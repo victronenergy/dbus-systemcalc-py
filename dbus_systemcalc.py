@@ -18,7 +18,7 @@ sys.path.insert(1, os.path.join(os.path.dirname(__file__), './ext/velib_python')
 from vedbus import VeDbusService, VeDbusItemImport
 from dbusmonitor import DbusMonitor
 
-softwareVersion = '1'
+softwareVersion = '1.00'
 
 class SystemCalc:
 	def __init__(self):
