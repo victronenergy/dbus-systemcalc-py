@@ -27,12 +27,6 @@ class SystemCalc:
 		dummy = {'code': None, 'whenToLog': 'configChange', 'accessLevel': None}
 
 		self._dbusmonitor = DbusMonitor({
-			""" 'com.victronenergy.battery': {
-				'/Dc/0/V': dummy,
-				'/Dc/0/I': dummy,
-				'/Soc': dummy,
-				'/ConsumedAmphours': dummy,
-				'/TimeToGo': dummy}, """
 			'com.victronenergy.solarcharger': {
 				'/Dc/V': dummy,
 				'/Dc/I': dummy},
@@ -113,12 +107,13 @@ class SystemCalc:
 		self._dbusservice.add_path('/Dc/System', value=None, gettextcallback=self._gettext)
 		"""
 
-		self._changed = False
+		self._changed = True
 		self._updatevalues()
 		gobject.timeout_add(2000, self._updatevalues)
 
 	def _updatevalues(self):
 		if not self._changed:
+			logging.debug('Nothing changed, skipping')
 			return True
 
 		# ==== PVINVERTERS ====
@@ -153,7 +148,6 @@ class SystemCalc:
 		solarchargers = self._dbusmonitor.get_service_list('com.victronenergy.solarcharger')
 		for solarcharger in solarchargers:
 			v = self._dbusmonitor.get_value(solarcharger, '/Dc/V')
-			logging.info(v)
 			if v is None:
 				continue
 			i = self._dbusmonitor.get_value(solarcharger, '/Dc/I')
@@ -170,6 +164,7 @@ class SystemCalc:
 			self._dbusservice[path] = newvalues[path] if path in newvalues else None
 
 		self._changed = False
+		logging.debug("New values: %s" % newvalues)
 
 		return True  # Keep timer running
 
