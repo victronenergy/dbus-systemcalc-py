@@ -44,7 +44,8 @@ class SystemCalc:
 		}, self._dbus_value_changed, self._device_added, self._device_removed)
 
 		# put ourselves on the dbus
-		self._dbusservice = VeDbusService('com.victronenergy.system.calc')
+
+		self._dbusservice = VeDbusService('com.victronenergy.kwhcounters')  #'com.victronenergy.system.calc')
 		self._dbusservice.add_mandatory_paths(
 			processname=__file__,
 			processversion=softwareVersion,
@@ -73,7 +74,17 @@ class SystemCalc:
 			description='Battery time to go')
 		"""
 
+
 		self._summeditems = {
+			'/SolarYield/Power/ACCoupledPVOnOutput': None,
+			'/SolarYield/Power/ACCoupledPVOnOutput0': None,
+			'/SolarYield/Power/ACCoupledPVOnOutput1': None,
+			'/SolarYield/Power/ACCoupledPVOnOutput2': None,
+			'/SolarYield/Power/DCCoupledPV': None}
+
+		# TODO: remove the old kwhcounters style (/SolarYield etc), and change paths to below
+		# list. And also change D-Bus service name back to com.victronenergy.system
+		"""
 			'/Ac/PvOnOutput/L1/Power': None,
 			'/Ac/PvOnOutput/L2/Power': None,
 			'/Ac/PvOnOutput/L3/Power': None,
@@ -84,6 +95,7 @@ class SystemCalc:
 			'/Ac/PvOnGenset/L2/Power': None,
 			'/Ac/PvOnGenset/L3/Power': None,
 			'/Dc/Pv/Power': None}
+		"""
 
 		for path in self._summeditems.keys():
 			self._dbusservice.add_path(path, value=None, gettextcallback=self._gettext)
@@ -112,23 +124,30 @@ class SystemCalc:
 		# ==== PVINVERTERS ====
 		pvinverters = self._dbusmonitor.get_service_list('com.victronenergy.pvinverter')
 		newvalues = {}
-		phases = ['L1', 'L2', 'L3']
-		pos = {0: '/Ac/PvOnGrid/', 1: '/Ac/PvOnOutput/', 2: '/Ac/PvOnGenset/'}
-
+		phases = ['1', '2', '3']
+		pos = {0: '/Ac/PvOnGrid/', 1: '/SolarYield/Power/ACCoupledPVOnOutput', 2: '/Ac/PvOnGenset/'}
+		total = 0
 		for pvinverter in pvinverters:
 			position = self._dbusmonitor.get_value(pvinverter, '/Position')
-			if position is None:
+			# Only work with pvinverters on the output for now.
+			# TODO: work with all
+			if position != 1:
 				continue
 
 			for phase in phases:
-				power = self._dbusmonitor.get_value(pvinverter, '/Ac/' + phase + '/Power')
+				power = self._dbusmonitor.get_value(pvinverter, '/Ac/L' + phase + '/Power')
 				if power is None:
 					continue
 
-				if pos[position] + phase + '/Power' not in newvalues:
-					newvalues[pos[position] + phase + '/Power'] = power
+				path = pos[position] + str(int(phase) - 1)
+				if path not in newvalues:
+					newvalues[path] = power
 				else:
-					newvalues[pos[position] + phase + '/Power'] += power
+					newvalues[path] += power
+
+				total += power
+
+		newvalues['/SolarYield/Power/ACCoupledPVOnOutput'] = total
 
 		# ==== SOLARCHARGERS ====
 		solarchargers = self._dbusmonitor.get_service_list('com.victronenergy.solarcharger')
@@ -141,10 +160,10 @@ class SystemCalc:
 			if i is None:
 				continue
 
-			if '/Dc/Pv/Power' not in newvalues:
-				newvalues['/Dc/Pv/Power'] = v * i
+			if '/SolarYield/Power/DCCoupledPV' not in newvalues:
+				newvalues['/SolarYield/Power/DCCoupledPV'] = v * i
 			else:
-				newvalues['/Dc/Pv/Power'] += v * i
+				newvalues['/SolarYield/Power/DCCoupledPV'] += v * i
 
 		# ==== UPDATE DBUS ITEMS ====
 		for path in self._summeditems.keys():
