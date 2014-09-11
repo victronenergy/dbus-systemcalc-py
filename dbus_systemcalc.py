@@ -38,8 +38,7 @@ class SystemCalc:
 		}, self._dbus_value_changed, self._device_added, self._device_removed)
 
 		# put ourselves on the dbus
-
-		self._dbusservice = VeDbusService('com.victronenergy.kwhcounters')  #'com.victronenergy.system.calc')
+		self._dbusservice = VeDbusService('com.victronenergy.system')
 		self._dbusservice.add_mandatory_paths(
 			processname=__file__,
 			processversion=softwareVersion,
@@ -68,7 +67,6 @@ class SystemCalc:
 			description='Battery time to go')
 		"""
 
-
 		self._summeditems = {		
 			'/Ac/PvOnOutput/L1/Power': None,
 			'/Ac/PvOnOutput/L2/Power': None,
@@ -83,9 +81,6 @@ class SystemCalc:
 			'/Ac/PvOnGenset/L3/Power': None,
 			'/Ac/PvOnGenset/Total/Power': None,
 			'/Dc/Pv/Power': None}
-			# TODO: Change D-Bus service name back to com.victronenergy.system
-
-		
 
 		for path in self._summeditems.keys():
 			self._dbusservice.add_path(path, value=None, gettextcallback=self._gettext)
@@ -133,7 +128,7 @@ class SystemCalc:
 					newvalues[path] = power
 				else:
 					newvalues[path] += power
-				print str(path) + " - " + str(power)
+
 				total[position] += power
 
 		newvalues['/Ac/PvOnGrid/Total/Power'] = total[0]
