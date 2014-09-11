@@ -169,7 +169,7 @@ class SystemCalc:
 		pass
 
 	def _gettext(self, path, value):
-		return "TODO: implement gettext"
+		return ("%.0FW" % (float(value)))
 
 
 if __name__ == "__main__":
