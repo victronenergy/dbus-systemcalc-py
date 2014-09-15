@@ -18,14 +18,13 @@ sys.path.insert(1, os.path.join(os.path.dirname(__file__), './ext/velib_python')
 from vedbus import VeDbusService, VeDbusItemImport
 from dbusmonitor import DbusMonitor
 
-softwareVersion = '1.00'
+softwareVersion = '1.01'
 
 class SystemCalc:
 	def __init__(self):
 		# Why this dummy? DbusMonitor expects these values to be there, even though we don
 		# need them. So just add some dummy data. This can go away when DbusMonitor is more generic.
 		dummy = {'code': None, 'whenToLog': 'configChange', 'accessLevel': None}
-
 		self._dbusmonitor = DbusMonitor({
 			'com.victronenergy.solarcharger': {
 				'/Dc/V': dummy,
