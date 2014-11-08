@@ -162,9 +162,11 @@ class SystemCalc:
 		self._changed = True
 
 	def _device_added(self, service, instance):
+		self._changed = True
 		pass
 
 	def _device_removed(self, service, instance):
+		self._changed = True
 		pass
 
 	def _gettext(self, path, value):
