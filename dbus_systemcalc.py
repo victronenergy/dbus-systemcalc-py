@@ -71,13 +71,16 @@ class SystemCalc:
 			'/Ac/PvOnOutput/L2/Power': None,
 			'/Ac/PvOnOutput/L3/Power': None,
 			'/Ac/PvOnOutput/Total/Power': None,
+			'/Ac/PvOnOutput/NumberOfPhases': None,
 			'/Ac/PvOnGrid/L1/Power': None,
 			'/Ac/PvOnGrid/L2/Power': None,
 			'/Ac/PvOnGrid/L3/Power': None,
 			'/Ac/PvOnGrid/Total/Power': None,
+			'/Ac/PvOnGrid/NumberOfPhases': None,
 			'/Ac/PvOnGenset/L1/Power': None,
 			'/Ac/PvOnGenset/L2/Power': None,
 			'/Ac/PvOnGenset/L3/Power': None,
+			'/Ac/PvOnGenset/NumberOfPhases': None,
 			'/Ac/PvOnGenset/Total/Power': None,
 			'/Dc/Pv/Power': None}
 
@@ -125,8 +128,6 @@ class SystemCalc:
 		total = {0: None, 1: None, 2: None}
 		for pvinverter in pvinverters:
 			position = self._dbusmonitor.get_value(pvinverter, '/Position')
-			# Only work with pvinverters on the output for now.
-			# TODO: work with all
 
 			for phase in phases:
 				power = self._dbusmonitor.get_value(pvinverter, '/Ac/L' + phase + '/Power')
@@ -141,6 +142,16 @@ class SystemCalc:
 
 				total[position] = power if total[position] is None else total[position] + power
 
+			# Determine number of phases.
+			if pos[position] + 'L3' + '/Power' in newvalues:
+				newvalues[pos[position] + 'NumberOfPhases'] = 3
+			elif pos[position] + 'L2' + '/Power' in newvalues:
+				newvalues[pos[position] + 'NumberOfPhases'] = 2
+			elif pos[position] + 'L1' + '/Power' in newvalues:
+				newvalues[pos[position] + 'NumberOfPhases'] = 1
+			# no need to set it to None, not adding the item to newvalues has the same effect
+
+		# Add totals
 		newvalues['/Ac/PvOnGrid/Total/Power'] = total[0]
 		newvalues['/Ac/PvOnOutput/Total/Power'] = total[1]
 		newvalues['/Ac/PvOnGenset/Total/Power'] = total[2]
