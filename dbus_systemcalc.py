@@ -99,13 +99,24 @@ class SystemCalc:
 
 		self._changed = True
 		self._updatevalues()
-		gobject.timeout_add(2000, self._updatevalues)
+		gobject.timeout_add(1000, self._handletimertick)
+
+	def _handletimertick(self):
+		# try catch, to make sure that we kill ourselves on an error. Without this try-catch, there would
+		# be an error written to stdout, and then the timer would not be restarted, resulting in a dead-
+		# lock waiting for manual intervention -> not good!
+		try:
+			if self._changed:
+				self._updatevalues()
+			self._changed = False
+		except:
+			import traceback
+			traceback.print_exc()
+			sys.exit(1)
+
+		return True  # keep timer running
 
 	def _updatevalues(self):
-		if not self._changed:
-			logging.debug('Nothing changed, skipping')
-			return True
-
 		# ==== PVINVERTERS ====
 		pvinverters = self._dbusmonitor.get_service_list('com.victronenergy.pvinverter')
 		newvalues = {}
@@ -153,10 +164,7 @@ class SystemCalc:
 		for path in self._summeditems.keys():
 			self._dbusservice[path] = newvalues[path] if path in newvalues else None
 
-		self._changed = False
 		logging.debug("New values: %s" % newvalues)
-
-		return True  # Keep timer running
 
 	def _dbus_value_changed(self, dbusServiceName, dbusPath, dict, changes, deviceInstance):
 		self._changed = True
