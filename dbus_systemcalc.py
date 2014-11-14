@@ -66,7 +66,7 @@ class SystemCalc:
 			description='Battery time to go')
 		"""
 
-		self._summeditems = {		
+		self._summeditems = {
 			'/Ac/PvOnOutput/L1/Power': None,
 			'/Ac/PvOnOutput/L2/Power': None,
 			'/Ac/PvOnOutput/L3/Power': None,
@@ -122,7 +122,7 @@ class SystemCalc:
 		newvalues = {}
 		phases = ['1', '2', '3']
 		pos = {0: '/Ac/PvOnGrid/', 1: '/Ac/PvOnOutput/', 2: '/Ac/PvOnGenset/'}
-		total = {0: 0, 1: 0, 2: 0}
+		total = {0: None, 1: None, 2: None}
 		for pvinverter in pvinverters:
 			position = self._dbusmonitor.get_value(pvinverter, '/Position')
 			# Only work with pvinverters on the output for now.
@@ -139,7 +139,7 @@ class SystemCalc:
 				else:
 					newvalues[path] += power
 
-				total[position] += power
+				total[position] = power if total[position] is None else total[position] + power
 
 		newvalues['/Ac/PvOnGrid/Total/Power'] = total[0]
 		newvalues['/Ac/PvOnOutput/Total/Power'] = total[1]
@@ -162,7 +162,8 @@ class SystemCalc:
 
 		# ==== UPDATE DBUS ITEMS ====
 		for path in self._summeditems.keys():
-			self._dbusservice[path] = newvalues[path] if path in newvalues else None
+			# Why the None? Because we want to invalidate things we don't have anymore.
+			self._dbusservice[path] = newvalues.get(path, None)
 
 		logging.debug("New values: %s" % newvalues)
 
