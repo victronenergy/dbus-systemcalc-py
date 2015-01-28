@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser(
 )
 
 parser.add_argument("-n", "--name", help="the D-Bus service you want me to claim",
-                type=str, default="com.victronenergy.solarcharger.ttyO1")
+                type=str, default="com.victronenergy.charger.ttyO1")
 
 args = parser.parse_args()
 
@@ -32,9 +32,9 @@ s = DbusDummyService(
     servicename=args.name,
     deviceinstance=0,
     paths={
-        '/Dc/V': {'initial': 41},
-        '/Dc/I': {'initial': 42}},
-    productname='Solarcharger',
+        '/Dc/0/V': {'initial': 31},
+        '/Dc/0/I': {'initial': 32}},
+    productname='BMV-700',
     connection='VE.Direct port 1')
 
 logger.info('Connected to dbus, and switching over to gobject.MainLoop() (= event based)')
