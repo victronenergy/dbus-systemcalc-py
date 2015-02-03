@@ -342,6 +342,31 @@ class TestBatteryData(unittest.TestCase):
 		battery.kill()
 		battery.wait()
 
+	def test_13_derive_battery(self):
+		vebus = startinbackground(['./dummyvebus.py'])
+		solarcharger = startinbackground(['./dummysolarcharger.py'])
+		charger = startinbackground(['./dummycharger.py'])
+
+		assert('0\n' == check_output(
+			['dbus', 'com.victronenergy.settings', '/Settings/SystemSetup/HasDcSystem', 'SetValue', '%0']))
+
+		sleep(2)
+
+		p = (31 * 32) + (41 * 42) + (11 * 12)
+		i = p / 41
+		self.assertEqual(str(p) + '\n', check_output(
+			['dbus', 'com.victronenergy.system', '/Dc/Battery/Power', 'GetValue']))
+		self.assertEqual(str(i) + '\n', check_output(
+			['dbus', 'com.victronenergy.system', '/Dc/Battery/Current', 'GetValue']))
+		self.assertEqual('41\n', check_output(
+			['dbus', 'com.victronenergy.system', '/Dc/Battery/Voltage', 'GetValue']))
+
+		vebus.kill()
+		vebus.wait()
+		solarcharger.kill()
+		solarcharger.wait()
+		charger.kill()
+		charger.wait()
 
 if __name__ == "__main__":
 	logging.basicConfig(stream=sys.stderr)

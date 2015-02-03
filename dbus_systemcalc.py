@@ -209,6 +209,16 @@ class SystemCalc:
 		return True  # keep timer running
 
 	def _updatevalues(self):
+		# ==== PREPARATIONS ====
+		# Determine values used in logic below
+		vebusses = self._dbusmonitor.get_service_list('com.victronenergy.vebus')
+		vebuspower = 0
+		for vebus in vebusses:
+			v = self._dbusmonitor.get_value(vebus, '/Dc/V')
+			i = self._dbusmonitor.get_value(vebus, '/Dc/I')
+			if v is not None and i is not None:
+				vebuspower += v * i
+
 		# ==== PVINVERTERS ====
 		pvinverters = self._dbusmonitor.get_service_list('com.victronenergy.pvinverter')
 		newvalues = {}
@@ -317,14 +327,23 @@ class SystemCalc:
 			elif charger_batteryvoltage is not None:
 				newvalues['/Dc/Battery/Voltage'] = charger_batteryvoltage
 			else:
-				# CCGX-connected system consists of only a Multi, but it is not user-selected as the battery-
-				# monitor, probably because there are other loads or chargers. In that case, at least use its
-				# reported battery voltage.
+				# CCGX-connected system consists of only a Multi, but it is not user-selected, nor
+				# auto-selected as the battery-monitor, probably because there are other loads or chargers.
+				# In that case, at least use its reported battery voltage.
 				vebusses = self._dbusmonitor.get_service_list('com.victronenergy.vebus')
 				for vebus in vebusses:
 					v = self._dbusmonitor.get_value(vebus, '/Dc/V')
 					if v is not None:
 						newvalues['/Dc/Battery/Voltage'] = v
+
+			if self._settings['hasdcsystem'] == 0 and '/Dc/Battery/Voltage' in newvalues:
+				# No unmonitored DC loads or chargers, and also no battery monitor: derive battery watts
+				# and amps from vebus, solarchargers and chargers.
+				assert '/Dc/Battery/Power' not in newvalues
+				assert '/Dc/Battery/Current' not in newvalues
+				p = newvalues.get('/Dc/Pv/Power', 0) + newvalues.get('/Dc/Charger/Power', 0) + vebuspower
+				newvalues['/Dc/Battery/Current'] = p / newvalues['/Dc/Battery/Voltage']
+				newvalues['/Dc/Battery/Power'] = p
 
 		# ==== SYSTEM ====
 		if self._settings['hasdcsystem'] == 1 and batteryservicetype == 'battery':
@@ -334,14 +353,6 @@ class SystemCalc:
 			# Solarcharger & other chargers: positive: charging
 			# battery: Positive: charging battery.
 			# battery = solarcharger + charger + ve.bus - system
-
-			vebusses = self._dbusmonitor.get_service_list('com.victronenergy.vebus')
-			vebuspower = 0
-			for vebus in vebusses:
-				v = self._dbusmonitor.get_value(vebus, '/Dc/V')
-				i = self._dbusmonitor.get_value(vebus, '/Dc/I')
-				if v is not None and i is not None:
-					vebuspower += v * i
 
 			newvalues['/Dc/System/Power'] = (newvalues.get('/Dc/Pv/Power', 0) +
 				newvalues.get('/Dc/Charger/Power', 0) +	vebuspower - newvalues['/Dc/Battery/Power'])
