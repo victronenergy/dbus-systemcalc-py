@@ -37,14 +37,17 @@ class SystemCalc:
 		dummy = {'code': None, 'whenToLog': 'configChange', 'accessLevel': None}
 		self._dbusmonitor = DbusMonitor({
 			'com.victronenergy.solarcharger': {
+				'/Connected': dummy,
 				'/Dc/V': dummy,
 				'/Dc/I': dummy},
 			'com.victronenergy.pvinverter': {
+				'/Connected': dummy,
 				'/Ac/L1/Power': dummy,
 				'/Ac/L2/Power': dummy,
 				'/Ac/L3/Power': dummy,
 				'/Position': dummy},
 			'com.victronenergy.battery': {
+				'/Connected': dummy,
 				'/ProductName': dummy,
 				'/Mgmt/Connection': dummy,
 				'/Dc/0/V': dummy,
@@ -52,6 +55,7 @@ class SystemCalc:
 				'/Dc/0/P': dummy,
 				'/Soc': dummy},
 			'com.victronenergy.vebus': {
+				'/Connected': dummy,
 				'/ProductName': dummy,
 				'/Mgmt/Connection': dummy,
 				'/State': dummy,
@@ -176,6 +180,8 @@ class SystemCalc:
 		# available, check if there are not Solar chargers and no normal chargers. If they are not
 		# there, assume this is a hub-2, hub-3 or hub-4 system and use VE.Bus SOC.
 		batteries = self._dbusmonitor.get_service_list('com.victronenergy.battery')
+		self._remove_unconnected_services(batteries)
+
 		if len(batteries) > 0:
 			return sorted(batteries)[0]  # Pick a random battery service
 
@@ -186,7 +192,7 @@ class SystemCalc:
 			return None
 
 		vebusses = self._dbusmonitor.get_service_list('com.victronenergy.vebus')
-		self._remove_disconnected_vebusses(vebusses)
+		self._remove_unconnected_services(vebusses)
 
 		if len(vebusses) > 0:
 			return sorted(vebusses)[0]  # Pick a random vebus service
@@ -369,12 +375,9 @@ class SystemCalc:
 		# servicename, ie 'com.victronenergy.vebus.ttyO1' is not used, since the last part of that is not
 		# fixed. dbus-serviceclass name and the device instance are already fixed, so best to use those.
 
-		# Get all vebus services.
 		services = self._dbusmonitor.get_service_list('com.victronenergy.vebus')
-		self._remove_disconnected_vebusses(services)
-
-		# Add all battery monitors
 		services.update(self._dbusmonitor.get_service_list('com.victronenergy.battery'))
+		self._remove_unconnected_services(services)
 
 		ul = {self.BATSERVICE_DEFAULT: 'Automatic', self.BATSERVICE_NOBATTERY: 'No battery monitor'}
 		for servicename, instance in services.items():
@@ -391,20 +394,24 @@ class SystemCalc:
 		return (self._dbusmonitor.get_value(servicename, '/ProductName') + ' on ' +
 						self._dbusmonitor.get_value(servicename, '/Mgmt/Connection'))
 
-	def _remove_disconnected_vebusses(self, vebusservices):
+	def _remove_unconnected_services(self, services):
 		# Workaround: because com.victronenergy.vebus is available even when there is no vebus product
 		# connected. Remove any that is not connected. For this, we use /State since mandatory path
 		# /Connected is not implemented in mk2dbus.
-		for servicename in vebusservices.keys():
-			if self._dbusmonitor.get_value(servicename, '/State') is None:
-				del vebusservices[servicename]
+		for servicename in services.keys():
+			if ((servicename.split('.')[2] == 'vebus' and self._dbusmonitor.get_value(servicename, '/State') is None)
+				or self._dbusmonitor.get_value(servicename, '/Connected') != 1
+				or self._dbusmonitor.get_value(servicename, '/ProductName') is None
+				or self._dbusmonitor.get_value(servicename, '/Mgmt/Connection') is None):
+				del services[servicename]
 
 	def _dbus_value_changed(self, dbusServiceName, dbusPath, dict, changes, deviceInstance):
 		self._changed = True
 
 		# Workaround because com.victronenergy.vebus is available even when there is no vebus product
 		# connected.
-		if dbusPath == '/State' and dbusServiceName.split('.')[0:3] == ['com', 'victronenergy', 'vebus']:
+		if (dbusPath in ['/Connected', '/ProductName', '/Mgmt/Connection'] or
+			(dbusPath == '/State' and dbusServiceName.split('.')[0:3] == ['com', 'victronenergy', 'vebus'])):
 			self._handleservicechange()
 
 	def _device_added(self, service, instance):
