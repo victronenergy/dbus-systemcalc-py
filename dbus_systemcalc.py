@@ -54,7 +54,14 @@ class SystemCalc:
 				'/Dc/0/I': dummy,
 				'/Dc/0/P': dummy,
 				'/Soc': dummy},
-			'com.victronenergy.vebus': {
+			'com.victronenergy.vebus' : {
+				'/Ac/ActiveIn/ActiveInput': dummy,
+				'/Ac/ActiveIn/L1/P': dummy,
+				'/Ac/ActiveIn/L2/P': dummy,
+				'/Ac/ActiveIn/L3/P': dummy,
+				'/Ac/Out/L1/P': dummy,
+				'/Ac/Out/L2/P': dummy,
+				'/Ac/Out/L3/P': dummy,
 				'/Connected': dummy,
 				'/ProductName': dummy,
 				'/Mgmt/Connection': dummy,
@@ -64,7 +71,22 @@ class SystemCalc:
 				'/Soc': dummy},
 			'com.victronenergy.charger': {
 				'/Dc/0/V': dummy,
-				'/Dc/0/I': dummy}
+				'/Dc/0/I': dummy},
+			'com.victronenergy.grid' : {
+				'/ProductId' : dummy,
+				'/DeviceType' : dummy,
+				'/Ac/L1/Power': dummy,
+				'/Ac/L2/Power': dummy,
+				'/Ac/L3/Power': dummy},
+			'com.victronenergy.genset' : {
+				'/ProductId' : dummy,
+				'/DeviceType' : dummy,
+				'/Ac/L1/Power': dummy,
+				'/Ac/L2/Power': dummy,
+				'/Ac/L3/Power': dummy},
+			'com.victronenergy.settings' : {
+				'/Settings/SystemSetup/AcInput1' : dummy,
+				'/Settings/SystemSetup/AcInput2' : dummy}
 		}, self._dbus_value_changed, self._device_added, self._device_removed)
 
 		# Connect to localsettings
@@ -94,6 +116,19 @@ class SystemCalc:
 			'/AutoSelectedBatteryService', value=None, gettextcallback=self._gettext)
 
 		self._summeditems = {
+			'/Ac/Grid/L1/Power': {'gettext': '%.0F W'},
+			'/Ac/Grid/L2/Power': {'gettext': '%.0F W'},
+			'/Ac/Grid/L3/Power': {'gettext': '%.0F W'},
+			'/Ac/Grid/ProductId': {'gettext': '%s'},
+			'/Ac/Grid/DeviceType': {'gettext': '%s'},
+			'/Ac/Genset/L1/Power': {'gettext': '%.0F W'},
+			'/Ac/Genset/L2/Power': {'gettext': '%.0F W'},
+			'/Ac/Genset/L3/Power': {'gettext': '%.0F W'},
+			'/Ac/Genset/ProductId': {'gettext': '%s'},
+			'/Ac/Genset/DeviceType': {'gettext': '%s'},
+			'/Ac/Consumption/L1/Power': {'gettext': '%.0F W'},
+			'/Ac/Consumption/L2/Power': {'gettext': '%.0F W'},
+			'/Ac/Consumption/L3/Power': {'gettext': '%.0F W'},
 			'/Ac/PvOnOutput/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/PvOnOutput/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/PvOnOutput/L3/Power': {'gettext': '%.0F W'},
@@ -118,7 +153,6 @@ class SystemCalc:
 			'/Dc/Battery/State': {'gettext': '%s'},
 			'/Dc/Charger/Power': {'gettext': '%.0F %%'},
 			'/Dc/System/Power': {'gettext': '%.0F W'},
-
 			}
 
 		for path in self._summeditems.keys():
@@ -363,6 +397,81 @@ class SystemCalc:
 			newvalues['/Dc/System/Power'] = (newvalues.get('/Dc/Pv/Power', 0) +
 				newvalues.get('/Dc/Charger/Power', 0) +	vebuspower - newvalues['/Dc/Battery/Power'])
 
+		# ===== GRID METERS & CONSUMPTION ====
+		# The function below should be called after PV inverter data has been updated, because we need the
+		# PV inverter total power to update the consumption.
+		energy_meter_info = [
+					('com.victronenergy.grid', 'Grid', 1), 
+					('com.victronenergy.genset', 'Genset', 2),
+					('com.victronenergy.shore', 'Shore', 3)]
+		consumption = { "L1" : None, "L2" : None, "L3" : None }
+		multis = self._dbusmonitor.get_service_list('com.victronenergy.vebus')
+		multi_path = None
+		if len(multis) > 0:
+			# Assume there's only 1 multi present (that is a single D-Bus service)
+			multi_path = multis.keys()[0]
+		for servicename, device_type, role_id in energy_meter_info:
+			energy_meters = self._dbusmonitor.get_service_list(servicename)
+			em_service = None
+			if len(energy_meters) > 0:
+				# Take the first meter, we assume there's only one present. We also assume that the device is
+				# currently online.
+				em_service = energy_meters.keys()[0]
+			uses_active_input = False
+			if multi_path is not None:
+				# If a grid meter is present we use values from it. If not, we look at the multi. If it has
+				# AcIn1 or AcIn2 connected to the grid, we use those values.
+				# com.victronenergy.grid.??? indicates presence of an energy meter used as grid meter.
+				# com.victronenergy.vebus.???/Ac/ActiveIn/ActiveInput: decides which whether we look at AcIn1 
+				# or AcIn2 as possible grid connection.
+				# com.victronenergy.settings/Settings/SystemSetup/AcInput1 (and AcInput2) contains role of 
+				# AcInput.
+				# Possible values:
+				# 0: Not available
+				# 1: Grid
+				# 2: Generator
+				# 3: Shore power
+				active_input = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/ActiveInput')
+				if active_input is not None:
+					settings_path = '/Settings/SystemSetup/AcInput%s' % (active_input + 1)
+					ac_input_role = self._dbusmonitor.get_value('com.victronenergy.settings', settings_path)
+					uses_active_input = ac_input_role == role_id
+			for phase in ['L1', 'L2', 'L3']:
+				p = None
+				if em_service is not None:
+					p = self._dbusmonitor.get_value(em_service, '/Ac/%s/Power' % phase)
+					# Compute consumption between energy meter and multi (meter power - multi AC in) and
+					# add an optional PV inverter on input to the mix.
+					c = consumption[phase]
+					if uses_active_input:
+						ac_in = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/P' % phase)
+						if ac_in is not None:
+							_safeadd(c, -ac_in)
+					# If there's any power coming from a PV inverter in the inactive AC in (which is unlikely),
+					# it will still be used, because there may also be a load in the same ACIn consuming
+					# power, or the power could be fed back to the net.
+					pvpower = newvalues.get('/Ac/PvOn%s/%s/Power' % (device_type, phase))
+					consumption[phase] = _safeadd(c, p, pvpower)
+				elif uses_active_input:
+					# No relevant energy meter present. Assume the AcIn of the multi is connected directly
+					# to the net/generator etc, and all load is taken from the AcOut. This means that we
+					# ignore the power coming from any PV inverters on AcIn.
+					p = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/P' % phase)
+				newvalues['/Ac/%s/%s/Power' % (device_type, phase)] = p
+			if em_service is not None:
+				newvalues['/Ac/%s/ProductId' % device_type] = self._dbusmonitor.get_value(em_service, '/ProductId')
+				newvalues['/Ac/%s/DeviceType' % device_type] = self._dbusmonitor.get_value(em_service, '/DeviceType')
+		for phase in ['L1', 'L2', 'L3']:
+			c = consumption[phase]
+			pvpower = newvalues.get('/Ac/PvOnOutput/%s/Power' % device_type)
+			c = _safeadd(c, pvpower)
+			if multi_path is not None:
+				ac_out = self._dbusmonitor.get_value(multi_path, '/Ac/Out/%s/P' % phase)
+				c = _safeadd(c, ac_out)
+			newvalues['/Ac/Consumption/%s/Power' % phase] = c
+		# TODO EV Add Multi DeviceType & ProductID. Unfortunately, the com.victronenergy.vebus.??? tree does
+		# not contain a /ProductId entry.
+
 		# ==== UPDATE DBUS ITEMS ====
 		for path in self._summeditems.keys():
 			# Why the None? Because we want to invalidate things we don't have anymore.
@@ -430,6 +539,15 @@ class SystemCalc:
 
 		return (self._summeditems[path]['gettext'] % (value))
 
+def _safeadd(*values):
+	r = None
+	for v in values:
+		if v is not None:
+			if r is None:
+				r = v
+			else:
+				r += v
+	return r
 
 if __name__ == "__main__":
 	# Argument parsing
