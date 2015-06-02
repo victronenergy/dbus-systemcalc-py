@@ -459,7 +459,7 @@ class SystemCalc:
 					if uses_active_input:
 						ac_in = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/P' % phase)
 						if ac_in is not None:
-							_safeadd(c, -ac_in)
+							c = _safeadd(c, -ac_in)
 					# If there's any power coming from a PV inverter in the inactive AC in (which is unlikely),
 					# it will still be used, because there may also be a load in the same ACIn consuming
 					# power, or the power could be fed back to the net.
@@ -477,12 +477,12 @@ class SystemCalc:
 				newvalues['/Ac/%s/DeviceType' % device_type] = self._dbusmonitor.get_value(em_service, '/DeviceType')
 		for phase in ['L1', 'L2', 'L3']:
 			c = consumption[phase]
-			pvpower = newvalues.get('/Ac/PvOnOutput/%s/Power' % device_type)
+			pvpower = newvalues.get('/Ac/PvOnOutput/%s/Power' % phase)
 			c = _safeadd(c, pvpower)
 			if multi_path is not None:
 				ac_out = self._dbusmonitor.get_value(multi_path, '/Ac/Out/%s/P' % phase)
 				c = _safeadd(c, ac_out)
-			newvalues['/Ac/Consumption/%s/Power' % phase] = c
+			newvalues['/Ac/Consumption/%s/Power' % phase] = max(0, c)
 		self._compute_phase_totals('/Ac/Consumption', newvalues)
 		# TODO EV Add Multi DeviceType & ProductID. Unfortunately, the com.victronenergy.vebus.??? tree does
 		# not contain a /ProductId entry.
