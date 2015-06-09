@@ -34,7 +34,7 @@ s = DbusDummyService(
     paths={
         '/Dc/0/V': {'initial': 31},
         '/Dc/0/I': {'initial': 32}},
-    productname='BMV-700',
+    productname='Charger (dummy)',
     connection='VE.Direct port 1')
 
 logger.info('Connected to dbus, and switching over to gobject.MainLoop() (= event based)')

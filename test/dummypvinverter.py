@@ -23,7 +23,7 @@ parser.add_argument(
 
 parser.add_argument(
     "-p", "--position", help="position (and instance): 0=grid, 1=output, 2=genset", type=int,
-    default="1")
+    default="0")
 
 args = parser.parse_args()
 
@@ -37,17 +37,14 @@ DBusGMainLoop(set_as_default=True)
 pvac_output = DbusDummyService(
     servicename=args.name,
     deviceinstance=args.position,
+    productname='PV inverter (dummy)',
     paths={
-        '/Ac/L1/Power': {'initial': 100, 'update': 1},
-        '/Ac/L2/Power': {'initial': 0, 'update': 0},
-        '/Ac/L3/Power': {'initial': 1000, 'update': 10},
-        '/Ac/Energy/Forward': {'initial': 0, 'update': 100000},
-        '/Position': {'initial': int(args.position), 'update': 0}})
+        '/Ac/L1/Power': {'initial': 100},
+        '/Ac/L2/Power': {'initial': 0},
+        '/Ac/L3/Power': {'initial': 1000},
+        '/Ac/Energy/Forward': {'initial': 0},
+        '/Position': {'initial': int(args.position)}})
 
 print 'Connected to dbus, and switching over to gobject.MainLoop() (= event based)'
 mainloop = gobject.MainLoop()
 mainloop.run()
-
-
-
-
