@@ -19,7 +19,7 @@ parser = argparse.ArgumentParser(
 
 parser.add_argument(
     "-n", "--name", help="the D-Bus service you want me to claim", type=str,
-    default="com.victronenergy.grid")
+    default="com.victronenergy.shore")
 
 parser.add_argument(
     "-p", "--position", help="position (and instance): 0=grid, 1=output, 2=genset", type=int,
@@ -37,6 +37,7 @@ DBusGMainLoop(set_as_default=True)
 pvac_output = DbusDummyService(
     servicename=args.name,
     deviceinstance=args.position,
+    productname='Grid meter (dummy)',
     paths={
         '/Ac/L1/Power': {'initial': 150},
         '/Ac/L2/Power': {'initial': 200},

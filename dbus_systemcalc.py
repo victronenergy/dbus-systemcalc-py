@@ -31,6 +31,7 @@ class SystemCalc:
 
 		self.BATSERVICE_DEFAULT = 'default'
 		self.BATSERVICE_NOBATTERY = 'nobattery'
+		self.AC_IN_SOURCES = ['NotAvailable', 'Grid', 'Genset', 'Shore']
 
 		# Why this dummy? Because DbusMonitor expects these values to be there, even though we don't
 		# need them. So just add some dummy data. This can go away when DbusMonitor is more generic.
@@ -63,6 +64,7 @@ class SystemCalc:
 				'/Ac/Out/L2/P': dummy,
 				'/Ac/Out/L3/P': dummy,
 				'/Connected': dummy,
+				'/Hub4/AcPowerSetpoint': dummy,
 				'/ProductName': dummy,
 				'/Mgmt/Connection': dummy,
 				'/State': dummy,
@@ -79,6 +81,18 @@ class SystemCalc:
 				'/Ac/L2/Power': dummy,
 				'/Ac/L3/Power': dummy},
 			'com.victronenergy.genset' : {
+				'/ProductId' : dummy,
+				'/DeviceType' : dummy,
+				'/Ac/L1/Power': dummy,
+				'/Ac/L2/Power': dummy,
+				'/Ac/L3/Power': dummy},
+			'com.victronenergy.notavailable' : {
+				'/ProductId' : dummy,
+				'/DeviceType' : dummy,
+				'/Ac/L1/Power': dummy,
+				'/Ac/L2/Power': dummy,
+				'/Ac/L3/Power': dummy},
+			'com.victronenergy.shore' : {
 				'/ProductId' : dummy,
 				'/DeviceType' : dummy,
 				'/Ac/L1/Power': dummy,
@@ -114,7 +128,7 @@ class SystemCalc:
 			'/AvailableBatteryServices', value=None, gettextcallback=self._gettext)
 		self._dbusservice.add_path(
 			'/AutoSelectedBatteryService', value=None, gettextcallback=self._gettext)
-
+		
 		self._summeditems = {
 			'/Ac/Grid/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/Grid/L2/Power': {'gettext': '%.0F W'},
@@ -137,6 +151,13 @@ class SystemCalc:
 			'/Ac/Shore/NumberOfPhases': {'gettext': '%.0F W'},
 			'/Ac/Shore/ProductId': {'gettext': '%s'},
 			'/Ac/Shore/DeviceType': {'gettext': '%s'},
+			'/Ac/NotAvailable/L1/Power': {'gettext': '%.0F W'},
+			'/Ac/NotAvailable/L2/Power': {'gettext': '%.0F W'},
+			'/Ac/NotAvailable/L3/Power': {'gettext': '%.0F W'},
+			'/Ac/NotAvailable/Total/Power': {'gettext': '%.0F W'},
+			'/Ac/NotAvailable/NumberOfPhases': {'gettext': '%.0F W'},
+			'/Ac/NotAvailable/ProductId': {'gettext': '%s'},
+			'/Ac/NotAvailable/DeviceType': {'gettext': '%s'},
 			'/Ac/Consumption/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/Consumption/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/Consumption/L3/Power': {'gettext': '%.0F W'},
@@ -166,6 +187,8 @@ class SystemCalc:
 			'/Dc/Battery/State': {'gettext': '%s'},
 			'/Dc/Charger/Power': {'gettext': '%.0F %%'},
 			'/Dc/System/Power': {'gettext': '%.0F W'},
+			'/Hub': {'gettext': '%s'},
+			'/Ac/ActiveIn/Source': {'gettext': '%s'}
 			}
 
 		for path in self._summeditems.keys():
@@ -410,20 +433,40 @@ class SystemCalc:
 			newvalues['/Dc/System/Power'] = (newvalues.get('/Dc/Pv/Power', 0) +
 				newvalues.get('/Dc/Charger/Power', 0) +	vebuspower - newvalues['/Dc/Battery/Power'])
 
-		# ===== GRID METERS & CONSUMPTION ====
-		# The function below should be called after PV inverter data has been updated, because we need the
-		# PV inverter total power to update the consumption.
-		energy_meter_info = [
-					('com.victronenergy.grid', 'Grid', 1), 
-					('com.victronenergy.genset', 'Genset', 2),
-					('com.victronenergy.shore', 'Shore', 3)]
-		consumption = { "L1" : None, "L2" : None, "L3" : None }
+		# ===== AC IN SOURCE =====
 		multis = self._dbusmonitor.get_service_list('com.victronenergy.vebus')
 		multi_path = None
 		if len(multis) > 0:
-			# Assume there's only 1 multi present (that is a single D-Bus service)
+			# Assume there's only 1 multi service present on the D-Bus
 			multi_path = multis.keys()[0]
-		for servicename, device_type, role_id in energy_meter_info:
+
+		ac_in_source = None
+		active_input = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/ActiveInput')
+		if active_input is not None:
+			settings_path = '/Settings/SystemSetup/AcInput%s' % (active_input + 1)
+			ac_in_source = self._dbusmonitor.get_value('com.victronenergy.settings', settings_path)
+		newvalues['/Ac/ActiveIn/Source'] = ac_in_source 
+
+		# ===== HUB MODE =====
+		# The code below should be executed after PV inverter data has been updated, because we need the
+		# PV inverter total power to update the consumption.
+		hub = None
+		if self._dbusmonitor.get_value(multi_path, '/Hub4/AcPowerSetpoint') is not None:
+			hub = 4
+		elif newvalues.get('/Dc/Pv/Power', None) is not None:
+			hub = 1
+		elif newvalues.get('/Ac/PvOnOutput/Total/Power', None) is not None:
+			hub = 2
+		elif newvalues.get('/Ac/PvOnGrid/Total/Power', None) is not None or \
+			newvalues.get('/Ac/PvOnGenset/Total/Power', None) is not None:
+			hub = 3
+		newvalues['/Hub'] = hub
+
+		# ===== GRID METERS & CONSUMPTION ====
+		consumption = { "L1" : None, "L2" : None, "L3" : None }
+		for role_id in range(0, len(self.AC_IN_SOURCES)):
+			device_type = self.AC_IN_SOURCES[role_id]
+			servicename = 'com.victronenergy.%s' % device_type.lower() 
 			energy_meters = self._dbusmonitor.get_service_list(servicename)
 			em_service = None
 			if len(energy_meters) > 0:
@@ -437,19 +480,9 @@ class SystemCalc:
 				# com.victronenergy.grid.??? indicates presence of an energy meter used as grid meter.
 				# com.victronenergy.vebus.???/Ac/ActiveIn/ActiveInput: decides which whether we look at AcIn1 
 				# or AcIn2 as possible grid connection.
-				# com.victronenergy.settings/Settings/SystemSetup/AcInput1 (and AcInput2) contains role of 
-				# AcInput.
-				# Possible values:
-				# 0: Not available
-				# 1: Grid
-				# 2: Generator
-				# 3: Shore power
-				active_input = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/ActiveInput')
-				if active_input is not None:
-					settings_path = '/Settings/SystemSetup/AcInput%s' % (active_input + 1)
-					ac_input_role = self._dbusmonitor.get_value('com.victronenergy.settings', settings_path)
-					uses_active_input = ac_input_role == role_id
-			for phase in ['L1', 'L2', 'L3']:
+				if ac_in_source is not None:
+					uses_active_input = ac_in_source == role_id
+			for phase in consumption:
 				p = None
 				if em_service is not None:
 					p = self._dbusmonitor.get_value(em_service, '/Ac/%s/Power' % phase)
@@ -464,7 +497,7 @@ class SystemCalc:
 					# it will still be used, because there may also be a load in the same ACIn consuming
 					# power, or the power could be fed back to the net.
 					pvpower = newvalues.get('/Ac/PvOn%s/%s/Power' % (device_type, phase))
-					consumption[phase] = _safeadd(c, p, pvpower)
+					consumption[phase] = max(0, _safeadd(c, p, pvpower))
 				elif uses_active_input:
 					# No relevant energy meter present. Assume the AcIn of the multi is connected directly
 					# to the net/generator etc, and all load is taken from the AcOut. This means that we
@@ -475,7 +508,7 @@ class SystemCalc:
 			if em_service is not None:
 				newvalues['/Ac/%s/ProductId' % device_type] = self._dbusmonitor.get_value(em_service, '/ProductId')
 				newvalues['/Ac/%s/DeviceType' % device_type] = self._dbusmonitor.get_value(em_service, '/DeviceType')
-		for phase in ['L1', 'L2', 'L3']:
+		for phase in consumption:
 			c = consumption[phase]
 			pvpower = newvalues.get('/Ac/PvOnOutput/%s/Power' % phase)
 			c = _safeadd(c, pvpower)
@@ -551,7 +584,9 @@ class SystemCalc:
 			state = {self.STATE_IDLE: 'Idle', self.STATE_CHARGING: 'Charging',
 				self.STATE_DISCHARGING: 'Discharging'}
 			return state[value]
-
+		elif path == '/Ac/ActiveIn/Source':
+			if value is not None and value >= 0 and value <= 4:
+				return self.AC_IN_SOURCES[value]
 		return (self._summeditems[path]['gettext'] % (value))
 
 	def _compute_phase_totals(self, path, newvalues):
