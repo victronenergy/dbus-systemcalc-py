@@ -25,7 +25,7 @@ from logger import setup_logging
 softwareVersion = '1.11'
 
 class SystemCalc:
-	def __init__(self):
+	def __init__(self, dbusmonitor_gen=None, dbusservice_gen=None, settings_device_gen=None):
 		self.STATE_IDLE = 0
 		self.STATE_CHARGING = 1
 		self.STATE_DISCHARGING = 2
@@ -36,7 +36,7 @@ class SystemCalc:
 		# Why this dummy? Because DbusMonitor expects these values to be there, even though we don't
 		# need them. So just add some dummy data. This can go away when DbusMonitor is more generic.
 		dummy = {'code': None, 'whenToLog': 'configChange', 'accessLevel': None}
-		self._dbusmonitor = DbusMonitor({
+		dbus_tree = {
 			'com.victronenergy.solarcharger': {
 				'/Connected': dummy,
 				'/Dc/V': dummy,
@@ -92,18 +92,31 @@ class SystemCalc:
 			'com.victronenergy.settings' : {
 				'/Settings/SystemSetup/AcInput1' : dummy,
 				'/Settings/SystemSetup/AcInput2' : dummy}
-		}, self._dbus_value_changed, self._device_added, self._device_removed)
+		}
+
+		if dbusmonitor_gen is None:
+			self._dbusmonitor = DbusMonitor(dbus_tree, self._dbus_value_changed, self._device_added, self._device_removed)
+		else:
+			self._dbusmonitor = dbusmonitor_gen(dbus_tree)
 
 		# Connect to localsettings
-		self._settings = SettingsDevice(
-			bus=dbus.SystemBus() if (platform.machine() == 'armv7l') else dbus.SessionBus(),
-			supportedSettings={
-				'batteryservice': ['/Settings/SystemSetup/BatteryService', self.BATSERVICE_DEFAULT, 0, 0],
-				'hasdcsystem': ['/Settings/SystemSetup/HasDcSystem', 0, 0, 1]},
-			eventCallback=self._handlechangedsetting)
+		supported_settings = {
+			'batteryservice': ['/Settings/SystemSetup/BatteryService', self.BATSERVICE_DEFAULT, 0, 0],
+			'hasdcsystem': ['/Settings/SystemSetup/HasDcSystem', 0, 0, 1]}
+		if settings_device_gen is None:
+			self._settings = SettingsDevice(
+				bus=dbus.SystemBus() if (platform.machine() == 'armv7l') else dbus.SessionBus(),
+				supportedSettings=supported_settings,
+				eventCallback=self._handlechangedsetting)
+		else:
+			self._settings = settings_device_gen(supported_settings, self._handlechangedsetting)
 
 		# put ourselves on the dbus
-		self._dbusservice = VeDbusService('com.victronenergy.system')
+		if dbusservice_gen is None:
+			self._dbusservice = VeDbusService('com.victronenergy.system')
+		else:
+			self._dbusservice = dbusservice_gen('com.victronenergy.system')
+
 		self._dbusservice.add_mandatory_paths(
 			processname=__file__,
 			processversion=softwareVersion,
@@ -194,7 +207,6 @@ class SystemCalc:
 		gobject.timeout_add(1000, self._handletimertick)
 
 	def _handlechangedsetting(self, setting, oldvalue, newvalue):
-		print('settings changed: {}'.format(setting, oldvalue, newvalue))
 		self._determinebatteryservice()
 		self._changed = True
 
@@ -584,7 +596,6 @@ class SystemCalc:
 
 	def _dbus_value_changed(self, dbusServiceName, dbusPath, dict, changes, deviceInstance):
 		self._changed = True
-		print('Value changed: {}'.format(dbusServiceName, dbusPath))
 
 		# Workaround because com.victronenergy.vebus is available even when there is no vebus product
 		# connected.
