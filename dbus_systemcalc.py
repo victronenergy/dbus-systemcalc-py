@@ -69,6 +69,7 @@ class SystemCalc:
 				'/State': dummy,
 				'/Dc/V': dummy,
 				'/Dc/I': dummy,
+				'/Dc/P': dummy,
 				'/Soc': dummy},
 			'com.victronenergy.charger': {
 				'/Dc/0/V': dummy,
@@ -115,7 +116,7 @@ class SystemCalc:
 			'/AvailableBatteryServices', value=None, gettextcallback=self._gettext)
 		self._dbusservice.add_path(
 			'/AutoSelectedBatteryService', value=None, gettextcallback=self._gettext)
-		
+
 		self._summeditems = {
 			'/Ac/Grid/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/Grid/L2/Power': {'gettext': '%.0F W'},
@@ -159,6 +160,8 @@ class SystemCalc:
 			'/Dc/Battery/Soc': {'gettext': '%.0F %%'},
 			'/Dc/Battery/State': {'gettext': '%s'},
 			'/Dc/Charger/Power': {'gettext': '%.0F %%'},
+			'/Dc/Vebus/Current': {'gettext': '%.1F A'},
+			'/Dc/Vebus/Power': {'gettext': '%.0F W'},
 			'/Dc/System/Power': {'gettext': '%.0F W'},
 			'/Hub': {'gettext': '%s'},
 			'/Ac/ActiveIn/Source': {'gettext': '%s'}
@@ -406,13 +409,26 @@ class SystemCalc:
 			newvalues['/Dc/System/Power'] = (newvalues.get('/Dc/Pv/Power', 0) +
 				newvalues.get('/Dc/Charger/Power', 0) +	vebuspower - newvalues['/Dc/Battery/Power'])
 
-		# ===== AC IN SOURCE =====
+		# ==== Vebus ====
 		multis = self._dbusmonitor.get_service_list('com.victronenergy.vebus')
 		multi_path = None
 		if len(multis) > 0:
 			# Assume there's only 1 multi service present on the D-Bus
 			multi_path = multis.keys()[0]
+			dc_current = self._dbusmonitor.get_value(multi_path, '/Dc/I')
+			newvalues['/Dc/Vebus/Current'] = dc_current
+			dc_power = self._dbusmonitor.get_value(multi_path, '/Dc/P')
+			# Just in case /Dc/P is not available
+			if dc_power == None and dc_current is not None:
+				dc_voltage = self._dbusmonitor.get_value(multi_path, '/Dc/V')
+				if dc_voltage is not None:
+					dc_power = dc_voltage * dc_current
+			# Note that there is also vebuspower, which is the total DC power summed over all multis.
+			# However, this value cannot be combined with /Dc/Multi/Current, because it does not make sense
+			# to add the Dc currents of all multis if they do not share the same DC voltage.
+			newvalues['/Dc/Vebus/Power'] = dc_power
 
+		# ===== AC IN SOURCE =====
 		ac_in_source = None
 		active_input = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/ActiveInput')
 		if active_input is not None:
@@ -438,7 +454,7 @@ class SystemCalc:
 		# ===== GRID METERS & CONSUMPTION ====
 		consumption = { "L1" : None, "L2" : None, "L3" : None }
 		for device_type in ['Grid', 'Genset']:
-			servicename = 'com.victronenergy.%s' % device_type.lower() 
+			servicename = 'com.victronenergy.%s' % device_type.lower()
 			energy_meters = self._dbusmonitor.get_service_list(servicename)
 			em_service = None
 			if len(energy_meters) > 0:
@@ -450,7 +466,7 @@ class SystemCalc:
 				# If a grid meter is present we use values from it. If not, we look at the multi. If it has
 				# AcIn1 or AcIn2 connected to the grid, we use those values.
 				# com.victronenergy.grid.??? indicates presence of an energy meter used as grid meter.
-				# com.victronenergy.vebus.???/Ac/ActiveIn/ActiveInput: decides which whether we look at AcIn1 
+				# com.victronenergy.vebus.???/Ac/ActiveIn/ActiveInput: decides which whether we look at AcIn1
 				# or AcIn2 as possible grid connection.
 				if ac_in_source is not None:
 					uses_active_input = ac_in_source > 0 and (ac_in_source == 2) == (device_type == 'Genset')
