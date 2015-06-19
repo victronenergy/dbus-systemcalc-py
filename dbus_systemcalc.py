@@ -53,7 +53,9 @@ class SystemCalc:
 				'/Dc/0/V': dummy,
 				'/Dc/0/I': dummy,
 				'/Dc/0/P': dummy,
-				'/Soc': dummy},
+				'/Soc': dummy,
+				'/TimeToGo': dummy,
+				'/ConsumedAmphours': dummy},
 			'com.victronenergy.vebus' : {
 				'/Ac/ActiveIn/ActiveInput': dummy,
 				'/Ac/ActiveIn/L1/P': dummy,
@@ -159,6 +161,8 @@ class SystemCalc:
 			'/Dc/Battery/Power': {'gettext': '%.0F W'},
 			'/Dc/Battery/Soc': {'gettext': '%.0F %%'},
 			'/Dc/Battery/State': {'gettext': '%s'},
+			'/Dc/Battery/TimeToGo': {'gettext': '%.0F s'},
+			'/Dc/Battery/ConsumedAmphours': {'gettext': '%.1F Ah'},
 			'/Dc/Charger/Power': {'gettext': '%.0F %%'},
 			'/Dc/Vebus/Current': {'gettext': '%.1F A'},
 			'/Dc/Vebus/Power': {'gettext': '%.0F W'},
@@ -350,6 +354,8 @@ class SystemCalc:
 		if self._batteryservice is not None:
 			batteryservicetype = self._batteryservice.split('.')[2]  # either 'battery' or 'vebus'
 			newvalues['/Dc/Battery/Soc'] = self._dbusmonitor.get_value(self._batteryservice,'/Soc')
+			newvalues['/Dc/Battery/TimeToGo'] = self._dbusmonitor.get_value(self._batteryservice,'/TimeToGo')
+			newvalues['/Dc/Battery/ConsumedAmphours'] = self._dbusmonitor.get_value(self._batteryservice,'/ConsumedAmphours')
 
 			if batteryservicetype == 'battery':
 				newvalues['/Dc/Battery/Voltage'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/V')
