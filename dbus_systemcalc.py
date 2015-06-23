@@ -114,6 +114,8 @@ class SystemCalc:
 			hardwareversion=None,
 			connected=1)
 
+		self._dbusservice.add_path('/Serial', value=_get_ccgx_serial())
+
 		self._dbusservice.add_path(
 			'/AvailableBatteryServices', value=None, gettextcallback=self._gettext)
 		self._dbusservice.add_path(
@@ -605,6 +607,16 @@ def _safeadd(*values):
 			else:
 				r += v
 	return r
+
+def _get_ccgx_serial():
+	'''Returns the MAC address ascociated with eth0. Example: 087ba61221a0.
+	This value is used as ID for the VRM portal, so it may be considered as the serial number of the CCGX.'''
+	# Assume we are on linux
+	import fcntl, socket, struct
+
+	s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+	info = fcntl.ioctl(s.fileno(), 0x8927,  struct.pack('256s', 'eth0'))
+	return ''.join('%02x' % ord(x) for x in info[18:24])
 
 if __name__ == "__main__":
 	# Argument parsing
