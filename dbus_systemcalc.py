@@ -402,7 +402,8 @@ class SystemCalc:
 				assert '/Dc/Battery/Power' not in newvalues
 				assert '/Dc/Battery/Current' not in newvalues
 				p = newvalues.get('/Dc/Pv/Power', 0) + newvalues.get('/Dc/Charger/Power', 0) + vebuspower
-				newvalues['/Dc/Battery/Current'] = p / newvalues['/Dc/Battery/Voltage']
+				voltage = newvalues['/Dc/Battery/Voltage']
+				newvalues['/Dc/Battery/Current'] = p / voltage if voltage > 0 else None
 				newvalues['/Dc/Battery/Power'] = p
 
 		# ==== SYSTEM ====
