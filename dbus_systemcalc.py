@@ -194,6 +194,7 @@ class SystemCalc:
 		gobject.timeout_add(1000, self._handletimertick)
 
 	def _handlechangedsetting(self, setting, oldvalue, newvalue):
+		print('settings changed: {}'.format(setting, oldvalue, newvalue))
 		self._determinebatteryservice()
 		self._changed = True
 
@@ -583,6 +584,7 @@ class SystemCalc:
 
 	def _dbus_value_changed(self, dbusServiceName, dbusPath, dict, changes, deviceInstance):
 		self._changed = True
+		print('Value changed: {}'.format(dbusServiceName, dbusPath))
 
 		# Workaround because com.victronenergy.vebus is available even when there is no vebus product
 		# connected.
