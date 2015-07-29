@@ -32,21 +32,10 @@ s = DbusDummyService(
     servicename=args.name,
     deviceinstance=0,
     paths={
-        '/Mode': {'initial': 3},
         '/State': {'initial': None},
         '/Soc': {'initial': 10},
         '/Dc/V': {'initial': 11},
-        '/Dc/I': {'initial': 12},
-        '/Dc/P': {'initial': 131},
-        '/Ac/ActiveIn/ActiveInput' : {'initial' : 0},
-        '/Ac/ActiveIn/L1/P': {'initial': 500},
-        '/Ac/ActiveIn/L2/P': {'initial': 400},
-        '/Ac/ActiveIn/L3/P': {'initial': 300},
-        '/Ac/Out/L1/P': {'initial': 300},
-        '/Ac/Out/L2/P': {'initial': 300},
-        '/Ac/Out/L3/P': {'initial': 300},
-        # '/Hub4/AcPowerSetpoint': {'initial': 100}
-        },
+        '/Dc/I': {'initial': 12}},
     productname='Multi 12/3000',
     connection='CCGX-VE.Bus port')
 

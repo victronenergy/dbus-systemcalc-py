@@ -19,7 +19,7 @@ parser = argparse.ArgumentParser(
 
 parser.add_argument(
     "-n", "--name", help="the D-Bus service you want me to claim", type=str,
-    default="com.victronenergy.shore")
+    default="com.victronenergy.grid")
 
 parser.add_argument(
     "-p", "--position", help="position (and instance): 0=grid, 1=output, 2=genset", type=int,
