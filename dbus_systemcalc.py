@@ -294,6 +294,10 @@ class SystemCalc:
 		total = {0: None, 1: None, 2: None}
 		for pvinverter in pvinverters:
 			position = self._dbusmonitor.get_value(pvinverter, '/Position')
+			# Position will be None if PV inverter service has just been removed (after retrieving the
+			# service list).
+			if position is None:
+				continue
 
 			for phase in phases:
 				power = self._dbusmonitor.get_value(pvinverter, '/Ac/L' + phase + '/Power')
