@@ -424,8 +424,11 @@ class SystemCalc:
 			# battery: Positive: charging battery.
 			# battery = solarcharger + charger + ve.bus - system
 
-			newvalues['/Dc/System/Power'] = (newvalues.get('/Dc/Pv/Power', 0) +
-				newvalues.get('/Dc/Charger/Power', 0) +	vebuspower - newvalues['/Dc/Battery/Power'])
+			battery_power = newvalues.get('/Dc/Battery/Power')
+			if battery_power is not None:
+				dc_pv_power = newvalues.get('/Dc/Pv/Power', 0)
+				charger_power = newvalues.get('/Dc/Charger/Power', 0)
+				newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + vebuspower - battery_power
 
 		# ==== Vebus ====
 		multis = self._dbusmonitor.get_service_list('com.victronenergy.vebus')

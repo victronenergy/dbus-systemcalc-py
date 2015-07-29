@@ -8,6 +8,7 @@
 # dummysolarcharger:      41V, 42A, 41 * 42 = 1722W
 
 # Python
+import dbus
 import logging
 import unittest
 from subprocess import Popen
@@ -281,6 +282,33 @@ class TestBatteryData(unittest.TestCase):
 		solarcharger.wait()
 		charger.kill()
 		charger.wait()
+
+	def test_10b_calculation_of_dc_system_no_battery_power(self):
+		battery = startinbackground(['./dummybattery.py'])
+		vebus = startinbackground(['./dummyvebus.py'])
+		solarcharger = startinbackground(['./dummysolarcharger.py'])
+
+		assert('0\n' == check_output(
+			['dbus', 'com.victronenergy.settings', '/Settings/SystemSetup/HasDcSystem', 'SetValue', '%1']))
+		assert('0\n' == check_output(
+			['dbus', 'com.victronenergy.settings', '/Settings/SystemSetup/BatteryService', 'SetValue', 'com.victronenergy.battery/0']))
+		# Could not find a way to make the dbus tool set an invalid value (empty array of integers), so using
+		# dbus module instead.
+		bus = dbus.SessionBus()
+		proxy = bus.get_object('com.victronenergy.battery.ttyO1', '/Dc/0/P')
+		proxy.SetValue(dbus.Array([], signature=dbus.Signature('i'), variant_level=1))
+
+		sleep(2)
+
+		self.assertEqual('[]\n', check_output(
+			['dbus', 'com.victronenergy.system', '/Dc/System/Power', 'GetValue']))
+
+		vebus.kill()
+		vebus.wait()
+		battery.kill()
+		battery.wait()
+		solarcharger.kill()
+		solarcharger.wait()
 
 	def test_11_battery_state(self):
 		self.assertEqual('[]\n', check_output(
