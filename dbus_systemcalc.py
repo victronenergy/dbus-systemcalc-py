@@ -120,6 +120,8 @@ class SystemCalc:
 			'/AvailableBatteryServices', value=None, gettextcallback=self._gettext)
 		self._dbusservice.add_path(
 			'/AutoSelectedBatteryService', value=None, gettextcallback=self._gettext)
+		self._dbusservice.add_path(
+			'/ActiveBatteryService', value=None, gettextcallback=self._gettext)
 
 		self._summeditems = {
 			'/Ac/Grid/L1/Power': {'gettext': '%.0F W'},
@@ -221,8 +223,15 @@ class SystemCalc:
 				newbatteryservice = services.keys()[services.values().index(instance)]
 
 		if newbatteryservice != self._batteryservice:
-			logger.info("Battery service, setting == %s, changed from %s to %s" %
-				(self._settings['batteryservice'], self._batteryservice, newbatteryservice))
+			services = self._dbusmonitor.get_service_list()
+			instance = services.get(newbatteryservice, None)
+			if instance is None:
+				battery_service = None
+			else:
+				battery_service = '%s/%s' % ('.'.join(newbatteryservice.split('.')[:3]), instance)
+			self._dbusservice['/ActiveBatteryService'] = battery_service
+			logger.info("Battery service, setting == %s, changed from %s to %s (%s)" %
+				(self._settings['batteryservice'], self._batteryservice, newbatteryservice, instance))
 			self._batteryservice = newbatteryservice
 
 	def _autoselect_battery_service(self):
@@ -578,7 +587,7 @@ class SystemCalc:
 		self._handleservicechange()
 
 	def _gettext(self, path, value):
-		if path in ['/AvailableBatteryServices', '/AutoSelectedBatteryService']:
+		if path in ['/AvailableBatteryServices', '/AutoSelectedBatteryService', '/ActiveBatteryService']:
 			return value
 		elif path == '/Dc/Battery/State':
 			state = {self.STATE_IDLE: 'Idle', self.STATE_CHARGING: 'Charging',
