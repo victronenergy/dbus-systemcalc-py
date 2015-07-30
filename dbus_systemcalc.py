@@ -21,7 +21,7 @@ from dbusmonitor import DbusMonitor
 from settingsdevice import SettingsDevice
 from logger import setup_logging
 
-softwareVersion = '1.10'
+softwareVersion = '1.11'
 
 class SystemCalc:
 	def __init__(self):
