@@ -32,6 +32,10 @@ class SystemCalc:
 
 		self.BATSERVICE_DEFAULT = 'default'
 		self.BATSERVICE_NOBATTERY = 'nobattery'
+		self.BATSERVICE_REDFLOW = 'redflow'
+
+		self.REDFLOW_READABLE_NAME = 'Redflow batteries'
+		self.REDFLOW_CAPABILITY = 'Redflow'
 
 		# Why this dummy? Because DbusMonitor expects these values to be there, even though we don't
 		# need them. So just add some dummy data. This can go away when DbusMonitor is more generic.
@@ -52,6 +56,7 @@ class SystemCalc:
 				'/Ac/L3/Power': dummy,
 				'/Position': dummy},
 			'com.victronenergy.battery': {
+				'/Capabilities': dummy,
 				'/Connected': dummy,
 				'/ProductName': dummy,
 				'/Mgmt/Connection': dummy,
@@ -226,13 +231,21 @@ class SystemCalc:
 	def _determinebatteryservice(self):
 		if self._settings['batteryservice'] == self.BATSERVICE_DEFAULT:
 			newbatteryservice = self._autoselect_battery_service()
-			self._dbusservice['/AutoSelectedBatteryService'] = (
-				'No battery monitor found' if newbatteryservice is None else
-				self._get_readable_service_name(newbatteryservice))
+			if newbatteryservice == self.BATSERVICE_REDFLOW:
+				servicename = self.REDFLOW_READABLE_NAME
+			elif newbatteryservice is not None:
+				servicename = self._get_readable_service_name(newbatteryservice)
+			else:
+				servicename = 'No battery monitor found'
+			self._dbusservice['/AutoSelectedBatteryService'] = servicename
 
 		elif self._settings['batteryservice'] == self.BATSERVICE_NOBATTERY:
 			self._dbusservice['/AutoSelectedBatteryService'] = None
 			newbatteryservice = None
+
+		elif self._settings['batteryservice'] == self.BATSERVICE_REDFLOW:
+			self._dbusservice['/AutoSelectedBatteryService'] = self.REDFLOW_READABLE_NAME
+			newbatteryservice = self.BATSERVICE_REDFLOW
 
 		else:
 			self._dbusservice['/AutoSelectedBatteryService'] = None
@@ -252,15 +265,18 @@ class SystemCalc:
 				newbatteryservice = services.keys()[services.values().index(instance)]
 
 		if newbatteryservice != self._batteryservice:
-			services = self._dbusmonitor.get_service_list()
-			instance = services.get(newbatteryservice, None)
-			if instance is None:
-				battery_service = None
+			if newbatteryservice == self.BATSERVICE_REDFLOW:
+				battery_service = self.BATSERVICE_REDFLOW
 			else:
-				battery_service = '%s/%s' % ('.'.join(newbatteryservice.split('.')[:3]), instance)
+				services = self._dbusmonitor.get_service_list()
+				instance = services.get(newbatteryservice, None)
+				if instance is None:
+					battery_service = None
+				else:
+					battery_service = '%s/%s' % ('.'.join(newbatteryservice.split('.')[:3]), instance)
+			logger.info("Battery service, setting == %s, changed from %s to %s" %
+				(self._settings['batteryservice'], self._batteryservice, battery_service))
 			self._dbusservice['/ActiveBatteryService'] = battery_service
-			logger.info("Battery service, setting == %s, changed from %s to %s (%s)" %
-				(self._settings['batteryservice'], self._batteryservice, newbatteryservice, instance))
 			self._batteryservice = newbatteryservice
 
 	def _autoselect_battery_service(self):
@@ -272,7 +288,17 @@ class SystemCalc:
 		batteries = self._get_connected_service_list('com.victronenergy.battery')
 
 		if len(batteries) > 0:
-			return sorted(batteries)[0]  # Pick a random battery service
+			has_redflow = False
+			no_redflow_batteries = []
+			for battery in batteries:
+				if self._has_capability(battery, self.REDFLOW_CAPABILITY):
+					has_redflow = True
+				else:
+					no_redflow_batteries.append(battery)
+			if len(no_redflow_batteries) > 0:
+				return sorted(no_redflow_batteries)[0]  # Pick a random battery service
+			elif has_redflow:
+				return self.BATSERVICE_REDFLOW
 
 		if self._get_first_connected_service('com.victronenergy.solarcharger') is not None:
 			return None
@@ -392,22 +418,42 @@ class SystemCalc:
 
 		# ==== BATTERY ====
 		if self._batteryservice is not None:
-			batteryservicetype = self._batteryservice.split('.')[2]  # either 'battery' or 'vebus'
-			newvalues['/Dc/Battery/Soc'] = self._dbusmonitor.get_value(self._batteryservice,'/Soc')
-			newvalues['/Dc/Battery/TimeToGo'] = self._dbusmonitor.get_value(self._batteryservice,'/TimeToGo')
-			newvalues['/Dc/Battery/ConsumedAmphours'] = self._dbusmonitor.get_value(self._batteryservice,'/ConsumedAmphours')
+			if self._batteryservice == self.BATSERVICE_REDFLOW:
+				# We assume that all available Redflow batteries are part of a single bank, and have the same
+				# capacity, so we can average their Soc values
+				services = self._dbusmonitor.get_service_list('com.victronenergy.battery')
+				self._remove_unconnected_services(services)
+				total = 0
+				count = 0
+				power = None
+				for service in services:
+					if self._has_capability(service, self.REDFLOW_CAPABILITY):
+						soc = self._dbusmonitor.get_value(service,'/Soc')
+						if soc is not None:
+							total += soc
+							count += 1
+						power = _safeadd(power, self._dbusmonitor.get_value(service, '/Dc/0/Power'))
+				if count > 0:
+					newvalues['/Dc/Battery/Soc'] = total / count
+				newvalues['/Dc/Battery/Power'] = power
+				batteryservicetype = 'battery'
+			else:
+				batteryservicetype = self._batteryservice.split('.')[2]  # either 'battery' or 'vebus'
+				newvalues['/Dc/Battery/Soc'] = self._dbusmonitor.get_value(self._batteryservice,'/Soc')
+				newvalues['/Dc/Battery/TimeToGo'] = self._dbusmonitor.get_value(self._batteryservice,'/TimeToGo')
+				newvalues['/Dc/Battery/ConsumedAmphours'] = self._dbusmonitor.get_value(self._batteryservice,'/ConsumedAmphours')
 
-			if batteryservicetype == 'battery':
-				newvalues['/Dc/Battery/Voltage'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Voltage')
-				newvalues['/Dc/Battery/Current'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
-				newvalues['/Dc/Battery/Power'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Power')
+				if batteryservicetype == 'battery':
+					newvalues['/Dc/Battery/Voltage'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Voltage')
+					newvalues['/Dc/Battery/Current'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
+					newvalues['/Dc/Battery/Power'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Power')
 
-			elif batteryservicetype == 'vebus':
-				newvalues['/Dc/Battery/Voltage'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Voltage')
-				newvalues['/Dc/Battery/Current'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
-				if newvalues['/Dc/Battery/Voltage'] is not None and newvalues['/Dc/Battery/Current'] is not None:
-					newvalues['/Dc/Battery/Power'] = (
-						newvalues['/Dc/Battery/Voltage'] * newvalues['/Dc/Battery/Current'])
+				elif batteryservicetype == 'vebus':
+					newvalues['/Dc/Battery/Voltage'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Voltage')
+					newvalues['/Dc/Battery/Current'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
+					if newvalues['/Dc/Battery/Voltage'] is not None and newvalues['/Dc/Battery/Current'] is not None:
+						newvalues['/Dc/Battery/Power'] = (
+							newvalues['/Dc/Battery/Voltage'] * newvalues['/Dc/Battery/Current'])
 
 			p = newvalues.get('/Dc/Battery/Power', None)
 			if p is not None:
@@ -575,9 +621,15 @@ class SystemCalc:
 		services.update(self._get_connected_service_list('com.victronenergy.battery'))
 
 		ul = {self.BATSERVICE_DEFAULT: 'Automatic', self.BATSERVICE_NOBATTERY: 'No battery monitor'}
+		has_redflow = False
 		for servicename, instance in services.items():
-			key = "%s/%s" % ('.'.join(servicename.split('.')[0:3]), instance)
-			ul[key] = self._get_readable_service_name(servicename)
+			if self._has_capability(servicename, self.REDFLOW_CAPABILITY):
+				has_redflow = True
+			else:
+				key = "%s/%s" % ('.'.join(servicename.split('.')[0:3]), instance)
+				ul[key] = self._get_readable_service_name(servicename)
+		if has_redflow:
+			ul[self.BATSERVICE_REDFLOW] = self.REDFLOW_READABLE_NAME
 
 		self._dbusservice['/AvailableBatteryServices'] = json.dumps(ul)
 
@@ -645,6 +697,11 @@ class SystemCalc:
 		if len(services) == 0:
 			return None
 		return services.items()[0]
+
+	def _has_capability(self, service, capability):
+		capabilities = self._dbusmonitor.get_value(service,'/Capabilities')
+		return capabilities is not None and capability in capabilities.split(',')
+
 
 def _safeadd(*values):
 	'''Adds all parameters passed to this function. Parameters which are None are ignored. If all parameters
