@@ -34,8 +34,8 @@ s = DbusDummyService(
     paths={
         '/State': {'initial': None},
         '/Soc': {'initial': 10},
-        '/Dc/V': {'initial': 11},
-        '/Dc/I': {'initial': 12}},
+        '/Dc/0/Voltage': {'initial': 11},
+        '/Dc/0/Current': {'initial': 12}},
     productname='Multi 12/3000',
     connection='CCGX-VE.Bus port')
 

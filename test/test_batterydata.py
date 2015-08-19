@@ -295,7 +295,7 @@ class TestBatteryData(unittest.TestCase):
 		# Could not find a way to make the dbus tool set an invalid value (empty array of integers), so using
 		# dbus module instead.
 		bus = dbus.SessionBus()
-		proxy = bus.get_object('com.victronenergy.battery.ttyO1', '/Dc/0/P')
+		proxy = bus.get_object('com.victronenergy.battery.ttyO1', '/Dc/0/Power')
 		proxy.SetValue(dbus.Array([], signature=dbus.Signature('i'), variant_level=1))
 
 		sleep(2)
@@ -317,7 +317,7 @@ class TestBatteryData(unittest.TestCase):
 		battery = startinbackground(['./dummybattery.py'])
 
 		assert('0\n' == check_output(
-			['dbus', 'com.victronenergy.battery.ttyO1', '/Dc/0/P', 'SetValue', '%40']))
+			['dbus', 'com.victronenergy.battery.ttyO1', '/Dc/0/Power', 'SetValue', '%40']))
 
 		sleep(2)
 
@@ -326,7 +326,7 @@ class TestBatteryData(unittest.TestCase):
 			['dbus', 'com.victronenergy.system', '/Dc/Battery/State', 'GetValue']))
 
 		assert('0\n' == check_output(
-			['dbus', 'com.victronenergy.battery.ttyO1', '/Dc/0/P', 'SetValue', '%-40']))
+			['dbus', 'com.victronenergy.battery.ttyO1', '/Dc/0/Power', 'SetValue', '%-40']))
 
 		sleep(2)
 
@@ -335,7 +335,7 @@ class TestBatteryData(unittest.TestCase):
 			['dbus', 'com.victronenergy.system', '/Dc/Battery/State', 'GetValue']))
 
 		assert('0\n' == check_output(
-			['dbus', 'com.victronenergy.battery.ttyO1', '/Dc/0/P', 'SetValue', '%1']))
+			['dbus', 'com.victronenergy.battery.ttyO1', '/Dc/0/Power', 'SetValue', '%1']))
 
 		sleep(2)
 

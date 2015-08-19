@@ -33,9 +33,9 @@ s = DbusDummyService(
     deviceinstance=0,
     paths={
         '/Soc': {'initial': 20},
-        '/Dc/0/V': {'initial': 21},
-        '/Dc/0/I': {'initial': 22},
-        '/Dc/0/P': {'initial': 23}},
+        '/Dc/0/Voltage': {'initial': 21},
+        '/Dc/0/Current': {'initial': 22},
+        '/Dc/0/Power': {'initial': 23}},
     productname='BMV-700',
     connection='VE.Direct port 1')
 

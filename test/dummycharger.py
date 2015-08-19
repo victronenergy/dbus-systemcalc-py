@@ -32,8 +32,8 @@ s = DbusDummyService(
     servicename=args.name,
     deviceinstance=0,
     paths={
-        '/Dc/0/V': {'initial': 31},
-        '/Dc/0/I': {'initial': 32}},
+        '/Dc/0/Voltage': {'initial': 31},
+        '/Dc/0/Current': {'initial': 32}},
     productname='Charger (dummy)',
     connection='VE.Direct port 1')
 

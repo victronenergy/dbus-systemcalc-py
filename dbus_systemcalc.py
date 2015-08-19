@@ -39,8 +39,8 @@ class SystemCalc:
 		dbus_tree = {
 			'com.victronenergy.solarcharger': {
 				'/Connected': dummy,
-				'/Dc/V': dummy,
-				'/Dc/I': dummy},
+				'/Dc/0/Voltage': dummy,
+				'/Dc/0/Current': dummy},
 			'com.victronenergy.pvinverter': {
 				'/Connected': dummy,
 				'/Ac/L1/Power': dummy,
@@ -51,9 +51,9 @@ class SystemCalc:
 				'/Connected': dummy,
 				'/ProductName': dummy,
 				'/Mgmt/Connection': dummy,
-				'/Dc/0/V': dummy,
-				'/Dc/0/I': dummy,
-				'/Dc/0/P': dummy,
+				'/Dc/0/Voltage': dummy,
+				'/Dc/0/Current': dummy,
+				'/Dc/0/Power': dummy,
 				'/Soc': dummy,
 				'/TimeToGo': dummy,
 				'/ConsumedAmphours': dummy},
@@ -70,13 +70,13 @@ class SystemCalc:
 				'/ProductName': dummy,
 				'/Mgmt/Connection': dummy,
 				'/State': dummy,
-				'/Dc/V': dummy,
-				'/Dc/I': dummy,
-				'/Dc/P': dummy,
+				'/Dc/0/Voltage': dummy,
+				'/Dc/0/Current': dummy,
+				'/Dc/0/Power': dummy,
 				'/Soc': dummy},
 			'com.victronenergy.charger': {
-				'/Dc/0/V': dummy,
-				'/Dc/0/I': dummy},
+				'/Dc/0/Voltage': dummy,
+				'/Dc/0/Current': dummy},
 			'com.victronenergy.grid' : {
 				'/ProductId' : dummy,
 				'/DeviceType' : dummy,
@@ -297,8 +297,8 @@ class SystemCalc:
 		vebusses = self._dbusmonitor.get_service_list('com.victronenergy.vebus')
 		vebuspower = 0
 		for vebus in vebusses:
-			v = self._dbusmonitor.get_value(vebus, '/Dc/V')
-			i = self._dbusmonitor.get_value(vebus, '/Dc/I')
+			v = self._dbusmonitor.get_value(vebus, '/Dc/0/Voltage')
+			i = self._dbusmonitor.get_value(vebus, '/Dc/0/Current')
 			if v is not None and i is not None:
 				vebuspower += v * i
 
@@ -346,10 +346,10 @@ class SystemCalc:
 		solarchargers = self._dbusmonitor.get_service_list('com.victronenergy.solarcharger')
 		solarcharger_batteryvoltage = None
 		for solarcharger in solarchargers:
-			v = self._dbusmonitor.get_value(solarcharger, '/Dc/V')
+			v = self._dbusmonitor.get_value(solarcharger, '/Dc/0/Voltage')
 			if v is None:
 				continue
-			i = self._dbusmonitor.get_value(solarcharger, '/Dc/I')
+			i = self._dbusmonitor.get_value(solarcharger, '/Dc/0/Current')
 			if i is None:
 				continue
 
@@ -366,13 +366,13 @@ class SystemCalc:
 		charger_batteryvoltage = None
 		for charger in chargers:
 			# Assume the battery connected to output 0 is the main battery
-			v = self._dbusmonitor.get_value(charger, '/Dc/0/V')
+			v = self._dbusmonitor.get_value(charger, '/Dc/0/Voltage')
 			if v is None:
 				continue
 
 			charger_batteryvoltage = v
 
-			i = self._dbusmonitor.get_value(charger, '/Dc/0/I')
+			i = self._dbusmonitor.get_value(charger, '/Dc/0/Current')
 			if i is None:
 				continue
 
@@ -389,13 +389,13 @@ class SystemCalc:
 			newvalues['/Dc/Battery/ConsumedAmphours'] = self._dbusmonitor.get_value(self._batteryservice,'/ConsumedAmphours')
 
 			if batteryservicetype == 'battery':
-				newvalues['/Dc/Battery/Voltage'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/V')
-				newvalues['/Dc/Battery/Current'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/I')
-				newvalues['/Dc/Battery/Power'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/P')
+				newvalues['/Dc/Battery/Voltage'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Voltage')
+				newvalues['/Dc/Battery/Current'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
+				newvalues['/Dc/Battery/Power'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Power')
 
 			elif batteryservicetype == 'vebus':
-				newvalues['/Dc/Battery/Voltage'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/V')
-				newvalues['/Dc/Battery/Current'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/I')
+				newvalues['/Dc/Battery/Voltage'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Voltage')
+				newvalues['/Dc/Battery/Current'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
 				if newvalues['/Dc/Battery/Voltage'] is not None and newvalues['/Dc/Battery/Current'] is not None:
 					newvalues['/Dc/Battery/Power'] = (
 						newvalues['/Dc/Battery/Voltage'] * newvalues['/Dc/Battery/Current'])
@@ -421,7 +421,7 @@ class SystemCalc:
 				# In that case, at least use its reported battery voltage.
 				vebusses = self._dbusmonitor.get_service_list('com.victronenergy.vebus')
 				for vebus in vebusses:
-					v = self._dbusmonitor.get_value(vebus, '/Dc/V')
+					v = self._dbusmonitor.get_value(vebus, '/Dc/0/Voltage')
 					if v is not None:
 						newvalues['/Dc/Battery/Voltage'] = v
 
@@ -456,12 +456,12 @@ class SystemCalc:
 		if len(multis) > 0:
 			# Assume there's only 1 multi service present on the D-Bus
 			multi_path = multis.keys()[0]
-			dc_current = self._dbusmonitor.get_value(multi_path, '/Dc/I')
+			dc_current = self._dbusmonitor.get_value(multi_path, '/Dc/0/Current')
 			newvalues['/Dc/Vebus/Current'] = dc_current
-			dc_power = self._dbusmonitor.get_value(multi_path, '/Dc/P')
-			# Just in case /Dc/P is not available
+			dc_power = self._dbusmonitor.get_value(multi_path, '/Dc/0/Power')
+			# Just in case /Dc/0/Power is not available
 			if dc_power == None and dc_current is not None:
-				dc_voltage = self._dbusmonitor.get_value(multi_path, '/Dc/V')
+				dc_voltage = self._dbusmonitor.get_value(multi_path, '/Dc/0/Voltage')
 				if dc_voltage is not None:
 					dc_power = dc_voltage * dc_current
 			# Note that there is also vebuspower, which is the total DC power summed over all multis.
