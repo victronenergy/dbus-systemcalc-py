@@ -39,10 +39,14 @@ class SystemCalc:
 		dbus_tree = {
 			'com.victronenergy.solarcharger': {
 				'/Connected': dummy,
+				'/ProductName': dummy,
+				'/Mgmt/Connection': dummy,
 				'/Dc/0/Voltage': dummy,
 				'/Dc/0/Current': dummy},
 			'com.victronenergy.pvinverter': {
 				'/Connected': dummy,
+				'/ProductName': dummy,
+				'/Mgmt/Connection': dummy,
 				'/Ac/L1/Power': dummy,
 				'/Ac/L2/Power': dummy,
 				'/Ac/L3/Power': dummy,
@@ -75,15 +79,24 @@ class SystemCalc:
 				'/Dc/0/Power': dummy,
 				'/Soc': dummy},
 			'com.victronenergy.charger': {
+				'/Connected': dummy,
+				'/ProductName': dummy,
+				'/Mgmt/Connection': dummy,
 				'/Dc/0/Voltage': dummy,
 				'/Dc/0/Current': dummy},
 			'com.victronenergy.grid' : {
+				'/Connected': dummy,
+				'/ProductName': dummy,
+				'/Mgmt/Connection': dummy,
 				'/ProductId' : dummy,
 				'/DeviceType' : dummy,
 				'/Ac/L1/Power': dummy,
 				'/Ac/L2/Power': dummy,
 				'/Ac/L3/Power': dummy},
 			'com.victronenergy.genset' : {
+				'/Connected': dummy,
+				'/ProductName': dummy,
+				'/Mgmt/Connection': dummy,
 				'/ProductId' : dummy,
 				'/DeviceType' : dummy,
 				'/Ac/L1/Power': dummy,
@@ -256,25 +269,21 @@ class SystemCalc:
 		# is more than one battery service, just use a random one. If no battery service is
 		# available, check if there are not Solar chargers and no normal chargers. If they are not
 		# there, assume this is a hub-2, hub-3 or hub-4 system and use VE.Bus SOC.
-		batteries = self._dbusmonitor.get_service_list('com.victronenergy.battery')
-		self._remove_unconnected_services(batteries)
+		batteries = self._get_connected_service_list('com.victronenergy.battery')
 
 		if len(batteries) > 0:
 			return sorted(batteries)[0]  # Pick a random battery service
 
-		if len(self._dbusmonitor.get_service_list('com.victronenergy.solarcharger')) > 0:
+		if self._get_first_connected_service('com.victronenergy.solarcharger') is not None:
 			return None
 
-		if len(self._dbusmonitor.get_service_list('com.victronenergy.charger')) > 0:
+		if self._get_first_connected_service('com.victronenergy.charger') is not None:
 			return None
 
-		vebusses = self._dbusmonitor.get_service_list('com.victronenergy.vebus')
-		self._remove_unconnected_services(vebusses)
-
-		if len(vebusses) > 0:
-			return sorted(vebusses)[0]  # Pick a random vebus service
-
-		return None
+		vebus_services = self._get_first_connected_service('com.victronenergy.vebus')
+		if vebus_services is None:
+			return None
+		return vebus_services[0]
 
 	def _handletimertick(self):
 		# try catch, to make sure that we kill ourselves on an error. Without this try-catch, there would
@@ -451,11 +460,11 @@ class SystemCalc:
 				newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + vebuspower - battery_power
 
 		# ==== Vebus ====
-		multis = self._dbusmonitor.get_service_list('com.victronenergy.vebus')
+		# Assume there's only 1 multi service present on the D-Bus
+		multi = self._get_first_connected_service('com.victronenergy.vebus')
 		multi_path = None
-		if len(multis) > 0:
-			# Assume there's only 1 multi service present on the D-Bus
-			multi_path = multis.keys()[0]
+		if multi is not None:
+			multi_path = multi[0]
 			dc_current = self._dbusmonitor.get_value(multi_path, '/Dc/0/Current')
 			newvalues['/Dc/Vebus/Current'] = dc_current
 			dc_power = self._dbusmonitor.get_value(multi_path, '/Dc/0/Power')
@@ -496,12 +505,8 @@ class SystemCalc:
 		consumption = { "L1" : None, "L2" : None, "L3" : None }
 		for device_type in ['Grid', 'Genset']:
 			servicename = 'com.victronenergy.%s' % device_type.lower()
-			energy_meters = self._dbusmonitor.get_service_list(servicename)
-			em_service = None
-			if len(energy_meters) > 0:
-				# Take the first meter, we assume there's only one present. We also assume that the device is
-				# currently online.
-				em_service = energy_meters.keys()[0]
+			energy_meter = self._get_first_connected_service(servicename)
+			em_service = None if energy_meter is None else energy_meter[0]
 			uses_active_input = False
 			if multi_path is not None:
 				# If a grid meter is present we use values from it. If not, we look at the multi. If it has
@@ -564,9 +569,8 @@ class SystemCalc:
 		# servicename, ie 'com.victronenergy.vebus.ttyO1' is not used, since the last part of that is not
 		# fixed. dbus-serviceclass name and the device instance are already fixed, so best to use those.
 
-		services = self._dbusmonitor.get_service_list('com.victronenergy.vebus')
-		services.update(self._dbusmonitor.get_service_list('com.victronenergy.battery'))
-		self._remove_unconnected_services(services)
+		services = self._get_connected_service_list('com.victronenergy.vebus')
+		services.update(self._get_connected_service_list('com.victronenergy.battery'))
 
 		ul = {self.BATSERVICE_DEFAULT: 'Automatic', self.BATSERVICE_NOBATTERY: 'No battery monitor'}
 		for servicename, instance in services.items():
@@ -628,6 +632,17 @@ class SystemCalc:
 				number_of_phases += 1
 		newvalues[path + '/Total/Power'] = total_power
 		newvalues[path + '/NumberOfPhases'] = number_of_phases if number_of_phases > 0 else None
+
+	def _get_connected_service_list(self, classfilter=None):
+		services = self._dbusmonitor.get_service_list(classfilter=classfilter)
+		self._remove_unconnected_services(services)
+		return services
+
+	def _get_first_connected_service(self, classfilter=None):
+		services = self._get_connected_service_list(classfilter=classfilter)
+		if len(services) == 0:
+			return None
+		return services.items()[0]
 
 def _safeadd(*values):
 	'''Adds all parameters passed to this function. Parameters which are None are ignored. If all parameters
