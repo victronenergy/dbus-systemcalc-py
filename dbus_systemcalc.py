@@ -151,7 +151,6 @@ class SystemCalc:
 			'/AutoSelectedBatteryService', value=None, gettextcallback=self._gettext)
 		self._dbusservice.add_path(
 			'/ActiveBatteryService', value=None, gettextcallback=self._gettext)
-
 		self._summeditems = {
 			'/Ac/Grid/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/Grid/L2/Power': {'gettext': '%.0F W'},
@@ -201,8 +200,9 @@ class SystemCalc:
 			'/Dc/Vebus/Power': {'gettext': '%.0F W'},
 			'/Dc/System/Power': {'gettext': '%.0F W'},
 			'/Hub': {'gettext': '%s'},
-			'/Ac/ActiveIn/Source': {'gettext': '%s'}
-			}
+			'/Ac/ActiveIn/Source': {'gettext': '%s'},
+			'/VebusService': {'gettext': '%s'}
+		}
 
 		for path in self._summeditems.keys():
 			self._dbusservice.add_path(path, value=None, gettextcallback=self._gettext)
@@ -477,6 +477,8 @@ class SystemCalc:
 			# However, this value cannot be combined with /Dc/Multi/Current, because it does not make sense
 			# to add the Dc currents of all multis if they do not share the same DC voltage.
 			newvalues['/Dc/Vebus/Power'] = dc_power
+
+		newvalues['/VebusService'] = multi_path
 
 		# ===== AC IN SOURCE =====
 		ac_in_source = None
