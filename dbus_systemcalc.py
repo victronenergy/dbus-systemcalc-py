@@ -220,6 +220,10 @@ class SystemCalc:
 
 		self._changed = True
 		self._handleservicechange()
+		for service, instance in self._dbusmonitor.get_service_list().items():
+			path = self._get_service_mapping_path(service, instance)
+			self._dbusservice.add_path(path, service)
+
 		self._updatevalues()
 		gobject.timeout_add(1000, self._handletimertick)
 
@@ -638,9 +642,17 @@ class SystemCalc:
 			self._handleservicechange()
 
 	def _device_added(self, service, instance):
+		path = self._get_service_mapping_path(service, instance)
+		if path in self._dbusservice:
+			self._dbusservice[path] = service
+		else:
+			self._dbusservice.add_path(path, service)
 		self._handleservicechange()
 
 	def _device_removed(self, service, instance):
+		path = self._get_service_mapping_path(service, instance)
+		if path in self._dbusservice:
+			del self._dbusservice[path]
 		self._handleservicechange()
 
 	def _gettext(self, path, value):
