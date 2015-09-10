@@ -148,7 +148,11 @@ class SystemCalc:
 		self._dbusservice.add_path(
 			'/AvailableBatteryServices', value=None, gettextcallback=self._gettext)
 		self._dbusservice.add_path(
+			'/AvailableBatteryMeasurements', value=None, gettextcallback=self._gettext)
+		self._dbusservice.add_path(
 			'/AutoSelectedBatteryService', value=None, gettextcallback=self._gettext)
+		self._dbusservice.add_path(
+			'/AutoSelectedBatteryMeasurement', value=None, gettextcallback=self._gettext)
 		self._dbusservice.add_path(
 			'/ActiveBatteryService', value=None, gettextcallback=self._gettext)
 		self._summeditems = {
@@ -224,8 +228,18 @@ class SystemCalc:
 		self._changed = True
 
 	def _determinebatteryservice(self):
+		auto_battery_service = self._autoselect_battery_service()
+		auto_battery_measurement = None
+		if auto_battery_service is not None:
+			services = self._dbusmonitor.get_service_list()
+			if auto_battery_service in services:
+				auto_battery_measurement = \
+					self._get_instance_service_name(auto_battery_service, services[auto_battery_service])
+				auto_battery_measurement = auto_battery_measurement.replace('.', '_').replace('/', '_') + '/Dc/0'
+		self._dbusservice['/AutoSelectedBatteryMeasurement'] = auto_battery_measurement
+
 		if self._settings['batteryservice'] == self.BATSERVICE_DEFAULT:
-			newbatteryservice = self._autoselect_battery_service()
+			newbatteryservice = auto_battery_service
 			self._dbusservice['/AutoSelectedBatteryService'] = (
 				'No battery monitor found' if newbatteryservice is None else
 				self._get_readable_service_name(newbatteryservice))
@@ -257,7 +271,7 @@ class SystemCalc:
 			if instance is None:
 				battery_service = None
 			else:
-				battery_service = '%s/%s' % ('.'.join(newbatteryservice.split('.')[:3]), instance)
+				battery_service = self._get_instance_service_name(newbatteryservice, instance)
 			self._dbusservice['/ActiveBatteryService'] = battery_service
 			logger.info("Battery service, setting == %s, changed from %s to %s (%s)" %
 				(self._settings['batteryservice'], self._batteryservice, newbatteryservice, instance))
@@ -576,10 +590,17 @@ class SystemCalc:
 
 		ul = {self.BATSERVICE_DEFAULT: 'Automatic', self.BATSERVICE_NOBATTERY: 'No battery monitor'}
 		for servicename, instance in services.items():
-			key = "%s/%s" % ('.'.join(servicename.split('.')[0:3]), instance)
+			key = self._get_instance_service_name(servicename, instance)
 			ul[key] = self._get_readable_service_name(servicename)
-
 		self._dbusservice['/AvailableBatteryServices'] = json.dumps(ul)
+
+		ul = {self.BATSERVICE_DEFAULT: 'Automatic', self.BATSERVICE_NOBATTERY: 'No battery monitor'}
+		# For later: for device supporting multiple Dc measurement we should add entries for /Dc/1 etc as
+		# well.
+		for servicename, instance in services.items():
+			key = self._get_instance_service_name(servicename, instance).replace('.', '_').replace('/', '_') + '/Dc/0'
+			ul[key] = self._get_readable_service_name(servicename)
+		self._dbusservice['/AvailableBatteryMeasurements'] = dbus.Dictionary(ul, signature='sv')
 
 		self._determinebatteryservice()
 
@@ -588,6 +609,13 @@ class SystemCalc:
 	def _get_readable_service_name(self, servicename):
 		return (self._dbusmonitor.get_value(servicename, '/ProductName') + ' on ' +
 						self._dbusmonitor.get_value(servicename, '/Mgmt/Connection'))
+
+	def _get_instance_service_name(self, service, instance):
+		return '%s/%s' % ('.'.join(service.split('.')[0:3]), instance)
+
+	def _get_service_mapping_path(self, service, instance):
+		sn = self._get_instance_service_name(service, instance).replace('.', '_').replace('/', '_')
+		return '/ServiceMapping/%s' % sn
 
 	def _remove_unconnected_services(self, services):
 		# Workaround: because com.victronenergy.vebus is available even when there is no vebus product
@@ -616,13 +644,14 @@ class SystemCalc:
 		self._handleservicechange()
 
 	def _gettext(self, path, value):
-		if path in ['/AvailableBatteryServices', '/AutoSelectedBatteryService', '/ActiveBatteryService']:
-			return value
-		elif path == '/Dc/Battery/State':
+		if path == '/Dc/Battery/State':
 			state = {self.STATE_IDLE: 'Idle', self.STATE_CHARGING: 'Charging',
 				self.STATE_DISCHARGING: 'Discharging'}
 			return state[value]
-		return (self._summeditems[path]['gettext'] % (value))
+		item = self._summeditems.get(path)
+		if item is not None:
+			return item['gettext'] % value
+		return value
 
 	def _compute_phase_totals(self, path, newvalues):
 		total_power = None

@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import json
 import os
 import platform
 import sys
@@ -791,6 +792,49 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Dc/Battery/Power':  12.4 * 9.7 + 12.7 * 6.3 - 12.25 * 8,
 			'/Dc/Battery/Current':  (12.4 * 9.7 + 12.7 * 6.3 - 12.25 * 8) / 12.4,
 			'/Dc/Battery/Voltage':  12.4})
+
+	def test_available_battery_measurement(self):
+		self._update_values()
+		availableMeasurements = self._service['/AvailableBatteryMeasurements']
+		self.assertEqual(len(availableMeasurements), 3)
+		self.assertEqual(availableMeasurements['default'], 'Automatic')
+		self.assertEqual(availableMeasurements['nobattery'], 'No battery monitor')
+		self.assertEqual(availableMeasurements['com_victronenergy_vebus_0/Dc/0'], 'Multi on dummy')
+		self._check_values({'/AutoSelectedBatteryMeasurement' : 'com_victronenergy_vebus_0/Dc/0'})
+
+	def test_available_battery_measurement_2(self):
+		self._add_device('com.victronenergy.battery.ttyO2',
+						 product_name='battery',
+						 values={
+								 '/Dc/0/Voltage' : 12.3,
+								 '/Dc/0/Current': 5.3,
+								 '/Dc/0/Power': 65,
+								 '/Soc': 15.3,
+								 '/DeviceInstance': 2})
+		self._update_values()
+		availableMeasurements = self._service['/AvailableBatteryMeasurements']
+		self.assertEqual(len(availableMeasurements), 4)
+		self.assertEqual(availableMeasurements['com_victronenergy_battery_2/Dc/0'], 'battery on dummy')
+		self._check_values({'/AutoSelectedBatteryMeasurement' : 'com_victronenergy_battery_2/Dc/0'})
+
+	def test_available_battery_measurement_3(self):
+		self._update_values()
+		availableMeasurements = self._service['/AvailableBatteryMeasurements']
+		self.assertEqual(len(availableMeasurements), 3)
+		self._add_device('com.victronenergy.battery.ttyO2',
+						 product_name='battery',
+						 values={
+								 '/Dc/0/Voltage' : 12.3,
+								 '/Dc/0/Current': 5.3,
+								 '/Dc/0/Power': 65,
+								 '/Soc': 15.3,
+								 '/DeviceInstance': 2})
+		self._update_values()
+		availableMeasurements = self._service['/AvailableBatteryMeasurements']
+		self.assertEqual(len(availableMeasurements), 4)
+		self.assertEqual(availableMeasurements['com_victronenergy_battery_2/Dc/0'], 'battery on dummy')
+		self._check_values({'/AutoSelectedBatteryMeasurement' : 'com_victronenergy_battery_2/Dc/0'})
+
 
 class TestSystemCalcNoMulti(TestSystemCalcBase):
 	def __init__(self, methodName='runTest'):
