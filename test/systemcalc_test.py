@@ -45,8 +45,27 @@ class TestSystemCalcBase(unittest.TestCase):
 			self._monitor.set_value(service, k, v)
 
 	def _check_values(self, values):
-		for k, v in values.items():
-			self.assertEqual(self._service[k], v)
+		ok = True
+		for k,v in values.items():
+			v2 = self._service[k] if k in self._service else None
+			if isinstance(v, (int, float)) and v2 is not None:
+				d = abs(v - v2)
+				if d > 1e-6:
+					ok = False
+					break
+			else:
+				if v != v2:
+					ok = False
+					break
+		if ok:
+			return
+		msg = ''
+		for k,v in values.items():
+			msg += '{0}:\t{1}'.format(k, v)
+			if k in self._service:
+				msg += '\t{}'.format(self._service[k])
+			msg += '\n'
+		self.assertTrue(ok, msg)
 
 
 class TestSystemCalc(TestSystemCalcBase):
@@ -218,6 +237,50 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Ac/Consumption/L1/Power': 500 - 100,
 			'/Ac/PvOnOutput/Total/Power': 500,
 			'/Ac/PvOnOutput/L1/Power': 500
+		})
+
+	def test_multiple_pv(self):
+		self._add_device('com.victronenergy.pvinverter.fronius_122_2313', {
+			'/Ac/L2/Power': 200,
+			'/Position': 1
+		})
+		self._add_device('com.victronenergy.pvinverter.fronius_122_2314', {
+			'/Ac/L1/Power': 105,
+			'/Position': 1
+		})
+		self._add_device('com.victronenergy.pvinverter.fronius_122_2315', {
+			'/Ac/L3/Power': 300,
+			'/Position': 1
+		})
+		self._add_device('com.victronenergy.pvinverter.fronius_122_2316', {
+			'/Ac/L1/Power': 110,
+			'/Ac/L3/Power': 200,
+			'/Position': 1
+		})
+		self._add_device('com.victronenergy.pvinverter.fronius_122_2317', {
+			'/Ac/L1/Power': 120,
+			'/Ac/L2/Power': 220,
+			'/Position': 0
+		})
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/Out/L1/P', -100)
+
+		self._update_values()
+		self._check_values({
+			'/Ac/ActiveIn/Source': 1,
+			'/Ac/Grid/Total/Power': 123 - 120 - 220,
+			'/Ac/Grid/L1/Power': 123 - 120,
+			'/Ac/Grid/L2/Power': -220,
+			'/Ac/Grid/L3/Power': None,
+			'/Ac/Grid/NumberOfPhases': 2,
+			'/Ac/Consumption/Total/Power': 200 + 105 + 300 + 110 + 200 - 100,
+			'/Ac/Consumption/L1/Power': 105 + 110 - 100,
+			'/Ac/PvOnOutput/Total/Power': 200 + 105 + 300 + 110 + 200,
+			'/Ac/PvOnOutput/NumberOfPhases': 3,
+			'/Ac/PvOnOutput/L1/Power': 105 + 110,
+			'/Ac/PvOnGrid/L1/Power': 120,
+			'/Ac/PvOnGrid/L2/Power': 220,
+			'/Ac/PvOnGrid/L3/Power': None,
+			'/Ac/PvOnGrid/NumberOfPhases': 2
 		})
 
 	def test_pv_on_input_invalid(self):

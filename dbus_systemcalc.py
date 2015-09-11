@@ -332,42 +332,21 @@ class SystemCalc:
 		# ==== PVINVERTERS ====
 		pvinverters = self._dbusmonitor.get_service_list('com.victronenergy.pvinverter')
 		newvalues = {}
-		phases = ['1', '2', '3']
-		pos = {0: '/Ac/PvOnGrid/', 1: '/Ac/PvOnOutput/', 2: '/Ac/PvOnGenset/'}
+		pos = {0: '/Ac/PvOnGrid', 1: '/Ac/PvOnOutput', 2: '/Ac/PvOnGenset'}
 		total = {0: None, 1: None, 2: None}
 		for pvinverter in pvinverters:
-			position = self._dbusmonitor.get_value(pvinverter, '/Position')
 			# Position will be None if PV inverter service has just been removed (after retrieving the
 			# service list).
-			if position is None:
-				continue
+			position = pos.get(self._dbusmonitor.get_value(pvinverter, '/Position'))
+			if position is not None:
+				for phase in range(1, 4):
+					power = self._dbusmonitor.get_value(pvinverter, '/Ac/L%s/Power' % phase)
+					if power is not None:
+						path = '%s/L%s/Power' % (position, phase)
+						newvalues[path] = _safeadd(newvalues.get(path), power)
 
-			for phase in phases:
-				power = self._dbusmonitor.get_value(pvinverter, '/Ac/L' + phase + '/Power')
-				if power is None:
-					continue
-
-				path = pos[position] + 'L' + str(int(phase)) + '/Power'
-				if path not in newvalues:
-					newvalues[path] = power
-				else:
-					newvalues[path] += power
-
-				total[position] = power if total[position] is None else total[position] + power
-
-			# Determine number of phases.
-			if pos[position] + 'L3' + '/Power' in newvalues:
-				newvalues[pos[position] + 'NumberOfPhases'] = 3
-			elif pos[position] + 'L2' + '/Power' in newvalues:
-				newvalues[pos[position] + 'NumberOfPhases'] = 2
-			elif pos[position] + 'L1' + '/Power' in newvalues:
-				newvalues[pos[position] + 'NumberOfPhases'] = 1
-			# no need to set it to None, not adding the item to newvalues has the same effect
-
-		# Add totals
-		newvalues['/Ac/PvOnGrid/Total/Power'] = total[0]
-		newvalues['/Ac/PvOnOutput/Total/Power'] = total[1]
-		newvalues['/Ac/PvOnGenset/Total/Power'] = total[2]
+		for path in pos.values():
+			self._compute_phase_totals(path, newvalues)
 
 		# ==== SOLARCHARGERS ====
 		solarchargers = self._dbusmonitor.get_service_list('com.victronenergy.solarcharger')
@@ -667,14 +646,14 @@ class SystemCalc:
 
 	def _compute_phase_totals(self, path, newvalues):
 		total_power = None
-		number_of_phases = 0
-		for phase in ['L1', 'L2', 'L3']:
-			p = newvalues['%s/%s/Power' % (path, phase)]
+		number_of_phases = None
+		for phase in range(1, 4):
+			p = newvalues.get('%s/L%s/Power' % (path, phase))
 			total_power = _safeadd(total_power, p)
 			if p is not None:
-				number_of_phases += 1
+				number_of_phases = phase
 		newvalues[path + '/Total/Power'] = total_power
-		newvalues[path + '/NumberOfPhases'] = number_of_phases if number_of_phases > 0 else None
+		newvalues[path + '/NumberOfPhases'] = number_of_phases
 
 	def _get_connected_service_list(self, classfilter=None):
 		services = self._dbusmonitor.get_service_list(classfilter=classfilter)
