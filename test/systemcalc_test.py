@@ -436,6 +436,16 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Dc/Battery/Power': None,
 			'/ActiveBatteryService': None})
 
+	def test_battery_selection_wrong_format(self):
+		self._settings['batteryservice'] = 'wrong format'
+		self._update_values()
+		availableMeasurements = json.loads(self._service['/AvailableBatteryServices'])
+		self.assertEqual(len(availableMeasurements), 3)
+		self.assertEqual(availableMeasurements['default'], 'Automatic')
+		self.assertEqual(availableMeasurements['nobattery'], 'No battery monitor')
+		self.assertEqual(availableMeasurements['com.victronenergy.vebus/0'], 'Multi on dummy')
+		self._check_values({'/AutoSelectedBatteryService' : None})
+
 	def test_battery_no_battery_power(self):
 		self._add_device('com.victronenergy.solarcharger.ttyO1',
 						 product_name='solarcharger',

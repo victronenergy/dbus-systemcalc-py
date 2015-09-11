@@ -256,9 +256,9 @@ class SystemCalc:
 			self._dbusservice['/AutoSelectedBatteryService'] = None
 
 			s = self._settings['batteryservice'].split('/')
-			assert len(s) == 2, "The battery setting (%s) is invalid!" % self._settings['batteryservice']
+			logger.error("The battery setting (%s) is invalid!" % self._settings['batteryservice'])
 			serviceclass = s[0]
-			instance = int(s[1])
+			instance = int(s[1]) if len(s) == 2 else None
 			services = self._dbusmonitor.get_service_list(classfilter=serviceclass)
 			if instance not in services.values():
 				# Once chosen battery monitor does not exist. Don't auto change the setting (it might come
