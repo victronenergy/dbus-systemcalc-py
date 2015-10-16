@@ -115,7 +115,9 @@ class SystemCalc:
 		# Connect to localsettings
 		supported_settings = {
 			'batteryservice': ['/Settings/SystemSetup/BatteryService', self.BATSERVICE_DEFAULT, 0, 0],
-			'hasdcsystem': ['/Settings/SystemSetup/HasDcSystem', 0, 0, 1]}
+			'hasdcsystem': ['/Settings/SystemSetup/HasDcSystem', 0, 0, 1],
+			'writevebussoc': ['/Settings/SystemSetup/WriteVebusSoc', 0, 0, 1]}
+
 		if settings_device_gen is None:
 			self._settings = SettingsDevice(
 				bus=dbus.SystemBus() if (platform.machine() == 'armv7l') else dbus.SessionBus(),
@@ -225,6 +227,8 @@ class SystemCalc:
 			self._dbusservice.add_path(path, service)
 
 		self._updatevalues()
+
+		self._writeVebusSocCounter = 9
 		gobject.timeout_add(1000, exit_on_error, self._handletimertick)
 
 	def _handlechangedsetting(self, setting, oldvalue, newvalue):
@@ -309,7 +313,20 @@ class SystemCalc:
 			self._updatevalues()
 		self._changed = False
 
+		self._writeVebusSocCounter += 1
+		if self._writeVebusSocCounter >= 10:
+			self._writeVebusSoc()
+			self._writeVebusSocCounter = 0
+
 		return True  # keep timer running
+
+	def _writeVebusSoc(self):
+		# ==== COPY BATTERY SOC TO VEBUS ====
+		if self._settings['writevebussoc'] and self._dbusservice['/VebusService'] and self._dbusservice['/Dc/Battery/Soc'] and \
+			self._batteryservice.split('.')[2] != 'vebus':
+
+			logger.debug("writing this soc to vebus: %d", self._dbusservice['/Dc/Battery/Soc'])
+			self._dbusmonitor.get_item(self._dbusservice['/VebusService'], '/Soc').set_value(self._dbusservice['/Dc/Battery/Soc'])
 
 	def _updatevalues(self):
 		# ==== PREPARATIONS ====
