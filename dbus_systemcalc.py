@@ -17,7 +17,7 @@ import json
 # Victron packages
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), './ext/velib_python'))
 from vedbus import VeDbusService, VeDbusItemImport
-from ve_utils import get_vrm_portal_id
+from ve_utils import get_vrm_portal_id, exit_on_error
 from dbusmonitor import DbusMonitor
 from settingsdevice import SettingsDevice
 from logger import setup_logging
@@ -225,7 +225,7 @@ class SystemCalc:
 			self._dbusservice.add_path(path, service)
 
 		self._updatevalues()
-		gobject.timeout_add(1000, self._handletimertick)
+		gobject.timeout_add(1000, exit_on_error, self._handletimertick)
 
 	def _handlechangedsetting(self, setting, oldvalue, newvalue):
 		self._determinebatteryservice()
@@ -303,18 +303,11 @@ class SystemCalc:
 			return None
 		return vebus_services[0]
 
+	# Called on a one second timer
 	def _handletimertick(self):
-		# try catch, to make sure that we kill ourselves on an error. Without this try-catch, there would
-		# be an error written to stdout, and then the timer would not be restarted, resulting in a dead-
-		# lock waiting for manual intervention -> not good!
-		try:
-			if self._changed:
-				self._updatevalues()
-			self._changed = False
-		except:
-			import traceback
-			traceback.print_exc()
-			sys.exit(1)
+		if self._changed:
+			self._updatevalues()
+		self._changed = False
 
 		return True  # keep timer running
 
