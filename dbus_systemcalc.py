@@ -221,11 +221,10 @@ class SystemCalc:
 				self._settings['batteryservice'])
 
 		self._changed = True
-		self._handleservicechange()
 		for service, instance in self._dbusmonitor.get_service_list().items():
-			path = self._get_service_mapping_path(service, instance)
-			self._dbusservice.add_path(path, service)
+			self._device_added(service, instance, do_service_change=False)
 
+		self._handleservicechange()
 		self._updatevalues()
 
 		self._writeVebusSocCounter = 9
@@ -630,13 +629,15 @@ class SystemCalc:
 			(dbusPath == '/State' and dbusServiceName.split('.')[0:3] == ['com', 'victronenergy', 'vebus'])):
 			self._handleservicechange()
 
-	def _device_added(self, service, instance):
+	def _device_added(self, service, instance, do_service_change=True):
 		path = self._get_service_mapping_path(service, instance)
 		if path in self._dbusservice:
 			self._dbusservice[path] = service
 		else:
 			self._dbusservice.add_path(path, service)
-		self._handleservicechange()
+
+		if do_service_change:
+			self._handleservicechange()
 
 	def _device_removed(self, service, instance):
 		path = self._get_service_mapping_path(service, instance)
