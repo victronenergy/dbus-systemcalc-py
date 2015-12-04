@@ -427,6 +427,17 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Hub': 4,
 			'/Ac/PvOnGenset/Total/Power': 500})
 
+	def test_hub4_missing_pv(self):
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/Out/L1/P', -500)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/ActiveIn/L1/P', -500)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub4/AcPowerSetpoint', 100)
+		self._add_device('com.victronenergy.grid.ttyUSB1', { '/Ac/L1/Power': -300 })
+
+		self._update_values()
+		self._check_values({
+			'/Hub': 4,
+			'/Ac/Consumption/L1/Power': 200})
+
 	def test_hub4_charger(self):
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/Dc/0/Voltage': 12.4,

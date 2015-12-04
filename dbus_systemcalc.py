@@ -522,7 +522,7 @@ class SystemCalc:
 					p = self._dbusmonitor.get_value(em_service, '/Ac/%s/Power' % phase)
 					# Compute consumption between energy meter and multi (meter power - multi AC in) and
 					# add an optional PV inverter on input to the mix.
-					c = consumption[phase]
+					c = None
 					if uses_active_input:
 						ac_in = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/P' % phase)
 						if ac_in is not None:
@@ -531,7 +531,7 @@ class SystemCalc:
 					# it will still be used, because there may also be a load in the same ACIn consuming
 					# power, or the power could be fed back to the net.
 					c = _safeadd(c, p, pvpower)
-					consumption[phase] = None if c is None else max(0, c)
+					consumption[phase] = _safeadd(consumption[phase], _safemax(0, c))
 				else:
 					if uses_active_input:
 						p = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/P' % phase)
@@ -545,13 +545,11 @@ class SystemCalc:
 				newvalues['/Ac/%s/ProductId' % device_type] = self._dbusmonitor.get_value(em_service, '/ProductId')
 				newvalues['/Ac/%s/DeviceType' % device_type] = self._dbusmonitor.get_value(em_service, '/DeviceType')
 		for phase in consumption:
-			c = consumption[phase]
-			pvpower = newvalues.get('/Ac/PvOnOutput/%s/Power' % phase)
-			c = _safeadd(c, pvpower)
+			c = newvalues.get('/Ac/PvOnOutput/%s/Power' % phase)
 			if multi_path is not None:
 				ac_out = self._dbusmonitor.get_value(multi_path, '/Ac/Out/%s/P' % phase)
 				c = _safeadd(c, ac_out)
-			newvalues['/Ac/Consumption/%s/Power' % phase] = None if c is None else max(0, c)
+			newvalues['/Ac/Consumption/%s/Power' % phase] = _safeadd(consumption[phase], _safemax(0, c))
 		self._compute_phase_totals('/Ac/Consumption', newvalues)
 		# TODO EV Add Multi DeviceType & ProductID. Unfortunately, the com.victronenergy.vebus.??? tree does
 		# not contain a /ProductId entry.
@@ -663,6 +661,12 @@ def _safeadd(*values):
 			else:
 				r += v
 	return r
+
+
+def _safemax(v0, v1):
+	if v0 is None or v1 is None:
+		return None
+	return max(v0, v1)
 
 
 if __name__ == "__main__":
