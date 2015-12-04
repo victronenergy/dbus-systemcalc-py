@@ -873,6 +873,37 @@ class TestSystemCalc(TestSystemCalcBase):
 		self.assertEqual(availableMeasurements['com_victronenergy_battery_2/Dc/0'], 'battery on dummy')
 		self._check_values({'/AutoSelectedBatteryMeasurement' : 'com_victronenergy_battery_2/Dc/0'})
 
+	def test_pv_inverter_ids_empty(self):
+		self._update_values()
+		self.assertEqual([], self._service['/PvInvertersProductIds'])
+
+	def test_pv_inverter_ids(self):
+		self._add_device('com.victronenergy.pvinverter.fronius_122_2312', {
+			'/Ac/L1/Power': 500,
+			'/Position': 0,
+			'/ProductId' : 0xB0FE
+		})
+		self._add_device('com.victronenergy.pvinverter.fronius_122_2311', {
+			'/Ac/L1/Power': 500,
+			'/Position': 0,
+			'/ProductId' : 0xB0FF
+		})
+		self._update_values()
+		self.assertEqual([0xB0FE, 0xB0FF], self._service['/PvInvertersProductIds'])
+
+	def test_pv_inverter_ids_identical(self):
+		self._add_device('com.victronenergy.pvinverter.fronius_122_2312', {
+			'/Ac/L1/Power': 500,
+			'/Position': 0,
+			'/ProductId' : 0xB0FE
+		})
+		self._add_device('com.victronenergy.pvinverter.fronius_122_2311', {
+			'/Ac/L1/Power': 500,
+			'/Position': 0,
+			'/ProductId' : 0xB0FE
+		})
+		self._update_values()
+		self.assertEqual([0xB0FE], self._service['/PvInvertersProductIds'])
 
 class TestSystemCalcNoMulti(TestSystemCalcBase):
 	def __init__(self, methodName='runTest'):

@@ -70,6 +70,7 @@ class SystemCalc:
 				'/Ac/Out/L2/P': dummy,
 				'/Ac/Out/L3/P': dummy,
 				'/Hub4/AcPowerSetpoint': dummy,
+				'/ProductId': dummy,
 				'/ProductName': dummy,
 				'/Mgmt/Connection': dummy,
 				'/Dc/0/Voltage': dummy,
@@ -541,9 +542,15 @@ class SystemCalc:
 						p = _safeadd(p, -pvpower)
 				newvalues['/Ac/%s/%s/Power' % (device_type, phase)] = p
 			self._compute_phase_totals('/Ac/%s' % device_type, newvalues)
+			product_id = None
+			device_type_id = None
 			if em_service is not None:
-				newvalues['/Ac/%s/ProductId' % device_type] = self._dbusmonitor.get_value(em_service, '/ProductId')
-				newvalues['/Ac/%s/DeviceType' % device_type] = self._dbusmonitor.get_value(em_service, '/DeviceType')
+				product_id = self._dbusmonitor.get_value(em_service, '/ProductId')
+				device_type_id = self._dbusmonitor.get_value(em_service, '/DeviceType')
+			if product_id is None and uses_active_input:
+				product_id = self._dbusmonitor.get_value(multi_path, '/ProductId')
+			newvalues['/Ac/%s/ProductId' % device_type] = product_id
+			newvalues['/Ac/%s/DeviceType' % device_type] = device_type_id
 		for phase in consumption:
 			c = newvalues.get('/Ac/PvOnOutput/%s/Power' % phase)
 			if multi_path is not None:
@@ -551,8 +558,6 @@ class SystemCalc:
 				c = _safeadd(c, ac_out)
 			newvalues['/Ac/Consumption/%s/Power' % phase] = _safeadd(consumption[phase], _safemax(0, c))
 		self._compute_phase_totals('/Ac/Consumption', newvalues)
-		# TODO EV Add Multi DeviceType & ProductID. Unfortunately, the com.victronenergy.vebus.??? tree does
-		# not contain a /ProductId entry.
 
 		# ==== UPDATE DBUS ITEMS ====
 		for path in self._summeditems.keys():
