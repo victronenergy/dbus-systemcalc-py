@@ -115,7 +115,7 @@ class SystemCalc:
 
 		if settings_device_gen is None:
 			self._settings = SettingsDevice(
-				bus=dbus.SystemBus() if (platform.machine() == 'armv7l') else dbus.SessionBus(),
+				bus=dbus.SessionBus() if 'DBUS_SESSION_BUS_ADDRESS' in os.environ else dbus.SystemBus(),
 				supportedSettings=supported_settings,
 				eventCallback=self._handlechangedsetting)
 		else:
