@@ -50,7 +50,8 @@ class SystemCalc:
 				'/Ac/L1/Power': dummy,
 				'/Ac/L2/Power': dummy,
 				'/Ac/L3/Power': dummy,
-				'/Position': dummy},
+				'/Position': dummy,
+				'/ProductId': dummy},
 			'com.victronenergy.battery': {
 				'/Connected': dummy,
 				'/ProductName': dummy,
@@ -153,6 +154,8 @@ class SystemCalc:
 			'/AutoSelectedBatteryMeasurement', value=None, gettextcallback=self._gettext)
 		self._dbusservice.add_path(
 			'/ActiveBatteryService', value=None, gettextcallback=self._gettext)
+		self._dbusservice.add_path(
+			'/PvInvertersProductIds', value=None)
 		self._summeditems = {
 			'/Ac/Grid/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/Grid/L2/Power': {'gettext': '%.0F W'},
@@ -321,6 +324,17 @@ class SystemCalc:
 
 			logger.debug("writing this soc to vebus: %d", self._dbusservice['/Dc/Battery/Soc'])
 			self._dbusmonitor.get_item(self._dbusservice['/VebusService'], '/Soc').set_value(self._dbusservice['/Dc/Battery/Soc'])
+
+	def _updatepvinverterspidlist(self):
+		# Create list of connected pv inverters id's
+		pvinverters = self._dbusmonitor.get_service_list('com.victronenergy.pvinverter')
+		productids = []
+
+		for pvinverter in pvinverters:
+			pid = self._dbusmonitor.get_value(pvinverter, '/ProductId')
+			if pid is not None and pid not in productids:
+				productids.append(pid)
+		self._dbusservice['/PvInvertersProductIds'] = dbus.Array(productids, signature='i')
 
 	def _updatevalues(self):
 		# ==== PREPARATIONS ====
@@ -589,6 +603,7 @@ class SystemCalc:
 		self._dbusservice['/AvailableBatteryMeasurements'] = dbus.Dictionary(ul, signature='sv')
 
 		self._determinebatteryservice()
+		self._updatepvinverterspidlist()
 
 		self._changed = True
 
