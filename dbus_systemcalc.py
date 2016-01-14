@@ -147,7 +147,7 @@ class SystemCalc:
 		self._dbusservice.add_path(
 			'/AvailableBatteryServices', value=None, gettextcallback=self._gettext)
 		self._dbusservice.add_path(
-			'/AvailableBatteryMeasurements', value=None, gettextcallback=self._gettext)
+			'/AvailableBatteryMeasurements', value=None)
 		self._dbusservice.add_path(
 			'/AutoSelectedBatteryService', value=None, gettextcallback=self._gettext)
 		self._dbusservice.add_path(
@@ -650,7 +650,7 @@ class SystemCalc:
 		item = self._summeditems.get(path)
 		if item is not None:
 			return item['gettext'] % value
-		return value
+		return str(value)
 
 	def _compute_phase_totals(self, path, newvalues):
 		total_power = None
