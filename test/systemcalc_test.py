@@ -38,6 +38,7 @@ class TestSystemCalcBase(unittest.TestCase):
 		self._system_calc._updatevalues()
 
 	def _add_device(self, service, values, connected=True, product_name='dummy', connection='dummy'):
+		self._monitor.set_value(service, '/Connected', 1 if connected else 0)
 		self._monitor.set_value(service, '/ProductName', product_name)
 		self._monitor.set_value(service, '/Mgmt/Connection', connection)
 		for k, v in values.items():
@@ -79,7 +80,8 @@ class TestSystemCalc(TestSystemCalcBase):
 				'/Dc/0/Voltage': 12.25,
 				'/Dc/0/Current': -8,
 				'/DeviceInstance': 0,
-				'/Soc': 53.2
+				'/Soc': 53.2,
+				'/State': 3
 			})
 		self._add_device('com.victronenergy.settings',
 			values={
@@ -555,6 +557,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Dc/0/Voltage', None)
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Dc/0/Current', None)
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Soc', None)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', None)
 		self._add_device('com.victronenergy.pvinverter.fronius_122_2312', {
 			'/Ac/L1/Power': None,
 			'/Position': None
@@ -600,7 +603,8 @@ class TestSystemCalc(TestSystemCalcBase):
 				'/Dc/0/Voltage': None,
 				'/Dc/0/Current': None,
 				'/DeviceInstance': None,
-				'/Soc': None
+				'/Soc': None,
+				'/State': 3
 			})
 
 		self._update_values()
@@ -609,7 +613,48 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Ac/Consumption/Total/Power': 100
 		})
 
+	def test_multiple_vebus_systems_2(self):
+		self._add_device('com.victronenergy.vebus.ttyO2',
+			product_name='Multi2',
+			connected=True,
+			values={
+				'/Ac/ActiveIn/L1/P': 127,
+				'/Ac/ActiveIn/ActiveInput': 0,
+				'/Ac/Out/L1/P': 87,
+				'/Dc/0/Voltage': 12.25,
+				'/Dc/0/Current': -8,
+				'/DeviceInstance': 1,
+				'/Soc': 53.2,
+				'/State': 3
+			})
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Connected', 0)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/ActiveIn/L1/P', None)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/ActiveIn/L2/P', None)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/ActiveIn/L3/P', None)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/Out/L1/P', None)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/Out/L2/P', None)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/Out/L3/P', None)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/ActiveIn/ActiveInput', None)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Dc/0/Voltage', None)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Dc/0/Current', None)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Soc', None)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', None)
+
+		self._update_values()
+		self._check_values({
+			'/Ac/Grid/Total/Power': 127,
+			'/Ac/Consumption/Total/Power': 87
+		})
+
+	def test_disconnected_vebus_is_ignored_in_auto_mode(self):
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Connected', 0)
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Soc': None,
+			'/Dc/Battery/Voltage': 12.25})
+
 	def test_connected_vebus_is_auto_selected(self):
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', 0)
 		self._update_values()
 		self._check_values({
 			'/Dc/Battery/Soc': 53.2,
@@ -636,6 +681,7 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/AutoSelectedBatteryService': 'battery on dummy'})
 
 	def test_batteryandvebus_defaultsetting(self):
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', 0)
 		self._update_values()
 		self._check_values({
 			'/Dc/Battery/Soc': 53.2,

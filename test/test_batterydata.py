@@ -68,6 +68,20 @@ class TestBatteryData(unittest.TestCase):
 		self.assertEqual("'No battery monitor found'\n", check_output(
 			['dbus', 'com.victronenergy.system', '/AutoSelectedBatteryService', 'GetValue']))
 
+	def test_02_disconnected_vebus_is_ignored_in_auto_mode(self):
+		vebus = startinbackground(['./dummyvebus.py'])
+
+		# SOC is ignored, since vebus /State == INVALID
+		self.assertEqual('[]\n', check_output(
+			['dbus', 'com.victronenergy.system', '/Dc/Battery/Soc', 'GetValue']))
+
+		# But voltage is used when available
+		self.assertEqual('11\n', check_output(
+			['dbus', 'com.victronenergy.system', '/Dc/Battery/Voltage', 'GetValue']))
+
+		vebus.kill()
+		vebus.wait()
+
 	def test_03_connected_vebus_is_auto_selected(self):
 		vebus = startinbackground(['./dummyvebus.py'])
 
