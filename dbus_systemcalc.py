@@ -13,6 +13,9 @@ import argparse
 import sys
 import os
 import json
+import signal
+from dbus.decorators import method
+from traceback import print_exc
 
 # Victron packages
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), './ext/velib_python'))
@@ -220,6 +223,8 @@ class SystemCalc:
 		self._batteryservice = None
 		self._determinebatteryservice()
 
+		self._supervised = {}
+
 		if self._batteryservice is None:
 			logger.info("Battery service initialized to None (setting == %s)" %
 				self._settings['batteryservice'])
@@ -233,6 +238,7 @@ class SystemCalc:
 
 		self._writeVebusSocCounter = 9
 		gobject.timeout_add(1000, exit_on_error, self._handletimertick)
+		gobject.timeout_add(60000, exit_on_error, self._process_supervised)
 
 	def _handlechangedsetting(self, setting, oldvalue, newvalue):
 		self._determinebatteryservice()
@@ -658,11 +664,19 @@ class SystemCalc:
 		if do_service_change:
 			self._handleservicechange()
 
+		service_type = service.split('.')[2]
+		if service_type == 'battery' or service_type == 'solarcharger':
+			proxy = self._dbusmonitor.dbusConn.get_object(service, '/ProductId', introspect=False)
+			method = proxy.get_dbus_method('GetValue')
+			self._supervised[service] = method
+
 	def _device_removed(self, service, instance):
 		path = self._get_service_mapping_path(service, instance)
 		if path in self._dbusservice:
 			del self._dbusservice[path]
 		self._handleservicechange()
+		if service in self._supervised:
+			del self._supervised[service]
 
 	def _gettext(self, path, value):
 		if path == '/Dc/Battery/State':
@@ -695,6 +709,27 @@ class SystemCalc:
 		if len(services) == 0:
 			return None
 		return services.items()[0]
+
+	def _process_supervised(self):
+		for service,method in self._supervised.items():
+			# Do an async call. If the owner of the service does not answer, we do not want to wait for
+			# the timeout here.
+			method.call_async(error_handler=lambda x: exit_on_error(self._supervise_failed, service, x))
+		return True
+
+	def _supervise_failed(self, service, error):
+		try:
+			logging.error('%s is not responding to D-Bus requests' % service)
+			proxy = self._dbusmonitor.dbusConn.get_object('org.freedesktop.DBus', '/', introspect=False)
+			pid = proxy.GetConnectionUnixProcessID(service)
+			if pid is not None and pid > 1:
+				logging.error('killing owner of %s (pid=%s)' % (service, pid))
+				os.kill(pid, signal.SIGKILL)
+		except dbus.exceptions.DBusException,e:
+			print_exc()
+		except os.OSError,e:
+			print_exc()
+
 
 def _safeadd(*values):
 	'''Adds all parameters passed to this function. Parameters which are None are ignored. If all parameters
