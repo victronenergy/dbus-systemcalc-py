@@ -666,9 +666,12 @@ class SystemCalc:
 
 		service_type = service.split('.')[2]
 		if service_type == 'battery' or service_type == 'solarcharger':
-			proxy = self._dbusmonitor.dbusConn.get_object(service, '/ProductId', introspect=False)
-			method = proxy.get_dbus_method('GetValue')
-			self._supervised[service] = method
+			try:
+				proxy = self._dbusmonitor.dbusConn.get_object(service, '/ProductId', introspect=False)
+				method = proxy.get_dbus_method('GetValue')
+				self._supervised[service] = method
+			except dbus.DBusException:
+				pass
 
 	def _device_removed(self, service, instance):
 		path = self._get_service_mapping_path(service, instance)
@@ -719,15 +722,18 @@ class SystemCalc:
 
 	def _supervise_failed(self, service, error):
 		try:
+			if error.get_dbus_name() != 'org.freedesktop.DBus.Error.NoReply':
+				logging.info('Ignoring supervise error from %s: %s' % (service, error))
+				return
 			logging.error('%s is not responding to D-Bus requests' % service)
 			proxy = self._dbusmonitor.dbusConn.get_object('org.freedesktop.DBus', '/', introspect=False)
 			pid = proxy.GetConnectionUnixProcessID(service)
 			if pid is not None and pid > 1:
 				logging.error('killing owner of %s (pid=%s)' % (service, pid))
 				os.kill(pid, signal.SIGKILL)
-		except dbus.exceptions.DBusException,e:
+		except dbus.exceptions.DBusException:
 			print_exc()
-		except os.OSError,e:
+		except OSError:
 			print_exc()
 
 
