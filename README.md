@@ -42,7 +42,7 @@ dbus_systemcalc_py, and available in com.victronenergy.system /AvailableBatteryS
 a JSON string with the format: {"key": "value", "key": "value", etc.}. This property is deprecated and
 should not be used outside systemcalc. Use /AvailableBatteryMeasurements instead.
 
-/AvailableBatteryMeasurements works like /AvailableBatteryMeasurements, but instead of a D-Bus service it 
+/AvailableBatteryMeasurements works like /AvailableBatteryServices, but instead of a D-Bus service it 
 will get you the path to a battery measurement itself. So 'com_victronenergy_battery_258/Dc/0' instead of
 'com.victronenergy.battery/258'. We have changed this, because a single D-Bus service may contain multiple
 batteries (eg. a main battery and a starter battery). The first part of the path is not a regular service 
