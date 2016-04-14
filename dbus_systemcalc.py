@@ -27,6 +27,10 @@ from logger import setup_logging
 
 softwareVersion = '1.24'
 
+# This is the path to the relay GPIO pin on the CCGX used for the relay. Other systems may use another pin,
+# so we may have to differentiate the path here.
+relayGpioFile = '/sys/class/gpio/gpio182/value'
+
 class SystemCalc:
 	def __init__(self, dbusmonitor_gen=None, dbusservice_gen=None, settings_device_gen=None):
 		self.STATE_IDLE = 0
@@ -152,7 +156,9 @@ class SystemCalc:
 
 		# At this moment, VRM portal ID is the MAC address of the CCGX. Anyhow, it should be string uniquely
 		# identifying the CCGX.
-		self._dbusservice.add_path('/Serial', value=get_vrm_portal_id())
+		self._dbusservice.add_path('/Serial', value=get_vrm_portal_id(), gettextcallback=lambda x:str(x))
+		self._dbusservice.add_path('/Relay/0/State', value=None, writeable=True,
+			onchangecallback=lambda p,v: exit_on_error(self._on_relay_state_changed, p, v))
 
 		self._dbusservice.add_path(
 			'/AvailableBatteryServices', value=None, gettextcallback=self._gettext)
@@ -240,6 +246,15 @@ class SystemCalc:
 
 		self._handleservicechange()
 		self._updatevalues()
+		try:
+			self._relay_file_read = open(relayGpioFile, 'rt')
+			self._relay_file_write = open(relayGpioFile, 'wt')
+			self._update_relay_state()
+			gobject.timeout_add(5000, exit_on_error, self._update_relay_state)
+		except IOError:
+			self._relay_file_read = None
+			self._relay_file_write = None
+			logging.warn('Could not open %s (relay)' % relayGpioFile)
 
 		self._writeVebusSocCounter = 9
 		gobject.timeout_add(1000, exit_on_error, self._handletimertick)
@@ -750,10 +765,32 @@ class SystemCalc:
 			if pid is not None and pid > 1:
 				logging.error('killing owner of %s (pid=%s)' % (service, pid))
 				os.kill(pid, signal.SIGKILL)
-		except dbus.exceptions.DBusException:
+		except (OSError, dbus.exceptions.DBusException):
 			print_exc()
-		except OSError:
+
+	def _update_relay_state(self):
+		state = None
+		try:
+			self._relay_file_read.seek(0)
+			state = int(self._relay_file_read.read().strip())
+		except (IOError, ValueError):
 			print_exc()
+		self._dbusservice['/Relay/0/State'] = state
+		return True
+
+	def _on_relay_state_changed(self, path, value):
+		if self._relay_file_write is None:
+			return False
+		try:
+			v = int(value)
+			if v < 0 or v > 1:
+				return False
+			self._relay_file_write.write(str(v))
+			self._relay_file_write.flush()
+			return True
+		except (IOError, ValueError):
+			print_exc()
+			return False
 
 	def _check_lg_battery(self, multi_path):
 		if self._lg_battery is None or multi_path is None:
