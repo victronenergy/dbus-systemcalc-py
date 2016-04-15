@@ -64,7 +64,8 @@ class SystemCalc:
 				'/Dc/0/Power': dummy,
 				'/Soc': dummy,
 				'/TimeToGo': dummy,
-				'/ConsumedAmphours': dummy},
+				'/ConsumedAmphours': dummy,
+				'/ProductId': dummy},
 			'com.victronenergy.vebus' : {
 				'/Ac/ActiveIn/ActiveInput': dummy,
 				'/Ac/ActiveIn/L1/P': dummy,
@@ -78,6 +79,7 @@ class SystemCalc:
 				'/ProductId': dummy,
 				'/ProductName': dummy,
 				'/Mgmt/Connection': dummy,
+				'/Mode': dummy,
 				'/State': dummy,
 				'/Dc/0/Voltage': dummy,
 				'/Dc/0/Current': dummy,
@@ -164,6 +166,8 @@ class SystemCalc:
 			'/ActiveBatteryService', value=None, gettextcallback=self._gettext)
 		self._dbusservice.add_path(
 			'/PvInvertersProductIds', value=None)
+		self._dbusservice.add_path(
+			'/Dc/Battery/Alarms/CircuitBreakerTripped', value=None)
 		self._summeditems = {
 			'/Ac/Grid/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/Grid/L2/Power': {'gettext': '%.0F W'},
@@ -224,6 +228,7 @@ class SystemCalc:
 		self._determinebatteryservice()
 
 		self._supervised = {}
+		self._lg_battery = None
 
 		if self._batteryservice is None:
 			logger.info("Battery service initialized to None (setting == %s)" %
@@ -589,6 +594,8 @@ class SystemCalc:
 			newvalues['/Ac/Consumption/%s/Power' % phase] = _safeadd(consumption[phase], _safemax(0, c))
 		self._compute_phase_totals('/Ac/Consumption', newvalues)
 
+		self._check_lg_battery(multi_path)
+
 		# ==== UPDATE DBUS ITEMS ====
 		for path in self._summeditems.keys():
 			# Why the None? Because we want to invalidate things we don't have anymore.
@@ -673,6 +680,12 @@ class SystemCalc:
 			except dbus.DBusException:
 				pass
 
+		if service_type == 'battery' and self._dbusmonitor.get_value(service, '/ProductId') == 0xB004:
+			logging.info('LG battery service appeared: %s' % service)
+			self._lg_battery = service
+			self._lg_voltage_buffer = []
+			self._dbusservice['/Dc/Battery/Alarms/CircuitBreakerTripped'] = 0
+
 	def _device_removed(self, service, instance):
 		path = self._get_service_mapping_path(service, instance)
 		if path in self._dbusservice:
@@ -680,6 +693,12 @@ class SystemCalc:
 		self._handleservicechange()
 		if service in self._supervised:
 			del self._supervised[service]
+
+		if service == self._lg_battery:
+			logging.info('LG battery service disappeared: %s' % service)
+			self._lg_battery = None
+			self._lg_voltage_buffer = None
+			self._dbusservice['/Dc/Battery/Alarms/CircuitBreakerTripped'] = None
 
 	def _gettext(self, path, value):
 		if path == '/Dc/Battery/State':
@@ -735,6 +754,37 @@ class SystemCalc:
 			print_exc()
 		except OSError:
 			print_exc()
+
+	def _check_lg_battery(self, multi_path):
+		if self._lg_battery is None or multi_path is None:
+			return
+		battery_current = self._dbusmonitor.get_value(self._lg_battery, '/Dc/0/Current')
+		if battery_current is None or abs(battery_current) > 0.01:
+			if len(self._lg_voltage_buffer) > 0:
+				logging.debug('LG voltage buffer reset')
+				self._lg_voltage_buffer = []
+			return
+		vebus_voltage = self._dbusmonitor.get_value(multi_path, '/Dc/0/Voltage')
+		if vebus_voltage is None:
+			return
+		self._lg_voltage_buffer.append(float(vebus_voltage))
+		if len(self._lg_voltage_buffer) > 40:
+			self._lg_voltage_buffer = self._lg_voltage_buffer[-40:]
+		elif len(self._lg_voltage_buffer) < 20:
+			return
+		min_voltage = min(self._lg_voltage_buffer)
+		max_voltage = max(self._lg_voltage_buffer)
+		battery_voltage = self._dbusmonitor.get_value(self._lg_battery, '/Dc/0/Voltage')
+		logging.debug('LG battery current V=%s I=%s' % (battery_voltage, battery_current))
+		if min_voltage < 0.9 * battery_voltage or max_voltage > 1.1 * battery_voltage:
+			logging.error('LG shutdown detected V=%s I=%s %s' % (battery_voltage, battery_current, self._lg_voltage_buffer))
+			item = self._dbusmonitor.get_item(multi_path, '/Mode')
+			if item is None:
+				logging.error('Cannot switch off vebus device')
+			else:
+				self._dbusservice['/Dc/Battery/Alarms/CircuitBreakerTripped'] = 2
+				item.set_value(dbus.Int32(4, variant_level=1))
+				self._lg_voltage_buffer = []
 
 
 def _safeadd(*values):
