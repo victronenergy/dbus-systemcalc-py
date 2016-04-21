@@ -25,7 +25,7 @@ from dbusmonitor import DbusMonitor
 from settingsdevice import SettingsDevice
 from logger import setup_logging
 
-softwareVersion = '1.24'
+softwareVersion = '1.25'
 
 # This is the path to the relay GPIO pin on the CCGX used for the relay. Other systems may use another pin,
 # so we may have to differentiate the path here.
