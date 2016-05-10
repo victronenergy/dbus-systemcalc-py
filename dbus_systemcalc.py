@@ -121,7 +121,7 @@ class SystemCalc:
 		if dbusmonitor_gen is None:
 			self._dbusmonitor = DbusMonitor(dbus_tree, self._dbus_value_changed, self._device_added, self._device_removed)
 		else:
-			self._dbusmonitor = dbusmonitor_gen(dbus_tree)
+			self._dbusmonitor = dbusmonitor_gen(dbus_tree, self._dbus_value_changed, self._device_added, self._device_removed)
 
 		# Connect to localsettings
 		supported_settings = {

@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import json
 import os
-import platform
 import sys
 import unittest
 
@@ -10,7 +9,6 @@ test_dir = os.path.dirname(__file__)
 sys.path.insert(1, os.path.join(test_dir, '..', 'ext', 'velib_python', 'test'))
 sys.path.insert(1, os.path.join(test_dir, '..'))
 import dbus_systemcalc
-import vedbus
 from logger import setup_logging
 from mock_dbus_monitor import MockDbusMonitor
 from mock_dbus_service import MockDbusService
@@ -25,7 +23,7 @@ class TestSystemCalcBase(unittest.TestCase):
 		unittest.TestCase.__init__(self, methodName)
 		self._service = MockDbusService('com.victronenergy.system')
 		self._system_calc = dbus_systemcalc.SystemCalc(\
-			lambda x: MockDbusMonitor(x), \
+			lambda x,a,b,c: MockDbusMonitor(x, a, b, c), \
 			lambda x: MockDbusService(x), \
 			lambda x, y: MockSettingsDevice(x, y))
 		self._monitor = self._system_calc._dbusmonitor
@@ -33,16 +31,14 @@ class TestSystemCalcBase(unittest.TestCase):
 		self._settings = self._system_calc._settings
 
 	def _update_values(self):
-		self._system_calc._determinebatteryservice()
-		self._system_calc._handleservicechange()
 		self._system_calc._updatevalues()
 
 	def _add_device(self, service, values, connected=True, product_name='dummy', connection='dummy'):
-		self._monitor.set_value(service, '/Connected', 1 if connected else 0)
-		self._monitor.set_value(service, '/ProductName', product_name)
-		self._monitor.set_value(service, '/Mgmt/Connection', connection)
-		for k, v in values.items():
-			self._monitor.set_value(service, k, v)
+		values['/Connected'] = 1 if connected else 0
+		values['/ProductName'] = product_name
+		values['/Mgmt/Connection'] = connection
+		values.setdefault('/DeviceInstance', 0)
+		self._monitor.add_service(service, values)
 
 	def _check_values(self, values):
 		ok = True
