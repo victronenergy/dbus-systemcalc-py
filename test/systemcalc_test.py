@@ -23,12 +23,21 @@ class TestSystemCalcBase(unittest.TestCase):
 		unittest.TestCase.__init__(self, methodName)
 		self._service = MockDbusService('com.victronenergy.system')
 		self._system_calc = dbus_systemcalc.SystemCalc(\
-			lambda x,a,b,c: MockDbusMonitor(x, a, b, c), \
-			lambda x: MockDbusService(x), \
-			lambda x, y: MockSettingsDevice(x, y))
-		self._monitor = self._system_calc._dbusmonitor
-		self._service = self._system_calc._dbusservice
-		self._settings = self._system_calc._settings
+			self._create_dbus_monitor, \
+			self._create_dbus_service, \
+			self._create_settings_device)
+
+	def _create_dbus_monitor(self, *args, **kwargs):
+		self._monitor = MockDbusMonitor(*args, **kwargs)
+		return self._monitor
+
+	def _create_dbus_service(self, *args, **kwargs):
+		self._service = MockDbusService(*args, **kwargs)
+		return self._service
+
+	def _create_settings_device(self, *args, **kwargs):
+		self._settings = MockSettingsDevice(*args, **kwargs)
+		return self._settings
 
 	def _update_values(self):
 		self._system_calc._updatevalues()
@@ -39,6 +48,9 @@ class TestSystemCalcBase(unittest.TestCase):
 		values['/Mgmt/Connection'] = connection
 		values.setdefault('/DeviceInstance', 0)
 		self._monitor.add_service(service, values)
+
+	def _set_setting(self, path, value):
+		self._settings[self._settings.get_short_name(path)] = value
 
 	def _check_values(self, values):
 		ok = True
@@ -351,7 +363,7 @@ class TestSystemCalc(TestSystemCalcBase):
 								 '/Dc/0/Voltage' : 12.4,
 								 '/Dc/0/Current': 5.6,
 								 '/Dc/0/Power': 120})
-		self._settings['hasdcsystem'] = 1
+		self._set_setting('/Settings/SystemSetup/HasDcSystem', 1)
 
 		self._update_values()
 		self._check_values({
@@ -457,7 +469,7 @@ class TestSystemCalc(TestSystemCalcBase):
 
 	def test_dc_current_from_power(self):
 		self._update_values()
-		self._settings['batteryservice'] = 'nobattery'
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'nobattery')
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Dc/0/Voltage', 0)
 		self._update_values()
 		self._check_values({
@@ -467,7 +479,7 @@ class TestSystemCalc(TestSystemCalcBase):
 
 	def test_battery_selection(self):
 		self._update_values()
-		self._settings['batteryservice'] = 'com.victronenergy.vebus/0'
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.vebus/0')
 		self._update_values()
 		self._check_values({
 			'/Dc/Battery/Soc': 53.2,
@@ -487,7 +499,7 @@ class TestSystemCalc(TestSystemCalcBase):
 
 	def test_battery_selection_no_battery(self):
 		self._update_values()
-		self._settings['batteryservice'] = 'nobattery'
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'nobattery')
 		self._update_values()
 		self._check_values({
 			'/Dc/Battery/Soc': None,
@@ -498,8 +510,8 @@ class TestSystemCalc(TestSystemCalcBase):
 
 	def test_battery_no_battery2(self):
 		self._update_values()
-		self._settings['batteryservice'] = 'com.victronenergy.battery/2'
-		self._settings['hasdcsystem'] = 1
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.battery/2')
+		self._set_setting('/Settings/SystemSetup/HasDcSystem', 1)
 		self._update_values()
 		self._check_values({
 			'/Dc/System/Power': None,
@@ -507,7 +519,7 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/ActiveBatteryService': None})
 
 	def test_battery_selection_wrong_format(self):
-		self._settings['batteryservice'] = 'wrong format'
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'wrong format')
 		self._update_values()
 		availableMeasurements = json.loads(self._service['/AvailableBatteryServices'])
 		self.assertEqual(len(availableMeasurements), 3)
@@ -529,8 +541,8 @@ class TestSystemCalc(TestSystemCalcBase):
 								 '/Dc/0/Current': None,
 								 '/Dc/0/Power': None,
 								 '/DeviceInstance': 2})
-		self._settings['batteryservice'] = 'com.victronenergy.battery/2'
-		self._settings['hasdcsystem'] = 1
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.battery/2')
+		self._set_setting('/Settings/SystemSetup/HasDcSystem', 1)
 		self._update_values()
 		self._check_values({
 			'/Dc/System/Power': None,
@@ -574,8 +586,8 @@ class TestSystemCalc(TestSystemCalcBase):
 						 '/Dc/0/Voltage' : None,
 						 '/Dc/0/Current': None,
 						 '/Dc/0/Power': None})
-		self._settings['batteryservice'] = 'com.victronenergy.vebus/0'
-		self._settings['hasdcsystem'] = 1
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.vebus/0')
+		self._set_setting('/Settings/SystemSetup/HasDcSystem', 1)
 		self._update_values()
 		self._check_values({
 			'/Ac/ActiveIn/Source': None,
@@ -795,7 +807,7 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Dc/Battery/Soc': 53.2})
 
 	def test_when_hasdcsystem_is_disabled_system_should_be_invalid(self):
-		self._settings['hasdcsystem'] = 0
+		self._set_setting('/Settings/SystemSetup/HasDcSystem', 0)
 		self._update_values()
 		self._check_values({
 			'/Dc/System/Power': None})
@@ -819,7 +831,7 @@ class TestSystemCalc(TestSystemCalcBase):
 						 values={
 							'/Dc/0/Voltage': 12.7,
 							'/Dc/0/Current': 6.3})
-		self._settings['hasdcsystem'] = 1
+		self._set_setting('/Settings/SystemSetup/HasDcSystem', 1)
 		self._update_values()
 		self._check_values({
 			'/Dc/System/Power':  12.7 * 6.3 + 12.4 * 9.7 - 12.25 * 8 - 65})
@@ -866,7 +878,7 @@ class TestSystemCalc(TestSystemCalcBase):
 						 values={
 							'/Dc/0/Voltage': 12.7,
 							'/Dc/0/Current': 6.3})
-		self._settings['hasdcsystem'] = 0
+		self._set_setting('/Settings/SystemSetup/HasDcSystem', 0)
 		self._update_values()
 		self._check_values({
 			'/Dc/Battery/Power':  12.4 * 9.7 + 12.7 * 6.3 - 12.25 * 8,
@@ -958,7 +970,7 @@ class TestSystemCalcNoMulti(TestSystemCalcBase):
 			'/AutoSelectedBatteryService': 'No battery monitor found'})
 
 	def test_no_battery_service(self):
-		self._settings['batteryservice'] = 'nobattery'
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'nobattery')
 		self._add_device('com.victronenergy.battery.ttyO2',
 						 product_name='battery',
 						 values={
@@ -972,7 +984,7 @@ class TestSystemCalcNoMulti(TestSystemCalcBase):
 			'/Dc/Battery/Power':  None,
 			'/AutoSelectedBatteryService': None})
 
-		self._settings['batteryservice'] = 'default'
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'default')
 		self._update_values()
 		self._check_values({
 			'/Dc/Battery/Power':  65,
