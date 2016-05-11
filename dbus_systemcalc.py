@@ -7,6 +7,7 @@ from gobject import idle_add
 import dbus
 import dbus.service
 import inspect
+import functools
 import platform
 import logging
 import argparse
@@ -748,10 +749,14 @@ class SystemCalc:
 		return services.items()[0]
 
 	def _process_supervised(self):
-		for service,method in self._supervised.items():
+		for service, method in self._supervised.items():
 			# Do an async call. If the owner of the service does not answer, we do not want to wait for
 			# the timeout here.
-			method.call_async(error_handler=lambda x: exit_on_error(self._supervise_failed, service, x))
+			# Do not use lambda function in the async call, because the lambda functions will be executed
+			# after completion of the loop, and the service parameter will have the value that was assigned
+			# to it in the last iteration. Instead we use functools.partial, which will 'freeze' the current
+			# value of service.
+			method.call_async(error_handler=functools.partial(exit_on_error, self._supervise_failed, service))
 		return True
 
 	def _supervise_failed(self, service, error):
