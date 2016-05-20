@@ -88,9 +88,7 @@ class HubTypeSelect(SystemCalcDelegate):
 		vebus_path = newvalues.get('/VebusService')
 		if self._dbusmonitor.get_value(vebus_path, '/Hub4/AcPowerSetpoint') != None:
 			hub = 4
-		elif self._dbusmonitor.get_value(vebus_path, '/Hub1/ChargeVoltage') != None:
-			hub = 1
-		elif self._dbusmonitor.get_value(vebus_path, '/Mgmt/Connection') == 'VE.Can' and \
+		elif self._dbusmonitor.get_value(vebus_path, '/Hub1/ChargeVoltage') != None or \
 			newvalues.get('/Dc/Pv/Power') != None:
 			hub = 1
 		elif newvalues.get('/Ac/PvOnOutput/Total/Power') != None:
@@ -99,6 +97,83 @@ class HubTypeSelect(SystemCalcDelegate):
 			newvalues.get('/Ac/PvOnGenset/Total/Power') != None:
 			hub = 3
 		newvalues['/Hub'] = hub
+
+
+class Hub1Bridge(SystemCalcDelegate):
+	def __init__(self):
+		self._solarchargers = []
+		self._timer = None
+
+	def get_input(self):
+		return [
+			('com.victronenergy.vebus',
+				['/Hub1/ChargeVoltage', '/State']),
+			('com.victronenergy.solarcharger',
+				['/Link/NetworkMode', '/Link/ChargeVoltage', '/State'])]
+
+	def device_added(self, service, instance, do_service_change=True):
+		service_type = service.split('.')[2]
+		if service_type != 'solarcharger':
+			return
+		self._solarchargers.append(service)
+		self._update_solarchargers()
+		if self._timer == None:
+			# Update the solar charger every 10 seconds, because it has to switch to HEX mode each time
+			# we write a value to its D-Bus service. Writing too often may block text messages.
+			self._timer = gobject.timeout_add(10000, exit_on_error, self._on_timer)
+
+	def device_removed(self, service, instance):
+		if service in self._solarchargers:
+			self._solarchargers.remove(service)
+			if len(self._solarchargers) == 0 and self._timer != None:
+				gobject.source_remove(self._timer)
+				self._timer = None
+
+	def _on_timer(self):
+		self._update_solarchargers()
+		return True
+
+	def _update_solarchargers(self):
+		vebus_path = self._get_vebus_path()
+		if vebus_path == None:
+			return
+		charge_voltage = self._dbusmonitor.get_value(vebus_path, '/Hub1/ChargeVoltage')
+		if charge_voltage == None:
+			return # This is not a Hub-1 system, or a VE.Can Hub-1 system
+		state = self._dbusmonitor.get_value(vebus_path, '/State')
+		for service in self._solarchargers:
+			# We use /Link/NetworkMode to detect Hub-1 support in the solarcharger. Existence of this item
+			# implies existence of the other /Link/* fields
+			network_mode_item = self._dbusmonitor.get_item(service, '/Link/NetworkMode')
+			if network_mode_item.get_value() != None:
+				network_mode_item.set_value(dbus.Int32(5, variant_level=1)) # On & Hub-1
+				charge_voltage_item = self._dbusmonitor.get_item(service, '/Link/ChargeVoltage')
+				charge_voltage_item.set_value(charge_voltage)
+				if state != None:
+					state_item = self._dbusmonitor.get_item(service, '/State')
+					state_item.set_value(state)
+
+	def _update_charge_current(self, newvalues):
+		# Not used right now, because vebus does not offer a path to write the total charge current
+		vebus_path = self._get_vebus_path(newvalues)
+		if vebus_path == None:
+			return
+		charge_current_item = self._dbusmonitor.get_item(vebus_path, '/Hub1/ChargeCurrent')
+		if charge_current_item.get_value() == None:
+			return
+		total_charge_current = 0
+		for service in self._solarchargers:
+			charge_current = self._dbusmonitor.get_value(service, '/Dc/0/Current')
+			if charge_current != None:
+				total_charge_current += charge_current
+		charge_current_item.set_value(dbus.Double(total_charge_current, variant_level=1))
+
+	def _get_vebus_path(self, newvalues=None):
+		if newvalues == None:
+			if '/VebusService' not in self._dbusservice:
+				return None
+			return self._dbusservice['/VebusService']
+		return newvalues.get('/VebusService')
 
 
 class ServiceMapper(SystemCalcDelegate):

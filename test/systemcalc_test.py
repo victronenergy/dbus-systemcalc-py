@@ -373,6 +373,8 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Dc/Pv/Power': 12.4 * 9.7})
 
 	def test_hub1(self):
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Mgmt/Connection', "VE.Bus")
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub1/ChargeVoltage', 0)
 		self._add_device('com.victronenergy.solarcharger.ttyO1',
 						 product_name='solarcharger',
 						 values={
@@ -388,6 +390,16 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._check_values({
 			'/Hub': 1,
 			'/Dc/Pv/Power': 12.4 * 9.7 + 24.3 * 5.6})
+
+	def test_hub1_vecan(self):
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Mgmt/Connection', "VE.Can")
+		self._add_device('com.victronenergy.solarcharger.ttyO1',
+						 product_name='solarcharger',
+						 values={
+								 '/Dc/0/Voltage' : 12.4,
+								 '/Dc/0/Current': 9.7})
+		self._update_values()
+		self._check_values({'/Hub': 1, '/Dc/Pv/Power': 12.4 * 9.7})
 
 	def test_hub2(self):
 		self._add_device('com.victronenergy.pvinverter.fronius_122_2312', {
@@ -959,6 +971,87 @@ class TestSystemCalc(TestSystemCalcBase):
 		})
 		self._update_values()
 		self.assertEqual([0xB0FE], self._service['/PvInvertersProductIds'])
+
+	def test_hub1_control_voltage(self):
+		self._update_values()
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub1/ChargeVoltage', 12.6)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', 2)
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Dc/0/Voltage': 12.4,
+			'/Dc/0/Current': 9.7},
+			connection='VE.Direct')
+		self._update_values()
+		self.assertEqual(12.6, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1', '/Link/ChargeVoltage'))
+		self.assertEqual(2, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1', '/State'))
+
+	def test_hub1_control_voltage_multiple_solarchargers(self):
+		self._update_values()
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub1/ChargeVoltage', 12.5)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', 2)
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Dc/0/Voltage': 12.4,
+			'/Dc/0/Current': 9.7},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 9.3},
+			connection='VE.Direct')
+		self._update_values()
+		self.assertEqual(12.5, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1', '/Link/ChargeVoltage'))
+		self.assertEqual(12.5, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeVoltage'))
+		self.assertEqual(2, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1', '/State'))
+
+	def test_hub1_control_voltage_ve_can(self):
+		# Hub1 control should ignore VE.Can solarchargers
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub1/ChargeVoltage', 12.5)
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Dc/0/Voltage': 12.4,
+			'/Dc/0/Current': 9.7},
+			connection='VE.Can')
+		self._update_values()
+		self.assertEqual(None, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1', '/Link/ChargeVoltage'))
+		self.assertEqual(0, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1', '/State'))
+
+	@unittest.skip("Disabled in source")
+	def test_hub1_control_current(self):
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub1/ChargeCurrent', 0)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Dc/0/Current', 0)
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 9.7},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 9.3},
+			connection='VE.Direct')
+		self._update_values()
+		self.assertEqual(9.7 + 9.3, self._monitor.get_value('com.victronenergy.vebus.ttyO1', '/Hub1/ChargeCurrent'))
+
+	def test_system_mapping(self):
+		self._update_values()
+		self._check_values({
+			'/ServiceMapping/com_victronenergy_vebus_0' : 'com.victronenergy.vebus.ttyO1',
+			'/ServiceMapping/com_victronenergy_settings_0' : 'com.victronenergy.settings'})
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery', values={'/DeviceInstance': 3})
+		self._check_values({
+			'/ServiceMapping/com_victronenergy_vebus_0' : 'com.victronenergy.vebus.ttyO1',
+			'/ServiceMapping/com_victronenergy_battery_3' : 'com.victronenergy.battery.ttyO2'})
+		self._remove_device('com.victronenergy.battery.ttyO2')
+		self.assertFalse('/ServiceMapping/com_victronenergy_battery_3' in self._service)
+
 
 class TestSystemCalcNoMulti(TestSystemCalcBase):
 	def __init__(self, methodName='runTest'):

@@ -116,7 +116,8 @@ class SystemCalc:
 			delegates.ServiceMapper(),
 			delegates.ServiceSupervisor(),
 			delegates.RelayState(),
-			delegates.LgCircuitBreakerDetect()]
+			delegates.LgCircuitBreakerDetect(),
+			delegates.Hub1Bridge()]
 
 		for m in self._modules:
 			for service, paths in m.get_input():
