@@ -1,6 +1,8 @@
 dbus_systemcalc_py
 ==================
 
+[![Build Status](https://travis-ci.org/victronenergy/dbus-systemcalc-py.svg?branch=master)](https://travis-ci.org/victronenergy/dbus-systemcalc-py)
+
 Publish PV totals and other system readings on D-Bus, getting info from other D-Bus services. D-Bus servicename:
   
     com.victronenergy.system
