@@ -2,44 +2,35 @@
 # -*- coding: utf-8 -*-
 
 from dbus.mainloop.glib import DBusGMainLoop
-import gobject
-from gobject import idle_add
 import dbus
-import dbus.service
-import inspect
-import functools
-import platform
-import logging
+import gobject
 import argparse
 import sys
 import os
 import json
-import signal
-from dbus.decorators import method
-from traceback import print_exc
 
 # Victron packages
-sys.path.insert(1, os.path.join(os.path.dirname(__file__), './ext/velib_python'))
-from vedbus import VeDbusService, VeDbusItemImport
+sys.path.insert(1, os.path.join(os.path.dirname(__file__), 'ext', 'velib_python'))
+from vedbus import VeDbusService
 from ve_utils import get_vrm_portal_id, exit_on_error
 from dbusmonitor import DbusMonitor
 from settingsdevice import SettingsDevice
 from logger import setup_logging
+import delegates
+from sc_utils import safeadd as _safeadd, safemax as _safemax
 
 softwareVersion = '1.25'
 
-# This is the path to the relay GPIO pin on the CCGX used for the relay. Other systems may use another pin,
-# so we may have to differentiate the path here.
-relayGpioFile = '/sys/class/gpio/gpio182/value'
-
 class SystemCalc:
-	def __init__(self, dbusmonitor_gen=None, dbusservice_gen=None, settings_device_gen=None):
+	def __init__(self, dbusservice):
 		self.STATE_IDLE = 0
 		self.STATE_CHARGING = 1
 		self.STATE_DISCHARGING = 2
 
 		self.BATSERVICE_DEFAULT = 'default'
 		self.BATSERVICE_NOBATTERY = 'nobattery'
+
+		self._dbusservice = dbusservice
 
 		# Why this dummy? Because DbusMonitor expects these values to be there, even though we don't
 		# need them. So just add some dummy data. This can go away when DbusMonitor is more generic.
@@ -119,48 +110,40 @@ class SystemCalc:
 				'/Settings/SystemSetup/AcInput2' : dummy}
 		}
 
-		if dbusmonitor_gen is None:
-			self._dbusmonitor = DbusMonitor(dbus_tree, self._dbus_value_changed, self._device_added, self._device_removed)
-		else:
-			self._dbusmonitor = dbusmonitor_gen(dbus_tree, self._dbus_value_changed, self._device_added, self._device_removed)
+		self._modules = [
+			delegates.HubTypeSelect(),
+			delegates.VebusSocWriter(),
+			delegates.ServiceMapper(),
+			delegates.ServiceSupervisor(),
+			delegates.RelayState(),
+			delegates.LgCircuitBreakerDetect()]
+
+		for m in self._modules:
+			for service, paths in m.get_input():
+				s = dbus_tree.setdefault(service, {})
+				for path in paths:
+					s[path] = dummy
+
+		self._dbusmonitor = self._create_dbus_monitor(dbus_tree, valueChangedCallback=self._dbus_value_changed,
+			deviceAddedCallback=self._device_added, deviceRemovedCallback=self._device_removed)
 
 		# Connect to localsettings
 		supported_settings = {
 			'batteryservice': ['/Settings/SystemSetup/BatteryService', self.BATSERVICE_DEFAULT, 0, 0],
-			'hasdcsystem': ['/Settings/SystemSetup/HasDcSystem', 0, 0, 1],
-			'writevebussoc': ['/Settings/SystemSetup/WriteVebusSoc', 0, 0, 1]}
+			'hasdcsystem': ['/Settings/SystemSetup/HasDcSystem', 0, 0, 1]}
 
-		if settings_device_gen is None:
-			self._settings = SettingsDevice(
-				bus=dbus.SessionBus() if 'DBUS_SESSION_BUS_ADDRESS' in os.environ else dbus.SystemBus(),
-				supportedSettings=supported_settings,
-				eventCallback=self._handlechangedsetting)
-		else:
-			self._settings = settings_device_gen(supported_settings, self._handlechangedsetting)
+		for m in self._modules:
+			for setting in m.get_settings():
+				supported_settings[setting[0]] = setting[1:]
 
-		# put ourselves on the dbus
-		if dbusservice_gen is None:
-			self._dbusservice = VeDbusService('com.victronenergy.system')
-		else:
-			self._dbusservice = dbusservice_gen('com.victronenergy.system')
+		self._settings = self._create_settings(supported_settings, self._handlechangedsetting)
 
-		self._dbusservice.add_mandatory_paths(
-			processname=__file__,
-			processversion=softwareVersion,
-			connection='data from other dbus processes',
-			deviceinstance=0,
-			productid=None,
-			productname=None,
-			firmwareversion=None,
-			hardwareversion=None,
-			connected=1)
+		for m in self._modules:
+			m.set_sources(self._dbusmonitor, self._settings, self._dbusservice)
 
 		# At this moment, VRM portal ID is the MAC address of the CCGX. Anyhow, it should be string uniquely
 		# identifying the CCGX.
-		self._dbusservice.add_path('/Serial', value=get_vrm_portal_id(), gettextcallback=lambda x:str(x))
-		self._dbusservice.add_path('/Relay/0/State', value=None, writeable=True,
-			onchangecallback=lambda p,v: exit_on_error(self._on_relay_state_changed, p, v))
-
+		self._dbusservice.add_path('/Serial', value=get_vrm_portal_id())
 		self._dbusservice.add_path(
 			'/AvailableBatteryServices', value=None, gettextcallback=self._gettext)
 		self._dbusservice.add_path(
@@ -173,8 +156,6 @@ class SystemCalc:
 			'/ActiveBatteryService', value=None, gettextcallback=self._gettext)
 		self._dbusservice.add_path(
 			'/PvInvertersProductIds', value=None)
-		self._dbusservice.add_path(
-			'/Dc/Battery/Alarms/CircuitBreakerTripped', value=None)
 		self._summeditems = {
 			'/Ac/Grid/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/Grid/L2/Power': {'gettext': '%.0F W'},
@@ -223,19 +204,18 @@ class SystemCalc:
 			'/Dc/Vebus/Current': {'gettext': '%.1F A'},
 			'/Dc/Vebus/Power': {'gettext': '%.0F W'},
 			'/Dc/System/Power': {'gettext': '%.0F W'},
-			'/Hub': {'gettext': '%s'},
 			'/Ac/ActiveIn/Source': {'gettext': '%s'},
 			'/VebusService': {'gettext': '%s'}
 		}
+
+		for m in self._modules:
+			self._summeditems.update(m.get_output())
 
 		for path in self._summeditems.keys():
 			self._dbusservice.add_path(path, value=None, gettextcallback=self._gettext)
 
 		self._batteryservice = None
 		self._determinebatteryservice()
-
-		self._supervised = {}
-		self._lg_battery = None
 
 		if self._batteryservice is None:
 			logger.info("Battery service initialized to None (setting == %s)" %
@@ -247,19 +227,14 @@ class SystemCalc:
 
 		self._handleservicechange()
 		self._updatevalues()
-		try:
-			self._relay_file_read = open(relayGpioFile, 'rt')
-			self._relay_file_write = open(relayGpioFile, 'wt')
-			self._update_relay_state()
-			gobject.timeout_add(5000, exit_on_error, self._update_relay_state)
-		except IOError:
-			self._relay_file_read = None
-			self._relay_file_write = None
-			logging.warn('Could not open %s (relay)' % relayGpioFile)
 
-		self._writeVebusSocCounter = 9
 		gobject.timeout_add(1000, exit_on_error, self._handletimertick)
-		gobject.timeout_add(60000, exit_on_error, self._process_supervised)
+
+	def _create_dbus_monitor(self, *args, **kwargs):
+		raise Exception("This function should be overridden")
+
+	def _create_settings(self, *args, **kwargs):
+		raise Exception("This function should be overridden")
 
 	def _handlechangedsetting(self, setting, oldvalue, newvalue):
 		self._determinebatteryservice()
@@ -344,20 +319,7 @@ class SystemCalc:
 			self._updatevalues()
 		self._changed = False
 
-		self._writeVebusSocCounter += 1
-		if self._writeVebusSocCounter >= 10:
-			self._writeVebusSoc()
-			self._writeVebusSocCounter = 0
-
 		return True  # keep timer running
-
-	def _writeVebusSoc(self):
-		# ==== COPY BATTERY SOC TO VEBUS ====
-		if self._settings['writevebussoc'] and self._dbusservice['/VebusService'] and self._dbusservice['/Dc/Battery/Soc'] and \
-			self._batteryservice.split('.')[2] != 'vebus':
-
-			logger.debug("writing this soc to vebus: %d", self._dbusservice['/Dc/Battery/Soc'])
-			self._dbusmonitor.get_item(self._dbusservice['/VebusService'], '/Soc').set_value(self._dbusservice['/Dc/Battery/Soc'])
 
 	def _updatepvinverterspidlist(self):
 		# Create list of connected pv inverters id's
@@ -537,21 +499,6 @@ class SystemCalc:
 			ac_in_source = self._dbusmonitor.get_value('com.victronenergy.settings', settings_path)
 		newvalues['/Ac/ActiveIn/Source'] = ac_in_source
 
-		# ===== HUB MODE =====
-		# The code below should be executed after PV inverter data has been updated, because we need the
-		# PV inverter total power to update the consumption.
-		hub = None
-		if self._dbusmonitor.get_value(multi_path, '/Hub4/AcPowerSetpoint') is not None:
-			hub = 4
-		elif newvalues.get('/Dc/Pv/Power', None) is not None:
-			hub = 1
-		elif newvalues.get('/Ac/PvOnOutput/Total/Power', None) is not None:
-			hub = 2
-		elif newvalues.get('/Ac/PvOnGrid/Total/Power', None) is not None or \
-			newvalues.get('/Ac/PvOnGenset/Total/Power', None) is not None:
-			hub = 3
-		newvalues['/Hub'] = hub
-
 		# ===== GRID METERS & CONSUMPTION ====
 		consumption = { "L1" : None, "L2" : None, "L3" : None }
 		for device_type in ['Grid', 'Genset']:
@@ -610,7 +557,8 @@ class SystemCalc:
 			newvalues['/Ac/Consumption/%s/Power' % phase] = _safeadd(consumption[phase], _safemax(0, c))
 		self._compute_phase_totals('/Ac/Consumption', newvalues)
 
-		self._check_lg_battery(multi_path)
+		for m in self._modules:
+			m.update_values(newvalues)
 
 		# ==== UPDATE DBUS ITEMS ====
 		for path in self._summeditems.keys():
@@ -647,15 +595,12 @@ class SystemCalc:
 		self._changed = True
 
 	def _get_readable_service_name(self, servicename):
-		return (self._dbusmonitor.get_value(servicename, '/ProductName') + ' on ' +
-						self._dbusmonitor.get_value(servicename, '/Mgmt/Connection'))
+		return '%s on %s' % (
+			self._dbusmonitor.get_value(servicename, '/ProductName'),
+			self._dbusmonitor.get_value(servicename, '/Mgmt/Connection'))
 
 	def _get_instance_service_name(self, service, instance):
 		return '%s/%s' % ('.'.join(service.split('.')[0:3]), instance)
-
-	def _get_service_mapping_path(self, service, instance):
-		sn = self._get_instance_service_name(service, instance).replace('.', '_').replace('/', '_')
-		return '/ServiceMapping/%s' % sn
 
 	def _remove_unconnected_services(self, services):
 		# Workaround: because com.victronenergy.vebus is available even when there is no vebus product
@@ -678,43 +623,17 @@ class SystemCalc:
 			self._handleservicechange()
 
 	def _device_added(self, service, instance, do_service_change=True):
-		path = self._get_service_mapping_path(service, instance)
-		if path in self._dbusservice:
-			self._dbusservice[path] = service
-		else:
-			self._dbusservice.add_path(path, service)
-
 		if do_service_change:
 			self._handleservicechange()
 
-		service_type = service.split('.')[2]
-		if service_type == 'battery' or service_type == 'solarcharger':
-			try:
-				proxy = self._dbusmonitor.dbusConn.get_object(service, '/ProductId', introspect=False)
-				method = proxy.get_dbus_method('GetValue')
-				self._supervised[service] = method
-			except dbus.DBusException:
-				pass
-
-		if service_type == 'battery' and self._dbusmonitor.get_value(service, '/ProductId') == 0xB004:
-			logging.info('LG battery service appeared: %s' % service)
-			self._lg_battery = service
-			self._lg_voltage_buffer = []
-			self._dbusservice['/Dc/Battery/Alarms/CircuitBreakerTripped'] = 0
+		for m in self._modules:
+			m.device_added(service, instance, do_service_change)
 
 	def _device_removed(self, service, instance):
-		path = self._get_service_mapping_path(service, instance)
-		if path in self._dbusservice:
-			del self._dbusservice[path]
 		self._handleservicechange()
-		if service in self._supervised:
-			del self._supervised[service]
 
-		if service == self._lg_battery:
-			logging.info('LG battery service disappeared: %s' % service)
-			self._lg_battery = None
-			self._lg_voltage_buffer = None
-			self._dbusservice['/Dc/Battery/Alarms/CircuitBreakerTripped'] = None
+		for m in self._modules:
+			m.device_removed(service, instance)
 
 	def _gettext(self, path, value):
 		if path == '/Dc/Battery/State':
@@ -748,104 +667,28 @@ class SystemCalc:
 			return None
 		return services.items()[0]
 
-	def _process_supervised(self):
-		for service, method in self._supervised.items():
-			# Do an async call. If the owner of the service does not answer, we do not want to wait for
-			# the timeout here.
-			# Do not use lambda function in the async call, because the lambda functions will be executed
-			# after completion of the loop, and the service parameter will have the value that was assigned
-			# to it in the last iteration. Instead we use functools.partial, which will 'freeze' the current
-			# value of service.
-			method.call_async(error_handler=functools.partial(exit_on_error, self._supervise_failed, service))
-		return True
 
-	def _supervise_failed(self, service, error):
-		try:
-			if error.get_dbus_name() != 'org.freedesktop.DBus.Error.NoReply':
-				logging.info('Ignoring supervise error from %s: %s' % (service, error))
-				return
-			logging.error('%s is not responding to D-Bus requests' % service)
-			proxy = self._dbusmonitor.dbusConn.get_object('org.freedesktop.DBus', '/', introspect=False)
-			pid = proxy.GetConnectionUnixProcessID(service)
-			if pid is not None and pid > 1:
-				logging.error('killing owner of %s (pid=%s)' % (service, pid))
-				os.kill(pid, signal.SIGKILL)
-		except (OSError, dbus.exceptions.DBusException):
-			print_exc()
+class DbusSystemCalc(SystemCalc):
+	def __init__(self):
+		dbusservice = VeDbusService('com.victronenergy.system')
+		dbusservice.add_mandatory_paths(
+			processname=__file__,
+			processversion=softwareVersion,
+			connection='data from other dbus processes',
+			deviceinstance=0,
+			productid=None,
+			productname=None,
+			firmwareversion=None,
+			hardwareversion=None,
+			connected=1)
+		SystemCalc.__init__(self, dbusservice)
 
-	def _update_relay_state(self):
-		state = None
-		try:
-			self._relay_file_read.seek(0)
-			state = int(self._relay_file_read.read().strip())
-		except (IOError, ValueError):
-			print_exc()
-		self._dbusservice['/Relay/0/State'] = state
-		return True
+	def _create_dbus_monitor(self, *args, **kwargs):
+		return DbusMonitor(*args, **kwargs)
 
-	def _on_relay_state_changed(self, path, value):
-		if self._relay_file_write is None:
-			return False
-		try:
-			v = int(value)
-			if v < 0 or v > 1:
-				return False
-			self._relay_file_write.write(str(v))
-			self._relay_file_write.flush()
-			return True
-		except (IOError, ValueError):
-			print_exc()
-			return False
-
-	def _check_lg_battery(self, multi_path):
-		if self._lg_battery is None or multi_path is None:
-			return
-		battery_current = self._dbusmonitor.get_value(self._lg_battery, '/Dc/0/Current')
-		if battery_current is None or abs(battery_current) > 0.01:
-			if len(self._lg_voltage_buffer) > 0:
-				logging.debug('LG voltage buffer reset')
-				self._lg_voltage_buffer = []
-			return
-		vebus_voltage = self._dbusmonitor.get_value(multi_path, '/Dc/0/Voltage')
-		if vebus_voltage is None:
-			return
-		self._lg_voltage_buffer.append(float(vebus_voltage))
-		if len(self._lg_voltage_buffer) > 40:
-			self._lg_voltage_buffer = self._lg_voltage_buffer[-40:]
-		elif len(self._lg_voltage_buffer) < 20:
-			return
-		min_voltage = min(self._lg_voltage_buffer)
-		max_voltage = max(self._lg_voltage_buffer)
-		battery_voltage = self._dbusmonitor.get_value(self._lg_battery, '/Dc/0/Voltage')
-		logging.debug('LG battery current V=%s I=%s' % (battery_voltage, battery_current))
-		if min_voltage < 0.9 * battery_voltage or max_voltage > 1.1 * battery_voltage:
-			logging.error('LG shutdown detected V=%s I=%s %s' % (battery_voltage, battery_current, self._lg_voltage_buffer))
-			item = self._dbusmonitor.get_item(multi_path, '/Mode')
-			if item is None:
-				logging.error('Cannot switch off vebus device')
-			else:
-				self._dbusservice['/Dc/Battery/Alarms/CircuitBreakerTripped'] = 2
-				item.set_value(dbus.Int32(4, variant_level=1))
-				self._lg_voltage_buffer = []
-
-
-def _safeadd(*values):
-	'''Adds all parameters passed to this function. Parameters which are None are ignored. If all parameters
-	are None, the function will return None as well.'''
-	r = None
-	for v in values:
-		if v is not None:
-			if r is None:
-				r = v
-			else:
-				r += v
-	return r
-
-
-def _safemax(v0, v1):
-	if v0 is None or v1 is None:
-		return None
-	return max(v0, v1)
+	def _create_settings(self, *args, **kwargs):
+		bus = dbus.SessionBus() if 'DBUS_SESSION_BUS_ADDRESS' in os.environ else dbus.SystemBus()
+		return SettingsDevice(bus, *args, **kwargs)
 
 
 if __name__ == "__main__":
@@ -866,7 +709,7 @@ if __name__ == "__main__":
 	# Have a mainloop, so we can send/receive asynchronous calls to and from dbus
 	DBusGMainLoop(set_as_default=True)
 
-	systemcalc = SystemCalc()
+	systemcalc = DbusSystemCalc()
 
 	# Start and run the mainloop
 	logger.info("Starting mainloop, responding only on events")

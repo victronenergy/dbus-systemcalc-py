@@ -18,26 +18,24 @@ from mock_settings_device import MockSettingsDevice
 dbus_systemcalc.logger = setup_logging()
 
 
+class MockSystemCalc(dbus_systemcalc.SystemCalc):
+	def __init__(self):
+		dbusservice = MockDbusService('com.victronenergy.system')
+		dbus_systemcalc.SystemCalc.__init__(self, dbusservice)
+
+	def _create_dbus_monitor(self, *args, **kwargs):
+		return MockDbusMonitor( *args, **kwargs)
+
+	def _create_settings(self, *args, **kwargs):
+		return MockSettingsDevice(*args, **kwargs)
+
+
 class TestSystemCalcBase(unittest.TestCase):
 	def __init__(self, methodName='runTest'):
 		unittest.TestCase.__init__(self, methodName)
-		self._service = MockDbusService('com.victronenergy.system')
-		self._system_calc = dbus_systemcalc.SystemCalc(\
-			self._create_dbus_monitor, \
-			self._create_dbus_service, \
-			self._create_settings_device)
-
-	def _create_dbus_monitor(self, *args, **kwargs):
-		self._monitor = MockDbusMonitor(*args, **kwargs)
-		return self._monitor
-
-	def _create_dbus_service(self, *args, **kwargs):
-		self._service = MockDbusService(*args, **kwargs)
-		return self._service
-
-	def _create_settings_device(self, *args, **kwargs):
-		self._settings = MockSettingsDevice(*args, **kwargs)
-		return self._settings
+		self._system_calc = MockSystemCalc()
+		self._monitor = self._system_calc._dbusmonitor
+		self._service = self._system_calc._dbusservice
 
 	def _update_values(self):
 		self._system_calc._updatevalues()
@@ -49,8 +47,11 @@ class TestSystemCalcBase(unittest.TestCase):
 		values.setdefault('/DeviceInstance', 0)
 		self._monitor.add_service(service, values)
 
+	def _remove_device(self, service):
+		self._monitor.remove_service(service)
+
 	def _set_setting(self, path, value):
-		self._settings[self._settings.get_short_name(path)] = value
+		self._system_calc._settings[self._system_calc._settings.get_short_name(path)] = value
 
 	def _check_values(self, values):
 		ok = True
