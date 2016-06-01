@@ -197,11 +197,6 @@ class ServiceMapper(SystemCalcDelegate):
 		return '/ServiceMapping/%s' % sn
 
 
-# This is the path to the relay GPIO pin on the CCGX used for the relay. Other systems may use another pin,
-# so we may have to differentiate the path here.
-RelayGpioFile = '/sys/class/gpio/gpio182/value'
-
-
 class VebusSocWriter(SystemCalcDelegate):
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)
@@ -233,47 +228,41 @@ class VebusSocWriter(SystemCalcDelegate):
 
 
 class RelayState(SystemCalcDelegate):
-	def __init__(self):
-		SystemCalcDelegate.__init__(self)
-		try:
-			self._relay_file_read = open(RelayGpioFile, 'rt')
-			self._relay_file_write = open(RelayGpioFile, 'wt')
-			gobject.idle_add(exit_on_error, lambda: not self._update_relay_state())
-			gobject.timeout_add(5000, exit_on_error, self._update_relay_state)
-		except IOError:
-			self._relay_file_read = None
-			self._relay_file_write = None
-			logging.warn('Could not open %s (relay)' % RelayGpioFile)
-
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
-		self._dbusservice.add_path('/Relay/0/State', value=None, writeable=True,
-			onchangecallback=lambda p,v: exit_on_error(self._on_relay_state_changed, p, v))
-
-	def get_input(self):
-		return [
-			('com.victronenergy.battery', ['/ProductId']),
-			('com.victronenergy.solarcharger', ['/ProductId'])]
+		relays = sc_utils.gpio_paths('/etc/venus/relays')
+		if len(relays) == 0:
+			logging.info('No relays found')
+			return
+		self._relays = {}
+		i = 0
+		for r in relays:
+			path = os.path.join(r, 'value')
+			dbus_path = '/Relay/{}/State'.format(i)
+			self._relays[dbus_path] = path
+			self._dbusservice.add_path(dbus_path, value=None, writeable=True,
+				onchangecallback=self._on_relay_state_changed)
+			i += 1
+		logging.info('Relays found: {}'.format(', '.join(self._relays.values())))
+		gobject.idle_add(exit_on_error, lambda: not self._update_relay_state())
+		gobject.timeout_add(5000, exit_on_error, self._update_relay_state)
 
 	def _update_relay_state(self):
-		state = None
-		try:
-			self._relay_file_read.seek(0)
-			state = int(self._relay_file_read.read().strip())
-		except (IOError, ValueError):
-			traceback.print_exc()
-		self._dbusservice['/Relay/0/State'] = state
+		# @todo EV Do we still need this? Maybe only at startup?
+		for dbus_path, file_path in self._relays.items():
+			try:
+				with open(file_path, 'rt') as r:
+					state = int(r.read().strip())
+					self._dbusservice[dbus_path] = state
+			except (IOError, ValueError):
+				traceback.print_exc()
 		return True
 
-	def _on_relay_state_changed(self, path, value):
-		if self._relay_file_write is None:
-			return False
+	def _on_relay_state_changed(self, dbus_path, value):
 		try:
-			v = int(value)
-			if v < 0 or v > 1:
-				return False
-			self._relay_file_write.write(str(v))
-			self._relay_file_write.flush()
+			path = self._relays[dbus_path]
+			with open(path, 'wt') as w:
+				w.write('1'  if value == 1 else '0')
 			return True
 		except (IOError, ValueError):
 			traceback.print_exc()

@@ -36,3 +36,11 @@ def service_instance_name(service_name, instance):
 	services without relying on communication port name etc.
 	Example: com.victronenergy.grid.cgwacs_ttyUSB0_di30_mb1 yields com.victronenergy.grid/30'''
 	return '%s/%s' % (service_base_name(service_name), instance)
+
+
+def gpio_paths(etc_path):
+	try:
+		with open(etc_path, 'rt') as r:
+			return r.read().strip().split()
+	except IOError:
+		return []
