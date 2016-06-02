@@ -269,6 +269,46 @@ class RelayState(SystemCalcDelegate):
 			return False
 
 
+class BuzzerControl(SystemCalcDelegate):
+	def set_sources(self, dbusmonitor, settings, dbusservice):
+		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
+		paths = sc_utils.gpio_paths('/etc/venus/buzzer')
+		if len(paths) == 0:
+			logging.info('No buzzer found')
+			return
+		self._path = os.path.join(paths[0], 'value')
+		self._buzzer_on = False
+		self._timer = None
+		self._dbusservice.add_path('/Buzzer/State', value=0, writeable=True,
+			onchangecallback=lambda p,v: exit_on_error(self._on_buzzer_state_changed, v))
+		logging.info('Buzzer found: {}'.format(self._path))
+
+	def _on_buzzer_state_changed(self, value):
+		if value == 1:
+			if self._timer == None:
+				self._timer = gobject.timeout_add(500, exit_on_error, self._on_timer)
+				self._set_buzzer(True)
+		elif self._timer != None:
+			gobject.source_remove(self._timer)
+			self._timer = None
+			self._set_buzzer(False)
+		return True
+
+	def _on_timer(self):
+		self._set_buzzer(not self._buzzer_on)
+		return True
+
+	def _set_buzzer(self, on):
+		try:
+			with open(self._path, 'wt') as w:
+				w.write('1' if on else '0')
+			self._buzzer_on = on
+			return True
+		except (IOError, ValueError):
+			traceback.print_exc()
+			return False
+
+
 class LgCircuitBreakerDetect(SystemCalcDelegate):
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)

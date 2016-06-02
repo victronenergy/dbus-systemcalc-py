@@ -114,6 +114,7 @@ class SystemCalc:
 			delegates.ServiceMapper(),
 			delegates.ServiceSupervisor(),
 			delegates.RelayState(),
+			delegates.BuzzerControl(),
 			delegates.LgCircuitBreakerDetect(),
 			delegates.Hub1Bridge()]
 
