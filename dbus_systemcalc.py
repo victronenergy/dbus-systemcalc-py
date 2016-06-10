@@ -352,7 +352,6 @@ class SystemCalc:
 		pvinverters = self._dbusmonitor.get_service_list('com.victronenergy.pvinverter')
 		newvalues = {}
 		pos = {0: '/Ac/PvOnGrid', 1: '/Ac/PvOnOutput', 2: '/Ac/PvOnGenset'}
-		total = {0: None, 1: None, 2: None}
 		for pvinverter in pvinverters:
 			# Position will be None if PV inverter service has just been removed (after retrieving the
 			# service list).
