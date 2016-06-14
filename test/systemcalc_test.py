@@ -6,9 +6,11 @@ import unittest
 
 # our own packages
 test_dir = os.path.dirname(__file__)
+sys.path.insert(0, test_dir)
 sys.path.insert(1, os.path.join(test_dir, '..', 'ext', 'velib_python', 'test'))
 sys.path.insert(1, os.path.join(test_dir, '..'))
 import dbus_systemcalc
+import gobject
 from logger import setup_logging
 from mock_dbus_monitor import MockDbusMonitor
 from mock_dbus_service import MockDbusService
@@ -32,12 +34,16 @@ class MockSystemCalc(dbus_systemcalc.SystemCalc):
 class TestSystemCalcBase(unittest.TestCase):
 	def __init__(self, methodName='runTest'):
 		unittest.TestCase.__init__(self, methodName)
+
+	def setUp(self):
+		gobject.timer_manager.reset()
 		self._system_calc = MockSystemCalc()
 		self._monitor = self._system_calc._dbusmonitor
 		self._service = self._system_calc._dbusservice
 
-	def _update_values(self):
-		self._system_calc._updatevalues()
+	def _update_values(self, interval=1000):
+		gobject.timer_manager.add_terminator(interval)
+		gobject.timer_manager.start()
 
 	def _add_device(self, service, values, connected=True, product_name='dummy', connection='dummy'):
 		values['/Connected'] = 1 if connected else 0
@@ -79,6 +85,9 @@ class TestSystemCalcBase(unittest.TestCase):
 class TestSystemCalc(TestSystemCalcBase):
 	def __init__(self, methodName='runTest'):
 		TestSystemCalcBase.__init__(self, methodName)
+
+	def setUp(self):
+		TestSystemCalcBase.setUp(self)
 		self._add_device('com.victronenergy.vebus.ttyO1',
 			product_name='Multi',
 			values={
@@ -1008,10 +1017,11 @@ class TestSystemCalc(TestSystemCalcBase):
 
 	def test_hub1_control_voltage_ve_can(self):
 		# Hub1 control should ignore VE.Can solarchargers
-		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub1/ChargeVoltage', 12.5)
+		# self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub1/ChargeVoltage', 12.5)
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
 			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
 			'/Dc/0/Voltage': 12.4,
 			'/Dc/0/Current': 9.7},
 			connection='VE.Can')
@@ -1050,6 +1060,37 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/ServiceMapping/com_victronenergy_battery_3' : 'com.victronenergy.battery.ttyO2'})
 		self._remove_device('com.victronenergy.battery.ttyO2')
 		self.assertFalse('/ServiceMapping/com_victronenergy_battery_3' in self._service)
+
+	def test_vebus_soc_writer(self):
+		self._set_setting('/Settings/SystemSetup/WriteVebusSoc', 1)
+		self._add_device('com.victronenergy.battery.ttyO2',
+						 product_name='battery',
+						 values={
+								 '/Dc/0/Voltage' : 12.3,
+								 '/Dc/0/Current': 5.3,
+								 '/Dc/0/Power': 65,
+								 '/Soc': 15.3,
+								 '/DeviceInstance': 2})
+		self.assertEqual(53.2, self._monitor.get_value('com.victronenergy.vebus.ttyO1', '/Soc'))
+		self._update_values(10000)
+		self.assertEqual(15.3, self._monitor.get_value('com.victronenergy.vebus.ttyO1', '/Soc'))
+
+	def test_vebus_soc_writer_vebus(self):
+		self._set_setting('/Settings/SystemSetup/WriteVebusSoc', 1)
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.vebus/0')
+		self._add_device('com.victronenergy.battery.ttyO2',
+						 product_name='battery',
+						 values={
+								 '/Dc/0/Voltage' : 12.3,
+								 '/Dc/0/Current': 5.3,
+								 '/Dc/0/Power': 65,
+								 '/Soc': 15.3,
+								 '/DeviceInstance': 2})
+		self.assertEqual(53.2, self._monitor.get_value('com.victronenergy.vebus.ttyO1', '/Soc'))
+		self._update_values(10000)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Soc', 54)
+		self._update_values(10000)
+		self.assertEqual(54, self._monitor.get_value('com.victronenergy.vebus.ttyO1', '/Soc'))
 
 
 class TestSystemCalcNoMulti(TestSystemCalcBase):

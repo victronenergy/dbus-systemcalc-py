@@ -134,7 +134,7 @@ class SystemCalc:
 
 		for m in self._modules:
 			for setting in m.get_settings():
-				supported_settings[setting[0]] = setting[1:]
+				supported_settings[setting[0]] = list(setting[1:])
 
 		self._settings = self._create_settings(supported_settings, self._handlechangedsetting)
 
