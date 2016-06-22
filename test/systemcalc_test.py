@@ -19,15 +19,14 @@ dbus_systemcalc.logger = setup_logging()
 
 
 class MockSystemCalc(dbus_systemcalc.SystemCalc):
-	def __init__(self):
-		dbusservice = MockDbusService('com.victronenergy.system')
-		dbus_systemcalc.SystemCalc.__init__(self, dbusservice)
-
 	def _create_dbus_monitor(self, *args, **kwargs):
 		return MockDbusMonitor( *args, **kwargs)
 
 	def _create_settings(self, *args, **kwargs):
 		return MockSettingsDevice(*args, **kwargs)
+
+	def _create_dbus_service(self):
+		return MockDbusService('com.victronenergy.system')
 
 
 class TestSystemCalcBase(unittest.TestCase):

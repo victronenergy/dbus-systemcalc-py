@@ -22,15 +22,13 @@ from sc_utils import safeadd as _safeadd, safemax as _safemax
 softwareVersion = '1.26'
 
 class SystemCalc:
-	def __init__(self, dbusservice):
+	def __init__(self):
 		self.STATE_IDLE = 0
 		self.STATE_CHARGING = 1
 		self.STATE_DISCHARGING = 2
 
 		self.BATSERVICE_DEFAULT = 'default'
 		self.BATSERVICE_NOBATTERY = 'nobattery'
-
-		self._dbusservice = dbusservice
 
 		# Why this dummy? Because DbusMonitor expects these values to be there, even though we don't
 		# need them. So just add some dummy data. This can go away when DbusMonitor is more generic.
@@ -139,6 +137,8 @@ class SystemCalc:
 
 		self._settings = self._create_settings(supported_settings, self._handlechangedsetting)
 
+		self._dbusservice = self._create_dbus_service()
+
 		for m in self._modules:
 			m.set_sources(self._dbusmonitor, self._settings, self._dbusservice)
 
@@ -235,6 +235,9 @@ class SystemCalc:
 		raise Exception("This function should be overridden")
 
 	def _create_settings(self, *args, **kwargs):
+		raise Exception("This function should be overridden")
+
+	def _create_dbus_service(self):
 		raise Exception("This function should be overridden")
 
 	def _handlechangedsetting(self, setting, oldvalue, newvalue):
@@ -670,7 +673,14 @@ class SystemCalc:
 
 
 class DbusSystemCalc(SystemCalc):
-	def __init__(self):
+	def _create_dbus_monitor(self, *args, **kwargs):
+		return DbusMonitor(*args, **kwargs)
+
+	def _create_settings(self, *args, **kwargs):
+		bus = dbus.SessionBus() if 'DBUS_SESSION_BUS_ADDRESS' in os.environ else dbus.SystemBus()
+		return SettingsDevice(bus, *args, **kwargs)
+
+	def _create_dbus_service(self):
 		dbusservice = VeDbusService('com.victronenergy.system')
 		dbusservice.add_mandatory_paths(
 			processname=__file__,
@@ -682,14 +692,7 @@ class DbusSystemCalc(SystemCalc):
 			firmwareversion=None,
 			hardwareversion=None,
 			connected=1)
-		SystemCalc.__init__(self, dbusservice)
-
-	def _create_dbus_monitor(self, *args, **kwargs):
-		return DbusMonitor(*args, **kwargs)
-
-	def _create_settings(self, *args, **kwargs):
-		bus = dbus.SessionBus() if 'DBUS_SESSION_BUS_ADDRESS' in os.environ else dbus.SystemBus()
-		return SettingsDevice(bus, *args, **kwargs)
+		return dbusservice
 
 
 if __name__ == "__main__":
