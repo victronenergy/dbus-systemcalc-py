@@ -17,10 +17,11 @@ VEDLIB_FILES = \
 	$(VEDLIBDIR)/settingsdevice.py \
 	$(VEDLIBDIR)/dbusmonitor.py
 
-help :
-	@ echo "The following make targets are available"
-	@ echo " help - print this message"
-	@ echo " install - install everything"
+help:
+	@echo "The following make targets are available"
+	@echo " help - print this message"
+	@echo " install - install everything"
+	@echo " clean - remove temporary files"
 
 install_app : $(FILES)
 	@if [ "$^" != "" ]; then \
@@ -35,6 +36,8 @@ install_velib_python: $(VEDLIB_FILES)
 		$(INSTALL_CMD) -t $(DESTDIR)$(LIBDIR) $^; \
 		echo installed $(DESTDIR)$(LIBDIR)/$(notdir $^); \
 	fi
+
+clean: ;
 
 install: install_velib_python install_app
 
