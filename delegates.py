@@ -377,7 +377,8 @@ class LgCircuitBreakerDetect(SystemCalcDelegate):
 class ServiceSupervisor(SystemCalcDelegate):
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)
-		self._supervised = {}
+		self._supervised = set()
+		self._busy = set()
 		gobject.timeout_add(60000, exit_on_error, self._process_supervised)
 
 	def get_input(self):
@@ -388,36 +389,42 @@ class ServiceSupervisor(SystemCalcDelegate):
 	def device_added(self, service, instance, do_service_change=True):
 		service_type = service.split('.')[2]
 		if service_type == 'battery' or service_type == 'solarcharger':
-			try:
-				proxy = self._dbusmonitor.dbusConn.get_object(service, '/ProductId', introspect=False)
-				method = proxy.get_dbus_method('GetValue')
-				self._supervised[service] = method
-			except dbus.DBusException:
-				pass
+			self._supervised.add(service)
 
 	def device_removed(self, service, instance):
-		if service in self._supervised:
-			del self._supervised[service]
+		self._supervised.discard(service)
+		self._busy.discard(service)
+
+	def is_busy(self, service):
+		return service in self._busy
 
 	def _process_supervised(self):
-		for service, method in self._supervised.items():
+		for service in self._supervised:
 			# Do an async call. If the owner of the service does not answer, we do not want to wait for
 			# the timeout here.
 			# Do not use lambda function in the async call, because the lambda functions will be executed
 			# after completion of the loop, and the service parameter will have the value that was assigned
 			# to it in the last iteration. Instead we use functools.partial, which will 'freeze' the current
 			# value of service.
-			method.call_async(error_handler=functools.partial(exit_on_error, self._supervise_failed, service))
+			self._busy.add(service)
+			self._dbusmonitor.dbusConn.call_async(
+				service, '/ProductId', None, 'GetValue', '', [],
+				functools.partial(exit_on_error, self._supervise_success, service),
+				functools.partial(exit_on_error, self._supervise_failed, service))
 		return True
+
+	def _supervise_success(self, service, value):
+		self._busy.discard(service)
 
 	def _supervise_failed(self, service, error):
 		try:
+			self._busy.discard(service)
 			if error.get_dbus_name() != 'org.freedesktop.DBus.Error.NoReply':
 				logging.info('Ignoring supervise error from %s: %s' % (service, error))
 				return
 			logging.error('%s is not responding to D-Bus requests' % service)
-			proxy = self._dbusmonitor.dbusConn.get_object('org.freedesktop.DBus', '/', introspect=False)
-			pid = proxy.GetConnectionUnixProcessID(service)
+			pid = self._dbusmonitor.dbusConn.call_blocking('org.freedesktop.DBus', '/', None,
+				'GetConnectionUnixProcessID', 's', [service])
 			if pid is not None and pid > 1:
 				logging.error('killing owner of %s (pid=%s)' % (service, pid))
 				os.kill(pid, signal.SIGKILL)
