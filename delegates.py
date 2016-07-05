@@ -144,15 +144,18 @@ class Hub1Bridge(SystemCalcDelegate):
 		for service in self._solarchargers:
 			# We use /Link/NetworkMode to detect Hub-1 support in the solarcharger. Existence of this item
 			# implies existence of the other /Link/* fields
-			network_mode_item = self._dbusmonitor.get_item(service, '/Link/NetworkMode')
-			if network_mode_item.get_value() != None:
-				network_mode_item.set_value(dbus.Int32(5, variant_level=1)) # On & Hub-1
-				charge_voltage_item = self._dbusmonitor.get_item(service, '/Link/ChargeVoltage')
-				charge_voltage_item.set_value(charge_voltage)
-				firmware_version = self._dbusmonitor.get_value(service, '/FirmwareVersion')
-				if state != None and firmware_version is not None and (firmware_version & 0x0FFF) == 0x0117:
-					state_item = self._dbusmonitor.get_item(service, '/State')
-					state_item.set_value(state)
+			try:
+				network_mode_item = self._dbusmonitor.get_item(service, '/Link/NetworkMode')
+				if network_mode_item.get_value() != None:
+					network_mode_item.set_value(dbus.Int32(5, variant_level=1)) # On & Hub-1
+					charge_voltage_item = self._dbusmonitor.get_item(service, '/Link/ChargeVoltage')
+					charge_voltage_item.set_value(dbus.Double(charge_voltage, variant_level=1))
+					firmware_version = self._dbusmonitor.get_value(service, '/FirmwareVersion')
+					if state != None and firmware_version is not None and (firmware_version & 0x0FFF) == 0x0117:
+						state_item = self._dbusmonitor.get_item(service, '/State')
+						state_item.set_value(dbus.Int32(state, variant_level=1))
+			except dbus.exceptions.DBusException:
+				pass
 
 	def _update_charge_current(self, newvalues):
 		# Not used right now, because vebus does not offer a path to write the total charge current
@@ -224,7 +227,11 @@ class VebusSocWriter(SystemCalcDelegate):
 		if active_battery_service == None or active_battery_service.startswith('com.victronenergy.vebus'):
 			return True
 		logging.debug("writing this soc to vebus: %d", soc)
-		self._dbusmonitor.get_item(vebus_service, '/Soc').set_value(soc)
+		try:
+			# Vebus service may go offline while we write this SoC
+			self._dbusmonitor.get_item(vebus_service, '/Soc').set_value(dbus.Double(soc, variant_level=1))
+		except dbus.exceptions.DBusException:
+			pass
 		return True
 
 
