@@ -109,7 +109,7 @@ class Hub1Bridge(SystemCalcDelegate):
 			('com.victronenergy.vebus',
 				['/Hub1/ChargeVoltage', '/State']),
 			('com.victronenergy.solarcharger',
-				['/Link/NetworkMode', '/Link/ChargeVoltage', '/State'])]
+				['/Link/NetworkMode', '/Link/ChargeVoltage', '/State', '/FirmwareVersion'])]
 
 	def device_added(self, service, instance, do_service_change=True):
 		service_type = service.split('.')[2]
@@ -149,7 +149,8 @@ class Hub1Bridge(SystemCalcDelegate):
 				network_mode_item.set_value(dbus.Int32(5, variant_level=1)) # On & Hub-1
 				charge_voltage_item = self._dbusmonitor.get_item(service, '/Link/ChargeVoltage')
 				charge_voltage_item.set_value(charge_voltage)
-				if state != None:
+				firmware_version = self._dbusmonitor.get_value(service, '/FirmwareVersion')
+				if state != None and firmware_version is not None and (firmware_version & 0x0FFF) == 0x0117:
 					state_item = self._dbusmonitor.get_item(service, '/State')
 					state_item.set_value(state)
 

@@ -980,7 +980,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self.assertEqual([0xB0FE], self._service['/PvInvertersProductIds'])
 
-	def test_hub1_control_voltage(self):
+	def test_hub1_control_voltage_with_state(self):
 		self._update_values()
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub1/ChargeVoltage', 12.6)
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', 2)
@@ -988,11 +988,27 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/State': 0,
 			'/Link/NetworkMode': 0,
 			'/Dc/0/Voltage': 12.4,
-			'/Dc/0/Current': 9.7},
+			'/Dc/0/Current': 9.7,
+			'/FirmwareVersion': 0xE117},
 			connection='VE.Direct')
 		self._update_values()
 		self.assertEqual(12.6, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1', '/Link/ChargeVoltage'))
 		self.assertEqual(2, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1', '/State'))
+
+	def test_hub1_control_voltage_without_state(self):
+		self._update_values()
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub1/ChargeVoltage', 12.6)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', 2)
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Dc/0/Voltage': 12.4,
+			'/Dc/0/Current': 9.7,
+			'/FirmwareVersion': 0x0119},
+			connection='VE.Direct')
+		self._update_values()
+		self.assertEqual(12.6, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1', '/Link/ChargeVoltage'))
+		self.assertEqual(0, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1', '/State'))
 
 	def test_hub1_control_voltage_multiple_solarchargers(self):
 		self._update_values()
@@ -1002,18 +1018,21 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/State': 0,
 			'/Link/NetworkMode': 0,
 			'/Dc/0/Voltage': 12.4,
-			'/Dc/0/Current': 9.7},
+			'/Dc/0/Current': 9.7,
+			'/FirmwareVersion': 0x0117},
 			connection='VE.Direct')
 		self._add_device('com.victronenergy.solarcharger.ttyO2', {
 			'/State': 0,
 			'/Link/NetworkMode': 0,
 			'/Dc/0/Voltage': 12.6,
-			'/Dc/0/Current': 9.3},
+			'/Dc/0/Current': 9.3,
+			'/FirmwareVersion': 0x0118},
 			connection='VE.Direct')
 		self._update_values()
 		self.assertEqual(12.5, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1', '/Link/ChargeVoltage'))
 		self.assertEqual(12.5, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeVoltage'))
 		self.assertEqual(2, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1', '/State'))
+		self.assertEqual(0, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/State'))
 
 	def test_hub1_control_voltage_ve_can(self):
 		# Hub1 control should ignore VE.Can solarchargers
