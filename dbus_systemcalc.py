@@ -108,15 +108,16 @@ class SystemCalc:
 				'/Settings/SystemSetup/AcInput2' : dummy}
 		}
 
+		service_supervisor = delegates.ServiceSupervisor()
 		self._modules = [
 			delegates.HubTypeSelect(),
 			delegates.VebusSocWriter(),
 			delegates.ServiceMapper(),
-			delegates.ServiceSupervisor(),
+			service_supervisor,
 			delegates.RelayState(),
 			delegates.BuzzerControl(),
 			delegates.LgCircuitBreakerDetect(),
-			delegates.Hub1Bridge()]
+			delegates.Hub1Bridge(service_supervisor)]
 
 		for m in self._modules:
 			for service, paths in m.get_input():

@@ -100,9 +100,10 @@ class HubTypeSelect(SystemCalcDelegate):
 
 
 class Hub1Bridge(SystemCalcDelegate):
-	def __init__(self):
+	def __init__(self, service_supervisor):
 		self._solarchargers = []
 		self._timer = None
+		self._service_supervisor = service_supervisor
 
 	def get_input(self):
 		return [
@@ -142,6 +143,9 @@ class Hub1Bridge(SystemCalcDelegate):
 			return # This is not a Hub-1 system, or a VE.Can Hub-1 system
 		state = self._dbusmonitor.get_value(vebus_path, '/State')
 		for service in self._solarchargers:
+			if self._service_supervisor.is_busy(service):
+				logging.debug('Solarcharger being supervised: {}'.format(service))
+				continue
 			# We use /Link/NetworkMode to detect Hub-1 support in the solarcharger. Existence of this item
 			# implies existence of the other /Link/* fields
 			try:
