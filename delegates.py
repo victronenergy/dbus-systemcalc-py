@@ -274,7 +274,7 @@ class RelayState(SystemCalcDelegate):
 		try:
 			path = self._relays[dbus_path]
 			with open(path, 'wt') as w:
-				w.write('1'  if value == 1 else '0')
+				w.write('1'  if int(value) == 1 else '0')
 			return True
 		except (IOError, ValueError):
 			traceback.print_exc()
@@ -296,14 +296,17 @@ class BuzzerControl(SystemCalcDelegate):
 		logging.info('Buzzer found: {}'.format(self._path))
 
 	def _on_buzzer_state_changed(self, value):
-		if value == 1:
-			if self._timer == None:
-				self._timer = gobject.timeout_add(500, exit_on_error, self._on_timer)
-				self._set_buzzer(True)
-		elif self._timer != None:
-			gobject.source_remove(self._timer)
-			self._timer = None
-			self._set_buzzer(False)
+		try:
+			if int(value) == 1:
+				if self._timer == None:
+					self._timer = gobject.timeout_add(500, exit_on_error, self._on_timer)
+					self._set_buzzer(True)
+			elif self._timer != None:
+				gobject.source_remove(self._timer)
+				self._timer = None
+				self._set_buzzer(False)
+		except ValueError:
+			traceback.print_exc()
 		return True
 
 	def _on_timer(self):
@@ -316,7 +319,7 @@ class BuzzerControl(SystemCalcDelegate):
 				w.write('1' if on else '0')
 			self._buzzer_on = on
 			return True
-		except (IOError, ValueError):
+		except IOError:
 			traceback.print_exc()
 			return False
 
