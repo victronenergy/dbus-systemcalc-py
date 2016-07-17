@@ -338,6 +338,17 @@ class SystemCalc:
 				productids.append(pid)
 		self._dbusservice['/PvInvertersProductIds'] = dbus.Array(productids, signature='i')
 
+	def _updatepvinverterspidlist(self):
+		# Create list of connected pv inverters id's
+		pvinverters = self._dbusmonitor.get_service_list('com.victronenergy.pvinverter')
+		productids = []
+
+		for pvinverter in pvinverters:
+			pid = self._dbusmonitor.get_value(pvinverter, '/ProductId')
+			if pid not in productids:
+				productids.append(pid)
+		self._dbusservice['/PvInvertersProductIds'] = productids if productids else None
+
 	def _updatevalues(self):
 		# ==== PREPARATIONS ====
 		# Determine values used in logic below
