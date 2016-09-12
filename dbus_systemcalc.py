@@ -679,7 +679,7 @@ class DbusSystemCalc(SystemCalc):
 
 	def _create_settings(self, *args, **kwargs):
 		bus = dbus.SessionBus() if 'DBUS_SESSION_BUS_ADDRESS' in os.environ else dbus.SystemBus()
-		return SettingsDevice(bus, *args, **kwargs)
+		return SettingsDevice(bus, *args, timeout=10, **kwargs)
 
 	def _create_dbus_service(self):
 		dbusservice = VeDbusService('com.victronenergy.system')
