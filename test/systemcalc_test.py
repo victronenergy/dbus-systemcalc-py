@@ -1034,7 +1034,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self.assertEqual(2, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1', '/State'))
 		self.assertEqual(0, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/State'))
 
-	def test_hub1_control_voltage_ve_can(self):
+	def test_hub1_control_voltage_ve_can_solarchargers(self):
 		# Hub1 control should ignore VE.Can solarchargers
 		# self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub1/ChargeVoltage', 12.5)
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
@@ -1047,6 +1047,56 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self.assertEqual(None, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1', '/Link/ChargeVoltage'))
 		self.assertEqual(0, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1', '/State'))
+
+	def test_hub1_control_ve_can_service(self):
+		self._update_values()
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub1/ChargeVoltage', 12.63)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', 2)
+		self._add_device('com.victronenergy.vecan.can0', {
+			'/Link/ChargeVoltage': None },
+			connection='VE.Direct')
+		self.assertEqual(12.63, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub1/ChargeVoltage', 13.2)
+		self._add_device('com.victronenergy.vecan.can1', {
+			'/Link/ChargeVoltage': None },
+			connection='VE.Direct')
+		self.assertEqual(13.2, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
+		self.assertEqual(13.2, self._monitor.get_value('com.victronenergy.vecan.can1', '/Link/ChargeVoltage'))
+		self._remove_device('com.victronenergy.vecan.can0')
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub1/ChargeVoltage', 13.1)
+		self._update_values(interval=10000)
+		self.assertEqual(None, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
+		self.assertEqual(13.1, self._monitor.get_value('com.victronenergy.vecan.can1', '/Link/ChargeVoltage'))
+
+	def test_hub1_control_ve_can_and_solar_charger(self):
+		self._update_values()
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub1/ChargeVoltage', 12.63)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', 2)
+		self._add_device('com.victronenergy.vecan.can0', {
+			'/Link/ChargeVoltage': 12.3 },
+			connection='VE.Direct')
+		self.assertEqual(12.63, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 9.3,
+			'/FirmwareVersion': 0x0118},
+			connection='VE.Direct')
+		self.assertEqual(12.63, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
+		self.assertEqual(12.63, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeVoltage'))
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub1/ChargeVoltage', 12.53)
+		self._update_values(interval=10000)
+		self.assertEqual(12.53, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
+		self.assertEqual(12.53, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeVoltage'))
+
+	def test_hub1_control_ve_can_service_no_setpoint(self):
+		self._update_values()
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub1/ChargeVoltage', 12.65)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', 2)
+		self._add_device('com.victronenergy.vecan.can0', {}, connection='VE.Direct')
+		self._update_values()
+		self.assertEqual(12.65, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
 
 	@unittest.skip("Disabled in source")
 	def test_hub1_control_current(self):
