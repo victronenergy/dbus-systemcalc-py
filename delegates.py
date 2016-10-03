@@ -178,22 +178,6 @@ class Hub1Bridge(SystemCalcDelegate):
 			except dbus.exceptions.DBusException:
 				pass
 
-	def _update_charge_current(self, newvalues):
-		# Not used right now, because vebus does not offer a path to write the total charge current
-		# @todo EV Also add vecan chargers.
-		vebus_path = self._get_vebus_path(newvalues)
-		if vebus_path == None:
-			return
-		charge_current_item = self._dbusmonitor.get_item(vebus_path, '/Hub1/ChargeCurrent')
-		if charge_current_item.get_value() == None:
-			return
-		total_charge_current = 0
-		for service in self._solarchargers:
-			charge_current = self._dbusmonitor.get_value(service, '/Dc/0/Current')
-			if charge_current != None:
-				total_charge_current += charge_current
-		charge_current_item.set_value(dbus.Double(total_charge_current, variant_level=1))
-
 	def _get_vebus_path(self, newvalues=None):
 		if newvalues == None:
 			if '/VebusService' not in self._dbusservice:
@@ -230,23 +214,37 @@ class VebusSocWriter(SystemCalcDelegate):
 		gobject.timeout_add(10000, exit_on_error, self._write_vebus_soc)
 
 	def get_input(self):
-		return [('com.victronenergy.vebus', ['/Soc'])]
+		return [('com.victronenergy.vebus', ['/Soc', '/ExtraBatteryCurrent'])]
 
 	def get_settings(self):
 		return [('writevebussoc', '/Settings/SystemSetup/WriteVebusSoc', 0, 0, 1)]
 
+	def update_values(self, newvalues):
+		vebus_service = newvalues.get('/VebusService')
+		if vebus_service == None:
+			return
+		if self._must_write_soc(vebus_service):
+			return
+		# Always write the extra current, even if there is no solarcharge present. We need this because once
+		# an SoC is written to the vebus service, the vebus device will stop adjusing its SoC until an
+		# extra current is written.
+		total_charge_current = newvalues.get('/Dc/Pv/Current', 0)
+		try:
+			charge_current_item = self._dbusmonitor.get_item(vebus_service, '/ExtraBatteryCurrent')
+			if charge_current_item.get_value() == None:
+				return
+			charge_current_item.set_value(dbus.Double(total_charge_current, variant_level=1))
+		except dbus.exceptions.DBusException:
+			pass
+
 	def _write_vebus_soc(self):
-		write_vebus_soc = self._settings['writevebussoc']
-		if not write_vebus_soc:
-			return True
 		vebus_service = self._dbusservice['/VebusService']
 		if vebus_service == None:
 			return True
+		if not self._must_write_soc(vebus_service):
+			return True
 		soc = self._dbusservice['/Dc/Battery/Soc']
 		if soc == None:
-			return True
-		active_battery_service = self._dbusservice['/ActiveBatteryService']
-		if active_battery_service == None or active_battery_service.startswith('com.victronenergy.vebus'):
 			return True
 		logging.debug("writing this soc to vebus: %d", soc)
 		try:
@@ -254,6 +252,15 @@ class VebusSocWriter(SystemCalcDelegate):
 			self._dbusmonitor.get_item(vebus_service, '/Soc').set_value(dbus.Double(soc, variant_level=1))
 		except dbus.exceptions.DBusException:
 			pass
+		return True
+
+	def _must_write_soc(self, vebus_service):
+		write_vebus_soc = self._settings['writevebussoc']
+		if not write_vebus_soc:
+			return False
+		active_battery_service = self._dbusservice['/ActiveBatteryService']
+		if active_battery_service == None or active_battery_service.startswith('com.victronenergy.vebus'):
+			return False
 		return True
 
 
