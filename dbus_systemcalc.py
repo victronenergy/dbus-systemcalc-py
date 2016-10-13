@@ -319,16 +319,20 @@ class SystemCalc:
 		if len(batteries) > 0:
 			return sorted(batteries)[0]  # Pick a random battery service
 
-		if self._get_first_connected_service('com.victronenergy.solarcharger') is not None:
-			return None
-
 		if self._get_first_connected_service('com.victronenergy.charger') is not None:
 			return None
 
-		vebus_services = self._get_first_connected_service('com.victronenergy.vebus')
-		if vebus_services is None:
+		vebus_service = self._get_first_connected_service('com.victronenergy.vebus')
+		if vebus_service is None:
 			return None
-		return vebus_services[0]
+
+		if self._dbusmonitor.get_value(vebus_service[0], '/ExtraBatteryCurrent') is not None:
+			return vebus_service[0]
+
+		if self._get_first_connected_service('com.victronenergy.solarcharger') is not None:
+			return None
+
+		return vebus_service[0]
 
 	# Called on a one second timer
 	def _handletimertick(self):

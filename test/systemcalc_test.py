@@ -563,6 +563,35 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Dc/Battery/Voltage': 12.25,
 			'/ActiveBatteryService': 'com.victronenergy.vebus/0'})
 
+	def test_battery_selection_solarcharger(self):
+		self._add_device('com.victronenergy.solarcharger.ttyO1',
+						 product_name='solarcharger',
+						 values={
+								 '/Dc/0/Voltage' : 12.4,
+								 '/Dc/0/Current': 9.7})
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Soc': None,
+			'/Dc/Battery/Current': (9.7 * 12.4 - 12.25 * 8) / 12.4,
+			'/Dc/Battery/Power': 9.7 * 12.4 - 12.25 * 8,
+			'/Dc/Battery/Voltage': 12.4,
+			'/ActiveBatteryService': None})
+
+	def test_battery_selection_solarcharger_extra_current(self):
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent', 0)
+		self._add_device('com.victronenergy.solarcharger.ttyO1',
+						 product_name='solarcharger',
+						 values={
+								 '/Dc/0/Voltage' : 12.4,
+								 '/Dc/0/Current': 9.7})
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Soc': 53.2,
+			'/Dc/Battery/Current': -8,
+			'/Dc/Battery/Power': -12.25 * 8,
+			'/Dc/Battery/Voltage': 12.25,
+			'/ActiveBatteryService': 'com.victronenergy.vebus/0'})
+
 	def test_battery_selection_no_battery(self):
 		self._update_values()
 		self._set_setting('/Settings/SystemSetup/BatteryService', 'nobattery')
