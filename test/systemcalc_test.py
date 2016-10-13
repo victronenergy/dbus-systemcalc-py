@@ -616,11 +616,11 @@ class TestSystemCalc(TestSystemCalcBase):
 								 '/Dc/0/Current': 9.7})
 		self._update_values()
 		self._check_values({
-			'/Dc/Battery/Soc': None,
-			'/Dc/Battery/Current': (12.4 * 9.7 -12.25 * 8) / 12.4,
+			'/Dc/Battery/Soc': 53.2,
+			'/Dc/Battery/Current': (12.4 * 9.7 - 12.25 * 8) / 12.4,
 			'/Dc/Battery/Power': 12.4 * 9.7 -12.25 * 8,
 			'/Dc/Battery/Voltage': 12.4,
-			'/ActiveBatteryService': None})
+			'/ActiveBatteryService': 'com.victronenergy.vebus/0'})
 		self.assertEqual(9.7, self._monitor.get_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent'))
 
 	def test_battery_selection_no_battery(self):

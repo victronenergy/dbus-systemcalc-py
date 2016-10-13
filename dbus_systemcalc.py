@@ -319,16 +319,20 @@ class SystemCalc:
 		if len(batteries) > 0:
 			return sorted(batteries)[0]  # Pick a random battery service
 
-		if self._get_first_connected_service('com.victronenergy.solarcharger') is not None:
-			return None
-
 		if self._get_first_connected_service('com.victronenergy.charger') is not None:
 			return None
 
-		vebus_services = self._get_first_connected_service('com.victronenergy.vebus')
-		if vebus_services is None:
+		vebus_service = self._get_first_connected_service('com.victronenergy.vebus')
+		if vebus_service is None:
 			return None
-		return vebus_services[0]
+
+		if self._dbusmonitor.get_value(vebus_service[0], '/ExtraBatteryCurrent') is not None and self._settings['hasdcsystem'] == 0:
+			return vebus_service[0]
+
+		if self._get_first_connected_service('com.victronenergy.solarcharger') is not None:
+			return None
+
+		return vebus_service[0]
 
 	# Called on a one second timer
 	def _handletimertick(self):
@@ -430,11 +434,23 @@ class SystemCalc:
 				newvalues['/Dc/Battery/Power'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Power')
 
 			elif batteryservicetype == 'vebus':
-				newvalues['/Dc/Battery/Voltage'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Voltage')
-				newvalues['/Dc/Battery/Current'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
-				if newvalues['/Dc/Battery/Voltage'] is not None and newvalues['/Dc/Battery/Current'] is not None:
-					newvalues['/Dc/Battery/Power'] = (
-						newvalues['/Dc/Battery/Voltage'] * newvalues['/Dc/Battery/Current'])
+				if self._settings['hasdcsystem'] == 1 or \
+					newvalues.get('/Dc/Pv/Power') is None or \
+					self._dbusmonitor.get_value(self._batteryservice, '/ExtraBatteryCurrent') is None:
+					newvalues['/Dc/Battery/Voltage'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Voltage')
+					newvalues['/Dc/Battery/Current'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
+					if newvalues['/Dc/Battery/Voltage'] is not None and newvalues['/Dc/Battery/Current'] is not None:
+						newvalues['/Dc/Battery/Power'] = (
+							newvalues['/Dc/Battery/Voltage'] * newvalues['/Dc/Battery/Current'])
+				else:
+					vebus_voltage = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Voltage')
+					vebus_current = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
+					vebus_power = None if vebus_voltage is None or vebus_current is None else vebus_current * vebus_voltage
+					battery_power = _safeadd(newvalues.get('/Dc/Pv/Power', 0), vebus_power)
+					battery_voltage = solarcharger_batteryvoltage or vebus_voltage
+					newvalues['/Dc/Battery/Current'] = battery_power / battery_voltage if battery_voltage > 0 else None
+					newvalues['/Dc/Battery/Power'] = battery_power
+					newvalues['/Dc/Battery/Voltage'] = battery_voltage
 
 			p = newvalues.get('/Dc/Battery/Power', None)
 			if p is not None:
