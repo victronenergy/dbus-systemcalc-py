@@ -174,6 +174,17 @@ class SystemCalc:
 			'/Ac/Genset/NumberOfPhases': {'gettext': '%.0F W'},
 			'/Ac/Genset/ProductId': {'gettext': '%s'},
 			'/Ac/Genset/DeviceType': {'gettext': '%s'},
+			'/Ac/ConsumptionOnOutput/NumberOfPhases': {'gettext': '%.0F W'},
+			'/Ac/ConsumptionOnOutput/L1/Power': {'gettext': '%.0F W'},
+			'/Ac/ConsumptionOnOutput/L2/Power': {'gettext': '%.0F W'},
+			'/Ac/ConsumptionOnOutput/L3/Power': {'gettext': '%.0F W'},
+			'/Ac/ConsumptionOnOutput/Total/Power': {'gettext': '%.0F W'},
+			'/Ac/ConsumptionOnInput/NumberOfPhases': {'gettext': '%.0F W'},
+			'/Ac/ConsumptionOnInput/L1/Power': {'gettext': '%.0F W'},
+			'/Ac/ConsumptionOnInput/L2/Power': {'gettext': '%.0F W'},
+			'/Ac/ConsumptionOnInput/L3/Power': {'gettext': '%.0F W'},
+			'/Ac/ConsumptionOnInput/Total/Power': {'gettext': '%.0F W'},
+			'/Ac/Consumption/NumberOfPhases': {'gettext': '%.0F W'},
 			'/Ac/Consumption/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/Consumption/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/Consumption/L3/Power': {'gettext': '%.0F W'},
@@ -539,6 +550,8 @@ class SystemCalc:
 				else:
 					if uses_active_input:
 						p = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/P' % phase)
+						if p is not None:
+							consumption[phase] = _safeadd(0, consumption[phase])
 					# No relevant energy meter present. Assume there is no load between the grid and the multi.
 					# There may be a PV inverter present though (Hub-3 setup).
 					if pvpower != None:
@@ -559,8 +572,12 @@ class SystemCalc:
 			if multi_path is not None:
 				ac_out = self._dbusmonitor.get_value(multi_path, '/Ac/Out/%s/P' % phase)
 				c = _safeadd(c, ac_out)
+			newvalues['/Ac/ConsumptionOnOutput/%s/Power' % phase] = _safemax(0, c)
+			newvalues['/Ac/ConsumptionOnInput/%s/Power' % phase] = consumption[phase]
 			newvalues['/Ac/Consumption/%s/Power' % phase] = _safeadd(consumption[phase], _safemax(0, c))
 		self._compute_phase_totals('/Ac/Consumption', newvalues)
+		self._compute_phase_totals('/Ac/ConsumptionOnOutput', newvalues)
+		self._compute_phase_totals('/Ac/ConsumptionOnInput', newvalues)
 
 		for m in self._modules:
 			m.update_values(newvalues)
