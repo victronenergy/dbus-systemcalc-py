@@ -4,6 +4,7 @@
 import dbus
 import functools
 import gobject
+import itertools
 import logging
 import os
 import sc_utils
@@ -220,16 +221,16 @@ class ServiceMapper(SystemCalcDelegate):
 
 
 class VebusSocWriter(SystemCalcDelegate):
+	_hub2_assistant_ids = set([0x0134, 0x0135, 0x0137, 0x0138, 0x013A, 0x141, 0x0146, 0x014D])
+
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)
 		gobject.idle_add(exit_on_error, lambda: not self._write_vebus_soc())
 		gobject.timeout_add(10000, exit_on_error, self._write_vebus_soc)
+		self._is_hub2 = None
 
 	def get_input(self):
-		return [('com.victronenergy.vebus', ['/Soc', '/ExtraBatteryCurrent'])]
-
-	def get_settings(self):
-		return [('writevebussoc', '/Settings/SystemSetup/WriteVebusSoc', 0, 0, 1)]
+		return [('com.victronenergy.vebus', ['/Soc', '/ExtraBatteryCurrent', '/Devices/0/Assistants'])]
 
 	def get_output(self):
 		return [('/Control/ExtraBatteryCurrent', {'gettext': '%s'})]
@@ -241,7 +242,7 @@ class VebusSocWriter(SystemCalcDelegate):
 	def update_values(self, newvalues):
 		vebus_service = newvalues.get('/VebusService')
 		current_written = 0
-		if vebus_service != None and not self._must_write_soc():
+		if vebus_service != None and not self._must_write_soc(vebus_service):
 			# Always write the extra current, even if there is no solarcharge present. We need this because once
 			# an SoC is written to the vebus service, the vebus device will stop adjusing its SoC until an
 			# extra current is written.
@@ -258,27 +259,40 @@ class VebusSocWriter(SystemCalcDelegate):
 	def _write_vebus_soc(self):
 		vebus_service = self._dbusservice['/VebusService']
 		soc_written = 0
-		if vebus_service != None and self._must_write_soc():
-			soc = self._dbusservice['/Dc/Battery/Soc']
-			if soc != None:
-				logging.debug("writing this soc to vebus: %d", soc)
-				try:
-					# Vebus service may go offline while we write this SoC
-					self._dbusmonitor.get_item(vebus_service, '/Soc').set_value(dbus.Double(soc, variant_level=1))
-					soc_written = 1
-				except dbus.exceptions.DBusException:
-					pass
+		if vebus_service != None:
+			self._update_hub2_presence(vebus_service)
+			if self._must_write_soc(vebus_service):
+				soc = self._dbusservice['/Dc/Battery/Soc']
+				if soc != None:
+					logging.debug("writing this soc to vebus: %d", soc)
+					try:
+						# Vebus service may go offline while we write this SoC
+						self._dbusmonitor.get_item(vebus_service, '/Soc').set_value(dbus.Double(soc, variant_level=1))
+						soc_written = 1
+					except dbus.exceptions.DBusException:
+						pass
 		self._dbusservice['/Control/VebusSoc'] = soc_written
 		return True
 
-	def _must_write_soc(self):
-		write_vebus_soc = self._settings['writevebussoc']
-		if not write_vebus_soc:
+	def _must_write_soc(self, vebus_service):
+		if self._is_hub2 == None:
+			self._update_hub2_presence(vebus_service)
+		if self._is_hub2:
 			return False
 		active_battery_service = self._dbusservice['/ActiveBatteryService']
 		if active_battery_service == None or active_battery_service.startswith('com.victronenergy.vebus'):
 			return False
 		return True
+
+	def _update_hub2_presence(self, vebus_service):
+		value = self._dbusmonitor.get_value(vebus_service, '/Devices/0/Assistants')
+		if value == None:
+			self._is_hub2 = True
+			return
+		ids = set(i[0] | i[1] * 256 for i in itertools.izip(\
+			itertools.islice(value, 0, None, 2), \
+			itertools.islice(value, 1, None, 2)))
+		self._is_hub2 = len(set(ids).intersection(VebusSocWriter._hub2_assistant_ids)) > 0
 
 
 class RelayState(SystemCalcDelegate):
