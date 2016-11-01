@@ -111,9 +111,13 @@ class Hub1Bridge(SystemCalcDelegate):
 			('com.victronenergy.vebus',
 				['/Hub1/ChargeVoltage', '/State']),
 			('com.victronenergy.solarcharger',
-				['/Link/NetworkMode', '/Link/ChargeVoltage', '/State', '/FirmwareVersion']),
+				['/Link/NetworkMode', '/Link/ChargeVoltage', '/State', '/FirmwareVersion', '/Mgmt/Connection']),
 			('com.victronenergy.vecan',
 				['/Link/ChargeVoltage'])]
+
+	def set_sources(self, dbusmonitor, settings, dbusservice):
+		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
+		self._dbusservice.add_path('/Control/SolarChargeVoltage', value=0)
 
 	def device_added(self, service, instance, do_service_change=True):
 		service_type = service.split('.')[2]
@@ -145,38 +149,46 @@ class Hub1Bridge(SystemCalcDelegate):
 		return True
 
 	def _update_solarchargers(self):
+		voltage_written = 0
 		vebus_path = self._get_vebus_path()
-		if vebus_path == None:
-			return
-		charge_voltage = self._dbusmonitor.get_value(vebus_path, '/Hub1/ChargeVoltage')
-		if charge_voltage == None:
-			return # This is not a Hub-1 system, or a VE.Can Hub-1 system
-		state = self._dbusmonitor.get_value(vebus_path, '/State')
-		for service in self._solarchargers:
-			if self._service_supervisor.is_busy(service):
-				logging.debug('Solarcharger being supervised: {}'.format(service))
-				continue
-			# We use /Link/NetworkMode to detect Hub-1 support in the solarcharger. Existence of this item
-			# implies existence of the other /Link/* fields
-			try:
-				network_mode_item = self._dbusmonitor.get_item(service, '/Link/NetworkMode')
-				if network_mode_item.get_value() != None:
-					network_mode_item.set_value(dbus.Int32(5, variant_level=1)) # On & Hub-1
-					charge_voltage_item = self._dbusmonitor.get_item(service, '/Link/ChargeVoltage')
-					charge_voltage_item.set_value(dbus.Double(charge_voltage, variant_level=1))
-					firmware_version = self._dbusmonitor.get_value(service, '/FirmwareVersion')
-					if state != None and firmware_version is not None and (firmware_version & 0x0FFF) == 0x0117:
-						state_item = self._dbusmonitor.get_item(service, '/State')
-						state_item.set_value(dbus.Int32(state, variant_level=1))
-			except dbus.exceptions.DBusException:
-				pass
-		for service in self._vecan_services:
-			try:
-				charge_voltage_item = self._dbusmonitor.get_item(service, '/Link/ChargeVoltage')
-				if charge_voltage_item != None:
-					charge_voltage_item.set_value(dbus.Double(charge_voltage, variant_level=1))
-			except dbus.exceptions.DBusException:
-				pass
+		if vebus_path != None:
+			charge_voltage = self._dbusmonitor.get_value(vebus_path, '/Hub1/ChargeVoltage')
+			if charge_voltage != None:
+				state = self._dbusmonitor.get_value(vebus_path, '/State')
+				has_vecan_charger = False
+				for service in self._solarchargers:
+					if self._service_supervisor.is_busy(service):
+						logging.debug('Solarcharger being supervised: {}'.format(service))
+						continue
+					# We use /Link/NetworkMode to detect Hub-1 support in the solarcharger. Existence of this item
+					# implies existence of the other /Link/* fields
+					try:
+						network_mode_item = self._dbusmonitor.get_item(service, '/Link/NetworkMode')
+						if network_mode_item.get_value() != None:
+							network_mode_item.set_value(dbus.Int32(5, variant_level=1)) # On & Hub-1
+							charge_voltage_item = self._dbusmonitor.get_item(service, '/Link/ChargeVoltage')
+							charge_voltage_item.set_value(dbus.Double(charge_voltage, variant_level=1))
+							firmware_version = self._dbusmonitor.get_value(service, '/FirmwareVersion')
+							if state != None and firmware_version is not None and (firmware_version & 0x0FFF) == 0x0117:
+								state_item = self._dbusmonitor.get_item(service, '/State')
+								state_item.set_value(dbus.Int32(state, variant_level=1))
+							voltage_written = 1
+					except dbus.exceptions.DBusException:
+						pass
+					has_vecan_charger = has_vecan_charger or (self._dbusmonitor.get_value(service, '/Mgmt/Connection') == 'VE.Can')
+				if has_vecan_charger:
+					for service in self._vecan_services:
+						try:
+							charge_voltage_item = self._dbusmonitor.get_item(service, '/Link/ChargeVoltage')
+							# Note: we don't check the value of charge_voltage_item because it may be invalid,
+							# for example if the D-Bus path has not been written for more than 60 (?) seconds.
+							# In case there is no path at all, the set_value below will raise an DBusException
+							# which we will ignore cheerfully.
+							charge_voltage_item.set_value(dbus.Double(charge_voltage, variant_level=1))
+							voltage_written = 1
+						except dbus.exceptions.DBusException:
+							pass
+		self._dbusservice['/Control/SolarChargeVoltage'] = voltage_written
 
 	def _get_vebus_path(self, newvalues=None):
 		if newvalues == None:
@@ -219,42 +231,47 @@ class VebusSocWriter(SystemCalcDelegate):
 	def get_settings(self):
 		return [('writevebussoc', '/Settings/SystemSetup/WriteVebusSoc', 0, 0, 1)]
 
+	def get_output(self):
+		return [('/Control/ExtraBatteryCurrent', {'gettext': '%s'})]
+
+	def set_sources(self, dbusmonitor, settings, dbusservice):
+		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
+		self._dbusservice.add_path('/Control/VebusSoc', value=0)
+
 	def update_values(self, newvalues):
 		vebus_service = newvalues.get('/VebusService')
-		if vebus_service == None:
-			return
-		if self._must_write_soc(vebus_service):
-			return
-		# Always write the extra current, even if there is no solarcharge present. We need this because once
-		# an SoC is written to the vebus service, the vebus device will stop adjusing its SoC until an
-		# extra current is written.
-		total_charge_current = newvalues.get('/Dc/Pv/Current', 0)
-		try:
-			charge_current_item = self._dbusmonitor.get_item(vebus_service, '/ExtraBatteryCurrent')
-			if charge_current_item.get_value() == None:
-				return
-			charge_current_item.set_value(dbus.Double(total_charge_current, variant_level=1))
-		except dbus.exceptions.DBusException:
-			pass
+		current_written = 0
+		if vebus_service != None and not self._must_write_soc():
+			# Always write the extra current, even if there is no solarcharge present. We need this because once
+			# an SoC is written to the vebus service, the vebus device will stop adjusing its SoC until an
+			# extra current is written.
+			total_charge_current = newvalues.get('/Dc/Pv/Current', 0)
+			try:
+				charge_current_item = self._dbusmonitor.get_item(vebus_service, '/ExtraBatteryCurrent')
+				if charge_current_item.get_value() != None:
+					charge_current_item.set_value(dbus.Double(total_charge_current, variant_level=1))
+					current_written = 1
+			except dbus.exceptions.DBusException:
+				pass
+		newvalues['/Control/ExtraBatteryCurrent'] = current_written
 
 	def _write_vebus_soc(self):
 		vebus_service = self._dbusservice['/VebusService']
-		if vebus_service == None:
-			return True
-		if not self._must_write_soc(vebus_service):
-			return True
-		soc = self._dbusservice['/Dc/Battery/Soc']
-		if soc == None:
-			return True
-		logging.debug("writing this soc to vebus: %d", soc)
-		try:
-			# Vebus service may go offline while we write this SoC
-			self._dbusmonitor.get_item(vebus_service, '/Soc').set_value(dbus.Double(soc, variant_level=1))
-		except dbus.exceptions.DBusException:
-			pass
+		soc_written = 0
+		if vebus_service != None and self._must_write_soc():
+			soc = self._dbusservice['/Dc/Battery/Soc']
+			if soc != None:
+				logging.debug("writing this soc to vebus: %d", soc)
+				try:
+					# Vebus service may go offline while we write this SoC
+					self._dbusmonitor.get_item(vebus_service, '/Soc').set_value(dbus.Double(soc, variant_level=1))
+					soc_written = 1
+				except dbus.exceptions.DBusException:
+					pass
+		self._dbusservice['/Control/VebusSoc'] = soc_written
 		return True
 
-	def _must_write_soc(self, vebus_service):
+	def _must_write_soc(self):
 		write_vebus_soc = self._settings['writevebussoc']
 		if not write_vebus_soc:
 			return False
