@@ -71,7 +71,7 @@ class HubTypeSelect(SystemCalcDelegate):
 
 	def get_input(self):
 		return [
-			('com.victronenergy.vebus', ['/Hub4/AcPowerSetpoint', '/Hub1/ChargeVoltage', '/Mgmt/Connection'])]
+			('com.victronenergy.vebus', ['/Hub4/AcPowerSetpoint', '/Hub/ChargeVoltage', '/Mgmt/Connection'])]
 
 	def get_output(self):
 		return [('/Hub', {'gettext': '%s'})]
@@ -89,7 +89,7 @@ class HubTypeSelect(SystemCalcDelegate):
 		vebus_path = newvalues.get('/VebusService')
 		if self._dbusmonitor.get_value(vebus_path, '/Hub4/AcPowerSetpoint') != None:
 			hub = 4
-		elif self._dbusmonitor.get_value(vebus_path, '/Hub1/ChargeVoltage') != None or \
+		elif self._dbusmonitor.get_value(vebus_path, '/Hub/ChargeVoltage') != None or \
 			newvalues.get('/Dc/Pv/Power') != None:
 			hub = 1
 		elif newvalues.get('/Ac/PvOnOutput/Total/Power') != None:
@@ -110,7 +110,7 @@ class Hub1Bridge(SystemCalcDelegate):
 	def get_input(self):
 		return [
 			('com.victronenergy.vebus',
-				['/Hub1/ChargeVoltage', '/State']),
+				['/Hub/ChargeVoltage', '/State']),
 			('com.victronenergy.solarcharger',
 				['/Link/NetworkMode', '/Link/ChargeVoltage', '/State', '/FirmwareVersion', '/Mgmt/Connection']),
 			('com.victronenergy.vecan',
@@ -153,7 +153,7 @@ class Hub1Bridge(SystemCalcDelegate):
 		voltage_written = 0
 		vebus_path = self._get_vebus_path()
 		if vebus_path != None:
-			charge_voltage = self._dbusmonitor.get_value(vebus_path, '/Hub1/ChargeVoltage')
+			charge_voltage = self._dbusmonitor.get_value(vebus_path, '/Hub/ChargeVoltage')
 			if charge_voltage != None:
 				state = self._dbusmonitor.get_value(vebus_path, '/State')
 				has_vecan_charger = False
