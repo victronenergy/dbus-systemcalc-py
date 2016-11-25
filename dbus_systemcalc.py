@@ -69,7 +69,6 @@ class SystemCalc:
 				'/Ac/Out/L2/P': dummy,
 				'/Ac/Out/L3/P': dummy,
 				'/Connected': dummy,
-				'/Hub4/AcPowerSetpoint': dummy,
 				'/ProductId': dummy,
 				'/ProductName': dummy,
 				'/Mgmt/Connection': dummy,

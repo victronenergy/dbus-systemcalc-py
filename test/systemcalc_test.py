@@ -440,6 +440,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Hub': 1,
+			'/SystemType': 'Hub-1',
 			'/Dc/Pv/Power': 12.4 * 9.7 + 24.3 * 5.6})
 
 	def test_hub1_vecan(self):
@@ -450,7 +451,10 @@ class TestSystemCalc(TestSystemCalcBase):
 								 '/Dc/0/Voltage' : 12.4,
 								 '/Dc/0/Current': 9.7})
 		self._update_values()
-		self._check_values({'/Hub': 1, '/Dc/Pv/Power': 12.4 * 9.7})
+		self._check_values({
+			'/Hub': 1,
+			'/SystemType': 'Hub-1',
+			'/Dc/Pv/Power': 12.4 * 9.7})
 
 	def test_hub2(self):
 		self._add_device('com.victronenergy.pvinverter.fronius_122_2312', {
@@ -461,6 +465,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Hub': 2,
+			'/SystemType': 'Hub-2',
 			'/Ac/PvOnOutput/Total/Power': 500})
 
 	def test_hub3_grid(self):
@@ -472,6 +477,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Hub': 3,
+			'/SystemType': 'Hub-3',
 			'/Ac/PvOnGrid/Total/Power': 500,
 			'/Ac/Grid/L1/Power': 123 - 500,
 			'/Ac/Genset/L1/Power': None})
@@ -485,31 +491,41 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Hub': 3,
+			'/SystemType': 'Hub-3',
 			'/Ac/PvOnGenset/Total/Power': 500,
 			'/Ac/Grid/L1/Power': 123,
 			'/Ac/Genset/L1/Power': -500})
 
 	def test_hub4_pv(self):
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub4/AssistantId', 3)
 		self._add_device('com.victronenergy.pvinverter.fronius_122_2312', {
 			'/Ac/L1/Power': 500,
 			'/Position': 2
 		})
-		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub4/AcPowerSetpoint', 100)
 
 		self._update_values()
 		self._check_values({
 			'/Hub': 4,
+			'/SystemType': 'Hub-4',
 			'/Ac/PvOnGenset/Total/Power': 500})
+
+	def test_ess_pv(self):
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub4/AssistantId', 5)
+		self._update_values()
+		self._check_values({
+			'/Hub': 4,
+			'/SystemType': 'ESS'})
 
 	def test_hub4_missing_pv(self):
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/Out/L1/P', -500)
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/ActiveIn/L1/P', -500)
-		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub4/AcPowerSetpoint', 100)
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub4/AssistantId', 3)
 		self._add_device('com.victronenergy.grid.ttyUSB1', { '/Ac/L1/Power': -300 })
 
 		self._update_values()
 		self._check_values({
 			'/Hub': 4,
+			'/SystemType': 'Hub-4',
 			'/Ac/Consumption/L1/Power': 200,
 			'/Ac/ConsumptionOnInput/L1/Power': 200,
 			'/Ac/ConsumptionOnOutput/L1/Power': 0
@@ -520,11 +536,12 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Dc/0/Voltage': 12.4,
 			'/Dc/0/Current': 9.7
 		})
-		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub4/AcPowerSetpoint', 100)
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub4/AssistantId', 3)
 
 		self._update_values()
 		self._check_values({
 			'/Hub': 4,
+			'/SystemType': 'Hub-4',
 			'/Dc/Pv/Power': 12.4 * 9.7})
 
 	def test_serial(self):
