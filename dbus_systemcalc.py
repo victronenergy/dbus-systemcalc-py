@@ -19,7 +19,7 @@ from logger import setup_logging
 import delegates
 from sc_utils import safeadd as _safeadd, safemax as _safemax
 
-softwareVersion = '1.31'
+softwareVersion = '1.32'
 
 class SystemCalc:
 	def __init__(self):
