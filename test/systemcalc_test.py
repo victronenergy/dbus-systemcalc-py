@@ -111,12 +111,10 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Ac/ActiveIn/Source': 1,
-			'/Ac/Grid/Total/Power': 123,
 			'/Ac/Grid/L1/Power': 123,
 			'/Ac/Grid/L2/Power': None,
 			'/Ac/Grid/L3/Power': None,
-			'/Ac/Genset/Total/Power': None,
-			'/Ac/Consumption/Total/Power': 100,
+			'/Ac/Genset/NumberOfPhases': None,
 			'/Ac/Consumption/L1/Power': 100,
 			'/Ac/Consumption/L2/Power': None,
 			'/Ac/Consumption/L3/Power': None,
@@ -134,9 +132,8 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Ac/ActiveIn/Source': 2,
-			'/Ac/Genset/Total/Power': 123,
 			'/Ac/Genset/L1/Power': 123,
-			'/Ac/Grid/Total/Power': None
+			'/Ac/Grid/L1/Power': None
 		})
 
 	def test_ac_in_not_available(self):
@@ -145,8 +142,8 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Ac/ActiveIn/Source': 0,
-			'/Ac/Grid/Total/Power': None,
-			'/Ac/Genset/Total/Power': None
+			'/Ac/Grid/NumberOfPhases': None,
+			'/Ac/Genset/NumberOfPhases': None
 		})
 
 	def test_ac_in_shore(self):
@@ -155,8 +152,8 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Ac/ActiveIn/Source': 3,
-			'/Ac/Grid/Total/Power': 123,
-			'/Ac/Genset/Total/Power': None
+			'/Ac/Grid/NumberOfPhases': 1,
+			'/Ac/Genset/NumberOfPhases': None
 		})
 
 	def test_ac_in_grid_3p(self):
@@ -170,13 +167,11 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Ac/ActiveIn/Source': 1,
-			'/Ac/Grid/Total/Power': 450,
 			'/Ac/Grid/L1/Power': 100,
 			'/Ac/Grid/L2/Power': 150,
 			'/Ac/Grid/L3/Power': 200,
 			'/Ac/Grid/NumberOfPhases': 3,
 			'/Ac/Genset/L1/Power': None,
-			'/Ac/Genset/Total/Power': None,
 			'/Ac/Genset/NumberOfPhases': None,
 			'/Ac/Consumption/L1/Power': 80,
 			'/Ac/Consumption/L2/Power': 90,
@@ -198,14 +193,10 @@ class TestSystemCalc(TestSystemCalcBase):
 
 		self._update_values()
 		self._check_values({
-			'/Ac/Grid/Total/Power': 1230,
 			'/Ac/Grid/L1/Power': 1230,
 			'/Ac/Grid/NumberOfPhases': 1,
-			'/Ac/Consumption/Total/Power': 1230 - 123 + 100 + 500,
 			'/Ac/Consumption/L1/Power': 1230 - 123 + 100 + 500,
-			'/Ac/ConsumptionOnOutput/Total/Power': 100,
 			'/Ac/ConsumptionOnOutput/L1/Power': 100,
-			'/Ac/ConsumptionOnInput/Total/Power': 1230 - 123 + 500,
 			'/Ac/ConsumptionOnInput/L1/Power': 1230 - 123 + 500
 		})
 
@@ -223,20 +214,16 @@ class TestSystemCalc(TestSystemCalcBase):
 
 		self._update_values()
 		self._check_values({
-			'/Ac/Grid/Total/Power': 1230 + 1130 + 1030,
 			'/Ac/Grid/L1/Power': 1230,
 			'/Ac/Grid/L2/Power': 1130,
 			'/Ac/Grid/L3/Power': 1030,
 			'/Ac/Grid/NumberOfPhases': 3,
-			'/Ac/Consumption/Total/Power': 1230 + 1130 + 1030 - 123 + 100 + 500 + 400 + 200,
 			'/Ac/Consumption/L1/Power': 1230 - 123 + 100 + 500,
 			'/Ac/Consumption/L2/Power': 1130 + 400,
 			'/Ac/Consumption/L3/Power': 1030 + 200,
-			'/Ac/ConsumptionOnInput/Total/Power': 1230 + 1130 + 1030 - 123 + 500 + 400 + 200,
 			'/Ac/ConsumptionOnInput/L1/Power': 1230 - 123 + 500,
 			'/Ac/ConsumptionOnInput/L2/Power': 1130 + 400,
 			'/Ac/ConsumptionOnInput/L3/Power': 1030 + 200,
-			'/Ac/ConsumptionOnOutput/Total/Power': 100,
 			'/Ac/ConsumptionOnOutput/L1/Power': 100,
 			# It's one phase on output
 			'/Ac/ConsumptionOnOutput/NumberOfPhases': 1,
@@ -256,14 +243,11 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Ac/ActiveIn/Source': 2,
-			'/Ac/Grid/Total/Power': 1230,
 			'/Ac/Grid/L1/Power': 1230,
 			'/Ac/Grid/NumberOfPhases': 1,
-			'/Ac/Consumption/Total/Power': 1230 + 100 + 500,
 			'/Ac/Consumption/L1/Power': 1230 + 100 + 500,
 			'/Ac/ConsumptionOnInput/L1/Power': 1230 + 500,
-			'/Ac/ConsumptionOnOutput/Total/Power': 100,
-			'/Ac/PvOnGrid/Total/Power': 500,
+			'/Ac/ConsumptionOnOutput/L1/Power': 100,
 			'/Ac/PvOnGrid/L1/Power': 500
 		})
 
@@ -277,16 +261,11 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Ac/ActiveIn/Source': 1,
-			'/Ac/Grid/Total/Power': 123,
 			'/Ac/Grid/L1/Power': 123,
 			'/Ac/Grid/NumberOfPhases': 1,
-			'/Ac/Consumption/Total/Power': 500 - 100,
 			'/Ac/Consumption/L1/Power': 500 - 100,
-			'/Ac/ConsumptionOnInput/Total/Power': 0,
 			'/Ac/ConsumptionOnInput/L1/Power': 0,
-			'/Ac/ConsumptionOnOutput/Total/Power': 500 - 100,
 			'/Ac/ConsumptionOnOutput/L1/Power': 500 - 100,
-			'/Ac/PvOnOutput/Total/Power': 500,
 			'/Ac/PvOnOutput/L1/Power': 500
 		})
 
@@ -318,19 +297,14 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Ac/ActiveIn/Source': 1,
-			'/Ac/Grid/Total/Power': 123 - 120 - 220,
 			'/Ac/Grid/L1/Power': 123 - 120,
 			'/Ac/Grid/L2/Power': -220,
 			'/Ac/Grid/L3/Power': None,
 			'/Ac/Grid/NumberOfPhases': 2,
-			'/Ac/Consumption/Total/Power': 200 + 105 + 300 + 110 + 200 - 100,
 			'/Ac/Consumption/L1/Power': 105 + 110 - 100,
 			#No grid meter so assume that are no loads on ac input
-			'/Ac/ConsumptionOnInput/Total/Power': 0,
 			'/Ac/ConsumptionOnInput/L1/Power': 0,
-			'/Ac/ConsumptionOnOutput/Total/Power': 200 + 105 + 300 + 110 + 200 + -100,
 			'/Ac/ConsumptionOnOutput/L1/Power': 105 + 110 + -100,
-			'/Ac/PvOnOutput/Total/Power': 200 + 105 + 300 + 110 + 200,
 			'/Ac/PvOnOutput/NumberOfPhases': 3,
 			'/Ac/PvOnOutput/L1/Power': 105 + 110,
 			'/Ac/PvOnGrid/L1/Power': 120,
@@ -349,16 +323,11 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Ac/ActiveIn/Source': 1,
-			'/Ac/Grid/Total/Power': 123,
 			'/Ac/Grid/L1/Power': 123,
 			'/Ac/Grid/NumberOfPhases': 1,
-			'/Ac/Consumption/Total/Power': 0,
 			'/Ac/Consumption/L1/Power': 0,
-			'/Ac/ConsumptionOnInput/Total/Power': 0,
 			'/Ac/ConsumptionOnInput/L1/Power': 0,
-			'/Ac/ConsumptionOnOutput/Total/Power': 0,
 			'/Ac/ConsumptionOnOutput/L1/Power': 0,
-			'/Ac/PvOnGenset/Total/Power': 500,
 			'/Ac/PvOnGenset/L1/Power': 500
 		})
 
@@ -466,7 +435,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._check_values({
 			'/Hub': 2,
 			'/SystemType': 'Hub-2',
-			'/Ac/PvOnOutput/Total/Power': 500})
+			'/Ac/PvOnOutput/L1/Power': 500})
 
 	def test_hub3_grid(self):
 		self._add_device('com.victronenergy.pvinverter.fronius_122_2312', {
@@ -478,7 +447,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._check_values({
 			'/Hub': 3,
 			'/SystemType': 'Hub-3',
-			'/Ac/PvOnGrid/Total/Power': 500,
+			'/Ac/PvOnGrid/L1/Power': 500,
 			'/Ac/Grid/L1/Power': 123 - 500,
 			'/Ac/Genset/L1/Power': None})
 
@@ -492,7 +461,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._check_values({
 			'/Hub': 3,
 			'/SystemType': 'Hub-3',
-			'/Ac/PvOnGenset/Total/Power': 500,
+			'/Ac/PvOnGenset/L1/Power': 500,
 			'/Ac/Grid/L1/Power': 123,
 			'/Ac/Genset/L1/Power': -500})
 
@@ -507,7 +476,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._check_values({
 			'/Hub': 4,
 			'/SystemType': 'Hub-4',
-			'/Ac/PvOnGenset/Total/Power': 500})
+			'/Ac/PvOnGenset/L1/Power': 500})
 
 	def test_ess_pv(self):
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub4/AssistantId', 5)
@@ -734,15 +703,14 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Ac/ActiveIn/Source': None,
-			'/Ac/Grid/Total/Power': None,
 			'/Ac/Grid/L1/Power': None,
 			'/Ac/Grid/L2/Power': None,
 			'/Ac/Grid/L3/Power': None,
-			'/Ac/Genset/Total/Power': None,
-			'/Ac/Consumption/Total/Power': None,
-			'/Ac/ConsumptionOnInput/Total/Power': None,
-			'/Ac/ConsumptionOnOutput/Total/Power': None,
-			'/Ac/PvOnOutput/Total/Power': None
+			'/Ac/Genset/NumberOfPhases': None,
+			'/Ac/Consumption/NumberOfPhases': None,
+			'/Ac/ConsumptionOnInput/NumberOfPhases': None,
+			'/Ac/ConsumptionOnOutput/NumberOfPhases': None,
+			'/Ac/PvOnOutput/NumberOfPhases': None
 		})
 
 	def test_multiple_vebus_systems(self):
@@ -762,8 +730,8 @@ class TestSystemCalc(TestSystemCalcBase):
 
 		self._update_values()
 		self._check_values({
-			'/Ac/Grid/Total/Power': 123,
-			'/Ac/Consumption/Total/Power': 100
+			'/Ac/Grid/L1/Power': 123,
+			'/Ac/Consumption/L1/Power': 100
 		})
 
 	def test_multiple_vebus_systems_2(self):
@@ -795,8 +763,8 @@ class TestSystemCalc(TestSystemCalcBase):
 
 		self._update_values()
 		self._check_values({
-			'/Ac/Grid/Total/Power': 127,
-			'/Ac/Consumption/Total/Power': 87
+			'/Ac/Grid/L1/Power': 127,
+			'/Ac/Consumption/L1/Power': 87
 		})
 
 	def test_disconnected_vebus_is_ignored_in_auto_mode(self):

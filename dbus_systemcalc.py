@@ -162,14 +162,12 @@ class SystemCalc:
 			'/Ac/Grid/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/Grid/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/Grid/L3/Power': {'gettext': '%.0F W'},
-			'/Ac/Grid/Total/Power': {'gettext': '%.0F W'},
 			'/Ac/Grid/NumberOfPhases': {'gettext': '%.0F W'},
 			'/Ac/Grid/ProductId': {'gettext': '%s'},
 			'/Ac/Grid/DeviceType': {'gettext': '%s'},
 			'/Ac/Genset/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/Genset/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/Genset/L3/Power': {'gettext': '%.0F W'},
-			'/Ac/Genset/Total/Power': {'gettext': '%.0F W'},
 			'/Ac/Genset/NumberOfPhases': {'gettext': '%.0F W'},
 			'/Ac/Genset/ProductId': {'gettext': '%s'},
 			'/Ac/Genset/DeviceType': {'gettext': '%s'},
@@ -177,33 +175,27 @@ class SystemCalc:
 			'/Ac/ConsumptionOnOutput/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/ConsumptionOnOutput/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/ConsumptionOnOutput/L3/Power': {'gettext': '%.0F W'},
-			'/Ac/ConsumptionOnOutput/Total/Power': {'gettext': '%.0F W'},
 			'/Ac/ConsumptionOnInput/NumberOfPhases': {'gettext': '%.0F W'},
 			'/Ac/ConsumptionOnInput/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/ConsumptionOnInput/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/ConsumptionOnInput/L3/Power': {'gettext': '%.0F W'},
-			'/Ac/ConsumptionOnInput/Total/Power': {'gettext': '%.0F W'},
 			'/Ac/Consumption/NumberOfPhases': {'gettext': '%.0F W'},
 			'/Ac/Consumption/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/Consumption/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/Consumption/L3/Power': {'gettext': '%.0F W'},
-			'/Ac/Consumption/Total/Power': {'gettext': '%.0F W'},
 			'/Ac/Consumption/NumberOfPhases': {'gettext': '%.0F W'},
 			'/Ac/PvOnOutput/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/PvOnOutput/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/PvOnOutput/L3/Power': {'gettext': '%.0F W'},
-			'/Ac/PvOnOutput/Total/Power': {'gettext': '%.0F W'},
 			'/Ac/PvOnOutput/NumberOfPhases': {'gettext': '%.0F W'},
 			'/Ac/PvOnGrid/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/PvOnGrid/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/PvOnGrid/L3/Power': {'gettext': '%.0F W'},
-			'/Ac/PvOnGrid/Total/Power': {'gettext': '%.0F W'},
 			'/Ac/PvOnGrid/NumberOfPhases': {'gettext': '%.0F W'},
 			'/Ac/PvOnGenset/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/PvOnGenset/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/PvOnGenset/L3/Power': {'gettext': '%.0F W'},
 			'/Ac/PvOnGenset/NumberOfPhases': {'gettext': '%d'},
-			'/Ac/PvOnGenset/Total/Power': {'gettext': '%.0F W'},
 			'/Dc/Pv/Power': {'gettext': '%.0F W'},
 			'/Dc/Pv/Current': {'gettext': '%.1F A'},
 			'/Dc/Battery/Voltage': {'gettext': '%.2F V'},
@@ -379,7 +371,7 @@ class SystemCalc:
 						newvalues[path] = _safeadd(newvalues.get(path), power)
 
 		for path in pos.values():
-			self._compute_phase_totals(path, newvalues)
+			self._compute_number_of_phases(path, newvalues)
 
 		# ==== SOLARCHARGERS ====
 		solarchargers = self._dbusmonitor.get_service_list('com.victronenergy.solarcharger')
@@ -572,7 +564,7 @@ class SystemCalc:
 					if pvpower != None:
 						p = _safeadd(p, -pvpower)
 				newvalues['/Ac/%s/%s/Power' % (device_type, phase)] = p
-			self._compute_phase_totals('/Ac/%s' % device_type, newvalues)
+			self._compute_number_of_phases('/Ac/%s' % device_type, newvalues)
 			product_id = None
 			device_type_id = None
 			if em_service is not None:
@@ -590,9 +582,9 @@ class SystemCalc:
 			newvalues['/Ac/ConsumptionOnOutput/%s/Power' % phase] = _safemax(0, c)
 			newvalues['/Ac/ConsumptionOnInput/%s/Power' % phase] = consumption[phase]
 			newvalues['/Ac/Consumption/%s/Power' % phase] = _safeadd(consumption[phase], _safemax(0, c))
-		self._compute_phase_totals('/Ac/Consumption', newvalues)
-		self._compute_phase_totals('/Ac/ConsumptionOnOutput', newvalues)
-		self._compute_phase_totals('/Ac/ConsumptionOnInput', newvalues)
+		self._compute_number_of_phases('/Ac/Consumption', newvalues)
+		self._compute_number_of_phases('/Ac/ConsumptionOnOutput', newvalues)
+		self._compute_number_of_phases('/Ac/ConsumptionOnInput', newvalues)
 
 		for m in self._modules:
 			m.update_values(newvalues)
@@ -682,15 +674,12 @@ class SystemCalc:
 			return item['gettext'] % value
 		return str(value)
 
-	def _compute_phase_totals(self, path, newvalues):
-		total_power = None
+	def _compute_number_of_phases(self, path, newvalues):
 		number_of_phases = None
 		for phase in range(1, 4):
 			p = newvalues.get('%s/L%s/Power' % (path, phase))
-			total_power = _safeadd(total_power, p)
 			if p is not None:
 				number_of_phases = phase
-		newvalues[path + '/Total/Power'] = total_power
 		newvalues[path + '/NumberOfPhases'] = number_of_phases
 
 	def _get_connected_service_list(self, classfilter=None):

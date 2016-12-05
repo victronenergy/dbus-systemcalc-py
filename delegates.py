@@ -96,11 +96,11 @@ class HubTypeSelect(SystemCalcDelegate):
 			newvalues.get('/Dc/Pv/Power') != None:
 			hub = 1
 			system_type = 'Hub-1'
-		elif newvalues.get('/Ac/PvOnOutput/Total/Power') != None:
+		elif newvalues.get('/Ac/PvOnOutput/NumberOfPhases') != None:
 			hub = 2
 			system_type = 'Hub-2'
-		elif newvalues.get('/Ac/PvOnGrid/Total/Power') != None or \
-			newvalues.get('/Ac/PvOnGenset/Total/Power') != None:
+		elif newvalues.get('/Ac/PvOnGrid/NumberOfPhases') != None or \
+			newvalues.get('/Ac/PvOnGenset/NumberOfPhases') != None:
 			hub = 3
 			system_type = 'Hub-3'
 		newvalues['/Hub'] = hub
