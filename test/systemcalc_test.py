@@ -1210,7 +1210,6 @@ class TestSystemCalc(TestSystemCalcBase):
 		self.assertEqual(12.53, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeVoltage'))
 		self._check_values({'/Control/SolarChargeVoltage' : 1})
 
-	@unittest.skip("Does not work well with MockDbusMonitor")
 	def test_hub1_control_ve_can_service_no_setpoint(self):
 		self._update_values()
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 12.65)
