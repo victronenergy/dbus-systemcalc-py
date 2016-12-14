@@ -278,7 +278,7 @@ class VebusSocWriter(SystemCalcDelegate):
 		current_written = 0
 		if vebus_service != None and not self._must_write_soc(vebus_service):
 			# Always write the extra current, even if there is no solarcharge present. We need this because once
-			# an SoC is written to the vebus service, the vebus device will stop adjusing its SoC until an
+			# an SoC is written to the vebus service, the vebus device will stop adjusting its SoC until an
 			# extra current is written.
 			total_charge_current = newvalues.get('/Dc/Pv/Current', 0)
 			try:
