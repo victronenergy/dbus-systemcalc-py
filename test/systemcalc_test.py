@@ -1206,6 +1206,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self.assertEqual(12.63, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeVoltage'))
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 12.53)
 		self._update_values(interval=10000)
+		self.assertEqual(5, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/NetworkMode'))
 		self.assertEqual(12.53, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
 		self.assertEqual(12.53, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeVoltage'))
 		self._check_values({'/Control/SolarChargeVoltage' : 1})
@@ -1218,6 +1219,61 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self.assertEqual(None, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
 		self._check_values({'/Control/SolarChargeVoltage' : 0})
+
+	def test_hub1_control_vedirect_solarcharger_bms_battery(self):
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 55.2)
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 9.3,
+			'/FirmwareVersion': 0x0118},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.battery.ttyO2',
+			 product_name='battery',
+			 values={
+				 '/Dc/0/Voltage' : 12.3,
+				 '/Dc/0/Current': 5.3,
+				 '/Dc/0/Power': 65,
+				 '/Soc': 15.3,
+				 '/DeviceInstance': 2,
+				 '/Info/BatteryLowVoltage': 47,
+				 '/Info/MaxChargeCurrent': 25,
+				 '/Info/MaxChargeVoltage': 58.2,
+				 '/Info/MaxDischargeCurrent': 50})
+		self._update_values(interval=10000)
+		self.assertEqual(13, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/NetworkMode'))
+		self.assertEqual(25, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeCurrent'))
+		self._check_values({'/Control/SolarChargeCurrent' : 1})
+
+	def test_control_vedirect_solarcharger_bms_battery_no_charge_voltage(self):
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 9.3,
+			'/FirmwareVersion': 0x0118},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.battery.ttyO2',
+			 product_name='battery',
+			 values={
+				 '/Dc/0/Voltage' : 12.3,
+				 '/Dc/0/Current': 5.3,
+				 '/Dc/0/Power': 65,
+				 '/Soc': 15.3,
+				 '/DeviceInstance': 2,
+				 '/Info/BatteryLowVoltage': 47,
+				 '/Info/MaxChargeCurrent': 25,
+				 '/Info/MaxChargeVoltage': 58.2,
+				 '/Info/MaxDischargeCurrent': 50})
+		self._update_values(interval=10000)
+		self.assertEqual(9, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/NetworkMode'))
+		self.assertEqual(25, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeCurrent'))
+		self._check_values({'/Control/SolarChargeCurrent' : 1})
 
 	def test_system_mapping(self):
 		self._update_values()
@@ -1492,6 +1548,33 @@ class TestSystemCalcNoMulti(TestSystemCalcBase):
 		self._check_values({
 			'/Dc/Battery/Power':  65,
 			'/AutoSelectedBatteryService': 'battery on dummy'})
+
+	def test_hub1_control_vedirect_solarcharger_bms_battery(self):
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 9.3,
+			'/FirmwareVersion': 0x0118},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.battery.ttyO2',
+			 product_name='battery',
+			 values={
+				 '/Dc/0/Voltage' : 12.3,
+				 '/Dc/0/Current': 5.3,
+				 '/Dc/0/Power': 65,
+				 '/Soc': 15.3,
+				 '/DeviceInstance': 2,
+				 '/Info/BatteryLowVoltage': 47,
+				 '/Info/MaxChargeCurrent': 25,
+				 '/Info/MaxChargeVoltage': 58.2,
+				 '/Info/MaxDischargeCurrent': 50})
+		self._update_values(interval=10000)
+		self.assertEqual(9, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/NetworkMode'))
+		self.assertEqual(25, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeCurrent'))
+		self._check_values({'/Control/SolarChargeCurrent' : 1})
 
 
 if __name__ == '__main__':

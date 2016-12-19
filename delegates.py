@@ -14,6 +14,7 @@ import traceback
 
 # Victron packages
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), 'ext', 'velib_python'))
+from sc_utils import safeadd
 from ve_utils import exit_on_error
 
 
@@ -111,21 +112,25 @@ class Hub1Bridge(SystemCalcDelegate):
 	def __init__(self, service_supervisor):
 		self._solarchargers = []
 		self._vecan_services = []
+		self._battery_services = []
 		self._timer = None
 		self._service_supervisor = service_supervisor
 
 	def get_input(self):
 		return [
+			('com.victronenergy.battery',
+				['/Info/MaxChargeCurrent']),
 			('com.victronenergy.vebus',
 				['/Hub/ChargeVoltage', '/State']),
 			('com.victronenergy.solarcharger',
-				['/Link/NetworkMode', '/Link/ChargeVoltage', '/State', '/FirmwareVersion', '/Mgmt/Connection']),
+				['/Link/NetworkMode', '/Link/ChargeVoltage', '/Link/ChargeCurrent', '/State', '/FirmwareVersion', '/Mgmt/Connection']),
 			('com.victronenergy.vecan',
 				['/Link/ChargeVoltage'])]
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 		self._dbusservice.add_path('/Control/SolarChargeVoltage', value=0)
+		self._dbusservice.add_path('/Control/SolarChargeCurrent', value=0)
 
 	def device_added(self, service, instance, do_service_change=True):
 		service_type = service.split('.')[2]
@@ -135,10 +140,13 @@ class Hub1Bridge(SystemCalcDelegate):
 		elif service_type == 'vecan':
 			self._vecan_services.append(service)
 			self._update_solarchargers()
+		elif service_type == 'battery':
+			self._battery_services.append(service)
+			self._update_solarchargers()
 		else:
 			# Skip timer code below
 			return
-		if self._timer == None:
+		if self._timer is None:
 			# Update the solar charger every 10 seconds, because it has to switch to HEX mode each time
 			# we write a value to its D-Bus service. Writing too often may block text messages.
 			self._timer = gobject.timeout_add(10000, exit_on_error, self._on_timer)
@@ -148,7 +156,9 @@ class Hub1Bridge(SystemCalcDelegate):
 			self._solarchargers.remove(service)
 		elif service in self._vecan_services:
 			self._vecan_services.remove(service)
-		if len(self._solarchargers) == 0 and len(self._vecan_services) == 0 and self._timer != None:
+		elif service in self._battery_services:
+			self._battery_services.remove(service)
+		if len(self._solarchargers) == 0 and len(self._vecan_services) == 0 and self._timer is not None:
 			gobject.source_remove(self._timer)
 			self._timer = None
 
@@ -158,45 +168,62 @@ class Hub1Bridge(SystemCalcDelegate):
 
 	def _update_solarchargers(self):
 		voltage_written = 0
+		current_written = 0
+		max_charge_current = None
+		for battery_service in self._battery_services:
+			max_charge_current = safeadd(max_charge_current, \
+				self._dbusmonitor.get_value(battery_service, '/Info/MaxChargeCurrent'))
 		vebus_path = self._get_vebus_path()
-		if vebus_path != None:
-			charge_voltage = self._dbusmonitor.get_value(vebus_path, '/Hub/ChargeVoltage')
-			if charge_voltage != None:
-				state = self._dbusmonitor.get_value(vebus_path, '/State')
-				has_vecan_charger = False
-				for service in self._solarchargers:
-					if self._service_supervisor.is_busy(service):
-						logging.debug('Solarcharger being supervised: {}'.format(service))
-						continue
+		charge_voltage = None if vebus_path is None else \
+			self._dbusmonitor.get_value(vebus_path, '/Hub/ChargeVoltage')
+		# Network mode:
+		# bit 0: Operated in network environment
+		# bit 2: Remote Hub-1 control
+		# bit 3: Remote BMS control
+		network_mode = 1 | (0 if charge_voltage is None else 4) | (0 if max_charge_current is None else 8)
+		if network_mode > 1:
+			has_vecan_charger = False
+			for service in self._solarchargers:
+				if self._service_supervisor.is_busy(service):
+					logging.debug('Solarcharger being supervised: {}'.format(service))
+					continue
+				try:
 					# We use /Link/NetworkMode to detect Hub-1 support in the solarcharger. Existence of this item
 					# implies existence of the other /Link/* fields
-					try:
-						network_mode_item = self._dbusmonitor.get_item(service, '/Link/NetworkMode')
-						if network_mode_item.get_value() != None:
-							network_mode_item.set_value(dbus.Int32(5, variant_level=1)) # On & Hub-1
+					network_mode_item = self._dbusmonitor.get_item(service, '/Link/NetworkMode')
+					if network_mode_item.get_value() is not None:
+						network_mode_item.set_value(dbus.Int32(network_mode, variant_level=1))
+						if charge_voltage is not None:
 							charge_voltage_item = self._dbusmonitor.get_item(service, '/Link/ChargeVoltage')
 							charge_voltage_item.set_value(dbus.Double(charge_voltage, variant_level=1))
 							firmware_version = self._dbusmonitor.get_value(service, '/FirmwareVersion')
-							if state != None and firmware_version is not None and (firmware_version & 0x0FFF) == 0x0117:
-								state_item = self._dbusmonitor.get_item(service, '/State')
-								state_item.set_value(dbus.Int32(state, variant_level=1))
-							voltage_written = 1
+							if firmware_version is not None and (firmware_version & 0x0FFF) == 0x0117:
+								state = self._dbusmonitor.get_value(vebus_path, '/State')
+								if state is not None:
+									state_item = self._dbusmonitor.get_item(service, '/State')
+									state_item.set_value(dbus.Int32(state, variant_level=1))
+						if max_charge_current is not None:
+							charge_current_item = self._dbusmonitor.get_item(service, '/Link/ChargeCurrent')
+							charge_current_item.set_value(dbus.Double(max_charge_current, variant_level=1))
+							current_written = 1
+						voltage_written = 1
+				except dbus.exceptions.DBusException:
+					pass
+				has_vecan_charger = has_vecan_charger or (self._dbusmonitor.get_value(service, '/Mgmt/Connection') == 'VE.Can')
+			if has_vecan_charger and charge_voltage is not None:
+				for service in self._vecan_services:
+					try:
+						charge_voltage_item = self._dbusmonitor.get_item(service, '/Link/ChargeVoltage')
+						# Note: we don't check the value of charge_voltage_item because it may be invalid,
+						# for example if the D-Bus path has not been written for more than 60 (?) seconds.
+						# In case there is no path at all, the set_value below will raise an DBusException
+						# which we will ignore cheerfully.
+						charge_voltage_item.set_value(dbus.Double(charge_voltage, variant_level=1))
+						voltage_written = 1
 					except dbus.exceptions.DBusException:
 						pass
-					has_vecan_charger = has_vecan_charger or (self._dbusmonitor.get_value(service, '/Mgmt/Connection') == 'VE.Can')
-				if has_vecan_charger:
-					for service in self._vecan_services:
-						try:
-							charge_voltage_item = self._dbusmonitor.get_item(service, '/Link/ChargeVoltage')
-							# Note: we don't check the value of charge_voltage_item because it may be invalid,
-							# for example if the D-Bus path has not been written for more than 60 (?) seconds.
-							# In case there is no path at all, the set_value below will raise an DBusException
-							# which we will ignore cheerfully.
-							charge_voltage_item.set_value(dbus.Double(charge_voltage, variant_level=1))
-							voltage_written = 1
-						except dbus.exceptions.DBusException:
-							pass
 		self._dbusservice['/Control/SolarChargeVoltage'] = voltage_written
+		self._dbusservice['/Control/SolarChargeCurrent'] = current_written
 
 	def _get_vebus_path(self, newvalues=None):
 		if newvalues == None:
