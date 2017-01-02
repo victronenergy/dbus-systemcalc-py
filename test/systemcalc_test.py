@@ -11,7 +11,7 @@ sys.path.insert(0, test_dir)
 sys.path.insert(1, os.path.join(test_dir, '..', 'ext', 'velib_python', 'test'))
 sys.path.insert(1, os.path.join(test_dir, '..'))
 import dbus_systemcalc
-import gobject
+import mock_gobject
 from mock_dbus_monitor import MockDbusMonitor
 from mock_dbus_service import MockDbusService
 from mock_settings_device import MockSettingsDevice
@@ -23,6 +23,7 @@ dbus_systemcalc.logger = logging.getLogger()
 # Patch an alternative function to get the portal ID, because the original retrieves the ID by getting
 # the MAC address of 'eth0' which may not be available.
 dbus_systemcalc.get_vrm_portal_id = lambda: 'aabbccddeeff'
+mock_gobject.patch_gobject(dbus_systemcalc.gobject)
 
 
 class MockSystemCalc(dbus_systemcalc.SystemCalc):
@@ -41,14 +42,13 @@ class TestSystemCalcBase(unittest.TestCase):
 		unittest.TestCase.__init__(self, methodName)
 
 	def setUp(self):
-		gobject.timer_manager.reset()
+		mock_gobject.timer_manager.reset()
 		self._system_calc = MockSystemCalc()
 		self._monitor = self._system_calc._dbusmonitor
 		self._service = self._system_calc._dbusservice
 
 	def _update_values(self, interval=1000):
-		gobject.timer_manager.add_terminator(interval)
-		gobject.timer_manager.start()
+		mock_gobject.timer_manager.run(interval)
 
 	def _add_device(self, service, values, connected=True, product_name='dummy', connection='dummy'):
 		values['/Connected'] = 1 if connected else 0
