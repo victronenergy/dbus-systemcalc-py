@@ -319,8 +319,14 @@ class VebusSocWriter(SystemCalcDelegate):
 		return True
 
 	def _update_hub2_presence(self, vebus_service):
+		# Note that /Devices/0/Assistants provides a list of bytes which can be empty. It can also be invalid
+		# (empty list of ints). An empty list of bytes is not interpreted as an invalid value. This allows
+		# us to distinguish between an empty list and an invalid value.
 		value = self._dbusmonitor.get_value(vebus_service, '/Devices/0/Assistants')
 		if value == None:
+			# List of assistants is not available, so we don't know which assistants are present. Because
+			# it is not allowed to write the vebus SoC on a hub-2 system, we assume for now there is a hub-2
+			# assistant. The flag will be reset later when the list is published.
 			self._is_hub2 = True
 			return
 		ids = set(i[0] | i[1] * 256 for i in itertools.izip(\
