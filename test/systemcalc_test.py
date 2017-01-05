@@ -237,6 +237,76 @@ class TestSystemCalc(TestSystemCalcBase):
 
 		})
 
+	def test_ac_gridmeter_3p_ignore_acout(self):
+		self._set_setting('/Settings/SystemSetup/HasAcOutSystem', 0)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/Out/L1/P', 20)
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Ac/Out/L2/P', -10)
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Ac/Out/L3/P', 30)
+		self._add_device('com.victronenergy.grid.ttyUSB1', {
+			'/Ac/L1/Power': 1230,
+			'/Ac/L2/Power': 1130,
+			'/Ac/L3/Power': 1030 })
+		self._add_device('com.victronenergy.pvinverter.fronius_122_2312', {
+			'/Ac/L1/Power': 500,
+			'/Ac/L2/Power': 400,
+			'/Ac/L3/Power': 200,
+			'/Position': 0
+		})
+
+		self._update_values()
+		self._check_values({
+			'/Ac/Grid/L1/Power': 1230,
+			'/Ac/Grid/L2/Power': 1130,
+			'/Ac/Grid/L3/Power': 1030,
+			'/Ac/Grid/NumberOfPhases': 3,
+			'/Ac/Consumption/L1/Power': 1230 - 123 + 500,
+			'/Ac/Consumption/L2/Power': 1130 + 400,
+			'/Ac/Consumption/L3/Power': 1030 + 200,
+			'/Ac/ConsumptionOnInput/L1/Power': 1230 - 123 + 500,
+			'/Ac/ConsumptionOnInput/L2/Power': 1130 + 400,
+			'/Ac/ConsumptionOnInput/L3/Power': 1030 + 200,
+			'/Ac/ConsumptionOnOutput/NumberOfPhases': None,
+			'/Ac/ConsumptionOnOutput/L1/Power': None,
+			'/Ac/ConsumptionOnOutput/L2/Power': None,
+			'/Ac/ConsumptionOnOutput/L3/Power': None
+
+		})
+
+	def test_ac_gridmeter_3p_has_acout_notset(self):
+		self._set_setting('/Settings/SystemSetup/HasAcOutSystem', 0)
+		self._monitor.add_value('com.victronenergy.settings', '/Settings/CGwacs/RunWithoutGridMeter', 1)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/Out/L1/P', 20)
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Ac/Out/L2/P', -10)
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Ac/Out/L3/P', 30)
+		self._add_device('com.victronenergy.grid.ttyUSB1', {
+			'/Ac/L1/Power': 1230,
+			'/Ac/L2/Power': 1130,
+			'/Ac/L3/Power': 1030 })
+		self._add_device('com.victronenergy.pvinverter.fronius_122_2312', {
+			'/Ac/L1/Power': 500,
+			'/Ac/L2/Power': 400,
+			'/Ac/L3/Power': 200,
+			'/Position': 0
+		})
+
+		self._update_values()
+		self._check_values({
+			'/Ac/Grid/L1/Power': 1230,
+			'/Ac/Grid/L2/Power': 1130,
+			'/Ac/Grid/L3/Power': 1030,
+			'/Ac/Grid/NumberOfPhases': 3,
+			'/Ac/Consumption/L1/Power': 1230 - 123 + 500 + 20,
+			'/Ac/Consumption/L2/Power': 1130 + 400,
+			'/Ac/Consumption/L3/Power': 1030 + 200 + 30,
+			'/Ac/ConsumptionOnInput/L1/Power': 1230 - 123 + 500,
+			'/Ac/ConsumptionOnInput/L2/Power': 1130 + 400,
+			'/Ac/ConsumptionOnInput/L3/Power': 1030 + 200,
+			'/Ac/ConsumptionOnOutput/NumberOfPhases': 3,
+			'/Ac/ConsumptionOnOutput/L1/Power': 20,
+			'/Ac/ConsumptionOnOutput/L2/Power': 0,
+			'/Ac/ConsumptionOnOutput/L3/Power': 30
+		})
+
 	def test_ac_gridmeter_inactive(self):
 		self._add_device('com.victronenergy.grid.ttyUSB1', { '/Ac/L1/Power': 1230 })
 		self._add_device('com.victronenergy.pvinverter.fronius_122_2312', {

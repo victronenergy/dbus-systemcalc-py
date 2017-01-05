@@ -104,7 +104,8 @@ class SystemCalc:
 				'/Ac/L3/Power': dummy},
 			'com.victronenergy.settings' : {
 				'/Settings/SystemSetup/AcInput1' : dummy,
-				'/Settings/SystemSetup/AcInput2' : dummy}
+				'/Settings/SystemSetup/AcInput2' : dummy,
+				'/Settings/CGwacs/RunWithoutGridMeter' : dummy}
 		}
 
 		service_supervisor = delegates.ServiceSupervisor()
@@ -130,7 +131,8 @@ class SystemCalc:
 		# Connect to localsettings
 		supported_settings = {
 			'batteryservice': ['/Settings/SystemSetup/BatteryService', self.BATSERVICE_DEFAULT, 0, 0],
-			'hasdcsystem': ['/Settings/SystemSetup/HasDcSystem', 0, 0, 1]}
+			'hasdcsystem': ['/Settings/SystemSetup/HasDcSystem', 0, 0, 1],
+			'useacout': ['/Settings/SystemSetup/HasAcOutSystem', 1, 0, 1]}
 
 		for m in self._modules:
 			for setting in m.get_settings():
@@ -574,14 +576,22 @@ class SystemCalc:
 				product_id = self._dbusmonitor.get_value(multi_path, '/ProductId')
 			newvalues['/Ac/%s/ProductId' % device_type] = product_id
 			newvalues['/Ac/%s/DeviceType' % device_type] = device_type_id
+		# If we have an ESS system and RunWithoutGridMeter is set, there cannot be load on the AC-In, so it
+		# must be on AC-Out. Hence we do calculate AC-Out consumption even if 'useacout' is disabled.
+		use_ac_out = \
+			self._settings['useacout'] == 1 or \
+			self._dbusmonitor.get_value('com.victronenergy.settings', '/Settings/CGwacs/RunWithoutGridMeter') == 1
 		for phase in consumption:
-			c = newvalues.get('/Ac/PvOnOutput/%s/Power' % phase)
-			if multi_path is not None:
-				ac_out = self._dbusmonitor.get_value(multi_path, '/Ac/Out/%s/P' % phase)
-				c = _safeadd(c, ac_out)
-			newvalues['/Ac/ConsumptionOnOutput/%s/Power' % phase] = _safemax(0, c)
+			c = None
+			if use_ac_out:
+				c = newvalues.get('/Ac/PvOnOutput/%s/Power' % phase)
+				if multi_path is not None:
+					ac_out = self._dbusmonitor.get_value(multi_path, '/Ac/Out/%s/P' % phase)
+					c = _safeadd(c, ac_out)
+				c = _safemax(0, c)
+			newvalues['/Ac/ConsumptionOnOutput/%s/Power' % phase] = c
 			newvalues['/Ac/ConsumptionOnInput/%s/Power' % phase] = consumption[phase]
-			newvalues['/Ac/Consumption/%s/Power' % phase] = _safeadd(consumption[phase], _safemax(0, c))
+			newvalues['/Ac/Consumption/%s/Power' % phase] = _safeadd(consumption[phase], c)
 		self._compute_number_of_phases('/Ac/Consumption', newvalues)
 		self._compute_number_of_phases('/Ac/ConsumptionOnOutput', newvalues)
 		self._compute_number_of_phases('/Ac/ConsumptionOnInput', newvalues)
