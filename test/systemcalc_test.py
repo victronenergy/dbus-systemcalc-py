@@ -1223,6 +1223,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._add_device('com.victronenergy.vecan.can0', {}, connection='VE.Can')
 		self._update_values()
 		self.assertEqual(None, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
+		self._check_values({'/Control/SolarChargeCurrent' : 0})
 		self._check_values({'/Control/SolarChargeVoltage' : 0})
 
 	def test_hub1_control_vedirect_solarcharger_bms_battery(self):
@@ -1251,7 +1252,9 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values(interval=10000)
 		self.assertEqual(13, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/NetworkMode'))
 		self.assertEqual(25, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeCurrent'))
-		self._check_values({'/Control/SolarChargeCurrent' : 1})
+		self._check_values({
+			'/Control/SolarChargeCurrent' : 1,
+			'/Control/SolarChargeVoltage' : 1})
 
 	def test_control_vedirect_solarcharger_bms_battery_no_charge_voltage(self):
 		self._add_device('com.victronenergy.solarcharger.ttyO2', {
@@ -1278,7 +1281,9 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values(interval=10000)
 		self.assertEqual(9, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/NetworkMode'))
 		self.assertEqual(25, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeCurrent'))
-		self._check_values({'/Control/SolarChargeCurrent' : 1})
+		self._check_values({
+			'/Control/SolarChargeCurrent' : 1,
+			'/Control/SolarChargeVoltage' : 0})
 
 	def test_system_mapping(self):
 		self._update_values()
@@ -1579,7 +1584,9 @@ class TestSystemCalcNoMulti(TestSystemCalcBase):
 		self._update_values(interval=10000)
 		self.assertEqual(9, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/NetworkMode'))
 		self.assertEqual(25, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeCurrent'))
-		self._check_values({'/Control/SolarChargeCurrent' : 1})
+		self._check_values({
+			'/Control/SolarChargeCurrent' : 1,
+			'/Control/SolarChargeVoltage' : 0})
 
 
 if __name__ == '__main__':
