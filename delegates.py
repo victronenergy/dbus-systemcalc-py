@@ -174,6 +174,13 @@ class Hub1Bridge(SystemCalcDelegate):
 		for battery_service in self._battery_services:
 			max_charge_current = safeadd(max_charge_current, \
 				self._dbusmonitor.get_value(battery_service, '/Info/MaxChargeCurrent'))
+		# Workaround: copying the max charge current from BMS batteries to the solarcharger leads to problems:
+		# excess PV power is not fed back to the grid any more, and loads on AC-out are not fed with PV power.
+		# PV power is used for charging the batteries only.
+		# So we removed this feature, until we have a complete solution for solar charger support. Until then
+		# we set a 'high' max charge current to avoid 'BMS connection lost' alarms from the solarcharger.
+		if max_charge_current is not None:
+			max_charge_current = 1000
 		vebus_path = self._get_vebus_path()
 		charge_voltage = None if vebus_path is None else \
 			self._dbusmonitor.get_value(vebus_path, '/Hub/ChargeVoltage')

@@ -1323,7 +1323,7 @@ class TestSystemCalc(TestSystemCalcBase):
 				 '/Info/MaxDischargeCurrent': 50})
 		self._update_values(interval=10000)
 		self.assertEqual(13, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/NetworkMode'))
-		self.assertEqual(25, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeCurrent'))
+		self.assertEqual(1000, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeCurrent'))
 		self._check_values({
 			'/Control/SolarChargeCurrent' : 1,
 			'/Control/SolarChargeVoltage' : 1})
@@ -1352,7 +1352,7 @@ class TestSystemCalc(TestSystemCalcBase):
 				 '/Info/MaxDischargeCurrent': 50})
 		self._update_values(interval=10000)
 		self.assertEqual(9, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/NetworkMode'))
-		self.assertEqual(25, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeCurrent'))
+		self.assertEqual(1000, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeCurrent'))
 		self._check_values({
 			'/Control/SolarChargeCurrent' : 1,
 			'/Control/SolarChargeVoltage' : 0})
@@ -1711,7 +1711,7 @@ class TestSystemCalcNoMulti(TestSystemCalcBase):
 				 '/Info/MaxDischargeCurrent': 50})
 		self._update_values(interval=10000)
 		self.assertEqual(9, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/NetworkMode'))
-		self.assertEqual(25, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeCurrent'))
+		self.assertEqual(1000, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeCurrent'))
 		self._check_values({
 			'/Control/SolarChargeCurrent' : 1,
 			'/Control/SolarChargeVoltage' : 0})
