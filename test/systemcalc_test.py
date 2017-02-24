@@ -1423,7 +1423,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self.assertIsNone(self._monitor.get_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent'))
 		self._check_values({'/Control/ExtraBatteryCurrent' : 0})
 
-	def test_hub1_no_extra_current_battery(self):
+	def test_hub1_with_bmv_extra_current_battery(self):
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent', 0)
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
@@ -1440,8 +1440,8 @@ class TestSystemCalc(TestSystemCalcBase):
 								 '/Soc': 15.3,
 								 '/DeviceInstance': 2})
 		self._update_values()
-		self.assertEqual(0, self._monitor.get_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent'))
-		self._check_values({'/Control/ExtraBatteryCurrent' : 0})
+		self.assertEqual(9.7, self._monitor.get_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent'))
+		self._check_values({'/Control/ExtraBatteryCurrent' : 1})
 		self._check_values({'/Control/VebusSoc' : 0})
 
 	def test_hub2_extra_current_battery(self):
@@ -1507,8 +1507,8 @@ class TestSystemCalc(TestSystemCalcBase):
 								 '/Soc': 15.3,
 								 '/DeviceInstance': 2})
 		self._update_values()
-		self.assertEqual(23, self._monitor.get_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent'))
-		self._check_values({'/Control/ExtraBatteryCurrent' : 0})
+		self.assertEqual(9.7, self._monitor.get_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent'))
+		self._check_values({'/Control/ExtraBatteryCurrent' : 1})
 		self._check_values({'/Control/VebusSoc' : 0})
 
 	def test_hub1_extra_current_no_write_soc(self):

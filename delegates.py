@@ -295,10 +295,17 @@ class VebusSocWriter(SystemCalcDelegate):
 	def update_values(self, newvalues):
 		vebus_service = newvalues.get('/VebusService')
 		current_written = 0
-		if vebus_service != None and not self._must_write_soc(vebus_service):
-			# Always write the extra current, even if there is no solarcharge present. We need this because once
-			# an SoC is written to the vebus service, the vebus device will stop adjusting its SoC until an
-			# extra current is written.
+		if vebus_service is not None:
+			# Writing the extra charge current to the Multi serves two purposes:
+			# 1) Also take the charge current from the MPPT into account in the VE.Bus SOC algorithm.
+			# 2) The bulk timer in the Multi only runs when the battery is being charged, ie charge-current
+			#    is positive. And in ESS Optimize mode, the Multi itself is not charging.
+			#    So without knowing that the MPPT is charging, the bulk timer will never run, and absorption
+			#    will then be very short.
+			#
+			# Always write the extra current, even if there is no solarcharger present. We need this because
+			# once an SoC is written to the vebus service, the vebus device will stop adjusting its SoC until
+			# an extra current is written.
 			total_charge_current = newvalues.get('/Dc/Pv/Current', 0)
 			try:
 				charge_current_item = self._dbusmonitor.get_item(vebus_service, '/ExtraBatteryCurrent')
