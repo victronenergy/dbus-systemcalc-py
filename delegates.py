@@ -280,7 +280,6 @@ class VebusSocWriter(SystemCalcDelegate):
 		SystemCalcDelegate.__init__(self)
 		gobject.idle_add(exit_on_error, lambda: not self._write_vebus_soc())
 		gobject.timeout_add(10000, exit_on_error, self._write_vebus_soc)
-		self._is_hub2 = None
 
 	def get_input(self):
 		return [('com.victronenergy.vebus', ['/Soc', '/ExtraBatteryCurrent', '/Devices/0/Assistants'])]
@@ -320,7 +319,6 @@ class VebusSocWriter(SystemCalcDelegate):
 		vebus_service = self._dbusservice['/VebusService']
 		soc_written = 0
 		if vebus_service != None:
-			self._update_hub2_presence(vebus_service)
 			if self._must_write_soc(vebus_service):
 				soc = self._dbusservice['/Dc/Battery/Soc']
 				if soc != None:
@@ -335,30 +333,25 @@ class VebusSocWriter(SystemCalcDelegate):
 		return True
 
 	def _must_write_soc(self, vebus_service):
-		if self._is_hub2 == None:
-			self._update_hub2_presence(vebus_service)
-		if self._is_hub2:
-			return False
 		active_battery_service = self._dbusservice['/ActiveBatteryService']
 		if active_battery_service == None or active_battery_service.startswith('com.victronenergy.vebus'):
 			return False
-		return True
-
-	def _update_hub2_presence(self, vebus_service):
+		# Writing SoC to the vebus service is not allowed when a hub-2 assistant is present, so we have to
+		# check the list of assistant IDs.
 		# Note that /Devices/0/Assistants provides a list of bytes which can be empty. It can also be invalid
 		# (empty list of ints). An empty list of bytes is not interpreted as an invalid value. This allows
 		# us to distinguish between an empty list and an invalid value.
 		value = self._dbusmonitor.get_value(vebus_service, '/Devices/0/Assistants')
 		if value == None:
-			# List of assistants is not available, so we don't know which assistants are present. Because
-			# it is not allowed to write the vebus SoC on a hub-2 system, we assume for now there is a hub-2
-			# assistant. The flag will be reset later when the list is published.
-			self._is_hub2 = True
-			return
+			# List of assistants is not yet available, so we don't know which assistants are present. Return
+			# False just in case a hub-2 assistant is in use.
+			return False
 		ids = set(i[0] | i[1] * 256 for i in itertools.izip(\
 			itertools.islice(value, 0, None, 2), \
 			itertools.islice(value, 1, None, 2)))
-		self._is_hub2 = len(set(ids).intersection(VebusSocWriter._hub2_assistant_ids)) > 0
+		if len(set(ids).intersection(VebusSocWriter._hub2_assistant_ids)) > 0:
+			return False
+		return True
 
 
 class RelayState(SystemCalcDelegate):
