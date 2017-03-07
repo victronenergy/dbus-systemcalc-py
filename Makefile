@@ -8,6 +8,7 @@ FILES = \
 	$(SOURCEDIR)/sc_utils.py
 
 DELEGATES = \
+	$(SOURCEDIR)/delegates/autoequalise.py \
 	$(SOURCEDIR)/delegates/base.py \
 	$(SOURCEDIR)/delegates/buzzercontrol.py \
 	$(SOURCEDIR)/delegates/hub1bridge.py \
@@ -59,6 +60,6 @@ clean: ;
 install: install_velib_python install_app install_delegates
 
 test:
-	python test/systemcalc_test.py -v
+	nosetests -w tests
 
 .PHONY: help install_app install_velib_python install test

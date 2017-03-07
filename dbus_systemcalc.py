@@ -105,7 +105,8 @@ class SystemCalc:
 			'com.victronenergy.settings' : {
 				'/Settings/SystemSetup/AcInput1' : dummy,
 				'/Settings/SystemSetup/AcInput2' : dummy,
-				'/Settings/CGwacs/RunWithoutGridMeter' : dummy}
+				'/Settings/CGwacs/RunWithoutGridMeter' : dummy,
+				'/Settings/System/TimeZone' : dummy}
 		}
 
 		self._modules = [
@@ -118,7 +119,8 @@ class SystemCalc:
 			delegates.Hub1Bridge(),
 			delegates.VoltageSense(),
 			delegates.SystemState(),
-            delegates.BatteryLife()]
+			delegates.BatteryLife(),
+			delegates.AutoEqualise()]
 
 		for m in self._modules:
 			for service, paths in m.get_input():
