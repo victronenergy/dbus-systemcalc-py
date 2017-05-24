@@ -10,8 +10,6 @@ FILES = \
 
 VEDLIB_FILES = \
 	$(VEDLIBDIR)/logger.py \
-	$(VEDLIBDIR)/tracing.py \
-	$(VEDLIBDIR)/streamcommand.py \
 	$(VEDLIBDIR)/ve_utils.py \
 	$(VEDLIBDIR)/vedbus.py \
 	$(VEDLIBDIR)/settingsdevice.py \
