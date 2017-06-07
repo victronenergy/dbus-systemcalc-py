@@ -108,16 +108,14 @@ class SystemCalc:
 				'/Settings/CGwacs/RunWithoutGridMeter' : dummy}
 		}
 
-		service_supervisor = delegates.ServiceSupervisor()
 		self._modules = [
 			delegates.HubTypeSelect(),
 			delegates.VebusSocWriter(),
 			delegates.ServiceMapper(),
-			service_supervisor,
 			delegates.RelayState(),
 			delegates.BuzzerControl(),
 			delegates.LgCircuitBreakerDetect(),
-			delegates.Hub1Bridge(service_supervisor)]
+			delegates.Hub1Bridge()]
 
 		for m in self._modules:
 			for service, paths in m.get_input():

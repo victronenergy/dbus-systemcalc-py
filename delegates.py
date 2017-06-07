@@ -3,13 +3,11 @@
 
 import dbus
 import fcntl
-import functools
 import gobject
 import itertools
 import logging
 import os
 import sc_utils
-import signal
 import sys
 import traceback
 
@@ -110,12 +108,11 @@ class HubTypeSelect(SystemCalcDelegate):
 
 
 class Hub1Bridge(SystemCalcDelegate):
-	def __init__(self, service_supervisor):
+	def __init__(self):
 		self._solarchargers = []
 		self._vecan_services = []
 		self._battery_services = []
 		self._timer = None
-		self._service_supervisor = service_supervisor
 
 	def get_input(self):
 		return [
@@ -195,9 +192,6 @@ class Hub1Bridge(SystemCalcDelegate):
 		voltage_written = 0
 		current_written = 0
 		for service in self._solarchargers:
-			if self._service_supervisor.is_busy(service):
-				logging.debug('Solarcharger being supervised: {}'.format(service))
-				continue
 			try:
 				has_vecan_charger = has_vecan_charger or \
 					(self._dbusmonitor.get_value(service, '/Mgmt/Connection') == 'VE.Can')
@@ -539,61 +533,3 @@ class LgCircuitBreakerDetect(SystemCalcDelegate):
 				self._dbusservice['/Dc/Battery/Alarms/CircuitBreakerTripped'] = 2
 				item.set_value(dbus.Int32(4, variant_level=1))
 				self._lg_voltage_buffer = []
-
-
-class ServiceSupervisor(SystemCalcDelegate):
-	def __init__(self):
-		SystemCalcDelegate.__init__(self)
-		self._supervised = set()
-		self._busy = set()
-		gobject.timeout_add(60000, exit_on_error, self._process_supervised)
-
-	def get_input(self):
-		return [
-			('com.victronenergy.battery', ['/ProductId']),
-			('com.victronenergy.solarcharger', ['/ProductId'])]
-
-	def device_added(self, service, instance, do_service_change=True):
-		service_type = service.split('.')[2]
-		if service_type == 'battery' or service_type == 'solarcharger':
-			self._supervised.add(service)
-
-	def device_removed(self, service, instance):
-		self._supervised.discard(service)
-		self._busy.discard(service)
-
-	def is_busy(self, service):
-		return service in self._busy
-
-	def _process_supervised(self):
-		for service in self._supervised:
-			# Do an async call. If the owner of the service does not answer, we do not want to wait for
-			# the timeout here.
-			# Do not use lambda function in the async call, because the lambda functions will be executed
-			# after completion of the loop, and the service parameter will have the value that was assigned
-			# to it in the last iteration. Instead we use functools.partial, which will 'freeze' the current
-			# value of service.
-			self._busy.add(service)
-			self._dbusmonitor.dbusConn.call_async(
-				service, '/ProductId', None, 'GetValue', '', [],
-				functools.partial(exit_on_error, self._supervise_success, service),
-				functools.partial(exit_on_error, self._supervise_failed, service))
-		return True
-
-	def _supervise_success(self, service, value):
-		self._busy.discard(service)
-
-	def _supervise_failed(self, service, error):
-		try:
-			self._busy.discard(service)
-			if error.get_dbus_name() != 'org.freedesktop.DBus.Error.NoReply':
-				logging.info('Ignoring supervise error from %s: %s' % (service, error))
-				return
-			logging.error('%s is not responding to D-Bus requests' % service)
-			pid = self._dbusmonitor.dbusConn.call_blocking('org.freedesktop.DBus', '/', None,
-				'GetConnectionUnixProcessID', 's', [service])
-			if pid is not None and pid > 1:
-				logging.error('killing owner of %s (pid=%s)' % (service, pid))
-				os.kill(pid, signal.SIGKILL)
-		except (OSError, dbus.exceptions.DBusException):
-			traceback.print_exc()
