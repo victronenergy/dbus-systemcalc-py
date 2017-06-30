@@ -6,6 +6,7 @@ import fcntl
 import gobject
 import itertools
 import logging
+import math
 import os
 import sc_utils
 import sys
@@ -108,7 +109,14 @@ class HubTypeSelect(SystemCalcDelegate):
 
 
 class Hub1Bridge(SystemCalcDelegate):
+	# if ChargeCurrent > ChangeCurrentLimitedFactor * MaxChargeCurrent we assume that the solar charger is
+	# current limited, and yield do more power if we increase the MaxChargeCurrent
+	ChargeCurrentLimitedFactor = 0.9
+	VebusChargeFactor = 0.8
+	StaticScaleFactor = 1.1 / ChargeCurrentLimitedFactor
+
 	def __init__(self):
+		SystemCalcDelegate.__init__(self)
 		self._solarchargers = []
 		self._vecan_services = []
 		self._battery_services = []
@@ -116,19 +124,42 @@ class Hub1Bridge(SystemCalcDelegate):
 
 	def get_input(self):
 		return [
-			('com.victronenergy.battery',
-				['/Info/MaxChargeCurrent']),
-			('com.victronenergy.vebus',
-				['/Hub/ChargeVoltage', '/State']),
-			('com.victronenergy.solarcharger',
-				['/Link/NetworkMode', '/Link/ChargeVoltage', '/Link/ChargeCurrent', '/State', '/FirmwareVersion', '/Mgmt/Connection']),
+			('com.victronenergy.battery', [
+				'/Info/BatteryLowVoltage',
+				'/Info/MaxChargeCurrent',
+				'/Info/MaxChargeVoltage',
+				'/Info/MaxDischargeCurrent']),
+			('com.victronenergy.vebus', [
+				'/Hub/ChargeVoltage',
+				'/Dc/0/Current',
+				'/Dc/0/MaxChargeCurrent',
+				'/State',
+				'/BatteryOperationalLimits/BatteryLowVoltage',
+				'/BatteryOperationalLimits/MaxChargeCurrent',
+				'/BatteryOperationalLimits/MaxChargeVoltage',
+				'/BatteryOperationalLimits/MaxDischargeCurrent']),
+			('com.victronenergy.solarcharger', [
+				'/Dc/0/Current',
+				'/Link/NetworkMode',
+				'/Link/ChargeVoltage',
+				'/Link/ChargeCurrent',
+				'/Settings/ChargeCurrentLimit',
+				'/State',
+				'/FirmwareVersion',
+				'/Mgmt/Connection']),
 			('com.victronenergy.vecan',
-				['/Link/ChargeVoltage'])]
+				['/Link/ChargeVoltage']),
+			('com.victronenergy.settings',
+				['/Settings/CGwacs/OvervoltageFeedIn'])]
+
+	def get_settings(self):
+		return [('maxchargecurrent', '/Settings/SystemSetup/MaxChargeCurrent', -1, -1, 10000)]
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 		self._dbusservice.add_path('/Control/SolarChargeVoltage', value=0)
 		self._dbusservice.add_path('/Control/SolarChargeCurrent', value=0)
+		self._dbusservice.add_path('/Control/BmsParameters', value=0)
 
 	def device_added(self, service, instance, do_service_change=True):
 		service_type = service.split('.')[2]
@@ -145,9 +176,12 @@ class Hub1Bridge(SystemCalcDelegate):
 			# Skip timer code below
 			return
 		if self._timer is None:
-			# Update the solar charger every 10 seconds, because it has to switch to HEX mode each time
-			# we write a value to its D-Bus service. Writing too often may block text messages.
-			self._timer = gobject.timeout_add(10000, exit_on_error, self._on_timer)
+			# Update the solar charger every 5 seconds, because it has to switch to HEX mode each time
+			# we write a value to its D-Bus service. Writing too often may block text messages. In MPPT
+			# firmware v1.23 and later, all relevant values will be transmitted as asynchronous message,
+			# so the update rate could be increased. However, on VE.Can chargers, this kind of information is
+			# shared every 5 seconds as well, so decreasing the interval might be irrelevant.
+			self._timer = gobject.timeout_add(5000, exit_on_error, self._on_timer)
 
 	def device_removed(self, service, instance):
 		if service in self._solarchargers:
@@ -156,90 +190,307 @@ class Hub1Bridge(SystemCalcDelegate):
 			self._vecan_services.remove(service)
 		elif service in self._battery_services:
 			self._battery_services.remove(service)
-		if len(self._solarchargers) == 0 and len(self._vecan_services) == 0 and self._timer is not None:
+		if len(self._solarchargers) == 0 and len(self._vecan_services) == 0 and \
+			len(self._battery_services) == 0 and self._timer is not None:
 			gobject.source_remove(self._timer)
 			self._timer = None
 
 	def _on_timer(self):
-		voltage_written, current_written = self._update_solarchargers()
+		bms_service = self.find_bms_service()
+		bms_parameters_written = self._update_battery_operational_limits(bms_service)
+		voltage_written, current_written = self._update_solarchargers(bms_service)
 		self._dbusservice['/Control/SolarChargeVoltage'] = voltage_written
 		self._dbusservice['/Control/SolarChargeCurrent'] = current_written
+		self._dbusservice['/Control/BmsParameters'] = bms_parameters_written
 		return True
 
-	def _update_solarchargers(self):
-		max_charge_current = None
-		for battery_service in self._battery_services:
-			max_charge_current = safeadd(max_charge_current, \
-				self._dbusmonitor.get_value(battery_service, '/Info/MaxChargeCurrent'))
-		# Workaround: copying the max charge current from BMS batteries to the solarcharger leads to problems:
-		# excess PV power is not fed back to the grid any more, and loads on AC-out are not fed with PV power.
-		# PV power is used for charging the batteries only.
-		# So we removed this feature, until we have a complete solution for solar charger support. Until then
-		# we set a 'high' max charge current to avoid 'BMS connection lost' alarms from the solarcharger.
-		if max_charge_current is not None:
-			max_charge_current = 1000
-		vebus_path = self._get_vebus_path()
-		charge_voltage = None if vebus_path is None else \
-			self._dbusmonitor.get_value(vebus_path, '/Hub/ChargeVoltage')
+	def _update_battery_operational_limits(self, bms_service):
+		if bms_service is None:
+			return 0
+		vebus_path = self._dbusservice['/VebusService']
+		if vebus_path is None:
+			return 0
+		try:
+			sc_utils.copy_dbus_value(self._dbusmonitor,
+				bms_service, '/Info/MaxChargeVoltage',
+				vebus_path, '/BatteryOperationalLimits/MaxChargeVoltage')
+			sc_utils.copy_dbus_value(self._dbusmonitor,
+				bms_service, '/Info/MaxChargeCurrent',
+				vebus_path, '/BatteryOperationalLimits/MaxChargeCurrent')
+			sc_utils.copy_dbus_value(self._dbusmonitor,
+				bms_service, '/Info/BatteryLowVoltage',
+				vebus_path, '/BatteryOperationalLimits/BatteryLowVoltage')
+			sc_utils.copy_dbus_value(self._dbusmonitor,
+				bms_service, '/Info/MaxDischargeCurrent',
+				vebus_path, '/BatteryOperationalLimits/MaxDischargeCurrent')
+			return 1
+		except dbus.exceptions.DBusException:
+			logging.debug(traceback.format_exc())
+			return 0
+
+	def _update_solarchargers(self, bms_service):
+		bms_max_charge_current = None if bms_service is None else \
+			self._dbusmonitor.get_value(bms_service, '/Info/MaxChargeCurrent')
+		max_charge_current = self._settings['maxchargecurrent']
+		# @todo EV If the max charge current is set the MPPTs will move to BMS mode. If the setting is reset
+		# later on, the MPPTs will error, because the are taken out of BMS mode. This is a good thing if the
+		# BMS max charge current is no longer available, but it case of a setting...
+		# Another issue: if a max charge current setting is set and a BMS is present, we get no errors
+		# whenever the BMS service disappears, because we keep setting the max charge current on the MPPTs.
+		if max_charge_current < 0:
+			max_charge_current = bms_max_charge_current
+		elif bms_max_charge_current is not None:
+			max_charge_current = min(max_charge_current, bms_max_charge_current)
+
+		# @todo EV Feedback allowed is defined as 'ESS present and FeedInOvervoltage is enabled'. This
+		# ignores other setups which allow feedback: hub-1 and hub-2 (and probably hub-3).
+		feedback_allowed = \
+			self._dbusservice['/SystemType'] == 'ESS' and \
+			self._dbusmonitor.get_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn') == 1
+		vebus_path = self._dbusservice['/VebusService']
+		# @todo EV If the vebus service does not provide a charge voltage setpoint (so no ESS/Hub-1/Hub-4), we
+		# use the max charge voltage provided by the BMS (if any). This will probably prevent feedback, but
+		# that is probably not allowed anyway.
+		charge_voltage = None
+		if bms_service is not None:
+			charge_voltage = self._dbusmonitor.get_value(bms_service, '/Info/MaxChargeVoltage')
+		if vebus_path is not None and (charge_voltage is None or feedback_allowed):
+			charge_voltage = self._dbusmonitor.get_value(vebus_path, '/Hub/ChargeVoltage')
 		if charge_voltage is None and max_charge_current is None:
-			return (0, 0)
+			# @todo EV Reset vebus_max_charge_current here? To what value? We get here if the BMS battery
+			# service disappears or the max charge current setting is reset.
+			return 0, 0
 		# Network mode:
 		# bit 0: Operated in network environment
-		# bit 2: Remote Hub-1 control
-		# bit 3: Remote BMS control
+		# bit 2: Remote Hub-1 control (MPPT will accept charge voltage)
+		# bit 3: Remote BMS control (MPPT will accept max charge current, and enter BMS mode)
 		network_mode = 1 | (0 if charge_voltage is None else 4) | (0 if max_charge_current is None else 8)
-		has_vecan_charger = False
-		voltage_written = 0
-		current_written = 0
+		has_vecan_chargers = False
+		vedirect_chargers = []
+		network_mode_written = False
 		for service in self._solarchargers:
 			try:
-				has_vecan_charger = has_vecan_charger or \
-					(self._dbusmonitor.get_value(service, '/Mgmt/Connection') == 'VE.Can')
+				if self._dbusmonitor.get_value(service, '/Mgmt/Connection') == 'VE.Can':
+					has_vecan_chargers = True
 				# We use /Link/NetworkMode to detect Hub support in the solarcharger. Existence of this item
 				# implies existence of the other /Link/* fields.
-				if self._dbusmonitor.get_value(service, '/Link/NetworkMode') is None:
-					continue
-				self._dbusmonitor.set_value(service, '/Link/NetworkMode', network_mode)
-				if charge_voltage is not None:
-					self._dbusmonitor.set_value(service, '/Link/ChargeVoltage', charge_voltage)
-					voltage_written = 1
-					# solarcharger firmware v1.17 does not support link items. Version v1.17 itself requires
-					# the vebus state to be copied to the solarcharger (otherwise the charge voltage would be
-					# ignored). v1.18 and later do not have this requirement.
-					firmware_version = self._dbusmonitor.get_value(service, '/FirmwareVersion')
-					if firmware_version is not None and (firmware_version & 0x0FFF) == 0x0117:
-						state = self._dbusmonitor.get_value(vebus_path, '/State')
-						if state is not None:
-							self._dbusmonitor.set_value(service, '/State', state)
-				if max_charge_current is not None:
-					self._dbusmonitor.set_value(service, '/Link/ChargeCurrent', max_charge_current)
-					current_written = 1
+				if self._dbusmonitor.get_value(service, '/Link/NetworkMode') is not None:
+					vedirect_chargers.append(service)
+					self._dbusmonitor.set_value(service, '/Link/NetworkMode', network_mode)
+					network_mode_written = True
 			except dbus.exceptions.DBusException:
 				pass
 
-		if has_vecan_charger and charge_voltage is not None:
-			# Charge voltage cannot by written directly to the CAN-bus solar chargers, we have to use
-			# the com.victronenergy.vecan.* service instead.
-			# Writing charge current to CAN-bus solar charger is not supported yet.
-			for service in self._vecan_services:
+		voltage_written = self._distribute_voltage_setpoint(vebus_path, charge_voltage, vedirect_chargers,
+															has_vecan_chargers)
+
+		# Do not limit max charge current when feedback is allowed. The rationale behind this is that MPPT
+		# charge power should match the capabilities of the battery. If the default charge algorithm is used
+		# by the MPPTs, the charge current should stay within limits. This avoids a problem that we do not
+		# know if extra MPPT power will be fed back to the grid when we decide to increase the MPPT max charge
+		# current.
+		# If feedback is allowed, we limit the vebus max charge current to bms_max_charge_current, because we
+		# have to write a value, and we have no default value (this would be the max charge current setting,
+		# which is not available right now).
+		if feedback_allowed:
+			self._maximize_charge_current(vebus_path, max_charge_current, vedirect_chargers)
+		else:
+			self._distribute_max_charge_current(vebus_path, max_charge_current, vedirect_chargers)
+
+		current_written = 1 if network_mode_written and max_charge_current is not None else 0
+		return voltage_written, current_written
+
+	def _distribute_voltage_setpoint(self, vebus_path, charge_voltage, vedirect_chargers, has_vecan_chargers):
+		if charge_voltage is None:
+			return 0
+
+		voltage_written = 0
+		for service in vedirect_chargers:
+			try:
+				self._dbusmonitor.set_value(service, '/Link/ChargeVoltage', charge_voltage)
+				voltage_written = 1
+				# solarcharger firmware v1.17 does not support link items. Version v1.17 itself requires
+				# the vebus state to be copied to the solarcharger (otherwise the charge voltage would be
+				# ignored). v1.18 and later do not have this requirement.
+				firmware_version = self._dbusmonitor.get_value(service, '/FirmwareVersion')
+				if firmware_version is not None and (firmware_version & 0x0FFF) == 0x0117:
+					state = self._dbusmonitor.get_value(vebus_path, '/State')
+					if state is not None:
+						self._dbusmonitor.set_value(service, '/State', state)
+			except dbus.exceptions.DBusException:
+				pass
+
+		if not has_vecan_chargers:
+			return voltage_written
+
+		# Charge voltage cannot by written directly to the CAN-bus solar chargers, we have to use
+		# the com.victronenergy.vecan.* service instead.
+		# Writing charge current to CAN-bus solar charger is not supported yet.
+		for service in self._vecan_services:
+			try:
+				# Note: we don't check the value of charge_voltage_item because it may be invalid,
+				# for example if the D-Bus path has not been written for more than 60 (?) seconds.
+				# In case there is no path at all, the set_value below will raise an DBusException
+				# which we will ignore cheerfully.
+				self._dbusmonitor.set_value(service, '/Link/ChargeVoltage', charge_voltage)
+				voltage_written = 1
+			except dbus.exceptions.DBusException:
+				pass
+
+		return voltage_written
+
+	def _maximize_charge_current(self, vebus_path, bms_max_charge_current, vedirect_chargers):
+		if bms_max_charge_current is None:
+			return
+
+		try:
+			self._dbusmonitor.set_value(vebus_path, '/Dc/0/MaxChargeCurrent', bms_max_charge_current)
+		except dbus.exceptions.DBusException:
+			logging.debug(traceback.format_exc())
+
+		for service in vedirect_chargers:
+			try:
+				sc_utils.copy_dbus_value(self._dbusmonitor,
+					service, '/Settings/ChargeCurrentLimit',
+					service, '/Link/ChargeCurrent')
+			except dbus.exceptions.DBusException:
+				logging.debug(traceback.format_exc())
+
+	def _distribute_max_charge_current(self, vebus_path, bms_max_charge_current, vedirect_chargers):
+		if bms_max_charge_current is None:
+			return
+
+		solar_charger_current = 0
+
+		# Find out which solarcharger are likely to be able to produce more current when their max charge
+		# current is increased.
+		upscalable_chargers = []
+		static_chargers = []
+		all_chargers = []
+		for service in vedirect_chargers:
+			charge_current = self._dbusmonitor.get_value(service, '/Dc/0/Current')
+			solar_charger_current = safeadd(solar_charger_current, charge_current)
+			max_charge_current = self._dbusmonitor.get_value(service, '/Link/ChargeCurrent')
+			state = self._dbusmonitor.get_value(service, '/State')
+			if state != 0:  # Off
+				all_chargers.append(service)
+				# See if we can increase PV yield by increasing the maximum charge current of this solar
+				# charger. It is assumed that a PV yield can be increased if the actual current is close to
+				# the maximum.
+				if max_charge_current is None or \
+					charge_current >= Hub1Bridge.ChargeCurrentLimitedFactor * max_charge_current:
+					upscalable_chargers.append(service)
+				else:
+					static_chargers.append(service)
+
+		if len(upscalable_chargers) == 0:
+			upscalable_chargers = static_chargers
+			static_chargers = []
+
+		# Handle vebus
+		vebus_dc_current = 0
+		if vebus_path is not None:
+			# @todo EV With vebus firmware v415 and the ESS assistant released on 20170616, the voltage
+			# setpoint published by the vebus devices may exceed the BOL max charge voltage. This may cause
+			# problems with CAN-bus BMS batteries. Do not release gitthis code before this issue is fixed.
+			# @todo EV For freshly updated systems: the vebus will not yet support BOL, if there is a BMS
+			# present bol_item.exists will return False because the vebus firmware has not been updated yet.
+			# In that case we cannot change the vebus charge current (it will be managed indirectly by
+			# hub4control), and will try to distribute the remaining current over the MPPTs.
+			# ***This is a change in behavior compared with the previous release ***.
+			vebus_dc_current = self._dbusmonitor.get_value(vebus_path, '/Dc/0/Current')
+			if self._dbusmonitor.exists(vebus_path, '/BatteryOperationalLimits/MaxChargeVoltage'):
+				vebus_max_charge_current = max(0, bms_max_charge_current - solar_charger_current)
+				# If there are MPPTs that may be able to produce power, we reduce vebus max charge current to
+				# give the MPPTs a change.
+				if len(upscalable_chargers) > 0:
+					vebus_max_charge_current = math.floor(vebus_max_charge_current * Hub1Bridge.VebusChargeFactor)
+					vebus_dc_current = min(vebus_dc_current, vebus_max_charge_current)
 				try:
-					# Note: we don't check the value of charge_voltage_item because it may be invalid,
-					# for example if the D-Bus path has not been written for more than 60 (?) seconds.
-					# In case there is no path at all, the set_value below will raise an DBusException
-					# which we will ignore cheerfully.
-					self._dbusmonitor.set_value(service, '/Link/ChargeVoltage', charge_voltage)
-					voltage_written = 1
+					self._dbusmonitor.set_value(vebus_path, '/Dc/0/MaxChargeCurrent', vebus_max_charge_current)
 				except dbus.exceptions.DBusException:
-					pass
+					logging.debug(traceback.format_exc())
 
-		return (voltage_written, current_written)
+		# Handle Ve.Direct solar chargers
+		extra_solar_charger_max_current = bms_max_charge_current - vebus_dc_current - solar_charger_current
+		if extra_solar_charger_max_current >= 0:
+			extra_solar_charger_max_current = \
+				self._distribute_currents(upscalable_chargers, extra_solar_charger_max_current)
+			# Scale up the max charge current to prevent the MPPT to be categorized as non static the next
+			# time.
+			self._distribute_currents(static_chargers, extra_solar_charger_max_current,
+				scale=Hub1Bridge.StaticScaleFactor)
+		else:
+			if solar_charger_current <= 0:
+				# No solar charger power is produced, but in total we create too much power. All we can do
+				# here is reduce solar charger power to zero. The reduced vebus charge current should take
+				# case of the rest.
+				solar_charger_factor = 0
+			else:
+				# If we get here, we know that solar_charger_current > 0 and
+				# extra_solar_charger_max_current < 0, so solar_charger_factor will always be between 0 and 1.
+				solar_charger_factor = max(0.0, 1 + float(extra_solar_charger_max_current) / solar_charger_current)
+			for charger in all_chargers:
+				try:
+					charge_current = self._dbusmonitor.get_value(charger, '/Dc/0/Current')
+					max_charge_current = solar_charger_factor * charge_current if charge_current > 0 else 0
+					self._dbusmonitor.set_value(charger, '/Link/ChargeCurrent', max_charge_current)
+				except dbus.exceptions.DBusException:
+					logging.debug(traceback.format_exc())
 
-	def _get_vebus_path(self, newvalues=None):
-		if newvalues == None:
-			if '/VebusService' not in self._dbusservice:
-				return None
-			return self._dbusservice['/VebusService']
-		return newvalues.get('/VebusService')
+	def _distribute_currents(self, chargers, increment, scale=1.0):
+		if increment < 0:
+			return increment
+		if len(chargers) == 0:
+			return increment
+		actual_currents = []
+		limits = []
+
+		for charger in chargers:
+			actual_currents.append(max(0, self._dbusmonitor.get_value(charger, '/Dc/0/Current')))
+			limits.append(self._dbusmonitor.get_value(charger, '/Settings/ChargeCurrentLimit'))
+		max_currents = Hub1Bridge.distribute(actual_currents, limits, increment)
+		i = 0
+		for charger in chargers:
+			try:
+				self._dbusmonitor.set_value(charger, '/Link/ChargeCurrent', scale * max_currents[i])
+				increment += actual_currents[i] - max_currents[i]
+				i += 1
+			except dbus.exceptions.DBusException:
+				logging.debug(traceback.format_exc())
+		return increment
+
+	@staticmethod
+	def distribute(actual_values, max_values, increment):
+		assert increment >= 0
+		assert len(actual_values) == len(max_values)
+		n = len(actual_values)
+		cn = n
+		new_values = [-1] * n
+		for j in range(0, n):
+			for i in range(0, n):
+				mv = max_values[i]
+				assert mv >= 0
+				if new_values[i] == mv:
+					continue
+				nv = actual_values[i] + float(increment) / cn
+				assert nv >= 0
+				if nv >= mv:
+					increment += actual_values[i] - mv
+					cn -= 1
+					new_values[i] = mv
+					break
+				new_values[i] = nv
+			else:
+				break
+			continue
+		return new_values
+
+	def find_bms_service(self):
+		for battery_service in self._battery_services:
+			if self._dbusmonitor.get_value(battery_service, '/Info/MaxChargeVoltage') is not None:
+				return battery_service
+		return None
 
 
 class ServiceMapper(SystemCalcDelegate):
