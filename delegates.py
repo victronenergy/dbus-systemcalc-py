@@ -19,41 +19,46 @@ from ve_utils import exit_on_error
 
 
 class SystemCalcDelegate(object):
+	def __init__(self):
+		self._dbusmonitor = None
+		self._settings = None
+		self._dbusservice = None
+
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		self._dbusmonitor = dbusmonitor
 		self._settings = settings
 		self._dbusservice = dbusservice
 
 	def get_input(self):
-		'''In derived classes this function should return the list or D-Bus paths used as input. This will be
+		"""In derived classes this function should return the list or D-Bus paths used as input. This will be
 		used to populate self._dbusmonitor. Paths should be ordered by service name.
 		Example:
 		def get_input(self):
 			return [
 				('com.victronenergy.battery', ['/ProductId']),
 				('com.victronenergy.solarcharger', ['/ProductId'])]
-		'''
+		"""
 		return []
 
 	def get_output(self):
-		'''In derived classes this function should return the list or D-Bus paths used as input. This will be
+		"""In derived classes this function should return the list or D-Bus paths used as input. This will be
 		used to create the D-Bus items in the com.victronenergy.system service. You can include a gettext
 		field which will be used to format the result of the GetText reply.
 		Example:
 		def get_output(self):
 			return [('/Hub', {'gettext': '%s'}), ('/Dc/Battery/Current', {'gettext': '%s A'})]
-		'''
+		"""
 		return []
 
 	def get_settings(self):
-		'''In derived classes this function should return all settings (from com.victronenergy.settings)
+		"""In derived classes this function should return all settings (from com.victronenergy.settings)
 		that are used in this class. The return value will be used to populate self._settings.
 		Note that if you add a setting here, it will be created (using AddSettings of the D-Bus), if you
 		do not want that, add your setting to the list returned by get_input.
 		List item format: (<alias>, <path>, <default value>, <min value>, <max value>)
 		def get_settings(self):
 			return [('writevebussoc', '/Settings/SystemSetup/WriteVebusSoc', 0, 0, 1)]
-		'''
+		"""
 		return []
 
 	def update_values(self, newvalues):
@@ -67,9 +72,6 @@ class SystemCalcDelegate(object):
 
 
 class HubTypeSelect(SystemCalcDelegate):
-	def __init__(self):
-		pass
-
 	def get_input(self):
 		return [
 			('com.victronenergy.vebus', ['/Hub/ChargeVoltage', '/Hub4/AssistantId'])]
@@ -90,18 +92,18 @@ class HubTypeSelect(SystemCalcDelegate):
 		system_type = None
 		vebus_path = newvalues.get('/VebusService')
 		hub4_assistant_id = self._dbusmonitor.get_value(vebus_path, '/Hub4/AssistantId')
-		if hub4_assistant_id != None:
+		if hub4_assistant_id is not None:
 			hub = 4
 			system_type = 'ESS' if hub4_assistant_id == 5 else 'Hub-4'
-		elif self._dbusmonitor.get_value(vebus_path, '/Hub/ChargeVoltage') != None or \
-			newvalues.get('/Dc/Pv/Power') != None:
+		elif self._dbusmonitor.get_value(vebus_path, '/Hub/ChargeVoltage') is not None or \
+			newvalues.get('/Dc/Pv/Power') is not None:
 			hub = 1
 			system_type = 'Hub-1'
-		elif newvalues.get('/Ac/PvOnOutput/NumberOfPhases') != None:
+		elif newvalues.get('/Ac/PvOnOutput/NumberOfPhases') is not None:
 			hub = 2
 			system_type = 'Hub-2'
-		elif newvalues.get('/Ac/PvOnGrid/NumberOfPhases') != None or \
-			newvalues.get('/Ac/PvOnGenset/NumberOfPhases') != None:
+		elif newvalues.get('/Ac/PvOnGrid/NumberOfPhases') is not None or \
+			newvalues.get('/Ac/PvOnGenset/NumberOfPhases') is not None:
 			hub = 3
 			system_type = 'Hub-3'
 		newvalues['/Hub'] = hub
@@ -494,22 +496,20 @@ class Hub1Bridge(SystemCalcDelegate):
 
 
 class ServiceMapper(SystemCalcDelegate):
-	def __init__(self):
-		pass
-
 	def device_added(self, service, instance, do_service_change=True):
-		path = self._get_service_mapping_path(service, instance)
+		path = ServiceMapper._get_service_mapping_path(service, instance)
 		if path in self._dbusservice:
 			self._dbusservice[path] = service
 		else:
 			self._dbusservice.add_path(path, service)
 
 	def device_removed(self, service, instance):
-		path = self._get_service_mapping_path(service, instance)
+		path = ServiceMapper._get_service_mapping_path(service, instance)
 		if path in self._dbusservice:
 			del self._dbusservice[path]
 
-	def _get_service_mapping_path(self, service, instance):
+	@staticmethod
+	def _get_service_mapping_path(service, instance):
 		sn = sc_utils.service_instance_name(service, instance).replace('.', '_').replace('/', '_')
 		return '/ServiceMapping/%s' % sn
 
@@ -605,13 +605,16 @@ class VebusSocWriter(SystemCalcDelegate):
 
 
 class RelayState(SystemCalcDelegate):
+	def __init__(self):
+		SystemCalcDelegate.__init__(self)
+		self._relays = {}
+
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 		relays = sc_utils.gpio_paths('/etc/venus/relays')
 		if len(relays) == 0:
 			logging.info('No relays found')
 			return
-		self._relays = {}
 		i = 0
 		for r in relays:
 			path = os.path.join(r, 'value')
@@ -639,7 +642,7 @@ class RelayState(SystemCalcDelegate):
 		try:
 			path = self._relays[dbus_path]
 			with open(path, 'wt') as w:
-				w.write('1'  if int(value) == 1 else '0')
+				w.write('1' if int(value) == 1 else '0')
 			return True
 		except (IOError, ValueError):
 			traceback.print_exc()
@@ -653,13 +656,17 @@ class BuzzerControl(SystemCalcDelegate):
 	GPIO_BUZZER_PATH = '/etc/venus/buzzer'
 	PWM_BUZZER_PATH = '/etc/venus/pwm_buzzer'
 
-	def set_sources(self, dbusmonitor, settings, dbusservice):
-		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
+	def __init__(self):
+		SystemCalcDelegate.__init__(self)
 		self._buzzer_on = False
 		self._timer = None
+		self._gpio_path = None
+		self._pwm_frequency = None
+
+	def set_sources(self, dbusmonitor, settings, dbusservice):
+		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 		# Find GPIO buzzer
 		gpio_paths = sc_utils.gpio_paths(BuzzerControl.GPIO_BUZZER_PATH)
-		self._gpio_path = None
 		if len(gpio_paths) > 0:
 			self._gpio_path = os.path.join(gpio_paths[0], 'value')
 			logging.info('GPIO buzzer found: {}'.format(self._gpio_path))
@@ -672,11 +679,11 @@ class BuzzerControl(SystemCalcDelegate):
 				logging.info('PWM buzzer found @ frequency: {}'.format(self._pwm_frequency))
 		except ValueError:
 			logging.error('Parsing of PWM buzzer settings at %s failed', BuzzerControl.PWM_BUZZER_PATH)
-		if self._gpio_path == None and self._pwm_frequency == None:
+		if self._gpio_path is None and self._pwm_frequency is None:
 			logging.info('No buzzer found')
 			return
 		self._dbusservice.add_path('/Buzzer/State', value=0, writeable=True,
-			onchangecallback=lambda p,v: exit_on_error(self._on_buzzer_state_changed, v))
+			onchangecallback=lambda p, v: exit_on_error(self._on_buzzer_state_changed, v))
 		# Reset the buzzer so the buzzer state equals the D-Bus value. It will also silence the buzzer after
 		# a restart of the service/system.
 		self._set_buzzer(False)
@@ -685,15 +692,15 @@ class BuzzerControl(SystemCalcDelegate):
 		try:
 			value = 1 if int(value) == 1 else 0
 			if value == 1:
-				if self._timer == None:
+				if self._timer is None:
 					self._timer = gobject.timeout_add(500, exit_on_error, self._on_timer)
 					self._set_buzzer(True)
-			elif self._timer != None:
+			elif self._timer is not None:
 				gobject.source_remove(self._timer)
 				self._timer = None
 				self._set_buzzer(False)
 			self._dbusservice['/Buzzer/State'] = value
-		except (TypeError,ValueError):
+		except (TypeError, ValueError):
 			logging.error('Incorrect value received on /Buzzer/State: %s', value)
 		return False
 
@@ -707,16 +714,16 @@ class BuzzerControl(SystemCalcDelegate):
 		self._buzzer_on = on
 
 	def _set_gpio_buzzer(self, on):
-		if self._gpio_path == None:
+		if self._gpio_path is None:
 			return
 		try:
 			with open(self._gpio_path, 'wt') as w:
 				w.write('1' if on else '0')
-		except (IOError,OSError):
+		except (IOError, OSError):
 			traceback.print_exc()
 
 	def _set_pwm_buzzer(self, on):
-		if self._pwm_frequency == None:
+		if self._pwm_frequency is None:
 			return
 		console_fd = None
 		interval = BuzzerControl.CLOCK_TICK_RATE // self._pwm_frequency if on else 0
@@ -724,11 +731,11 @@ class BuzzerControl(SystemCalcDelegate):
 			# The return value of os.open does not have an __exit__ function, so we cannot use 'with' here.
 			console_fd = os.open(BuzzerControl.TTY_PATH, os.O_RDONLY | os.O_NOCTTY)
 			fcntl.ioctl(console_fd, BuzzerControl.KIOCSOUND, interval)
-		except (IOError,OSError):
+		except (IOError, OSError):
 			traceback.print_exc()
 		finally:
 			try:
-				if console_fd != None:
+				if console_fd is not None:
 					os.close(console_fd)
 			except:
 				traceback.print_exc()
@@ -737,6 +744,7 @@ class BuzzerControl(SystemCalcDelegate):
 class LgCircuitBreakerDetect(SystemCalcDelegate):
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)
+		self._lg_voltage_buffer = None
 		self._lg_battery = None
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
