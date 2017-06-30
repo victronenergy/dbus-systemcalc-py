@@ -44,3 +44,9 @@ def gpio_paths(etc_path):
 			return r.read().strip().split()
 	except IOError:
 		return []
+
+
+def copy_dbus_value(monitor, src_service, src_path, dest_service, dest_path, copy_invalid=False):
+	value = monitor.get_value(src_service, src_path)
+	if copy_invalid or value is not None:
+		monitor.set_value(dest_service, dest_path, value)

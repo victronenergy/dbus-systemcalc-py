@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import json
 import logging
+import math
 import os
 import sys
 import tempfile
@@ -88,6 +89,36 @@ class TestSystemCalcBase(unittest.TestCase):
 			msg += '\n'
 		self.assertTrue(ok, msg)
 
+	def _check_external_values(self, values):
+		"""Checks a list of values from external (ie. not com.victronenergy.system) services.
+		Example for values:
+		['com.victronenergy.vebus.ttyO1', { '/State': 3, '/Mode': 7 },
+		'com.victronenergy.hub4', { '/MaxChargePower' : 342 }]
+		"""
+		ok = True
+		for service, objects in values.items():
+			for path, value in objects.items():
+				v = self._monitor.get_value(service, path)
+				if isinstance(value, (int, float)) and v is not None:
+					d = abs(value - v)
+					if d > 1e-6:
+						ok = False
+						break
+				else:
+					if v != value:
+						ok = False
+						break
+		if ok:
+			return
+		msg = ''
+		for service, objects in values.items():
+			for path, value in objects.items():
+				msg += '{0}:\t{1}'.format(path, value)
+				v = self._monitor.get_value(service, path)
+				msg += '\t{}'.format(v)
+				msg += '\n'
+		self.assertTrue(ok, msg)
+
 
 class TestSystemCalc(TestSystemCalcBase):
 	def __init__(self, methodName='runTest'):
@@ -106,7 +137,11 @@ class TestSystemCalc(TestSystemCalcBase):
 				'/DeviceInstance': 0,
 				'/Devices/0/Assistants': [0x55, 0x1] + (26 * [0]), # Hub-4 assistant
 				'/Soc': 53.2,
-				'/State': 3
+				'/State': 3,
+				'/BatteryOperationalLimits/MaxChargeVoltage': None,
+				'/BatteryOperationalLimits/MaxChargeCurrent': None,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': None,
+				'/BatteryOperationalLimits/BatteryLowVoltage': None
 			})
 		self._add_device('com.victronenergy.settings',
 			values={
@@ -1077,45 +1112,45 @@ class TestSystemCalc(TestSystemCalcBase):
 
 	def test_available_battery_measurement(self):
 		self._update_values()
-		availableMeasurements = self._service['/AvailableBatteryMeasurements']
-		self.assertEqual(len(availableMeasurements), 3)
-		self.assertEqual(availableMeasurements['default'], 'Automatic')
-		self.assertEqual(availableMeasurements['nobattery'], 'No battery monitor')
-		self.assertEqual(availableMeasurements['com_victronenergy_vebus_0/Dc/0'], 'Multi on dummy')
-		self._check_values({'/AutoSelectedBatteryMeasurement' : 'com_victronenergy_vebus_0/Dc/0'})
+		available_measurements = self._service['/AvailableBatteryMeasurements']
+		self.assertEqual(len(available_measurements), 3)
+		self.assertEqual(available_measurements['default'], 'Automatic')
+		self.assertEqual(available_measurements['nobattery'], 'No battery monitor')
+		self.assertEqual(available_measurements['com_victronenergy_vebus_0/Dc/0'], 'Multi on dummy')
+		self._check_values({'/AutoSelectedBatteryMeasurement': 'com_victronenergy_vebus_0/Dc/0'})
 
 	def test_available_battery_measurement_2(self):
 		self._add_device('com.victronenergy.battery.ttyO2',
-						 product_name='battery',
-						 values={
-								 '/Dc/0/Voltage' : 12.3,
-								 '/Dc/0/Current': 5.3,
-								 '/Dc/0/Power': 65,
-								 '/Soc': 15.3,
-								 '/DeviceInstance': 2})
+						product_name='battery',
+						values={
+								'/Dc/0/Voltage': 12.3,
+								'/Dc/0/Current': 5.3,
+								'/Dc/0/Power': 65,
+								'/Soc': 15.3,
+								'/DeviceInstance': 2})
 		self._update_values()
-		availableMeasurements = self._service['/AvailableBatteryMeasurements']
-		self.assertEqual(len(availableMeasurements), 4)
-		self.assertEqual(availableMeasurements['com_victronenergy_battery_2/Dc/0'], 'battery on dummy')
-		self._check_values({'/AutoSelectedBatteryMeasurement' : 'com_victronenergy_battery_2/Dc/0'})
+		available_measurements = self._service['/AvailableBatteryMeasurements']
+		self.assertEqual(len(available_measurements), 4)
+		self.assertEqual(available_measurements['com_victronenergy_battery_2/Dc/0'], 'battery on dummy')
+		self._check_values({'/AutoSelectedBatteryMeasurement': 'com_victronenergy_battery_2/Dc/0'})
 
 	def test_available_battery_measurement_3(self):
 		self._update_values()
-		availableMeasurements = self._service['/AvailableBatteryMeasurements']
-		self.assertEqual(len(availableMeasurements), 3)
+		available_measurements = self._service['/AvailableBatteryMeasurements']
+		self.assertEqual(len(available_measurements), 3)
 		self._add_device('com.victronenergy.battery.ttyO2',
-						 product_name='battery',
-						 values={
-								 '/Dc/0/Voltage' : 12.3,
-								 '/Dc/0/Current': 5.3,
-								 '/Dc/0/Power': 65,
-								 '/Soc': 15.3,
-								 '/DeviceInstance': 2})
+						product_name='battery',
+						values={
+								'/Dc/0/Voltage': 12.3,
+								'/Dc/0/Current': 5.3,
+								'/Dc/0/Power': 65,
+								'/Soc': 15.3,
+								'/DeviceInstance': 2})
 		self._update_values()
-		availableMeasurements = self._service['/AvailableBatteryMeasurements']
-		self.assertEqual(len(availableMeasurements), 4)
-		self.assertEqual(availableMeasurements['com_victronenergy_battery_2/Dc/0'], 'battery on dummy')
-		self._check_values({'/AutoSelectedBatteryMeasurement' : 'com_victronenergy_battery_2/Dc/0'})
+		available_measurements = self._service['/AvailableBatteryMeasurements']
+		self.assertEqual(len(available_measurements), 4)
+		self.assertEqual(available_measurements['com_victronenergy_battery_2/Dc/0'], 'battery on dummy')
+		self._check_values({'/AutoSelectedBatteryMeasurement': 'com_victronenergy_battery_2/Dc/0'})
 
 	def test_pv_inverter_ids_empty(self):
 		self._update_values()
@@ -1295,78 +1330,306 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._add_device('com.victronenergy.vecan.can0', {}, connection='VE.Can')
 		self._update_values()
 		self.assertEqual(None, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
-		self._check_values({'/Control/SolarChargeCurrent' : 0})
-		self._check_values({'/Control/SolarChargeVoltage' : 0})
+		self._check_values({'/Control/SolarChargeCurrent': 0})
+		self._check_values({'/Control/SolarChargeVoltage': 0})
 
 	def test_hub1_control_vedirect_solarcharger_bms_battery(self):
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 55.2)
+		self._monitor.add_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn', 0)
 		self._add_device('com.victronenergy.solarcharger.ttyO2', {
-			'/State': 0,
+			'/State': 3,
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
 			'/Link/ChargeCurrent': None,
-			'/Dc/0/Voltage': 12.6,
-			'/Dc/0/Current': 9.3,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Dc/0/Voltage': 58.0,
+			'/Dc/0/Current': 30,
 			'/FirmwareVersion': 0x0118},
 			connection='VE.Direct')
 		self._add_device('com.victronenergy.battery.ttyO2',
-			 product_name='battery',
-			 values={
-				 '/Dc/0/Voltage' : 12.3,
-				 '/Dc/0/Current': 5.3,
-				 '/Dc/0/Power': 65,
-				 '/Soc': 15.3,
-				 '/DeviceInstance': 2,
-				 '/Info/BatteryLowVoltage': 47,
-				 '/Info/MaxChargeCurrent': 25,
-				 '/Info/MaxChargeVoltage': 58.2,
-				 '/Info/MaxDischargeCurrent': 50})
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 58.1,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
 		self._update_values(interval=10000)
-		self.assertEqual(13, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/NetworkMode'))
-		self.assertEqual(1000, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeCurrent'))
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/NetworkMode': 13,
+				'/Link/ChargeCurrent': 25 + 8,
+				'/Link/ChargeVoltage': 58.2},
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
+				'/Dc/0/MaxChargeCurrent': 0}})
 		self._check_values({
-			'/Control/SolarChargeCurrent' : 1,
-			'/Control/SolarChargeVoltage' : 1})
+			'/Control/SolarChargeCurrent': 1,
+			'/Control/SolarChargeVoltage': 1,
+			'/Control/BmsParameters': 1})
+
+	def test_vedirect_solarcharger_bms_battery_max_charge_current_setting(self):
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 55.2)
+		self._monitor.add_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn', 0)
+		self._set_setting('/Settings/SystemSetup/MaxChargeCurrent', 20)
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Dc/0/Voltage': 58.0,
+			'/Dc/0/Current': 30,
+			'/FirmwareVersion': 0x0118},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.3,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
+		self._update_values(interval=10000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/NetworkMode': 13,
+				'/Link/ChargeCurrent': 20 + 8,
+				'/Link/ChargeVoltage': 58.2},
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
+				'/Dc/0/MaxChargeCurrent': 0}})
+		self._check_values({
+			'/Control/SolarChargeCurrent': 1,
+			'/Control/SolarChargeVoltage': 1,
+			'/Control/BmsParameters': 1})
 
 	def test_control_vedirect_solarcharger_bms_battery_no_charge_voltage(self):
 		self._add_device('com.victronenergy.solarcharger.ttyO2', {
-			'/State': 0,
+			'/State': 3,
+			'/Settings/ChargeCurrentLimit': 100,
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
 			'/Link/ChargeCurrent': None,
 			'/Dc/0/Voltage': 12.6,
-			'/Dc/0/Current': 9.3,
+			'/Dc/0/Current': 31,
 			'/FirmwareVersion': 0x0118},
 			connection='VE.Direct')
 		self._add_device('com.victronenergy.battery.ttyO2',
-			 product_name='battery',
-			 values={
-				 '/Dc/0/Voltage' : 12.3,
-				 '/Dc/0/Current': 5.3,
-				 '/Dc/0/Power': 65,
-				 '/Soc': 15.3,
-				 '/DeviceInstance': 2,
-				 '/Info/BatteryLowVoltage': 47,
-				 '/Info/MaxChargeCurrent': 25,
-				 '/Info/MaxChargeVoltage': 58.2,
-				 '/Info/MaxDischargeCurrent': 50})
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.3,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
 		self._update_values(interval=10000)
-		self.assertEqual(9, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/NetworkMode'))
-		self.assertEqual(1000, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeCurrent'))
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/NetworkMode': 13,
+				'/Link/ChargeCurrent': 25 + 8,
+				'/Link/ChargeVoltage': 58.2},
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
+				'/Dc/0/MaxChargeCurrent': 0}})
 		self._check_values({
-			'/Control/SolarChargeCurrent' : 1,
-			'/Control/SolarChargeVoltage' : 0})
+			'/Control/SolarChargeCurrent': 1,
+			'/Control/SolarChargeVoltage': 1,
+			'/Control/BmsParameters': 1})
+
+	def test_control_vedirect_solarcharger_charge_distribution(self):
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Dc/0/MaxChargeCurrent', 0)
+		self._update_values()
+		self._add_device('com.victronenergy.solarcharger.ttyO0', {
+			'/State': 3,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': 15,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 14.3,
+			'/FirmwareVersion': 0x0118},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 3,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': 15,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 7,
+			'/FirmwareVersion': 0x0118},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.3,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO0': {
+				'/Link/NetworkMode': 13,
+				'/Link/ChargeCurrent': 25 - 7 + 8,
+				'/Link/ChargeVoltage': 58.2},
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/NetworkMode': 13,
+				'/Link/ChargeCurrent': 7 * 1.1 / 0.9,
+				'/Link/ChargeVoltage': 58.2},
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
+				'/Dc/0/MaxChargeCurrent': math.floor((25 - 14.3 - 7) * 0.8)}})
+		self._check_values({
+			'/Control/SolarChargeCurrent': 1,
+			'/Control/SolarChargeVoltage': 1,
+			'/Control/BmsParameters': 1})
+
+	def test_control_vedirect_solarcharger_bms_ess_feedback(self):
+		# When feedback is allowed we do not limit MPPTs
+		# Force system type to ESS
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub4/AssistantId', 5)
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 58.3)
+		self._monitor.add_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn', 1)
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 0,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 31,
+			'/FirmwareVersion': 0x0118},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 58.0,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
+		self._update_values(interval=10000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/NetworkMode': 13,
+				'/Link/ChargeCurrent': 100,
+				'/Link/ChargeVoltage': 58.3},
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
+				'/Dc/0/MaxChargeCurrent': 25}})
+		self._check_values({
+			'/SystemType': 'ESS',
+			'/Control/SolarChargeCurrent': 1,
+			'/Control/SolarChargeVoltage': 1,
+			'/Control/BmsParameters': 1})
+
+	def test_hub1_control_vedirect_solarcharger_bms_battery_no_link(self):
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 55.2)
+		# Solar chargers with firmware < 1.17 do not publish the /Link section.
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 0,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 30,
+			'/FirmwareVersion': 0x0116},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.3,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
+		self._update_values(interval=10000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
+				'/Dc/0/MaxChargeCurrent': 25}})
+		self._check_values({
+			'/Control/SolarChargeCurrent': 0,
+			'/Control/SolarChargeVoltage': 0,
+			'/Control/BmsParameters': 1})
+
+	def test_hub1_control_vedirect_solarcharger_bms_battery_no_solarcharger(self):
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.3,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
+		self._update_values(interval=10000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
+				'/Dc/0/MaxChargeCurrent': 25}})
+		self._check_values({
+			'/Control/SolarChargeCurrent': 0,
+			'/Control/SolarChargeVoltage': 0,
+			'/Control/BmsParameters': 1})
 
 	def test_system_mapping(self):
 		self._update_values()
 		self._check_values({
-			'/ServiceMapping/com_victronenergy_vebus_0' : 'com.victronenergy.vebus.ttyO1',
-			'/ServiceMapping/com_victronenergy_settings_0' : 'com.victronenergy.settings'})
+			'/ServiceMapping/com_victronenergy_vebus_0': 'com.victronenergy.vebus.ttyO1',
+			'/ServiceMapping/com_victronenergy_settings_0': 'com.victronenergy.settings'})
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery', values={'/DeviceInstance': 3})
 		self._check_values({
-			'/ServiceMapping/com_victronenergy_vebus_0' : 'com.victronenergy.vebus.ttyO1',
-			'/ServiceMapping/com_victronenergy_battery_3' : 'com.victronenergy.battery.ttyO2'})
+			'/ServiceMapping/com_victronenergy_vebus_0': 'com.victronenergy.vebus.ttyO1',
+			'/ServiceMapping/com_victronenergy_battery_3': 'com.victronenergy.battery.ttyO2'})
 		self._remove_device('com.victronenergy.battery.ttyO2')
 		self.assertFalse('/ServiceMapping/com_victronenergy_battery_3' in self._service)
 
@@ -1689,32 +1952,127 @@ class TestSystemCalcNoMulti(TestSystemCalcBase):
 
 	def test_hub1_control_vedirect_solarcharger_bms_battery(self):
 		self._add_device('com.victronenergy.solarcharger.ttyO2', {
-			'/State': 0,
+			'/State': 3,
+			'/Settings/ChargeCurrentLimit': 100,
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
 			'/Link/ChargeCurrent': None,
 			'/Dc/0/Voltage': 12.6,
-			'/Dc/0/Current': 9.3,
+			'/Dc/0/Current': 24,
 			'/FirmwareVersion': 0x0118},
 			connection='VE.Direct')
 		self._add_device('com.victronenergy.battery.ttyO2',
-			 product_name='battery',
-			 values={
-				 '/Dc/0/Voltage' : 12.3,
-				 '/Dc/0/Current': 5.3,
-				 '/Dc/0/Power': 65,
-				 '/Soc': 15.3,
-				 '/DeviceInstance': 2,
-				 '/Info/BatteryLowVoltage': 47,
-				 '/Info/MaxChargeCurrent': 25,
-				 '/Info/MaxChargeVoltage': 58.2,
-				 '/Info/MaxDischargeCurrent': 50})
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.3,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
 		self._update_values(interval=10000)
-		self.assertEqual(9, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/NetworkMode'))
-		self.assertEqual(1000, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeCurrent'))
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/NetworkMode': 13,
+				'/Link/ChargeCurrent': 25,
+				'/Link/ChargeVoltage': 58.2}})
 		self._check_values({
-			'/Control/SolarChargeCurrent' : 1,
-			'/Control/SolarChargeVoltage' : 0})
+			'/Control/SolarChargeCurrent': 1,
+			'/Control/SolarChargeVoltage': 1,
+			'/Control/BmsParameters': 0})
+
+	def test_hub1_control_bms_battery_vedirect_solarcharger_off(self):
+		self._add_device('com.victronenergy.solarcharger.ttyO0', {
+			'/State': 0,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 0,
+			'/FirmwareVersion': 0x0118},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 3,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 24,
+			'/FirmwareVersion': 0x0118},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.battery.ttyUSB0',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.3,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
+		self._update_values(interval=10000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO0': {
+				'/Link/NetworkMode': 13,
+				'/Link/ChargeCurrent': None,
+				'/Link/ChargeVoltage': 58.2},
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/NetworkMode': 13,
+				'/Link/ChargeCurrent': 25,
+				'/Link/ChargeVoltage': 58.2}})
+		self._check_values({
+			'/Control/SolarChargeCurrent': 1,
+			'/Control/SolarChargeVoltage': 1,
+			'/Control/BmsParameters': 0})
+
+	def test_hub1bridge_distr_1(self):
+		actual_values = [1, 2, 3]
+		max_values = [6, 5, 4]
+		new_values = delegates.Hub1Bridge.distribute(actual_values, max_values, 3)
+		self.assertEqual(new_values, [2, 3, 4])
+
+	def test_hub1bridge_distr_2(self):
+		actual_values = [1, 2, 3]
+		max_values = [6, 5, 4]
+		new_values = delegates.Hub1Bridge.distribute(actual_values, max_values, 9.0)
+		self.assertEqual(new_values, [6, 5, 4])
+
+	def test_hub1bridge_distr_3(self):
+		actual_values = [1, 2, 3]
+		max_values = [6, 5, 4]
+		new_values = delegates.Hub1Bridge.distribute(actual_values, max_values, 10.0)
+		self.assertEqual(new_values, [6, 5, 4])
+
+	def test_hub1bridge_distr_4(self):
+		actual_values = [1, 2, 3]
+		max_values = [6, 5, 4]
+		new_values = delegates.Hub1Bridge.distribute(actual_values, max_values, 6.0)
+		self.assertEqual(new_values, [3.5, 4.5, 4])
+
+	def test_hub1bridge_distr_5(self):
+		actual_values = [3, 2, 1]
+		max_values = [4, 5, 6]
+		new_values = delegates.Hub1Bridge.distribute(actual_values, max_values, 6.0)
+		self.assertEqual(new_values, [4, 4.5, 3.5])
+
+	def test_hub1bridge_distr_6(self):
+		actual_values = [4, 5, 6]
+		max_values = [1, 2, 8]
+		new_values = delegates.Hub1Bridge.distribute(actual_values, max_values, 0.0)
+		self.assertEqual(new_values, [1, 2, 8])
+
+	def test_hub1bridge_distr_7(self):
+		actual_values = [1]
+		max_values = [5]
+		new_values = delegates.Hub1Bridge.distribute(actual_values, max_values, 6.0)
+		self.assertEqual(new_values, [5])
 
 
 if __name__ == '__main__':
