@@ -180,12 +180,11 @@ class Hub1Bridge(SystemCalcDelegate):
 			# Skip timer code below
 			return
 		if self._timer is None:
-			# Update the solar charger every 5 seconds, because it has to switch to HEX mode each time
+			# Update the solar charger every 3 seconds, because it has to switch to HEX mode each time
 			# we write a value to its D-Bus service. Writing too often may block text messages. In MPPT
 			# firmware v1.23 and later, all relevant values will be transmitted as asynchronous message,
-			# so the update rate could be increased. However, on VE.Can chargers, this kind of information is
-			# shared every 5 seconds as well, so decreasing the interval might be irrelevant.
-			self._timer = gobject.timeout_add(5000, exit_on_error, self._on_timer)
+			# so the update rate could be increased.
+			self._timer = gobject.timeout_add(3000, exit_on_error, self._on_timer)
 
 	def device_removed(self, service, instance):
 		if service in self._solarchargers:
