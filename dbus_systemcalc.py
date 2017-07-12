@@ -342,7 +342,7 @@ class SystemCalc:
 			pid = self._dbusmonitor.get_value(pvinverter, '/ProductId')
 			if pid is not None and pid not in productids:
 				productids.append(pid)
-		self._dbusservice['/PvInvertersProductIds'] = dbus.Array(productids, signature='i')
+		self._dbusservice['/PvInvertersProductIds'] = productids
 
 	def _updatevalues(self):
 		# ==== PREPARATIONS ====
@@ -624,7 +624,7 @@ class SystemCalc:
 		for servicename, instance in services.items():
 			key = self._get_instance_service_name(servicename, instance).replace('.', '_').replace('/', '_') + '/Dc/0'
 			ul[key] = self._get_readable_service_name(servicename)
-		self._dbusservice['/AvailableBatteryMeasurements'] = dbus.Dictionary(ul, signature='sv')
+		self._dbusservice['/AvailableBatteryMeasurements'] = ul
 
 		self._determinebatteryservice()
 		self._updatepvinverterspidlist()

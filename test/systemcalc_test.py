@@ -1317,10 +1317,7 @@ class TestSystemCalc(TestSystemCalcBase):
 				 '/Dc/0/Power': 65,
 				 '/Soc': 15.3,
 				 '/DeviceInstance': 2,
-				 '/Info/BatteryLowVoltage': 47,
-				 '/Info/MaxChargeCurrent': 25,
-				 '/Info/MaxChargeVoltage': 58.2,
-				 '/Info/MaxDischargeCurrent': 50})
+				 '/Info/MaxChargeCurrent': 25})
 		self._update_values(interval=10000)
 		self.assertEqual(13, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/NetworkMode'))
 		self.assertEqual(1000, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeCurrent'))
@@ -1346,10 +1343,7 @@ class TestSystemCalc(TestSystemCalcBase):
 				 '/Dc/0/Power': 65,
 				 '/Soc': 15.3,
 				 '/DeviceInstance': 2,
-				 '/Info/BatteryLowVoltage': 47,
-				 '/Info/MaxChargeCurrent': 25,
-				 '/Info/MaxChargeVoltage': 58.2,
-				 '/Info/MaxDischargeCurrent': 50})
+				 '/Info/MaxChargeCurrent': 25})
 		self._update_values(interval=10000)
 		self.assertEqual(9, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/NetworkMode'))
 		self.assertEqual(1000, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeCurrent'))
@@ -1705,10 +1699,7 @@ class TestSystemCalcNoMulti(TestSystemCalcBase):
 				 '/Dc/0/Power': 65,
 				 '/Soc': 15.3,
 				 '/DeviceInstance': 2,
-				 '/Info/BatteryLowVoltage': 47,
-				 '/Info/MaxChargeCurrent': 25,
-				 '/Info/MaxChargeVoltage': 58.2,
-				 '/Info/MaxDischargeCurrent': 50})
+				 '/Info/MaxChargeCurrent': 25})
 		self._update_values(interval=10000)
 		self.assertEqual(9, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/NetworkMode'))
 		self.assertEqual(1000, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/Link/ChargeCurrent'))

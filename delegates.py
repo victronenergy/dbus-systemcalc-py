@@ -199,11 +199,9 @@ class Hub1Bridge(SystemCalcDelegate):
 				# implies existence of the other /Link/* fields.
 				if self._dbusmonitor.get_value(service, '/Link/NetworkMode') is None:
 					continue
-				self._dbusmonitor.set_value(service, '/Link/NetworkMode', \
-					dbus.Int32(network_mode, variant_level=1))
+				self._dbusmonitor.set_value(service, '/Link/NetworkMode', network_mode)
 				if charge_voltage is not None:
-					self._dbusmonitor.set_value(service, '/Link/ChargeVoltage', \
-						dbus.Double(charge_voltage, variant_level=1))
+					self._dbusmonitor.set_value(service, '/Link/ChargeVoltage', charge_voltage)
 					voltage_written = 1
 					# solarcharger firmware v1.17 does not support link items. Version v1.17 itself requires
 					# the vebus state to be copied to the solarcharger (otherwise the charge voltage would be
@@ -212,10 +210,9 @@ class Hub1Bridge(SystemCalcDelegate):
 					if firmware_version is not None and (firmware_version & 0x0FFF) == 0x0117:
 						state = self._dbusmonitor.get_value(vebus_path, '/State')
 						if state is not None:
-							self._dbusmonitor.set_value(service, '/State', dbus.Int32(state, variant_level=1))
+							self._dbusmonitor.set_value(service, '/State', state)
 				if max_charge_current is not None:
-					self._dbusmonitor.set_value(service, '/Link/ChargeCurrent', \
-						dbus.Double(max_charge_current, variant_level=1))
+					self._dbusmonitor.set_value(service, '/Link/ChargeCurrent', max_charge_current)
 					current_written = 1
 			except dbus.exceptions.DBusException:
 				pass
@@ -230,8 +227,7 @@ class Hub1Bridge(SystemCalcDelegate):
 					# for example if the D-Bus path has not been written for more than 60 (?) seconds.
 					# In case there is no path at all, the set_value below will raise an DBusException
 					# which we will ignore cheerfully.
-					self._dbusmonitor.set_value(service, '/Link/ChargeVoltage', \
-						dbus.Double(charge_voltage, variant_level=1))
+					self._dbusmonitor.set_value(service, '/Link/ChargeVoltage', charge_voltage)
 					voltage_written = 1
 				except dbus.exceptions.DBusException:
 					pass
@@ -301,9 +297,9 @@ class VebusSocWriter(SystemCalcDelegate):
 			# an extra current is written.
 			total_charge_current = newvalues.get('/Dc/Pv/Current', 0)
 			try:
-				charge_current_item = self._dbusmonitor.get_item(vebus_service, '/ExtraBatteryCurrent')
-				if charge_current_item.get_value() != None:
-					charge_current_item.set_value(dbus.Double(total_charge_current, variant_level=1))
+				charge_current = self._dbusmonitor.get_value(vebus_service, '/ExtraBatteryCurrent')
+				if charge_current is not None:
+					self._dbusmonitor.set_value(vebus_service, '/ExtraBatteryCurrent', total_charge_current)
 					current_written = 1
 			except dbus.exceptions.DBusException:
 				pass
@@ -319,7 +315,7 @@ class VebusSocWriter(SystemCalcDelegate):
 					logging.debug("writing this soc to vebus: %d", soc)
 					try:
 						# Vebus service may go offline while we write this SoC
-						self._dbusmonitor.get_item(vebus_service, '/Soc').set_value(dbus.Double(soc, variant_level=1))
+						self._dbusmonitor.set_value(vebus_service, '/Soc', soc)
 						soc_written = 1
 					except dbus.exceptions.DBusException:
 						pass
@@ -525,11 +521,11 @@ class LgCircuitBreakerDetect(SystemCalcDelegate):
 		battery_voltage = self._dbusmonitor.get_value(self._lg_battery, '/Dc/0/Voltage')
 		logging.debug('LG battery current V=%s I=%s' % (battery_voltage, battery_current))
 		if min_voltage < 0.9 * battery_voltage or max_voltage > 1.1 * battery_voltage:
-			logging.error('LG shutdown detected V=%s I=%s %s' % (battery_voltage, battery_current, self._lg_voltage_buffer))
-			item = self._dbusmonitor.get_item(vebus_path, '/Mode')
-			if item is None:
+			logging.error('LG shutdown detected V=%s I=%s %s' %
+				(battery_voltage, battery_current, self._lg_voltage_buffer))
+			self._dbusservice['/Dc/Battery/Alarms/CircuitBreakerTripped'] = 2
+			self._lg_voltage_buffer = []
+			try:
+				self._dbusmonitor.set_value(vebus_path, '/Mode', 4)
+			except dbus.exceptions.DBusException:
 				logging.error('Cannot switch off vebus device')
-			else:
-				self._dbusservice['/Dc/Battery/Alarms/CircuitBreakerTripped'] = 2
-				item.set_value(dbus.Int32(4, variant_level=1))
-				self._lg_voltage_buffer = []
