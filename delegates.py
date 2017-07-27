@@ -146,6 +146,7 @@ class Hub1Bridge(SystemCalcDelegate):
 				'/Link/NetworkMode',
 				'/Link/ChargeVoltage',
 				'/Link/ChargeCurrent',
+				'/Link/VoltageSense',
 				'/Settings/ChargeCurrentLimit',
 				'/State',
 				'/FirmwareVersion',
@@ -164,6 +165,7 @@ class Hub1Bridge(SystemCalcDelegate):
 		self._dbusservice.add_path('/Control/SolarChargeCurrent', value=0)
 		self._dbusservice.add_path('/Control/BmsParameters', value=0)
 		self._dbusservice.add_path('/Control/MaxChargeCurrent', value=0)
+		self._dbusservice.add_path('/Control/SolarChargerVoltageSense', value=0)
 
 	def device_added(self, service, instance, do_service_change=True):
 		service_type = service.split('.')[2]
@@ -201,7 +203,8 @@ class Hub1Bridge(SystemCalcDelegate):
 	def _on_timer(self):
 		bms_service = self.find_bms_service()
 		bms_parameters_written = self._update_battery_operational_limits(bms_service)
-		voltage_written, current_written = self._update_solarchargers(bms_service)
+		voltage_written, current_written, voltagesense_written = self._update_solarchargers(bms_service)
+		self._dbusservice['/Control/SolarChargerVoltageSense'] = voltagesense_written
 		self._dbusservice['/Control/SolarChargeVoltage'] = voltage_written
 		self._dbusservice['/Control/SolarChargeCurrent'] = current_written
 		self._dbusservice['/Control/BmsParameters'] = bms_parameters_written
@@ -278,10 +281,13 @@ class Hub1Bridge(SystemCalcDelegate):
 			charge_voltage = self._dbusmonitor.get_value(vebus_path, '/Hub/ChargeVoltage')
 		if charge_voltage is None and bms_service is not None:
 			charge_voltage = self._dbusmonitor.get_value(bms_service, '/Info/MaxChargeVoltage')
-		if charge_voltage is None and max_charge_current is None:
+		sense_voltage = None if vebus_path is None else \
+			self._dbusmonitor.get_value(vebus_path, '/Dc/0/Voltage')
+		if charge_voltage is None and max_charge_current is None and sense_voltage is None:
 			# @todo EV Reset vebus_max_charge_current here? To what value? We get here if the BMS battery
 			# service disappears or the max charge current setting is reset.
-			return 0, 0
+			return 0, 0, 0
+
 		# Network mode:
 		# bit 0: Operated in network environment
 		# bit 2: Remote Hub-1 control (MPPT will accept charge voltage)
@@ -305,6 +311,7 @@ class Hub1Bridge(SystemCalcDelegate):
 
 		voltage_written = self._distribute_voltage_setpoint(vebus_path, charge_voltage, vedirect_chargers,
 															has_vecan_chargers)
+		voltagesense_written = self._distribute_sense_voltage(sense_voltage, vedirect_chargers)
 
 		# Do not limit max charge current when feedback is allowed. The rationale behind this is that MPPT
 		# charge power should match the capabilities of the battery. If the default charge algorithm is used
@@ -320,7 +327,19 @@ class Hub1Bridge(SystemCalcDelegate):
 			self._distribute_max_charge_current(vebus_path, max_charge_current, vedirect_chargers)
 
 		current_written = 1 if network_mode_written and max_charge_current is not None else 0
-		return voltage_written, current_written
+		return voltage_written, current_written, voltagesense_written
+
+	def _distribute_sense_voltage(self, sense_voltage, vedirect_chargers):
+		if sense_voltage is None:
+			return 0
+		voltagesense_written = 0
+		for service in vedirect_chargers:
+			try:
+				self._dbusmonitor.set_value(service, '/Link/VoltageSense', sense_voltage)
+				voltagesense_written = 1
+			except dbus.exceptions.DBusException:
+				pass
+		return voltagesense_written
 
 	def _distribute_voltage_setpoint(self, vebus_path, charge_voltage, vedirect_chargers, has_vecan_chargers):
 		if charge_voltage is None:

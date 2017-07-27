@@ -1193,15 +1193,21 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/State': 0,
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
+			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.4,
 			'/Dc/0/Current': 9.7,
 			'/FirmwareVersion': 0xE117},
 			connection='VE.Direct')
 		self._update_values()
-		self.assertEqual(12.6, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1',
-			'/Link/ChargeVoltage'))
-		self.assertEqual(2, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1', '/State'))
-		self._check_values({'/Control/SolarChargeVoltage': 1})
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeVoltage': 12.6,
+				'/Link/VoltageSense': 12.25,
+				'/State': 2
+			}})
+		self._check_values({
+			'/Control/SolarChargeVoltage': 1,
+			'/Control/SolarChargerVoltageSense': 1})
 
 	def test_hub1_control_voltage_without_state(self):
 		self._update_values()
@@ -1211,15 +1217,21 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/State': 0,
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
+			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.4,
 			'/Dc/0/Current': 9.7,
 			'/FirmwareVersion': 0x0119},
 			connection='VE.Direct')
 		self._update_values()
-		self.assertEqual(12.6, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1',
-			'/Link/ChargeVoltage'))
-		self.assertEqual(0, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1', '/State'))
-		self._check_values({'/Control/SolarChargeVoltage': 1})
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeVoltage': 12.6,
+				'/Link/VoltageSense': 12.25,
+				'/State': 0
+			}})
+		self._check_values({
+			'/Control/SolarChargeVoltage': 1,
+			'/Control/SolarChargerVoltageSense': 1})
 
 	def test_hub1_control_voltage_multiple_solarchargers(self):
 		self._update_values()
@@ -1433,6 +1445,7 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
 			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 31,
 			'/FirmwareVersion': 0x0118},
@@ -1454,7 +1467,8 @@ class TestSystemCalc(TestSystemCalcBase):
 			'com.victronenergy.solarcharger.ttyO2': {
 				'/Link/NetworkMode': 13,
 				'/Link/ChargeCurrent': 25 + 8,
-				'/Link/ChargeVoltage': 58.2},
+				'/Link/ChargeVoltage': 58.2,
+				'/Link/VoltageSense': 12.25},
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
 				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
@@ -1464,6 +1478,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._check_values({
 			'/Control/SolarChargeCurrent': 1,
 			'/Control/SolarChargeVoltage': 1,
+			'/Control/SolarChargerVoltageSense': 1,
 			'/Control/BmsParameters': 1})
 
 	def test_control_vedirect_solarcharger_charge_distribution(self):
@@ -1711,9 +1726,13 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent', 1)
 		self._update_values()
 		self.assertEqual(0, self._monitor.get_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent'))
-		self._check_values({'/Control/ExtraBatteryCurrent': 1})
+		self._check_values({
+			'/Control/ExtraBatteryCurrent': 1,
+			'/Control/SolarChargeVoltage': 0,
+			'/Control/SolarChargeCurrent': 0,
+			'/Control/SolarChargerVoltageSense': 0})
 
-	def test_hub1_extra_current_hub2_no_battery(self):
+	def test_hub1_extra_current_hub2_no_battery_monitor(self):
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent', 0)
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
@@ -1772,7 +1791,10 @@ class TestSystemCalc(TestSystemCalcBase):
 			[0x4D, 0x01, 0x3C, 0x01] + (26 * [0]))
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
 			'/Link/NetworkMode': 0,
+			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 9.7},
 			connection='VE.Direct')
@@ -1784,10 +1806,20 @@ class TestSystemCalc(TestSystemCalcBase):
 								'/Dc/0/Power': 65,
 								'/Soc': 15.3,
 								'/DeviceInstance': 2})
-		self._update_values()
+		self._update_values(3000)
 		self.assertEqual(9.7, self._monitor.get_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent'))
-		self._check_values({'/Control/ExtraBatteryCurrent': 1})
-		self._check_values({'/Control/VebusSoc': 0})
+		self._check_values({
+			'/Control/ExtraBatteryCurrent': 1,
+			'/Control/VebusSoc': 0,
+			'/Control/SolarChargerVoltageSense': 1,
+			'/Control/SolarChargeVoltage': 0,
+			'/Control/SolarChargeCurrent': 0,
+			'/Control/BmsParameters': 0})
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeVoltage': None,
+				'/Link/ChargeCurrent': None,
+				'/Link/VoltageSense': 12.25}})
 
 	def test_hub1_extra_current_no_active_battery(self):
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent', 23)
