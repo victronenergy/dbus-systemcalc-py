@@ -121,7 +121,7 @@ class Hub1Bridge(SystemCalcDelegate):
 			('com.victronenergy.vebus',
 				['/Hub/ChargeVoltage', '/State']),
 			('com.victronenergy.solarcharger',
-				['/Link/NetworkMode', '/Link/ChargeVoltage', '/Link/ChargeCurrent', '/State', '/FirmwareVersion', '/Mgmt/Connection']),
+				['/Link/NetworkMode', '/Link/ChargeVoltage', '/Link/ChargeCurrent', '/State', '/FirmwareVersion', '/Mgmt/Connection', '/Link/VoltageSense']),
 			('com.victronenergy.vecan',
 				['/Link/ChargeVoltage'])]
 
@@ -129,6 +129,7 @@ class Hub1Bridge(SystemCalcDelegate):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 		self._dbusservice.add_path('/Control/SolarChargeVoltage', value=0)
 		self._dbusservice.add_path('/Control/SolarChargeCurrent', value=0)
+		self._dbusservice.add_path('/Control/SolarChargerVoltageSense', value=0)
 
 	def device_added(self, service, instance, do_service_change=True):
 		service_type = service.split('.')[2]
@@ -161,9 +162,10 @@ class Hub1Bridge(SystemCalcDelegate):
 			self._timer = None
 
 	def _on_timer(self):
-		voltage_written, current_written = self._update_solarchargers()
+		voltage_written, current_written, voltagesense_written = self._update_solarchargers()
 		self._dbusservice['/Control/SolarChargeVoltage'] = voltage_written
 		self._dbusservice['/Control/SolarChargeCurrent'] = current_written
+		self._dbusservice['/Control/SolarChargerVoltageSense'] = voltagesense_written
 		return True
 
 	def _update_solarchargers(self):
@@ -171,6 +173,7 @@ class Hub1Bridge(SystemCalcDelegate):
 		for battery_service in self._battery_services:
 			max_charge_current = safeadd(max_charge_current, \
 				self._dbusmonitor.get_value(battery_service, '/Info/MaxChargeCurrent'))
+
 		# Workaround: copying the max charge current from BMS batteries to the solarcharger leads to problems:
 		# excess PV power is not fed back to the grid any more, and loads on AC-out are not fed with PV power.
 		# PV power is used for charging the batteries only.
@@ -178,31 +181,45 @@ class Hub1Bridge(SystemCalcDelegate):
 		# we set a 'high' max charge current to avoid 'BMS connection lost' alarms from the solarcharger.
 		if max_charge_current is not None:
 			max_charge_current = 1000
+
 		vebus_path = self._get_vebus_path()
 		charge_voltage = None if vebus_path is None else \
 			self._dbusmonitor.get_value(vebus_path, '/Hub/ChargeVoltage')
-		if charge_voltage is None and max_charge_current is None:
-			return (0, 0)
+		sense_voltage = None if vebus_path is None else \
+			self._dbusmonitor.get_value(vebus_path, '/Dc/0/Voltage')
+
+		if charge_voltage is None and max_charge_current is None and sense_voltage is None:
+			return (0, 0, 0)
+
 		# Network mode:
 		# bit 0: Operated in network environment
 		# bit 2: Remote Hub-1 control
 		# bit 3: Remote BMS control
 		network_mode = 1 | (0 if charge_voltage is None else 4) | (0 if max_charge_current is None else 8)
+
 		has_vecan_charger = False
 		voltage_written = 0
 		current_written = 0
+		voltage_sense_written = 0
+
+		# VE.Direct Solar Chargers (and detect VE.Can Solar charger presence)
 		for service in self._solarchargers:
 			try:
 				has_vecan_charger = has_vecan_charger or \
 					(self._dbusmonitor.get_value(service, '/Mgmt/Connection') == 'VE.Can')
+
 				# We use /Link/NetworkMode to detect Hub support in the solarcharger. Existence of this item
-				# implies existence of the other /Link/* fields.
+				# implies existence of the other /Link/* fields. And this also skips the VE.Can services,
+				# they don't have the /Link paths. Managing those charges is via the
+				# com.victronenergy.vecan.* service.
 				if self._dbusmonitor.get_value(service, '/Link/NetworkMode') is None:
 					continue
+
 				self._dbusmonitor.set_value(service, '/Link/NetworkMode', network_mode)
 				if charge_voltage is not None:
 					self._dbusmonitor.set_value(service, '/Link/ChargeVoltage', charge_voltage)
 					voltage_written = 1
+
 					# solarcharger firmware v1.17 does not support link items. Version v1.17 itself requires
 					# the vebus state to be copied to the solarcharger (otherwise the charge voltage would be
 					# ignored). v1.18 and later do not have this requirement.
@@ -211,16 +228,25 @@ class Hub1Bridge(SystemCalcDelegate):
 						state = self._dbusmonitor.get_value(vebus_path, '/State')
 						if state is not None:
 							self._dbusmonitor.set_value(service, '/State', state)
+
 				if max_charge_current is not None:
 					self._dbusmonitor.set_value(service, '/Link/ChargeCurrent', max_charge_current)
 					current_written = 1
+
+				if sense_voltage is not None:
+					print(sense_voltage)
+					print(self._dbusmonitor.set_value(service, '/Link/VoltageSense', sense_voltage))
+					print("writing voltage sense %.2F to %s" % (sense_voltage, service))
+					voltage_sense_written = 1
+
 			except dbus.exceptions.DBusException:
 				pass
 
+		# VE.Can Solar chargers
+		# Charge voltage cannot by written directly to the CAN-bus solar chargers, we have to use
+		# the com.victronenergy.vecan.* service instead.
+		# Writing charge current to CAN-bus solar charger is not supported yet.
 		if has_vecan_charger and charge_voltage is not None:
-			# Charge voltage cannot by written directly to the CAN-bus solar chargers, we have to use
-			# the com.victronenergy.vecan.* service instead.
-			# Writing charge current to CAN-bus solar charger is not supported yet.
 			for service in self._vecan_services:
 				try:
 					# Note: we don't check the value of charge_voltage_item because it may be invalid,
@@ -232,7 +258,7 @@ class Hub1Bridge(SystemCalcDelegate):
 				except dbus.exceptions.DBusException:
 					pass
 
-		return (voltage_written, current_written)
+		return (voltage_written, current_written, voltage_sense_written)
 
 	def _get_vebus_path(self, newvalues=None):
 		if newvalues == None:
