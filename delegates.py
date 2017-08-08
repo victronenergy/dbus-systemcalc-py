@@ -162,6 +162,7 @@ class Hub1Bridge(SystemCalcDelegate):
 		self._dbusservice.add_path('/Control/SolarChargeVoltage', value=0)
 		self._dbusservice.add_path('/Control/SolarChargeCurrent', value=0)
 		self._dbusservice.add_path('/Control/BmsParameters', value=0)
+		self._dbusservice.add_path('/Control/MaxChargeCurrent', value=0)
 
 	def device_added(self, service, instance, do_service_change=True):
 		service_type = service.split('.')[2]
@@ -221,6 +222,9 @@ class Hub1Bridge(SystemCalcDelegate):
 		self._dbusservice['/Control/SolarChargeVoltage'] = voltage_written
 		self._dbusservice['/Control/SolarChargeCurrent'] = current_written
 		self._dbusservice['/Control/BmsParameters'] = bms_parameters_written
+		# @todo EV What if ESS + OvervoltageFeedIn? In that case there is no charge current control on the
+		# MPPTs.
+		self._dbusservice['/Control/MaxChargeCurrent'] = vebus_path is None or adjust_vebus_max_charge_current
 		return True
 
 	def _update_battery_operational_limits(self, bms_service, has_ess_assistant):
