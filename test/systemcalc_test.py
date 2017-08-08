@@ -131,6 +131,7 @@ class TestSystemCalc(TestSystemCalcBase):
 			values={
 				'/Ac/ActiveIn/L1/P': 123,
 				'/Ac/ActiveIn/ActiveInput': 0,
+				'/Ac/ActiveIn/Connected': 1,
 				'/Ac/Out/L1/P': 100,
 				'/Dc/0/Voltage': 12.25,
 				'/Dc/0/Current': -8,
@@ -1527,7 +1528,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 58.3)
 		self._monitor.add_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn', 1)
 		self._add_device('com.victronenergy.solarcharger.ttyO2', {
-			'/State': 0,
+			'/State': 1,
 			'/Settings/ChargeCurrentLimit': 100,
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
@@ -1560,6 +1561,54 @@ class TestSystemCalc(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeVoltage': None,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
 				'/Dc/0/MaxChargeCurrent': 25}})
+		self._check_values({
+			'/SystemType': 'ESS',
+			'/Control/SolarChargeCurrent': 1,
+			'/Control/SolarChargeVoltage': 1,
+			'/Control/BmsParameters': 1})
+
+	def test_control_vedirect_solarcharger_bms_ess_feedback_no_ac_in(self):
+		# When feedback is allowed we do not limit MPPTs, but in this case there is no AC-in so feedback is
+		# not possible.
+		# Force system type to ESS
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub4/AssistantId', 5)
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 58.3)
+		self._monitor.add_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn', 1)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/ActiveIn/Connected', 0)
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 1,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': 57.3,
+			'/Link/ChargeCurrent': 20,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 31,
+			'/FirmwareVersion': 0x0118},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 58.0,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
+		self._update_values(interval=10000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/NetworkMode': 13,
+				'/Link/ChargeCurrent': 25 + 8,
+				'/Link/ChargeVoltage': 58.3},
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
+				'/BatteryOperationalLimits/MaxChargeVoltage': None,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
+				'/Dc/0/MaxChargeCurrent': 0}})
 		self._check_values({
 			'/SystemType': 'ESS',
 			'/Control/SolarChargeCurrent': 1,
