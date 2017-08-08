@@ -132,6 +132,7 @@ class Hub1Bridge(SystemCalcDelegate):
 				'/Info/MaxChargeVoltage',
 				'/Info/MaxDischargeCurrent']),
 			('com.victronenergy.vebus', [
+				'/Ac/ActiveIn/Connected',
 				'/Hub/ChargeVoltage',
 				'/Dc/0/Current',
 				'/Dc/0/MaxChargeCurrent',
@@ -272,13 +273,15 @@ class Hub1Bridge(SystemCalcDelegate):
 		elif bms_max_charge_current is not None:
 			max_charge_current = min(max_charge_current, bms_max_charge_current)
 
+		vebus_path = self._dbusservice['/VebusService']
+
 		# Feedback allowed is defined as 'ESS present and FeedInOvervoltage is enabled'. This ignores other
 		# setups which allow feedback: hub-1.
-		# @todo EV Also check if we have AC-in? Without AC-in, feedback_allow -> false
 		feedback_allowed = \
 			has_ess_assistant and \
-			self._dbusmonitor.get_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn') == 1
-		vebus_path = self._dbusservice['/VebusService']
+			self._dbusmonitor.get_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn') == 1 and \
+			self._dbusmonitor.get_value(vebus_path, '/Ac/ActiveIn/Connected') == 1
+
 		# If the vebus service does not provide a charge voltage setpoint (so no ESS/Hub-1/Hub-4), we use the
 		# max charge voltage provided by the BMS (if any). This will probably prevent feedback, but that is
 		# probably not allowed anyway.
@@ -429,7 +432,6 @@ class Hub1Bridge(SystemCalcDelegate):
 			# In that case we cannot change the vebus charge current (it will be managed indirectly by
 			# hub4control), and will try to distribute the remaining current over the MPPTs.
 			# *** This is a change in behavior compared with the previous release ***.
-			# @todo EV Rude handling if vebus_dc_current is None.
 			vebus_dc_current = self._dbusmonitor.get_value(vebus_path, '/Dc/0/Current') or 0
 			if adjust_vebus_max_charge_current:
 				vebus_max_charge_current = max(0, bms_max_charge_current - solar_charger_current)
