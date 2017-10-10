@@ -264,7 +264,16 @@ class ServiceMapper(SystemCalcDelegate):
 
 
 class VebusSocWriter(SystemCalcDelegate):
-	_hub2_assistant_ids = set([0x0134, 0x0135, 0x0137, 0x0138, 0x013A, 0x141, 0x0146, 0x014D])
+	# Note that there are 2 categories of hub2 assistants: v1xx/v2xx firmware and v3xx/v4xx firmware.
+	# Both versions have problems with writing the SoC (the assistants themselves adjust the SoC from time
+	# to time for internal bookkeeping). For the assistants mentioned below there is no way of detecting the
+	# presence of the hub-2 assistant apart from the assistant ID.
+	# There is a plan to prevent this list from growing any further: new hub-2 assistant would identify
+	# themselves, and the mk2 service will create /Hub2 path will be created in the vebus service. However,
+	# no assistant has been released supporting this feature (the mk2 service already supports this).
+	# Therefore it has not been implemented here.
+	_hub2_assistant_ids = \
+		{0x0134, 0x0135, 0x0137, 0x0138, 0x013A, 0x141, 0x0146, 0x014D, 0x015F, 0x0160, 0x0165}
 
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)
