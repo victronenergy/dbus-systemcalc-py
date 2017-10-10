@@ -6,6 +6,8 @@ python:
 before_install:
   - sudo apt-get update
   - sudo apt-get install python-gobject-2
+  - sudo apt-get install dbus-x11
+  - sudo apt-get install python-dbus
 
 script:
   - cd test && python systemcalc_test.py -v
