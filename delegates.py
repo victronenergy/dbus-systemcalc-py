@@ -308,10 +308,10 @@ class VebusSocWriter(SystemCalcDelegate):
 	def _write_vebus_soc(self):
 		vebus_service = self._dbusservice['/VebusService']
 		soc_written = 0
-		if vebus_service != None:
+		if vebus_service is not None:
 			if self._must_write_soc(vebus_service):
 				soc = self._dbusservice['/Dc/Battery/Soc']
-				if soc != None:
+				if soc is not None:
 					logging.debug("writing this soc to vebus: %d", soc)
 					try:
 						# Vebus service may go offline while we write this SoC
@@ -324,7 +324,7 @@ class VebusSocWriter(SystemCalcDelegate):
 
 	def _must_write_soc(self, vebus_service):
 		active_battery_service = self._dbusservice['/ActiveBatteryService']
-		if active_battery_service == None or active_battery_service.startswith('com.victronenergy.vebus'):
+		if active_battery_service is None or active_battery_service.startswith('com.victronenergy.vebus'):
 			return False
 		# Writing SoC to the vebus service is not allowed when a hub-2 assistant is present, so we have to
 		# check the list of assistant IDs.
@@ -332,12 +332,12 @@ class VebusSocWriter(SystemCalcDelegate):
 		# (empty list of ints). An empty list of bytes is not interpreted as an invalid value. This allows
 		# us to distinguish between an empty list and an invalid value.
 		value = self._dbusmonitor.get_value(vebus_service, '/Devices/0/Assistants')
-		if value == None:
+		if value is None:
 			# List of assistants is not yet available, so we don't know which assistants are present. Return
 			# False just in case a hub-2 assistant is in use.
 			return False
-		ids = set(i[0] | i[1] * 256 for i in itertools.izip(\
-			itertools.islice(value, 0, None, 2), \
+		ids = set(i[0] | i[1] * 256 for i in itertools.izip(
+			itertools.islice(value, 0, None, 2),
 			itertools.islice(value, 1, None, 2)))
 		if len(set(ids).intersection(VebusSocWriter._hub2_assistant_ids)) > 0:
 			return False
