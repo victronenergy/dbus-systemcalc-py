@@ -115,7 +115,8 @@ class SystemCalc:
 			delegates.RelayState(),
 			delegates.BuzzerControl(),
 			delegates.LgCircuitBreakerDetect(),
-			delegates.Hub1Bridge()]
+			delegates.Hub1Bridge(),
+			delegates.SystemState()]
 
 		for m in self._modules:
 			for service, paths in m.get_input():
