@@ -26,7 +26,11 @@ class VebusSocWriter(SystemCalcDelegate):
 		gobject.timeout_add(10000, exit_on_error, self._write_vebus_soc)
 
 	def get_input(self):
-		return [('com.victronenergy.vebus', ['/Soc', '/ExtraBatteryCurrent', '/Devices/0/Assistants'])]
+		return [('com.victronenergy.vebus', [
+			'/Devices/0/Assistants',
+			'/ExtraBatteryCurrent',
+			'/Hub2',
+			'/Soc'])]
 
 	def get_output(self):
 		return [('/Control/ExtraBatteryCurrent', {'gettext': '%s'})]
@@ -80,6 +84,8 @@ class VebusSocWriter(SystemCalcDelegate):
 		active_battery_service = self._dbusservice['/ActiveBatteryService']
 		if active_battery_service is None or active_battery_service.startswith('com.victronenergy.vebus'):
 			return False
+		if self._dbusmonitor.get_value(vebus_service, '/Hub2') is not None:
+			return True
 		# Writing SoC to the vebus service is not allowed when a hub-2 assistant is present, so we have to
 		# check the list of assistant IDs.
 		# Note that /Devices/0/Assistants provides a list of bytes which can be empty. It can also be invalid
