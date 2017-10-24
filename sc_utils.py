@@ -50,3 +50,13 @@ def copy_dbus_value(monitor, src_service, src_path, dest_service, dest_path, cop
 	value = monitor.get_value(src_service, src_path)
 	if copy_invalid or value is not None:
 		monitor.set_value(dest_service, dest_path, value)
+
+
+class SmartDict(dict):
+	def __getattr__(self, n):
+		try:
+			return self[n]
+		except IndexError:
+			raise AttributeError(n)
+	def __setattr__(self, k, v):
+		self[k] = v
