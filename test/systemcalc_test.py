@@ -1558,7 +1558,7 @@ class TestSystemCalc(TestSystemCalcBase):
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
 				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
-				'/BatteryOperationalLimits/MaxChargeVoltage': None,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
 				'/Dc/0/MaxChargeCurrent': 25}})
 		self._check_values({
@@ -1606,7 +1606,7 @@ class TestSystemCalc(TestSystemCalcBase):
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
 				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
-				'/BatteryOperationalLimits/MaxChargeVoltage': None,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
 				'/Dc/0/MaxChargeCurrent': 0}})
 		self._check_values({

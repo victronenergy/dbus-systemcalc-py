@@ -199,52 +199,30 @@ class Hub1Bridge(SystemCalcDelegate):
 			self._timer = None
 
 	def _on_timer(self):
-		vebus_path = self._dbusservice['/VebusService']
-		has_ess_assistant = None
-		adjust_vebus_max_charge_current = None
-		if vebus_path is not None:
-			# We do not analyse the content of /Devices/0/Assistants, because that would require us to keep
-			# a list of ESS assistant version numbers (see VebusSocWriter._hub2_assistant_ids). Because that
-			# list is expected to change (unlike the list of hub-2 assistants), we use /Hub4/AssistantId to
-			# check the presence. It is guaranteed that /Hub4/AssistantId will be published before
-			# /Devices/0/Assistants.
-			assistants = self._dbusmonitor.get_value(vebus_path, '/Devices/0/Assistants')
-			if assistants is not None:
-				has_ess_assistant = self._dbusmonitor.get_value(vebus_path, '/Hub4/AssistantId') == 5
-			# BOL support on vebus implies dynamic max charge current support. Both features were added in the
-			# same version (v415). We cannot check the presence of /Dc/0/MaxChargeCurrent, because it already
-			# existed in earlier version, where it was not dynamic (ie. should not be change too often).
-			adjust_vebus_max_charge_current = \
-				self._dbusmonitor.exists(vebus_path, '/BatteryOperationalLimits/MaxChargeVoltage')
 		bms_service = self.find_bms_service()
-		bms_parameters_written = self._update_battery_operational_limits(bms_service, has_ess_assistant)
-		voltage_written, current_written = self._update_solarchargers(bms_service, has_ess_assistant,
-			adjust_vebus_max_charge_current)
+		bms_parameters_written = self._update_battery_operational_limits(bms_service)
+		voltage_written, current_written = self._update_solarchargers(bms_service)
 		self._dbusservice['/Control/SolarChargeVoltage'] = voltage_written
 		self._dbusservice['/Control/SolarChargeCurrent'] = current_written
 		self._dbusservice['/Control/BmsParameters'] = bms_parameters_written
 		# @todo EV What if ESS + OvervoltageFeedIn? In that case there is no charge current control on the
 		# MPPTs.
-		self._dbusservice['/Control/MaxChargeCurrent'] = vebus_path is None or adjust_vebus_max_charge_current
+		vebus_path = self._dbusservice['/VebusService']
+		self._dbusservice['/Control/MaxChargeCurrent'] = \
+			vebus_path is None or \
+			self._dbusmonitor.exists(vebus_path, '/BatteryOperationalLimits/MaxChargeVoltage')
 		return True
 
-	def _update_battery_operational_limits(self, bms_service, has_ess_assistant):
-		# If has_ess_assistant is None, it is assumed that is it not clear if the assistant is present.
-		# (vebus is still initializing).
+	def _update_battery_operational_limits(self, bms_service):
 		if bms_service is None:
 			return 0
 		vebus_path = self._dbusservice['/VebusService']
 		if vebus_path is None:
 			return 0
 		try:
-			# With vebus firmware v415 and the ESS assistant released on 20170616, the voltage setpoint
-			# published by the vebus devices may exceed the BOL max charge voltage. This may cause
-			# problems with CAN-bus BMS batteries. For now, we do not copy the max charge voltage if there is
-			# a ESS assistant, or if it is not clear yet if the assistant is present.
-			if has_ess_assistant is not None and not has_ess_assistant:
-				sc_utils.copy_dbus_value(self._dbusmonitor,
-					bms_service, '/Info/MaxChargeVoltage',
-					vebus_path, '/BatteryOperationalLimits/MaxChargeVoltage')
+			sc_utils.copy_dbus_value(self._dbusmonitor,
+				bms_service, '/Info/MaxChargeVoltage',
+				vebus_path, '/BatteryOperationalLimits/MaxChargeVoltage')
 			sc_utils.copy_dbus_value(self._dbusmonitor,
 				bms_service, '/Info/MaxChargeCurrent',
 				vebus_path, '/BatteryOperationalLimits/MaxChargeCurrent')
@@ -259,7 +237,7 @@ class Hub1Bridge(SystemCalcDelegate):
 			logging.debug(traceback.format_exc())
 			return 0
 
-	def _update_solarchargers(self, bms_service, has_ess_assistant, adjust_vebus_max_charge_current):
+	def _update_solarchargers(self, bms_service):
 		bms_max_charge_current = None if bms_service is None else \
 			self._dbusmonitor.get_value(bms_service, '/Info/MaxChargeCurrent')
 		max_charge_current = self._settings['maxchargecurrent']
@@ -275,6 +253,16 @@ class Hub1Bridge(SystemCalcDelegate):
 
 		vebus_path = self._dbusservice['/VebusService']
 
+		has_ess_assistant = None
+		if vebus_path is not None:
+			# We do not analyse the content of /Devices/0/Assistants, because that would require us to keep
+			# a list of ESS assistant version numbers (see VebusSocWriter._hub2_assistant_ids). Because that
+			# list is expected to change (unlike the list of hub-2 assistants), we use /Hub4/AssistantId to
+			# check the presence. It is guaranteed that /Hub4/AssistantId will be published before
+			# /Devices/0/Assistants.
+			assistants = self._dbusmonitor.get_value(vebus_path, '/Devices/0/Assistants')
+			if assistants is not None:
+				has_ess_assistant = self._dbusmonitor.get_value(vebus_path, '/Hub4/AssistantId') == 5
 		# Feedback allowed is defined as 'ESS present and FeedInOvervoltage is enabled'. This ignores other
 		# setups which allow feedback: hub-1.
 		feedback_allowed = \
@@ -329,8 +317,7 @@ class Hub1Bridge(SystemCalcDelegate):
 		if feedback_allowed:
 			self._maximize_charge_current(vebus_path, max_charge_current, vedirect_chargers)
 		else:
-			self._distribute_max_charge_current(vebus_path, max_charge_current, vedirect_chargers,
-				adjust_vebus_max_charge_current)
+			self._distribute_max_charge_current(vebus_path, max_charge_current, vedirect_chargers)
 
 		current_written = 1 if network_mode_written and max_charge_current is not None else 0
 		return voltage_written, current_written
@@ -391,8 +378,7 @@ class Hub1Bridge(SystemCalcDelegate):
 			except dbus.exceptions.DBusException:
 				logging.debug(traceback.format_exc())
 
-	def _distribute_max_charge_current(self, vebus_path, bms_max_charge_current, vedirect_chargers,
-			adjust_vebus_max_charge_current):
+	def _distribute_max_charge_current(self, vebus_path, bms_max_charge_current, vedirect_chargers):
 		if bms_max_charge_current is None:
 			return
 
@@ -433,7 +419,10 @@ class Hub1Bridge(SystemCalcDelegate):
 			# hub4control), and will try to distribute the remaining current over the MPPTs.
 			# *** This is a change in behavior compared with the previous release ***.
 			vebus_dc_current = self._dbusmonitor.get_value(vebus_path, '/Dc/0/Current') or 0
-			if adjust_vebus_max_charge_current:
+			# BOL support on vebus implies dynamic max charge current support. Both features were added in the
+			# same version (v415). We cannot check the presence of /Dc/0/MaxChargeCurrent, because it already
+			# existed in earlier versions, where it was not dynamic (ie. should not be changed too often).
+			if self._dbusmonitor.exists(vebus_path, '/BatteryOperationalLimits/MaxChargeVoltage'):
 				vebus_max_charge_current = max(0, bms_max_charge_current - solar_charger_current)
 				# If there are MPPTs that may be able to produce more power, we reduce the vebus max charge
 				# current to give the MPPTs a change.
