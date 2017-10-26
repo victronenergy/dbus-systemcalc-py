@@ -166,6 +166,7 @@ class Hub1Bridge(SystemCalcDelegate):
 		self._dbusservice.add_path('/Control/BmsParameters', value=0)
 		self._dbusservice.add_path('/Control/MaxChargeCurrent', value=0)
 		self._dbusservice.add_path('/Control/SolarChargerVoltageSense', value=0)
+		self._dbusservice.add_path('/Debug/SolarVoltageOffset', value=0, writeable=True)
 
 	def device_added(self, service, instance, do_service_change=True):
 		service_type = service.split('.')[2]
@@ -281,6 +282,11 @@ class Hub1Bridge(SystemCalcDelegate):
 			charge_voltage = self._dbusmonitor.get_value(vebus_path, '/Hub/ChargeVoltage')
 		if charge_voltage is None and bms_service is not None:
 			charge_voltage = self._dbusmonitor.get_value(bms_service, '/Info/MaxChargeVoltage')
+		if charge_voltage is not None:
+			try:
+				charge_voltage += float(self._dbusservice['/Debug/SolarVoltageOffset'])
+			except ValueError:
+				pass
 		sense_voltage = None if vebus_path is None else \
 			self._dbusmonitor.get_value(vebus_path, '/Dc/0/Voltage')
 		if charge_voltage is None and max_charge_current is None and sense_voltage is None:
