@@ -8,6 +8,7 @@ before_install:
   - sudo apt-get install python-gobject-2
   - sudo apt-get install dbus-x11
   - sudo apt-get install python-dbus
+  - sudo apt-get install python-nose
 
 script:
-  - cd test && python systemcalc_test.py -v
+  - cd tests && python systemcalc_test.py -v
