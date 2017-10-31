@@ -32,17 +32,25 @@ s = DbusDummyService(
     servicename=args.name,
     deviceinstance=0,
     paths={
-        '/State': {'initial': None},
-        '/Soc': {'initial': 10},
-        '/Dc/0/Voltage': {'initial': 11},
-        '/Dc/0/Current': {'initial': 12}},
+		'/Ac/ActiveIn/L1/P': {'initial': 0},
+		'/Ac/ActiveIn/ActiveInput': {'initial': 0},
+		'/Ac/ActiveIn/Connected': {'initial': 1},
+		'/Ac/Out/L1/P': {'initial': 0},
+		'/Dc/0/Voltage': {'initial': 11},
+		'/Dc/0/Current': {'initial': 12},
+		'/Dc/0/MaxChargeCurrent': {'initial': None},
+		'/Soc': {'initial': 10},
+		'/State': {'initial': None},
+		'/VebusMainState': {'initial': None},
+		'/Hub4/AssistantId': {'initial': None},
+		'/Hub4/Sustain': {'initial': None},
+		'/BatteryOperationalLimits/MaxChargeVoltage': {'initial': None},
+		'/BatteryOperationalLimits/MaxChargeCurrent': {'initial': None},
+		'/BatteryOperationalLimits/MaxDischargeCurrent': {'initial': None},
+		'/BatteryOperationalLimits/BatteryLowVoltage': {'initial': None}},
     productname='Multi 12/3000',
     connection='CCGX-VE.Bus port')
 
 logging.info('Connected to dbus, and switching over to gobject.MainLoop() (= event based)')
 mainloop = gobject.MainLoop()
 mainloop.run()
-
-
-
-
