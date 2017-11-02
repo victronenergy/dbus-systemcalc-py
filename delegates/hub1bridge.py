@@ -1,114 +1,14 @@
-#!/usr/bin/python -u
-# -*- coding: utf-8 -*-
-
-import dbus
-import fcntl
+from dbus.exceptions import DBusException
 import gobject
-import itertools
 import logging
 import math
-import os
-import sc_utils
-import sys
 import traceback
 
 # Victron packages
-sys.path.insert(1, os.path.join(os.path.dirname(__file__), 'ext', 'velib_python'))
-from sc_utils import safeadd
+from sc_utils import safeadd, copy_dbus_value
 from ve_utils import exit_on_error
 
-
-class SystemCalcDelegate(object):
-	def __init__(self):
-		self._dbusmonitor = None
-		self._settings = None
-		self._dbusservice = None
-
-	def set_sources(self, dbusmonitor, settings, dbusservice):
-		self._dbusmonitor = dbusmonitor
-		self._settings = settings
-		self._dbusservice = dbusservice
-
-	def get_input(self):
-		"""In derived classes this function should return the list or D-Bus paths used as input. This will be
-		used to populate self._dbusmonitor. Paths should be ordered by service name.
-		Example:
-		def get_input(self):
-			return [
-				('com.victronenergy.battery', ['/ProductId']),
-				('com.victronenergy.solarcharger', ['/ProductId'])]
-		"""
-		return []
-
-	def get_output(self):
-		"""In derived classes this function should return the list or D-Bus paths used as input. This will be
-		used to create the D-Bus items in the com.victronenergy.system service. You can include a gettext
-		field which will be used to format the result of the GetText reply.
-		Example:
-		def get_output(self):
-			return [('/Hub', {'gettext': '%s'}), ('/Dc/Battery/Current', {'gettext': '%s A'})]
-		"""
-		return []
-
-	def get_settings(self):
-		"""In derived classes this function should return all settings (from com.victronenergy.settings)
-		that are used in this class. The return value will be used to populate self._settings.
-		Note that if you add a setting here, it will be created (using AddSettings of the D-Bus), if you
-		do not want that, add your setting to the list returned by get_input.
-		List item format: (<alias>, <path>, <default value>, <min value>, <max value>)
-		def get_settings(self):
-			return [('writevebussoc', '/Settings/SystemSetup/WriteVebusSoc', 0, 0, 1)]
-		"""
-		return []
-
-	def update_values(self, newvalues):
-		pass
-
-	def device_added(self, service, instance, do_service_change=True):
-		pass
-
-	def device_removed(self, service, instance):
-		pass
-
-
-class HubTypeSelect(SystemCalcDelegate):
-	def get_input(self):
-		return [
-			('com.victronenergy.vebus', ['/Hub/ChargeVoltage', '/Hub4/AssistantId'])]
-
-	def get_output(self):
-		return [('/Hub', {'gettext': '%s'}), ('/SystemType', {'gettext': '%s'})]
-
-	def device_added(self, service, instance, do_service_change=True):
-		pass
-
-	def device_removed(self, service, instance):
-		pass
-
-	def update_values(self, newvalues):
-		# The code below should be executed after PV inverter data has been updated, because we need the
-		# PV inverter total power to update the consumption.
-		hub = None
-		system_type = None
-		vebus_path = newvalues.get('/VebusService')
-		hub4_assistant_id = self._dbusmonitor.get_value(vebus_path, '/Hub4/AssistantId')
-		if hub4_assistant_id is not None:
-			hub = 4
-			system_type = 'ESS' if hub4_assistant_id == 5 else 'Hub-4'
-		elif self._dbusmonitor.get_value(vebus_path, '/Hub/ChargeVoltage') is not None or \
-			newvalues.get('/Dc/Pv/Power') is not None:
-			hub = 1
-			system_type = 'Hub-1'
-		elif newvalues.get('/Ac/PvOnOutput/NumberOfPhases') is not None:
-			hub = 2
-			system_type = 'Hub-2'
-		elif newvalues.get('/Ac/PvOnGrid/NumberOfPhases') is not None or \
-			newvalues.get('/Ac/PvOnGenset/NumberOfPhases') is not None:
-			hub = 3
-			system_type = 'Hub-3'
-		newvalues['/Hub'] = hub
-		newvalues['/SystemType'] = system_type
-
+from delegates.base import SystemCalcDelegate
 
 class Hub1Bridge(SystemCalcDelegate):
 	# if ChargeCurrent > ChangeCurrentLimitedFactor * MaxChargeCurrent we assume that the solar charger is
@@ -224,20 +124,20 @@ class Hub1Bridge(SystemCalcDelegate):
 		if vebus_path is None:
 			return 0
 		try:
-			sc_utils.copy_dbus_value(self._dbusmonitor,
+			copy_dbus_value(self._dbusmonitor,
 				bms_service, '/Info/MaxChargeVoltage',
 				vebus_path, '/BatteryOperationalLimits/MaxChargeVoltage')
-			sc_utils.copy_dbus_value(self._dbusmonitor,
+			copy_dbus_value(self._dbusmonitor,
 				bms_service, '/Info/MaxChargeCurrent',
 				vebus_path, '/BatteryOperationalLimits/MaxChargeCurrent')
-			sc_utils.copy_dbus_value(self._dbusmonitor,
+			copy_dbus_value(self._dbusmonitor,
 				bms_service, '/Info/BatteryLowVoltage',
 				vebus_path, '/BatteryOperationalLimits/BatteryLowVoltage')
-			sc_utils.copy_dbus_value(self._dbusmonitor,
+			copy_dbus_value(self._dbusmonitor,
 				bms_service, '/Info/MaxDischargeCurrent',
 				vebus_path, '/BatteryOperationalLimits/MaxDischargeCurrent')
 			return 1
-		except dbus.exceptions.DBusException:
+		except DBusException:
 			logging.debug(traceback.format_exc())
 			return 0
 
@@ -312,7 +212,7 @@ class Hub1Bridge(SystemCalcDelegate):
 					vedirect_chargers.append(service)
 					self._dbusmonitor.set_value(service, '/Link/NetworkMode', network_mode)
 					network_mode_written = True
-			except dbus.exceptions.DBusException:
+			except DBusException:
 				pass
 
 		voltage_written = self._distribute_voltage_setpoint(vebus_path, charge_voltage, vedirect_chargers,
@@ -343,7 +243,7 @@ class Hub1Bridge(SystemCalcDelegate):
 			try:
 				self._dbusmonitor.set_value(service, '/Link/VoltageSense', sense_voltage)
 				voltagesense_written = 1
-			except dbus.exceptions.DBusException:
+			except DBusException:
 				pass
 		return voltagesense_written
 
@@ -364,7 +264,7 @@ class Hub1Bridge(SystemCalcDelegate):
 					state = self._dbusmonitor.get_value(vebus_path, '/State')
 					if state is not None:
 						self._dbusmonitor.set_value(service, '/State', state)
-			except dbus.exceptions.DBusException:
+			except DBusException:
 				pass
 
 		if not has_vecan_chargers:
@@ -381,7 +281,7 @@ class Hub1Bridge(SystemCalcDelegate):
 				# which we will ignore cheerfully.
 				self._dbusmonitor.set_value(service, '/Link/ChargeVoltage', charge_voltage)
 				voltage_written = 1
-			except dbus.exceptions.DBusException:
+			except DBusException:
 				pass
 
 		return voltage_written
@@ -392,15 +292,15 @@ class Hub1Bridge(SystemCalcDelegate):
 
 		try:
 			self._dbusmonitor.set_value(vebus_path, '/Dc/0/MaxChargeCurrent', bms_max_charge_current)
-		except dbus.exceptions.DBusException:
+		except DBusException:
 			logging.debug(traceback.format_exc())
 
 		for service in vedirect_chargers:
 			try:
-				sc_utils.copy_dbus_value(self._dbusmonitor,
+				copy_dbus_value(self._dbusmonitor,
 					service, '/Settings/ChargeCurrentLimit',
 					service, '/Link/ChargeCurrent')
-			except dbus.exceptions.DBusException:
+			except DBusException:
 				logging.debug(traceback.format_exc())
 
 	def _distribute_max_charge_current(self, vebus_path, bms_max_charge_current, vedirect_chargers):
@@ -456,7 +356,7 @@ class Hub1Bridge(SystemCalcDelegate):
 					vebus_dc_current = min(vebus_dc_current, vebus_max_charge_current)
 				try:
 					self._dbusmonitor.set_value(vebus_path, '/Dc/0/MaxChargeCurrent', vebus_max_charge_current)
-				except dbus.exceptions.DBusException:
+				except DBusException:
 					logging.debug(traceback.format_exc())
 
 		# Handle Ve.Direct solar chargers
@@ -483,7 +383,7 @@ class Hub1Bridge(SystemCalcDelegate):
 					charge_current = self._dbusmonitor.get_value(charger, '/Dc/0/Current')
 					max_charge_current = solar_charger_factor * charge_current if charge_current > 0 else 0
 					self._dbusmonitor.set_value(charger, '/Link/ChargeCurrent', max_charge_current)
-				except dbus.exceptions.DBusException:
+				except DBusException:
 					logging.debug(traceback.format_exc())
 
 	def _distribute_currents(self, chargers, increment, scale=1.0):
@@ -504,7 +404,7 @@ class Hub1Bridge(SystemCalcDelegate):
 				self._dbusmonitor.set_value(charger, '/Link/ChargeCurrent', scale * max_currents[i])
 				increment += actual_currents[i] - max_currents[i]
 				i += 1
-			except dbus.exceptions.DBusException:
+			except DBusException:
 				logging.debug(traceback.format_exc())
 		return increment
 
@@ -539,307 +439,3 @@ class Hub1Bridge(SystemCalcDelegate):
 			if self._dbusmonitor.get_value(battery_service, '/Info/MaxChargeVoltage') is not None:
 				return battery_service
 		return None
-
-
-class ServiceMapper(SystemCalcDelegate):
-	def device_added(self, service, instance, do_service_change=True):
-		path = ServiceMapper._get_service_mapping_path(service, instance)
-		if path in self._dbusservice:
-			self._dbusservice[path] = service
-		else:
-			self._dbusservice.add_path(path, service)
-
-	def device_removed(self, service, instance):
-		path = ServiceMapper._get_service_mapping_path(service, instance)
-		if path in self._dbusservice:
-			del self._dbusservice[path]
-
-	@staticmethod
-	def _get_service_mapping_path(service, instance):
-		sn = sc_utils.service_instance_name(service, instance).replace('.', '_').replace('/', '_')
-		return '/ServiceMapping/%s' % sn
-
-
-class VebusSocWriter(SystemCalcDelegate):
-	# Note that there are 2 categories of hub2 assistants: v1xx/v2xx firmware and v3xx/v4xx firmware.
-	# Both versions have problems with writing the SoC (the assistants themselves adjust the SoC from time
-	# to time for internal bookkeeping). For the assistants mentioned below there is no way of detecting the
-	# presence of the hub-2 assistant apart from the assistant ID.
-	# There is a plan to prevent this list from growing any further: new hub-2 assistant would identify
-	# themselves, and the mk2 service will create /Hub2 path will be created in the vebus service. However,
-	# no assistant has been released supporting this feature (the mk2 service already supports this).
-	# Therefore it has not been implemented here.
-	_hub2_assistant_ids = \
-		{0x0134, 0x0135, 0x0137, 0x0138, 0x013A, 0x141, 0x0146, 0x014D, 0x015F, 0x0160, 0x0165}
-
-	def __init__(self):
-		SystemCalcDelegate.__init__(self)
-		gobject.idle_add(exit_on_error, lambda: not self._write_vebus_soc())
-		gobject.timeout_add(10000, exit_on_error, self._write_vebus_soc)
-
-	def get_input(self):
-		return [('com.victronenergy.vebus', ['/Soc', '/ExtraBatteryCurrent', '/Devices/0/Assistants'])]
-
-	def get_output(self):
-		return [('/Control/ExtraBatteryCurrent', {'gettext': '%s'})]
-
-	def set_sources(self, dbusmonitor, settings, dbusservice):
-		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
-		self._dbusservice.add_path('/Control/VebusSoc', value=0)
-
-	def update_values(self, newvalues):
-		vebus_service = newvalues.get('/VebusService')
-		current_written = 0
-		if vebus_service is not None:
-			# Writing the extra charge current to the Multi serves two purposes:
-			# 1) Also take the charge current from the MPPT into account in the VE.Bus SOC algorithm.
-			# 2) The bulk timer in the Multi only runs when the battery is being charged, ie charge-current
-			#    is positive. And in ESS Optimize mode, the Multi itself is not charging.
-			#    So without knowing that the MPPT is charging, the bulk timer will never run, and absorption
-			#    will then be very short.
-			#
-			# Always write the extra current, even if there is no solarcharger present. We need this because
-			# once an SoC is written to the vebus service, the vebus device will stop adjusting its SoC until
-			# an extra current is written.
-			total_charge_current = newvalues.get('/Dc/Pv/Current', 0)
-			try:
-				charge_current = self._dbusmonitor.get_value(vebus_service, '/ExtraBatteryCurrent')
-				if charge_current is not None:
-					self._dbusmonitor.set_value(vebus_service, '/ExtraBatteryCurrent', total_charge_current)
-					current_written = 1
-			except dbus.exceptions.DBusException:
-				pass
-		newvalues['/Control/ExtraBatteryCurrent'] = current_written
-
-	def _write_vebus_soc(self):
-		vebus_service = self._dbusservice['/VebusService']
-		soc_written = 0
-		if vebus_service is not None:
-			if self._must_write_soc(vebus_service):
-				soc = self._dbusservice['/Dc/Battery/Soc']
-				if soc is not None:
-					logging.debug("writing this soc to vebus: %d", soc)
-					try:
-						# Vebus service may go offline while we write this SoC
-						self._dbusmonitor.set_value(vebus_service, '/Soc', soc)
-						soc_written = 1
-					except dbus.exceptions.DBusException:
-						pass
-		self._dbusservice['/Control/VebusSoc'] = soc_written
-		return True
-
-	def _must_write_soc(self, vebus_service):
-		active_battery_service = self._dbusservice['/ActiveBatteryService']
-		if active_battery_service is None or active_battery_service.startswith('com.victronenergy.vebus'):
-			return False
-		# Writing SoC to the vebus service is not allowed when a hub-2 assistant is present, so we have to
-		# check the list of assistant IDs.
-		# Note that /Devices/0/Assistants provides a list of bytes which can be empty. It can also be invalid
-		# (empty list of ints). An empty list of bytes is not interpreted as an invalid value. This allows
-		# us to distinguish between an empty list and an invalid value.
-		value = self._dbusmonitor.get_value(vebus_service, '/Devices/0/Assistants')
-		if value is None:
-			# List of assistants is not yet available, so we don't know which assistants are present. Return
-			# False just in case a hub-2 assistant is in use.
-			return False
-		ids = set(i[0] | i[1] * 256 for i in itertools.izip(
-			itertools.islice(value, 0, None, 2),
-			itertools.islice(value, 1, None, 2)))
-		if len(set(ids).intersection(VebusSocWriter._hub2_assistant_ids)) > 0:
-			return False
-		return True
-
-
-class RelayState(SystemCalcDelegate):
-	def __init__(self):
-		SystemCalcDelegate.__init__(self)
-		self._relays = {}
-
-	def set_sources(self, dbusmonitor, settings, dbusservice):
-		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
-		relays = sc_utils.gpio_paths('/etc/venus/relays')
-		if len(relays) == 0:
-			logging.info('No relays found')
-			return
-		i = 0
-		for r in relays:
-			path = os.path.join(r, 'value')
-			dbus_path = '/Relay/{}/State'.format(i)
-			self._relays[dbus_path] = path
-			self._dbusservice.add_path(dbus_path, value=None, writeable=True,
-				onchangecallback=self._on_relay_state_changed)
-			i += 1
-		logging.info('Relays found: {}'.format(', '.join(self._relays.values())))
-		gobject.idle_add(exit_on_error, lambda: not self._update_relay_state())
-		gobject.timeout_add(5000, exit_on_error, self._update_relay_state)
-
-	def _update_relay_state(self):
-		# @todo EV Do we still need this? Maybe only at startup?
-		for dbus_path, file_path in self._relays.items():
-			try:
-				with open(file_path, 'rt') as r:
-					state = int(r.read().strip())
-					self._dbusservice[dbus_path] = state
-			except (IOError, ValueError):
-				traceback.print_exc()
-		return True
-
-	def _on_relay_state_changed(self, dbus_path, value):
-		try:
-			path = self._relays[dbus_path]
-			with open(path, 'wt') as w:
-				w.write('1' if int(value) == 1 else '0')
-			return True
-		except (IOError, ValueError):
-			traceback.print_exc()
-			return False
-
-
-class BuzzerControl(SystemCalcDelegate):
-	CLOCK_TICK_RATE = 1193180
-	KIOCSOUND = 0x4B2F
-	TTY_PATH = '/dev/tty0'
-	GPIO_BUZZER_PATH = '/etc/venus/buzzer'
-	PWM_BUZZER_PATH = '/etc/venus/pwm_buzzer'
-
-	def __init__(self):
-		SystemCalcDelegate.__init__(self)
-		self._buzzer_on = False
-		self._timer = None
-		self._gpio_path = None
-		self._pwm_frequency = None
-
-	def set_sources(self, dbusmonitor, settings, dbusservice):
-		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
-		# Find GPIO buzzer
-		gpio_paths = sc_utils.gpio_paths(BuzzerControl.GPIO_BUZZER_PATH)
-		if len(gpio_paths) > 0:
-			self._gpio_path = os.path.join(gpio_paths[0], 'value')
-			logging.info('GPIO buzzer found: {}'.format(self._gpio_path))
-		# Find PWM buzzer
-		self._pwm_frequency = None
-		try:
-			pwm_frequency = sc_utils.gpio_paths(BuzzerControl.PWM_BUZZER_PATH)
-			if len(pwm_frequency) > 0:
-				self._pwm_frequency = int(pwm_frequency[0])
-				logging.info('PWM buzzer found @ frequency: {}'.format(self._pwm_frequency))
-		except ValueError:
-			logging.error('Parsing of PWM buzzer settings at %s failed', BuzzerControl.PWM_BUZZER_PATH)
-		if self._gpio_path is None and self._pwm_frequency is None:
-			logging.info('No buzzer found')
-			return
-		self._dbusservice.add_path('/Buzzer/State', value=0, writeable=True,
-			onchangecallback=lambda p, v: exit_on_error(self._on_buzzer_state_changed, v))
-		# Reset the buzzer so the buzzer state equals the D-Bus value. It will also silence the buzzer after
-		# a restart of the service/system.
-		self._set_buzzer(False)
-
-	def _on_buzzer_state_changed(self, value):
-		try:
-			value = 1 if int(value) == 1 else 0
-			if value == 1:
-				if self._timer is None:
-					self._timer = gobject.timeout_add(500, exit_on_error, self._on_timer)
-					self._set_buzzer(True)
-			elif self._timer is not None:
-				gobject.source_remove(self._timer)
-				self._timer = None
-				self._set_buzzer(False)
-			self._dbusservice['/Buzzer/State'] = value
-		except (TypeError, ValueError):
-			logging.error('Incorrect value received on /Buzzer/State: %s', value)
-		return False
-
-	def _on_timer(self):
-		self._set_buzzer(not self._buzzer_on)
-		return True
-
-	def _set_buzzer(self, on):
-		self._set_gpio_buzzer(on)
-		self._set_pwm_buzzer(on)
-		self._buzzer_on = on
-
-	def _set_gpio_buzzer(self, on):
-		if self._gpio_path is None:
-			return
-		try:
-			with open(self._gpio_path, 'wt') as w:
-				w.write('1' if on else '0')
-		except (IOError, OSError):
-			traceback.print_exc()
-
-	def _set_pwm_buzzer(self, on):
-		if self._pwm_frequency is None:
-			return
-		console_fd = None
-		interval = BuzzerControl.CLOCK_TICK_RATE // self._pwm_frequency if on else 0
-		try:
-			# The return value of os.open does not have an __exit__ function, so we cannot use 'with' here.
-			console_fd = os.open(BuzzerControl.TTY_PATH, os.O_RDONLY | os.O_NOCTTY)
-			fcntl.ioctl(console_fd, BuzzerControl.KIOCSOUND, interval)
-		except (IOError, OSError):
-			traceback.print_exc()
-		finally:
-			try:
-				if console_fd is not None:
-					os.close(console_fd)
-			except:
-				traceback.print_exc()
-
-
-class LgCircuitBreakerDetect(SystemCalcDelegate):
-	def __init__(self):
-		SystemCalcDelegate.__init__(self)
-		self._lg_voltage_buffer = None
-		self._lg_battery = None
-
-	def set_sources(self, dbusmonitor, settings, dbusservice):
-		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
-		self._dbusservice.add_path('/Dc/Battery/Alarms/CircuitBreakerTripped', value=None)
-
-	def device_added(self, service, instance, do_service_change=True):
-		service_type = service.split('.')[2]
-		if service_type == 'battery' and self._dbusmonitor.get_value(service, '/ProductId') == 0xB004:
-			logging.info('LG battery service appeared: %s' % service)
-			self._lg_battery = service
-			self._lg_voltage_buffer = []
-			self._dbusservice['/Dc/Battery/Alarms/CircuitBreakerTripped'] = 0
-
-	def device_removed(self, service, instance):
-		if service == self._lg_battery:
-			logging.info('LG battery service disappeared: %s' % service)
-			self._lg_battery = None
-			self._lg_voltage_buffer = None
-			self._dbusservice['/Dc/Battery/Alarms/CircuitBreakerTripped'] = None
-
-	def update_values(self, newvalues):
-		vebus_path = newvalues.get('/VebusService')
-		if self._lg_battery is None or vebus_path is None:
-			return
-		battery_current = self._dbusmonitor.get_value(self._lg_battery, '/Dc/0/Current')
-		if battery_current is None or abs(battery_current) > 0.01:
-			if len(self._lg_voltage_buffer) > 0:
-				logging.debug('LG voltage buffer reset')
-				self._lg_voltage_buffer = []
-			return
-		vebus_voltage = self._dbusmonitor.get_value(vebus_path, '/Dc/0/Voltage')
-		if vebus_voltage is None:
-			return
-		self._lg_voltage_buffer.append(float(vebus_voltage))
-		if len(self._lg_voltage_buffer) > 40:
-			self._lg_voltage_buffer = self._lg_voltage_buffer[-40:]
-		elif len(self._lg_voltage_buffer) < 20:
-			return
-		min_voltage = min(self._lg_voltage_buffer)
-		max_voltage = max(self._lg_voltage_buffer)
-		battery_voltage = self._dbusmonitor.get_value(self._lg_battery, '/Dc/0/Voltage')
-		logging.debug('LG battery current V=%s I=%s' % (battery_voltage, battery_current))
-		if min_voltage < 0.9 * battery_voltage or max_voltage > 1.1 * battery_voltage:
-			logging.error('LG shutdown detected V=%s I=%s %s' %
-				(battery_voltage, battery_current, self._lg_voltage_buffer))
-			self._dbusservice['/Dc/Battery/Alarms/CircuitBreakerTripped'] = 2
-			self._lg_voltage_buffer = []
-			try:
-				self._dbusmonitor.set_value(vebus_path, '/Mode', 4)
-			except dbus.exceptions.DBusException:
-				logging.error('Cannot switch off vebus device')
