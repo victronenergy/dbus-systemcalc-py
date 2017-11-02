@@ -5,8 +5,18 @@ LIBDIR = $(bindir)/ext/velib_python
 
 FILES = \
 	$(SOURCEDIR)/dbus_systemcalc.py \
-	$(SOURCEDIR)/delegates.py \
 	$(SOURCEDIR)/sc_utils.py
+
+DELEGATES = \
+	$(SOURCEDIR)/delegates/base.py \
+	$(SOURCEDIR)/delegates/buzzercontrol.py \
+	$(SOURCEDIR)/delegates/hub1bridge.py \
+	$(SOURCEDIR)/delegates/hubtype.py \
+	$(SOURCEDIR)/delegates/__init__.py \
+	$(SOURCEDIR)/delegates/lgbattery.py \
+	$(SOURCEDIR)/delegates/relaystate.py \
+	$(SOURCEDIR)/delegates/servicemapper.py \
+	$(SOURCEDIR)/delegates/vebussocwriter.py
 
 VEDLIB_FILES = \
 	$(VEDLIBDIR)/logger.py \
@@ -20,6 +30,12 @@ help:
 	@echo " help - print this message"
 	@echo " install - install everything"
 	@echo " clean - remove temporary files"
+
+install_delegates : $(DELEGATES)
+	@if [ "$^" != "" ]; then \
+		$(INSTALL_CMD) -d $(DESTDIR)$(bindir)/delegates; \
+		$(INSTALL_CMD) -t $(DESTDIR)$(bindir)/delegates $^; \
+	fi
 
 install_app : $(FILES)
 	@if [ "$^" != "" ]; then \
@@ -37,7 +53,7 @@ install_velib_python: $(VEDLIB_FILES)
 
 clean: ;
 
-install: install_velib_python install_app
+install: install_velib_python install_app install_delegates
 
 test:
 	python test/systemcalc_test.py -v
