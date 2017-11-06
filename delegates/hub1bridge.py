@@ -5,6 +5,7 @@ import math
 import traceback
 
 # Victron packages
+from autoequalise import AutoEqualise
 from sc_utils import safeadd, copy_dbus_value
 from ve_utils import exit_on_error
 
@@ -53,8 +54,9 @@ class Hub1Bridge(SystemCalcDelegate):
 				'/Mgmt/Connection']),
 			('com.victronenergy.vecan',
 				['/Link/ChargeVoltage']),
-			('com.victronenergy.settings',
-				['/Settings/CGwacs/OvervoltageFeedIn'])]
+			('com.victronenergy.settings', [
+				'/Settings/CGwacs/OvervoltageFeedIn',
+				'/Settings/AutoEqualise/MaxChargeCurrent'])]
 
 	def get_settings(self):
 		return [('maxchargecurrent', '/Settings/SystemSetup/MaxChargeCurrent', -1, -1, 10000)]
@@ -165,14 +167,13 @@ class Hub1Bridge(SystemCalcDelegate):
 			assistants = self._dbusmonitor.get_value(vebus_path, '/Devices/0/Assistants')
 			if assistants is not None:
 				has_ess_assistant = self._dbusmonitor.get_value(vebus_path, '/Hub4/AssistantId') == 5
-		# Feedback allowed is defined as 'ESS present and FeedInOvervoltage is enabled'. This ignores other
-		# setups which allow feedback: hub-1. Also, AC-In must be connected, and not its source must not be
-		# a generator.
-		feedback_allowed = \
-			has_ess_assistant and \
-			self._dbusmonitor.get_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn') == 1 and \
-			self._dbusmonitor.get_value(vebus_path, '/Ac/ActiveIn/Connected') == 1 and \
-			self._dbusservice['/Ac/ActiveIn/Source'] != 2  # genset
+
+			# @todo We only do this when there is a vebus device present, it is not yet clear what should
+			# happen if there are solarchargers present, but no vebus.
+			if self._dbusservice['/AutoEqualise/State'] == AutoEqualise.EQUALISING:
+				c = self._dbusmonitor.get_value('com.victronenergy.settings', '/Settings/AutoEqualise/MaxChargeCurrent')
+				if max_charge_current is None or max_charge_current > c:
+					max_charge_current = c
 
 		# If the vebus service does not provide a charge voltage setpoint (so no ESS/Hub-1/Hub-4), we use the
 		# max charge voltage provided by the BMS (if any). This will probably prevent feedback, but that is
@@ -221,9 +222,19 @@ class Hub1Bridge(SystemCalcDelegate):
 		# by the MPPTs, the charge current should stay within limits. This avoids a problem that we do not
 		# know if extra MPPT power will be fed back to the grid when we decide to increase the MPPT max charge
 		# current.
+
 		# If feedback is allowed, we limit the vebus max charge current to bms_max_charge_current, because we
 		# have to write a value, and we have no default value (this would be the max charge current setting,
 		# which is not available right now).
+
+		# Feedback allowed is defined as 'ESS present and FeedInOvervoltage is enabled'. This ignores other
+		# setups which allow feedback: hub-1. Also, AC-In must be connected, and not its source must not be
+		# a generator.
+		feedback_allowed = \
+			has_ess_assistant and \
+			self._dbusmonitor.get_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn') == 1 and \
+			self._dbusmonitor.get_value(vebus_path, '/Ac/ActiveIn/Connected') == 1 and \
+			self._dbusservice['/Ac/ActiveIn/Source'] != 2  # genset
 		if feedback_allowed:
 			self._maximize_charge_current(vebus_path, max_charge_current, vedirect_chargers)
 		else:

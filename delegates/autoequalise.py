@@ -110,7 +110,8 @@ class AutoEqualise(SystemCalcDelegate):
 			('autoeqstarttime', '/Settings/AutoEqualise/StartTime', '14:00', 0, 0),
 			('autoeqinterval', '/Settings/AutoEqualise/Interval', 180, 1, 365),
 			('autoeqlaststarted', '/Settings/AutoEqualise/LastStarted', 0, 0, 0),
-			('autoeqlastcompleted', '/Settings/AutoEqualise/LastCompleted', 0, 0, 0)]
+			('autoeqlastcompleted', '/Settings/AutoEqualise/LastCompleted', 0, 0, 0),
+			('autoequalisecurrent', '/Settings/AutoEqualise/MaxChargeCurrent', 50, 0, 10000)]
 
 	def get_input(self):
 		return [
