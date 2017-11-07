@@ -10,13 +10,15 @@ from ve_utils import exit_on_error
 from delegates.base import SystemCalcDelegate
 
 class RelayState(SystemCalcDelegate):
+	RELAY_PATH = '/etc/venus/relays'
+
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)
 		self._relays = {}
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
-		relays = gpio_paths('/etc/venus/relays')
+		relays = gpio_paths(RelayState.RELAY_PATH)
 		if len(relays) == 0:
 			logging.info('No relays found')
 			return
