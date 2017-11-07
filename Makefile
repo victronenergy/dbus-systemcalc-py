@@ -16,7 +16,8 @@ DELEGATES = \
 	$(SOURCEDIR)/delegates/lgbattery.py \
 	$(SOURCEDIR)/delegates/relaystate.py \
 	$(SOURCEDIR)/delegates/servicemapper.py \
-	$(SOURCEDIR)/delegates/vebussocwriter.py
+	$(SOURCEDIR)/delegates/vebussocwriter.py \
+	$(SOURCEDIR)/delegates/systemstate.py
 
 VEDLIB_FILES = \
 	$(VEDLIBDIR)/logger.py \

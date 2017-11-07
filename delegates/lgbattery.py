@@ -1,3 +1,4 @@
+import logging
 from dbus.exceptions import DBusException
 from delegates.base import SystemCalcDelegate
 
