@@ -166,11 +166,13 @@ class Hub1Bridge(SystemCalcDelegate):
 			if assistants is not None:
 				has_ess_assistant = self._dbusmonitor.get_value(vebus_path, '/Hub4/AssistantId') == 5
 		# Feedback allowed is defined as 'ESS present and FeedInOvervoltage is enabled'. This ignores other
-		# setups which allow feedback: hub-1.
+		# setups which allow feedback: hub-1. Also, AC-In must be connected, and not its source must not be
+		# a generator.
 		feedback_allowed = \
 			has_ess_assistant and \
 			self._dbusmonitor.get_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn') == 1 and \
-			self._dbusmonitor.get_value(vebus_path, '/Ac/ActiveIn/Connected') == 1
+			self._dbusmonitor.get_value(vebus_path, '/Ac/ActiveIn/Connected') == 1 and \
+			self._dbusservice['/Ac/ActiveIn/Source'] != 2  # genset
 
 		# If the vebus service does not provide a charge voltage setpoint (so no ESS/Hub-1/Hub-4), we use the
 		# max charge voltage provided by the BMS (if any). This will probably prevent feedback, but that is
