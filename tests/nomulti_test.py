@@ -121,7 +121,7 @@ class TestSystemCalcNoMulti(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO0': {
 				'/Link/NetworkMode': 13,
-				'/Link/ChargeCurrent': None,
+				'/Link/ChargeCurrent': 0,
 				'/Link/ChargeVoltage': 58.2},
 			'com.victronenergy.solarcharger.ttyO2': {
 				'/Link/NetworkMode': 13,
