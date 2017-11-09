@@ -314,15 +314,12 @@ class Hub1Bridge(SystemCalcDelegate):
 		upscalable_chargers = []
 		static_chargers = []
 		all_chargers = []
-		sleeping_chargers = []
 		for service in vedirect_chargers:
 			charge_current = self._dbusmonitor.get_value(service, '/Dc/0/Current')
 			solar_charger_current = safeadd(solar_charger_current, charge_current)
 			max_charge_current = self._dbusmonitor.get_value(service, '/Link/ChargeCurrent')
 			state = self._dbusmonitor.get_value(service, '/State')
-			if state == 0:  # Off
-				sleeping_chargers.append(service)
-			else:
+			if state != 0:  # Off
 				all_chargers.append(service)
 				# See if we can increase PV yield by increasing the maximum charge current of this solar
 				# charger. It is assumed that a PV yield can be increased if the actual current is close to
@@ -388,14 +385,6 @@ class Hub1Bridge(SystemCalcDelegate):
 					self._dbusmonitor.set_value(charger, '/Link/ChargeCurrent', max_charge_current)
 				except DBusException:
 					logging.debug(traceback.format_exc())
-
-		# Handle sleeping chargers. Older chargers turn off when there is no PV, but won't turn on
-		# again the next day unless ChargeCurrent is set.
-		for charger in sleeping_chargers:
-			try:
-				self._dbusmonitor.set_value(charger, '/Link/ChargeCurrent', 0)
-			except DBusException:
-				pass
 
 	def _distribute_currents(self, chargers, increment, scale=1.0):
 		if increment < 0:
