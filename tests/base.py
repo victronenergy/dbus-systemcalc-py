@@ -43,6 +43,15 @@ class TestSystemCalcBase(unittest.TestCase):
 	def _set_setting(self, path, value):
 		self._system_calc._settings[self._system_calc._settings.get_short_name(path)] = value
 
+	def _check_settings(self, values):
+		settings = {k: v[1] for k, v in self._system_calc._settings._settings.iteritems()}
+		msg = ('{}\t{}\t{}'.format(k, v, settings.get(k)) \
+			for k, v in values.iteritems())
+		msg = '\n'.join(msg)
+
+		tests = (settings.get(k) == v for k, v in values.iteritems())
+		self.assertTrue(all(tests), '\n'+msg)
+
 	def _check_values(self, values):
 		ok = True
 		for k, v in values.items():
