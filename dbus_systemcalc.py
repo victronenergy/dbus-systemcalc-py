@@ -117,7 +117,8 @@ class SystemCalc:
 			delegates.LgCircuitBreakerDetect(),
 			delegates.Hub1Bridge(),
 			delegates.VoltageSense(),
-			delegates.SystemState()]
+			delegates.SystemState(),
+            delegates.BatteryLife()]
 
 		for m in self._modules:
 			for service, paths in m.get_input():

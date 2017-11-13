@@ -13,3 +13,4 @@ from delegates.buzzercontrol import BuzzerControl
 from delegates.lgbattery import LgCircuitBreakerDetect
 from delegates.systemstate import SystemState
 from delegates.voltagesense import VoltageSense
+from delegates.batterylife import BatteryLife
