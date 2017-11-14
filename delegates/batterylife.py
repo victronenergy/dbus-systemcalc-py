@@ -1,6 +1,6 @@
 import logging
 import gobject
-from time import time, mktime, gmtime
+from datetime import datetime, timedelta
 from functools import partial
 
 # Victron packages
@@ -53,6 +53,10 @@ class Constants(object):
 def bound(low, v, high):
 	return max(low, min(v, high))
 
+def dt_to_stamp(dt):
+	""" Return UTC timestamp for datetime dt. """
+	return (dt - datetime(1970, 1, 1)).total_seconds()
+
 class BatteryLife(SystemCalcDelegate):
 	""" Calculates the ESS CGwacs state. """
 
@@ -88,9 +92,7 @@ class BatteryLife(SystemCalcDelegate):
 			('minsoclimit', MIN_SOC_LIMIT_PATH, 10.0, 0, 100),
 		]
 
-	def _get_tz(self):
-		return int(mktime(gmtime(0)))
-	_get_time = lambda: int(time())
+	_get_time = datetime.now
 
 	@property
 	def state(self):
@@ -133,7 +135,7 @@ class BatteryLife(SystemCalcDelegate):
 
 	def _forcecharge(self):
 		if not self.sustain and (self.soc > self.active_soclimit or self.soc >= 100):
-			self.dischargedtime = self._get_time()
+			self.dischargedtime = dt_to_stamp(self._get_time())
 			return State.BLDischarged
 
 	def _absorption(self):
@@ -168,7 +170,7 @@ class BatteryLife(SystemCalcDelegate):
 			if not self.flags & Flags.Discharged:
 				self.flags |= Flags.Discharged
 				self.adjust_soc_limit(Constants.SocSwitchIncrement)
-			self.dischargedtime = self._get_time()
+			self.dischargedtime = dt_to_stamp(self._get_time())
 		return State.BLSustain if self.sustain else State.BLDischarged
 
 	def on_absorption(self, adjust):
@@ -240,7 +242,7 @@ class BatteryLife(SystemCalcDelegate):
 
 	@dischargedtime.setter
 	def dischargedtime(self, v):
-		self._settings['dischargedtime'] = v
+		self._settings['dischargedtime'] = int(v)
 
 	def __getattr__(self, k):
 		""" Make our tracked values available as attributes, makes the
@@ -271,21 +273,20 @@ class BatteryLife(SystemCalcDelegate):
 			self.state = newstate
 
 	def _on_timer(self):
-		# TZ compensated stamp. This way a day is an exact multiple of 86400
-		# and multiples of 900 is a 15-minute boundary.
-		ts = self._get_time() - self._get_tz()
+		now = self._get_time()
 
 		# Test for the first 15-minute window of the day, and clear the flags
-		if (ts % 86400) < 900:
+		if now.hour == 0 and now.minute < 15:
 			self.flags = 0
 
 		if self.state in (State.BLDischarged, State.BLSustain):
 			# load dischargedtime, it's a unix timestamp, ie UTC
 			if self.dischargedtime:
-				if self._get_time() - self.dischargedtime >  Constants.ForceChargeInterval:
+				dt = datetime.fromtimestamp(self.dischargedtime)
+				if now - dt > timedelta(seconds=Constants.ForceChargeInterval):
 					self.adjust_soc_limit(Constants.SocSwitchIncrement)
 					self.state = State.BLForceCharge
 			else:
-				self.dischargedtime = self._get_time()
+				self.dischargedtime = dt_to_stamp(now)
 
 		return True

@@ -16,8 +16,7 @@ from base import TestSystemCalcBase
 import patches
 
 # Time travel patch
-BatteryLife._get_time = lambda *a: 864000000 + timer_manager.time/1000
-BatteryLife._get_tz = lambda *a: 0
+BatteryLife._get_time = lambda *a: timer_manager.datetime
 
 class TestBatteryLife(TestSystemCalcBase):
     vebus = 'com.victronenergy.vebus.ttyO1'
