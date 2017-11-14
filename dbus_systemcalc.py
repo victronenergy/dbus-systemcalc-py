@@ -350,6 +350,12 @@ class SystemCalc:
 
 	def _updatevalues(self):
 		# ==== PREPARATIONS ====
+		# Set the user timezone
+		if 'TZ' not in os.environ:
+			tz = self._dbusmonitor.get_value('com.victronenergy.settings', '/Settings/System/TimeZone')
+			if tz is not None:
+				os.environ['TZ'] = tz
+
 		# Determine values used in logic below
 		vebusses = self._dbusmonitor.get_service_list('com.victronenergy.vebus')
 		vebuspower = 0
@@ -672,6 +678,12 @@ class SystemCalc:
 		if (dbusPath in ['/Connected', '/ProductName', '/Mgmt/Connection'] or
 			(dbusPath == '/State' and dbusServiceName.split('.')[0:3] == ['com', 'victronenergy', 'vebus'])):
 			self._handleservicechange()
+
+		# Track the timezone changes
+		if dbusPath == '/Settings/System/TimeZone':
+			tz = changes.get('Value')
+			if tz is not None:
+				os.environ['TZ'] = tz
 
 	def _device_added(self, service, instance, do_service_change=True):
 		if do_service_change:
