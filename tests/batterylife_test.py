@@ -155,6 +155,28 @@ class TestBatteryLife(TestSystemCalcBase):
             'flags': Flags.Discharged,
         })
 
+    def test_record_discharged_soc(self):
+        self._set_setting('/Settings/CGwacs/BatteryLife/SocLimit', 20)
+        self._monitor.set_value(self.vebus, '/Soc', 50)
+        self._update_values()
+        self._check_settings({ 'state': State.BLDefault })
+
+        # Send into discharged state, check that soc is recorded
+        self._monitor.set_value(self.vebus, '/Soc', 10)
+        self._update_values()
+        self._check_settings({
+            'state': State.BLDischarged,
+            'dischargedsoc': 20
+        })
+
+        # Subsequent changes to the limit does not modify the recorded value
+        self._set_setting('/Settings/CGwacs/BatteryLife/SocLimit', 30)
+        self._update_values()
+        self._check_settings({
+            'state': State.BLDischarged,
+            'dischargedsoc': 20
+        })
+
     # Older tests migrated from hub4control
     def test_chargeToAbsorption(self):
         self._set_setting('/Settings/CGwacs/BatteryLife/SocLimit', 20)

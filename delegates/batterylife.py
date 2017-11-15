@@ -14,6 +14,7 @@ FLAGS_PATH = BLPATH + "/Flags";
 SOC_LIMIT_PATH = BLPATH + "/SocLimit";
 MIN_SOC_LIMIT_PATH = BLPATH + "/MinimumSocLimit";
 DISCHARGED_TIME_PATH = BLPATH + "/DischargedTime";
+DISCHARGED_SOC_PATH = BLPATH + "/DischargedSoc"
 
 class State(object):
 	BLDisabled = 0
@@ -77,7 +78,7 @@ class BatteryLife(SystemCalcDelegate):
 				'/Hub4/Sustain']),
 			('com.victronenergy.settings', [
 				STATE_PATH, FLAGS_PATH, DISCHARGED_TIME_PATH,
-				SOC_LIMIT_PATH, MIN_SOC_LIMIT_PATH])
+				DISCHARGED_SOC_PATH, SOC_LIMIT_PATH, MIN_SOC_LIMIT_PATH])
 		]
 
 	def get_output(self):
@@ -88,6 +89,7 @@ class BatteryLife(SystemCalcDelegate):
 			('state', STATE_PATH, 1, 0, 0),
 			('flags', FLAGS_PATH, 0, 0, 0, 1),
 			('dischargedtime', DISCHARGED_TIME_PATH, 0, 0, 0, 1),
+			('dischargedsoc', DISCHARGED_SOC_PATH, -1, -1, 100, 1),
 			('soclimit', SOC_LIMIT_PATH, 10.0, 0, 100, 1),
 			('minsoclimit', MIN_SOC_LIMIT_PATH, 10.0, 0, 100),
 		]
@@ -166,6 +168,13 @@ class BatteryLife(SystemCalcDelegate):
 		self._settings['soclimit'] = bound(0.0, limit, Constants.SocSwitchMax)
 
 	def on_discharged(self, adjust):
+		# set dischargedsoc to the active limit just before going to the
+		# discharged state. If the soc drops further, we will recharge back
+		# to this level.
+		limit = self.active_soclimit
+		if self.dischargedsoc < 0 or self.dischargedsoc > limit:
+			self.dischargedsoc = limit
+
 		if adjust:
 			if not self.flags & Flags.Discharged:
 				self.flags |= Flags.Discharged
@@ -243,6 +252,14 @@ class BatteryLife(SystemCalcDelegate):
 	@dischargedtime.setter
 	def dischargedtime(self, v):
 		self._settings['dischargedtime'] = int(v)
+
+	@property
+	def dischargedsoc(self):
+		return self._settings['dischargedsoc']
+
+	@dischargedsoc.setter
+	def dischargedsoc(self, v):
+		self._settings['dischargedsoc'] = v
 
 	def __getattr__(self, k):
 		""" Make our tracked values available as attributes, makes the
