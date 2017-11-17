@@ -24,14 +24,10 @@ class State(object):
 	BLDischarged = 5
 	BLForceCharge = 6
 	BLSustain = 7
-	# Not used any more, but we keep it, because the /BatteryLife/State setting
-	# this value.
 	BLLowSocCharge = 8
 	KeepCharged = 9
 	SocGuardDefault = 10
 	SocGuardDischarged = 11
-	# Not used any more, but we keep it, because the /BatteryLife/State setting
-	# this value.
 	SocGuardLowSocCharge = 12
 
 class Flags(object):
@@ -43,7 +39,7 @@ class Constants(object):
 	SocSwitchOffset = 3.0
 	SocSwitchIncrement = 5.0
 	SocSwitchDefaultMin = 10.0
-	LowSocChargeOffset = 2.0 # Should be < SocSwitchOffset
+	LowSocChargeOffset = 5.0
 	AbsorptionLevel = 85.0
 	FloatLevel = 95.0
 	SocSwitchMax = AbsorptionLevel - SocSwitchIncrement
@@ -132,7 +128,18 @@ class BatteryLife(SystemCalcDelegate):
 
 	def _discharged(self):
 		if not self.sustain and (self.soc > self.switch_on_soc or self.soc >= 100):
+			self.dischargedsoc = -1
 			return State.BLDefault
+		elif self.soc <= 0 or self.soc < self.dischargedsoc - Constants.LowSocChargeOffset:
+			return State.BLLowSocCharge
+
+	def _lowsoccharge(self):
+		# We stop charging when we get back to the SoC we had when we entered
+		# the discharged state. If we switched into discharged state at 0%,
+		# we will enter LowSocCharge, so we should not switch out until
+		# we picked up at least to 3% (SocSwitchOffset).
+		if self.soc >= min(100, max(self.dischargedsoc, Constants.SocSwitchOffset)):
+			return State.BLDischarged
 
 	def _forcecharge(self):
 		if not self.sustain and (self.soc > self.active_soclimit or self.soc >= 100):
@@ -158,8 +165,14 @@ class BatteryLife(SystemCalcDelegate):
 			return State.SocGuardDischarged
 
 	def _socguard_discharged(self):
-		if self.soc >= 100 or (self.soc > self.minsoclimit + Constants.LowSocChargeOffset):
+		if self.soc >= min(100, self.minsoclimit + Constants.SocSwitchOffset):
 			return State.SocGuardDefault
+		elif self.soc < self.minsoclimit - Constants.LowSocChargeOffset:
+			return State.SocGuardLowSocCharge
+
+	def _socguard_lowsoccharge(self):
+		if self.soc >= min(100, self.minsoclimit):
+			return State.SocGuardDischarged
 
 	def adjust_soc_limit(self, delta):
 		limit = max(self._settings['minsoclimit'],
@@ -210,11 +223,11 @@ class BatteryLife(SystemCalcDelegate):
 		State.BLDischarged: _discharged,
 		State.BLForceCharge: _forcecharge,
 		State.BLSustain: _discharged,
-		State.BLLowSocCharge: lambda s: State.BLDischarged,
+		State.BLLowSocCharge: _lowsoccharge,
 		State.KeepCharged: lambda s: s.state,
 		State.SocGuardDefault: _socguard_default,
 		State.SocGuardDischarged: _socguard_discharged,
-		State.SocGuardLowSocCharge: lambda s: State.SocGuardDischarged,
+		State.SocGuardLowSocCharge: _socguard_lowsoccharge,
 	}
 
 	@property
@@ -239,9 +252,8 @@ class BatteryLife(SystemCalcDelegate):
 
 	@property
 	def switch_on_soc(self):
-		m = self._settings['minsoclimit']
-		if m > Constants.SocSwitchMax:
-			return m + Constants.LowSocChargeOffset
+		""" This property determines when we go from Discharged state to
+		    Default state. """
 		return self.active_soclimit + Constants.SocSwitchOffset
 
 	@property
@@ -284,9 +296,20 @@ class BatteryLife(SystemCalcDelegate):
 			self.state = State.BLDisabled
 			return
 
-		newstate = self._map.get(self.state, lambda s: State.BLDefault)(self)
-		if newstate is not None:
-			self.state = newstate
+		# The values we received might transition our state machine through
+		# more than one state. For example,
+		# 1. At startup
+		#    BLRestart -> BLDefault
+		# 2. multi detected with very low soc:
+		#    BLDisabled -> BLRestart -> BLDefault -> BLDischarged -> BLLowSocCharge
+		# 3. Sudden drop in SoC
+		#    BLDefault -> BLDischarged -> BLLowSocCharge
+		newstate = self.state
+		for _ in range(5):
+			_newstate = self._map.get(newstate, lambda s: State.BLDefault)(self)
+			if _newstate is None or _newstate == newstate: break
+			newstate = _newstate
+		self.state = newstate
 
 	def _on_timer(self):
 		now = self._get_time()
