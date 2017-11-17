@@ -1,7 +1,6 @@
 import logging
 import gobject
 from datetime import datetime, timedelta
-from functools import partial
 
 # Victron packages
 from ve_utils import exit_on_error
@@ -145,12 +144,12 @@ class BatteryLife(SystemCalcDelegate):
 			return self.on_discharged(True)
 		elif self.soc > Constants.FloatLevel:
 			return self.on_float(True)
-		elif self.soc < Constants.FloatLevel - Constants.SocSwitchOffset:
+		elif self.soc < Constants.AbsorptionLevel - Constants.SocSwitchOffset:
 			return State.BLDefault
 
 	def _float(self):
 		if self.sustain or (self.soc <= self.active_soclimit and self.soc < 100):
-			return self.on_discharged()
+			return self.on_discharged(True)
 		elif self.soc < Constants.FloatLevel - Constants.SocSwitchOffset:
 			return State.BLAbsorption
 
