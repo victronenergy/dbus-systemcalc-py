@@ -36,7 +36,8 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeVoltage': None,
 				'/BatteryOperationalLimits/MaxChargeCurrent': None,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': None,
-				'/BatteryOperationalLimits/BatteryLowVoltage': None
+				'/BatteryOperationalLimits/BatteryLowVoltage': None,
+				'/FirmwareFeatures/BolFrame': 1
 			})
 		self._add_device('com.victronenergy.settings',
 			values={

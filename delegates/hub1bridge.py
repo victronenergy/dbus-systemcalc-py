@@ -40,6 +40,7 @@ class Hub1Bridge(SystemCalcDelegate):
 				'/BatteryOperationalLimits/BatteryLowVoltage',
 				'/BatteryOperationalLimits/MaxChargeCurrent',
 				'/BatteryOperationalLimits/MaxChargeVoltage',
+				'/FirmwareFeatures/BolFrame',
 				'/BatteryOperationalLimits/MaxDischargeCurrent']),
 			('com.victronenergy.solarcharger', [
 				'/Dc/0/Current',
@@ -114,7 +115,7 @@ class Hub1Bridge(SystemCalcDelegate):
 		vebus_path = self._dbusservice['/VebusService']
 		self._dbusservice['/Control/MaxChargeCurrent'] = \
 			vebus_path is None or \
-			self._dbusmonitor.exists(vebus_path, '/BatteryOperationalLimits/MaxChargeVoltage')
+			self._dbusmonitor.get_value(vebus_path, '/FirmwareFeatures/BolFrame') == 1
 		return True
 
 	def _update_battery_operational_limits(self, bms_service):
@@ -337,9 +338,6 @@ class Hub1Bridge(SystemCalcDelegate):
 		# Handle vebus
 		vebus_dc_current = 0
 		if vebus_path is not None:
-			# For freshly updated systems: the vebus will not yet support BOL, if there is a BMS
-			# present bol_item.exists will return False because the vebus firmware has not been updated yet
-			# (to version 415 or later).
 			# In that case we cannot change the vebus charge current (it will be managed indirectly by
 			# hub4control), and will try to distribute the remaining current over the MPPTs.
 			# *** This is a change in behavior compared with the previous release ***.
@@ -347,7 +345,7 @@ class Hub1Bridge(SystemCalcDelegate):
 			# BOL support on vebus implies dynamic max charge current support. Both features were added in the
 			# same version (v415). We cannot check the presence of /Dc/0/MaxChargeCurrent, because it already
 			# existed in earlier versions, where it was not dynamic (ie. should not be changed too often).
-			if self._dbusmonitor.exists(vebus_path, '/BatteryOperationalLimits/MaxChargeVoltage'):
+			if self._dbusmonitor.get_value(vebus_path, '/FirmwareFeatures/BolFrame') == 1:
 				vebus_max_charge_current = max(0, bms_max_charge_current - solar_charger_current)
 				# If there are MPPTs that may be able to produce more power, we reduce the vebus max charge
 				# current to give the MPPTs a change.
