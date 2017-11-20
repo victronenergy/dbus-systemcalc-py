@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+from itertools import chain
+from collections import Counter
 
 # This adapts sys.path to include all relevant packages
 import context
@@ -239,6 +241,106 @@ class TestBatteryLife(TestSystemCalcBase):
         self._monitor.set_value(self.vebus, '/Soc', 20)
         self._update_values()
         self._check_settings({ 'state': State.SocGuardDischarged })
+
+    def test_stability(self):
+        """ No flapping between states on boundaries. """
+        bl = BatteryLife()
+        bl.set_sources(self._system_calc._dbusmonitor,
+            self._system_calc._settings, self._system_calc._dbusservice)
+        bl._tracked_values = {
+            'soc': 100,
+            'vebus': 'com.victronenergy.vebus.ttyO1'
+        }
+
+        def sweep(start, stop, initialstate):
+            step = 1 if start < stop else -1
+            newstate = initialstate
+            transitions = {}
+            for soc in chain(
+                    (x/10.0 for x in xrange(start*10, stop*10, step)),
+                    (stop,)):
+                bl._tracked_values['soc'] = soc
+                states = Counter()
+                for _ in range(10):
+                    _newstate = bl._map.get(newstate, lambda s: State.BLDefault)(bl)
+                    if _newstate is not None:
+                        # Record the transition points
+                        if _newstate != newstate:
+                            transitions[_newstate] = soc
+                        states.update((_newstate,))
+                        newstate = _newstate
+                if(len(states)):
+                    # We check the stability of the state machine by ensuring
+                    # it settles on the most common value, and that all other
+                    # states occur only once, that is, there are no cycles.
+                    mc = states.most_common()
+                    self.assertTrue(newstate == mc[0][0],
+                        "state machine should settle on most common value")
+                    for state, count in mc[1:]:
+                        self.assertTrue(count <= 1,
+                            "Cycle through states {}".format(states))
+            return transitions
+
+        # Discharge sweep
+        transitions = sweep(100, 0, State.BLFloat)
+        self.assertEqual(transitions, {
+            State.BLAbsorption: 91.9,
+            State.BLDefault: 81.9,
+            State.BLDischarged: 10.0,
+            State.BLLowSocCharge: 4.9
+        })
+
+        # Charge sweep
+        transitions = sweep(0, 100, State.BLLowSocCharge)
+        self.assertEqual(transitions, {
+            State.BLDischarged: 10.0,
+            State.BLDefault: 18.1,
+            State.BLAbsorption: 85.0,
+            State.BLFloat: 95.1
+        })
+
+        # Repeat the tests for SocGuard
+        transitions = sweep(100, 0, State.SocGuardDefault)
+        self.assertEqual(transitions, {
+            State.SocGuardDischarged: 10.0,
+            State.SocGuardLowSocCharge: 4.9
+        })
+        transitions = sweep(0, 100, State.SocGuardLowSocCharge)
+        self.assertEqual(transitions, {
+            State.SocGuardDischarged: 10.0,
+            State.SocGuardDefault: 13.0
+        })
+
+        # Really low
+        self._set_setting('/Settings/CGwacs/BatteryLife/SocLimit', 5)
+        self._set_setting('/Settings/CGwacs/BatteryLife/MinimumSocLimit', 5)
+
+        transitions = sweep(10, 0, State.BLDefault)
+        self.assertEqual(transitions, {
+            State.BLDischarged: 5.0,
+            State.BLLowSocCharge: 0
+        })
+        transitions = sweep(0, 10, State.BLLowSocCharge)
+        self.assertEqual(transitions, {
+            State.BLDischarged: 5.0,
+            State.BLDefault: 8.1
+        })
+
+        # Down to zero. We go into BLLowSocCharge immediately, but on recharge
+        # we stop shy of going back into BLDefault.
+        self._set_setting('/Settings/CGwacs/BatteryLife/SocLimit', 0)
+        self._set_setting('/Settings/CGwacs/BatteryLife/MinimumSocLimit', 0)
+
+        transitions = sweep(10, 0, State.BLDefault)
+        self.assertEqual(transitions, {
+            State.BLDischarged: 0,
+            State.BLLowSocCharge: 0
+        })
+        transitions = sweep(0, 10, State.BLLowSocCharge)
+        self.assertEqual(transitions, {
+            State.BLDischarged: 3.0,
+            State.BLDefault: 3.1
+        })
 
     # Older tests migrated and adapted from hub4control
     def test_chargeToAbsorption(self):
