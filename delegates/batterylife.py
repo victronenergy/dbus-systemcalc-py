@@ -224,7 +224,7 @@ class BatteryLife(SystemCalcDelegate):
 		State.BLForceCharge: _forcecharge,
 		State.BLSustain: _discharged,
 		State.BLLowSocCharge: _lowsoccharge,
-		State.KeepCharged: lambda s: s.state,
+		State.KeepCharged: lambda s: State.KeepCharged,
 		State.SocGuardDefault: _socguard_default,
 		State.SocGuardDischarged: _socguard_discharged,
 		State.SocGuardLowSocCharge: _socguard_lowsoccharge,
