@@ -196,9 +196,9 @@ class Hub1Bridge(SystemCalcDelegate):
 
 		# Network mode:
 		# bit 0: Operated in network environment
-		# bit 2: Remote Hub-1 control (MPPT will accept charge voltage)
-		# bit 3: Remote BMS control (MPPT will accept max charge current, and enter BMS mode)
-		network_mode = 1 | (0 if charge_voltage is None else 4) | (0 if max_charge_current is None else 8)
+		# bit 2: Remote Hub-1 control (MPPT will accept charge voltage and max charge current)
+		# bit 3: Remote BMS control (MPPT enter BMS mode)
+		network_mode = 1 | (0 if charge_voltage is None and max_charge_current is None else 4) | (0 if bms_service is None else 8)
 		has_vecan_chargers = False
 		vedirect_chargers = []
 		network_mode_written = False
