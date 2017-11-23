@@ -116,6 +116,7 @@ class SystemCalc:
 			delegates.BuzzerControl(),
 			delegates.LgCircuitBreakerDetect(),
 			delegates.Hub1Bridge(),
+			delegates.VoltageSense(),
 			delegates.SystemState()]
 
 		for m in self._modules:

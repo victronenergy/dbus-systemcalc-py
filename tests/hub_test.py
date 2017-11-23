@@ -37,7 +37,9 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeCurrent': None,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': None,
 				'/BatteryOperationalLimits/BatteryLowVoltage': None,
-				'/FirmwareFeatures/BolFrame': 1
+				'/BatteryOperationalLimits/SenseVoltage': None,
+				'/FirmwareFeatures/BolFrame': 1,
+				'/FirmwareFeatures/BolUBatAndTBatSense': 1
 			})
 		self._add_device('com.victronenergy.settings',
 			values={
@@ -58,7 +60,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Dc/0/Current': 9.7,
 			'/FirmwareVersion': 0xE117},
 			connection='VE.Direct')
-		self._update_values()
+		self._update_values(3000)
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO1': {
 				'/Link/ChargeVoltage': 12.6,
@@ -81,7 +83,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Dc/0/Current': 9.7,
 			'/FirmwareVersion': 0x0119},
 			connection='VE.Direct')
-		self._update_values()
+		self._update_values(3000)
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO1': {
 				'/Link/ChargeVoltage': 12.6,
@@ -99,6 +101,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/State': 0,
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
+			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.4,
 			'/Dc/0/Current': 9.7,
 			'/FirmwareVersion': 0x0117},
@@ -107,6 +110,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/State': 0,
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
+			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 9.3,
 			'/FirmwareVersion': 0x0118},
@@ -127,6 +131,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/State': 0,
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
+			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.4,
 			'/Dc/0/Current': 9.7},
 			connection='VE.Can')
@@ -186,6 +191,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/State': 0,
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
+			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 9.3,
 			'/FirmwareVersion': 0x0118},
@@ -219,6 +225,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
 			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
 			'/Settings/ChargeCurrentLimit': 100,
 			'/Dc/0/Voltage': 58.0,
 			'/Dc/0/Current': 30,
@@ -262,6 +269,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
 			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
 			'/Settings/ChargeCurrentLimit': 100,
 			'/Dc/0/Voltage': 58.0,
 			'/Dc/0/Current': 30,
@@ -347,6 +355,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
 			'/Link/ChargeCurrent': 15,
+			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 14.3,
 			'/FirmwareVersion': 0x0118},
@@ -357,6 +366,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
 			'/Link/ChargeCurrent': 15,
+			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 7,
 			'/FirmwareVersion': 0x0118},
@@ -405,6 +415,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
 			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 31,
 			'/FirmwareVersion': 0x0118},
@@ -453,6 +464,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': 57.3,
 			'/Link/ChargeCurrent': 20,
+			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 31,
 			'/FirmwareVersion': 0x0118},
@@ -566,12 +578,14 @@ class TestHubSystem(TestSystemCalcBase):
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
 			'/Link/NetworkMode': 0,
+			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 9.7},
 			connection='VE.Direct')
 		self._add_device('com.victronenergy.solarcharger.ttyO2', {
 			'/State': 0,
 			'/Link/NetworkMode': 0,
+			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 9.3},
 			connection='VE.Direct')
@@ -594,12 +608,14 @@ class TestHubSystem(TestSystemCalcBase):
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
 			'/Link/NetworkMode': 0,
+			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 9.7},
 			connection='VE.Direct')
 		self._add_device('com.victronenergy.solarcharger.ttyO2', {
 			'/State': 0,
 			'/Link/NetworkMode': 0,
+			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 9.3},
 			connection='VE.Direct')
@@ -613,6 +629,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
 			'/Link/NetworkMode': 0,
+			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 9.7},
 			connection='VE.Direct')
@@ -625,6 +642,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
 			'/Link/NetworkMode': 0,
+			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 9.7},
 			connection='VE.Direct')
@@ -683,6 +701,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
 			'/Link/NetworkMode': 0,
+			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 9.7},
 			connection='VE.Direct')
