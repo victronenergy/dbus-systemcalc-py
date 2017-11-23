@@ -62,7 +62,6 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO1': {
 				'/Link/ChargeVoltage': 12.6,
-				'/Link/VoltageSense': 12.25,
 				'/State': 2
 			}})
 		self._check_values({
@@ -86,7 +85,6 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO1': {
 				'/Link/ChargeVoltage': 12.6,
-				'/Link/VoltageSense': 12.25,
 				'/State': 0
 			}})
 		self._check_values({
@@ -327,8 +325,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'com.victronenergy.solarcharger.ttyO2': {
 				'/Link/NetworkMode': 13,
 				'/Link/ChargeCurrent': 25 + 8,
-				'/Link/ChargeVoltage': 58.2,
-				'/Link/VoltageSense': 12.25},
+				'/Link/ChargeVoltage': 58.2},
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
 				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
@@ -678,8 +675,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO1': {
 				'/Link/ChargeVoltage': None,
-				'/Link/ChargeCurrent': None,
-				'/Link/VoltageSense': 12.25}})
+				'/Link/ChargeCurrent': None}})
 
 	def test_hub1_extra_current_no_active_battery(self):
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent', 23)
