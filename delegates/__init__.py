@@ -1,21 +1,6 @@
 #!/usr/bin/python -u
 # -*- coding: utf-8 -*-
 
-from dbus.exceptions import DBusException
-import fcntl
-import gobject
-import itertools
-import logging
-import math
-import os
-import sc_utils
-import sys
-import traceback
-
-# Victron packages
-from sc_utils import safeadd
-from ve_utils import exit_on_error
-
 from delegates.base import SystemCalcDelegate
 
 # All delegates

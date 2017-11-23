@@ -5,9 +5,7 @@ import tempfile
 import context
 
 # our own packages
-import dbus_systemcalc
 import delegates
-import mock_gobject
 from base import TestSystemCalcBase
 
 # Monkey patching for unit tests
