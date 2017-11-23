@@ -1,19 +1,10 @@
 #!/usr/bin/env python
-import json
-import logging
-import math
-import os
-import sys
-import tempfile
-import unittest
 
 # This adapts sys.path to include all relevant packages
 import context
 
 # our own packages
-import dbus_systemcalc
 from delegates import Hub1Bridge
-import mock_gobject
 from base import TestSystemCalcBase
 
 # Monkey patching for unit tests

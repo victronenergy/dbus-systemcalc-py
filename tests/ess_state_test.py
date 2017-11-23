@@ -1,13 +1,9 @@
 #!/usr/bin/env python
-import json
-import unittest
 
 # This adapts sys.path to include all relevant packages
 import context
 
 # our own packages
-import dbus_systemcalc
-from delegates import SystemState
 from base import TestSystemCalcBase
 
 # Monkey patching for unit tests
