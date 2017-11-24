@@ -61,4 +61,10 @@ install: install_velib_python install_app install_delegates
 test:
 	nosetests -v -w tests
 
+testinstall:
+	$(eval TMP := $(shell mktemp -d))
+	$(MAKE) DESTDIR=$(TMP) install
+	(cd $(TMP) && ./dbus_systemcalc.py --help > /dev/null)
+	-rm -rf $(TMP)
+
 .PHONY: help install_app install_velib_python install test
