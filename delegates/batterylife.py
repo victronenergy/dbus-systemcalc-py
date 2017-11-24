@@ -212,7 +212,7 @@ class BatteryLife(SystemCalcDelegate):
 				flags |= Flags.Float
 			self.flags = flags
 			self.adjust_soc_limit(offset)
-			return State.BLFloat
+		return State.BLFloat
 
 	_map = {
 		State.BLDisabled: _disabled,
