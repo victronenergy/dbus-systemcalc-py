@@ -105,7 +105,8 @@ class SystemCalc:
 			'com.victronenergy.settings' : {
 				'/Settings/SystemSetup/AcInput1' : dummy,
 				'/Settings/SystemSetup/AcInput2' : dummy,
-				'/Settings/CGwacs/RunWithoutGridMeter' : dummy}
+				'/Settings/CGwacs/RunWithoutGridMeter' : dummy,
+				'/Settings/System/TimeZone' : dummy}
 		}
 
 		self._modules = [
