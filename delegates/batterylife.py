@@ -97,7 +97,9 @@ class BatteryLife(SystemCalcDelegate):
 
 	@state.setter
 	def state(self, v):
-		self._settings['state'] = v
+		v = int(v)
+		if self._settings['state'] != v:
+			self._settings['state'] = v
 
 	@property
 	def flags(self):
