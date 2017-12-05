@@ -84,7 +84,6 @@ class BatteryLife(SystemCalcDelegate):
 			('state', STATE_PATH, 1, 0, 0),
 			('flags', FLAGS_PATH, 0, 0, 0, 1),
 			('dischargedtime', DISCHARGED_TIME_PATH, 0, 0, 0, 1),
-			('dischargedsoc', DISCHARGED_SOC_PATH, -1, -1, 100, 1),
 			('soclimit', SOC_LIMIT_PATH, 10.0, 0, 100, 1),
 			('minsoclimit', MIN_SOC_LIMIT_PATH, 10.0, 0, 100),
 		]
@@ -130,9 +129,8 @@ class BatteryLife(SystemCalcDelegate):
 
 	def _discharged(self):
 		if not self.sustain and (self.soc > self.switch_on_soc or self.soc >= 100):
-			self.dischargedsoc = -1
 			return State.BLDefault
-		elif self.soc <= 0 or self.soc < self.dischargedsoc - Constants.LowSocChargeOffset:
+		elif self.soc <= 0 or self.soc < self.minsoclimit - Constants.LowSocChargeOffset:
 			return State.BLLowSocCharge
 
 	def _lowsoccharge(self):
@@ -140,7 +138,7 @@ class BatteryLife(SystemCalcDelegate):
 		# the discharged state. If we switched into discharged state at 0%,
 		# we will enter LowSocCharge, so we should not switch out until
 		# we picked up at least to 3% (SocSwitchOffset).
-		if self.soc >= min(100, max(self.dischargedsoc, Constants.SocSwitchOffset)):
+		if self.soc >= min(100, max(self.minsoclimit, Constants.SocSwitchOffset)):
 			return State.BLDischarged
 
 	def _forcecharge(self):
@@ -182,13 +180,6 @@ class BatteryLife(SystemCalcDelegate):
 		self._settings['soclimit'] = bound(0.0, limit, Constants.SocSwitchMax)
 
 	def on_discharged(self, adjust):
-		# set dischargedsoc to the active limit just before going to the
-		# discharged state. If the soc drops further, we will recharge back
-		# to this level.
-		limit = self.active_soclimit
-		if self.dischargedsoc < 0 or self.dischargedsoc > limit:
-			self.dischargedsoc = limit
-
 		if adjust:
 			if not self.flags & Flags.Discharged:
 				self.flags |= Flags.Discharged
@@ -266,14 +257,6 @@ class BatteryLife(SystemCalcDelegate):
 	def dischargedtime(self, v):
 		self._settings['dischargedtime'] = int(v)
 
-	@property
-	def dischargedsoc(self):
-		return self._settings['dischargedsoc']
-
-	@dischargedsoc.setter
-	def dischargedsoc(self, v):
-		self._settings['dischargedsoc'] = v
-
 	def __getattr__(self, k):
 		""" Make our tracked values available as attributes, makes the
 			code look neater. """
@@ -290,6 +273,7 @@ class BatteryLife(SystemCalcDelegate):
 		# Cannot start without a multi or an soc
 		if self.vebus is None or self.soc is None:
 			logging.debug("[BatteryLife] No vebus or no valid SoC")
+			self.state = State.BLDisabled
 			return
 
 		# Cannot start without ESS available

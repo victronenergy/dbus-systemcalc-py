@@ -157,30 +157,9 @@ class TestBatteryLife(TestSystemCalcBase):
             'flags': Flags.Discharged,
         })
 
-    def test_record_discharged_soc(self):
-        self._set_setting('/Settings/CGwacs/BatteryLife/SocLimit', 20)
-        self._monitor.set_value(self.vebus, '/Soc', 50)
-        self._update_values()
-        self._check_settings({ 'state': State.BLDefault })
-
-        # Send into discharged state, check that soc is recorded
-        self._monitor.set_value(self.vebus, '/Soc', 18.5)
-        self._update_values()
-        self._check_settings({
-            'state': State.BLDischarged,
-            'dischargedsoc': 20
-        })
-
-        # Subsequent changes to the limit does not modify the recorded value
-        self._set_setting('/Settings/CGwacs/BatteryLife/SocLimit', 19)
-        self._update_values()
-        self._check_settings({
-            'state': State.BLDischarged,
-            'dischargedsoc': 20
-        })
-
     def test_auto_recharge(self):
         self._set_setting('/Settings/CGwacs/BatteryLife/SocLimit', 20)
+        self._set_setting('/Settings/CGwacs/BatteryLife/MinimumSocLimit', 20)
         self._monitor.set_value(self.vebus, '/Soc', 21)
         self._update_values()
         self._check_settings({ 'state': State.BLDefault })
@@ -188,7 +167,7 @@ class TestBatteryLife(TestSystemCalcBase):
         # Drop charge a little
         self._monitor.set_value(self.vebus, '/Soc', 20)
         self._update_values()
-        self._check_settings({ 'state': State.BLDischarged })
+        self._check_settings({ 'state': State.BLDischarged, 'soclimit': 25 })
 
         # A little more
         self._monitor.set_value(self.vebus, '/Soc', 15)
@@ -342,6 +321,76 @@ class TestBatteryLife(TestSystemCalcBase):
             State.BLDefault: 3.1
         })
 
+    def test_recharge_moving_goalpost(self):
+        self._set_setting('/Settings/CGwacs/BatteryLife/SocLimit', 20)
+        self._set_setting('/Settings/CGwacs/BatteryLife/MinimumSocLimit', 20)
+        self._monitor.set_value(self.vebus, '/Soc', 21)
+        self._update_values()
+        self._check_settings({
+            'soclimit': 20,
+            'state': State.BLDefault
+        })
+
+        # When we hit the lower limit, soclimit is bumped (batterylife) and we
+        # to into Discharged mode.
+        self._monitor.set_value(self.vebus, '/Soc', 20)
+        self._update_values()
+        self._check_settings({
+            'soclimit': 25,
+            'state': State.BLDischarged
+        })
+
+        # SoC drops further
+        self._monitor.set_value(self.vebus, '/Soc', 15)
+        self._update_values()
+        self._check_settings({ 'state': State.BLDischarged })
+
+        # And we go into recharge
+        self._monitor.set_value(self.vebus, '/Soc', 14.9)
+        self._update_values()
+        self._check_settings({ 'state': State.BLLowSocCharge })
+
+        # User decides 15% is okay after all
+        self._set_setting('/Settings/CGwacs/BatteryLife/MinimumSocLimit', 15)
+        self._monitor.set_value(self.vebus, '/Soc', 15)
+        self._update_values()
+        self._check_settings({ 'state': State.BLDischarged })
+
+        # or 10% even, but we remain in Discharged because SocLimit is 25.
+        self._set_setting('/Settings/CGwacs/BatteryLife/MinimumSocLimit', 10)
+        self._update_values()
+        self._check_settings({ 'state': State.BLDischarged, 'soclimit': 25 })
+
+        self._monitor.set_value(self.vebus, '/Soc', 28.1)
+        self._update_values()
+        self._check_settings({ 'state': State.BLDefault })
+
+        # Simulate new day
+        self._set_setting('/Settings/CGwacs/BatteryLife/Flags', 0)
+        self._monitor.set_value(self.vebus, '/Soc', 24.9)
+        self._update_values()
+        self._check_settings({ 'state': State.BLDischarged, 'soclimit': 30 })
+
+        self._monitor.set_value(self.vebus, '/Soc', 33.1)
+        self._update_values()
+        self._check_settings({ 'state': State.BLDefault })
+
+        # And another new day, soclimit keeps creeping up 
+        self._set_setting('/Settings/CGwacs/BatteryLife/Flags', 0)
+        self._monitor.set_value(self.vebus, '/Soc', 29.9)
+        self._update_values()
+        self._check_settings({ 'state': State.BLDischarged, 'soclimit': 35 })
+
+        self._monitor.set_value(self.vebus, '/Soc', 38.1)
+        self._update_values()
+        self._check_settings({ 'state': State.BLDefault })
+
+        # Go into absorption and check that soclimit is dropped again.
+        self._monitor.set_value(self.vebus, '/Soc', 85)
+        self._update_values()
+        self._check_settings({ 'state': State.BLAbsorption, 'soclimit': 30 })
+
+
     # Older tests migrated and adapted from hub4control
     def test_chargeToAbsorption(self):
         self._set_setting('/Settings/CGwacs/BatteryLife/SocLimit', 20)
@@ -392,6 +441,7 @@ class TestBatteryLife(TestSystemCalcBase):
 
     def test_chargeToAbsorption80Pct(self):
         self._set_setting('/Settings/CGwacs/BatteryLife/SocLimit', 80)
+        self._set_setting('/Settings/CGwacs/BatteryLife/MinimumSocLimit', 75)
         self._monitor.set_value(self.vebus, '/Soc', 50)
         self._update_values()
         self._check_settings({ 'state': State.BLLowSocCharge })
@@ -687,6 +737,7 @@ class TestBatteryLife(TestSystemCalcBase):
 
     def test_batteryLifeLowSocCharge(self):
         self._set_setting('/Settings/CGwacs/BatteryLife/SocLimit', 20)
+        self._set_setting('/Settings/CGwacs/BatteryLife/MinimumSocLimit', 20)
         self._monitor.set_value(self.vebus, '/Soc', 21)
         self._update_values()
         self._check_settings({
@@ -729,7 +780,7 @@ class TestBatteryLife(TestSystemCalcBase):
             'soclimit': 25
         })
 
-        self._monitor.set_value(self.vebus, '/Soc', 19)
+        self._monitor.set_value(self.vebus, '/Soc', 14.9)
         self._update_values()
         self._check_settings({
             'state': State.BLLowSocCharge,
