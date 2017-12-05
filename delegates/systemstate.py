@@ -29,6 +29,7 @@ class SystemState(SystemCalcDelegate):
 	UNKNOWN = 0x00
 	DISCHARGING = 0x100
 	SUSTAIN = 0x101
+	RECHARGE = 0x102
 
 	def __init__(self):
 		super(SystemState, self).__init__()
@@ -126,9 +127,10 @@ class SystemState(SystemCalcDelegate):
 			elif hubstate in (BL.Discharged, SOCG.Discharged):
 				flags.LowSoc = 1
 				flags.BatteryLife = int(hubstate == BL.Discharged)
-			elif hubstate in (BL.ForceCharge, BL.LowSocCharge,
-					SOCG.LowSocCharge):
-				flags.SlowCharge = 1
+			elif hubstate in (BL.ForceCharge, BL.LowSocCharge, SOCG.LowSocCharge):
+				ss = SystemState.RECHARGE
+				if hubstate == BL.ForceCharge:
+					flags.SlowCharge = 1
 
 			# Sustain flag
 			if self._dbusmonitor.get_value(vebus, '/Hub4/Sustain'):
