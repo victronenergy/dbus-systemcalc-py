@@ -2,16 +2,12 @@ VictronServicePrefix = 'com.victronenergy'
 
 
 def safeadd(*values):
-	'''Adds all parameters passed to this function. Parameters which are None are ignored. If all parameters
-	are None, the function will return None as well.'''
-	r = None
-	for v in values:
-		if v is not None:
-			if r is None:
-				r = v
-			else:
-				r += v
-	return r
+	""" Adds all parameters passed to this function. Parameters which are None
+		are ignored. If all parameters are None, the function will return None
+		as well.
+	"""
+	values = [v for v in values if v is not None]
+	return sum(values) if values else None
 
 
 def safemax(v0, v1):
