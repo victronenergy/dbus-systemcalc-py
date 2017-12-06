@@ -712,3 +712,39 @@ class TestHubSystem(TestSystemCalcBase):
 		self.assertEqual(9.7, self._monitor.get_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent'))
 		self._check_values({'/Control/ExtraBatteryCurrent': 1})
 		self._check_values({'/Control/VebusSoc': 0})
+
+	def test_solar_subsys(self):
+		from delegates.hub1bridge import SolarChargerSubsystem
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/VoltageSense': None,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 9.3
+		}, connection='VE.Direct')
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/VoltageSense': None,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 9.3
+		}, connection='VE.Direct')
+
+		system = SolarChargerSubsystem(self._system_calc._dbusmonitor)
+		system.add_charger('com.victronenergy.solarcharger.ttyO1')
+		system.add_charger('com.victronenergy.solarcharger.ttyO2')
+
+		# Test __contains__
+		self.assertTrue('com.victronenergy.solarcharger.ttyO1' in system)
+		self.assertTrue('com.victronenergy.solarcharger.ttyO2' in system)
+		self.assertTrue('com.victronenergy.solarcharger.ttyO3' not in system)
+
+		# Test __len__
+		self.assertTrue(len(system)==2)
+
+		# test __iter__
+		chargers = list(system)
+		self.assertTrue(chargers[0].service == 'com.victronenergy.solarcharger.ttyO1')
+		self.assertTrue(chargers[1].service == 'com.victronenergy.solarcharger.ttyO2')

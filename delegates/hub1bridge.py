@@ -66,6 +66,27 @@ class SolarCharger(object):
 			self.service, '/Settings/ChargeCurrentLimit',
 			self.service, '/Link/ChargeCurrent')
 
+class SolarChargerSubsystem(object):
+	def __init__(self, monitor):
+		self.monitor = monitor
+		self._solarchargers = {}
+
+	def add_charger(self, service):
+		self._solarchargers[service] = charger = SolarCharger(self.monitor, service)
+		return charger
+
+	def remove_charger(self, service):
+		del self._solarchargers[service]
+
+	def __iter__(self):
+		return self._solarchargers.itervalues()
+
+	def __len__(self):
+		return len(self._solarchargers)
+
+	def __contains__(self, k):
+		return k in self._solarchargers
+
 class Hub1Bridge(SystemCalcDelegate):
 	# if ChargeCurrent > ChangeCurrentLimitedFactor * MaxChargeCurrent we assume that the solar charger is
 	# current limited, and yield do more power if we increase the MaxChargeCurrent
@@ -75,7 +96,7 @@ class Hub1Bridge(SystemCalcDelegate):
 
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)
-		self._solarchargers = {}
+		self._solarsystem = None
 		self._vecan_services = []
 		self._battery_services = []
 		self._timer = None
@@ -117,6 +138,8 @@ class Hub1Bridge(SystemCalcDelegate):
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
+		self._solarsystem = SolarChargerSubsystem(dbusmonitor)
+
 		self._dbusservice.add_path('/Control/SolarChargeVoltage', value=0)
 		self._dbusservice.add_path('/Control/SolarChargeCurrent', value=0)
 		self._dbusservice.add_path('/Control/BmsParameters', value=0)
@@ -126,7 +149,7 @@ class Hub1Bridge(SystemCalcDelegate):
 	def device_added(self, service, instance, do_service_change=True):
 		service_type = service.split('.')[2]
 		if service_type == 'solarcharger':
-			self._solarchargers[service] = SolarCharger(self._dbusmonitor, service)
+			self._solarsystem.add_charger(service)
 			self._on_timer()
 		elif service_type == 'vecan':
 			self._vecan_services.append(service)
@@ -145,13 +168,13 @@ class Hub1Bridge(SystemCalcDelegate):
 			self._timer = gobject.timeout_add(3000, exit_on_error, self._on_timer)
 
 	def device_removed(self, service, instance):
-		if service in self._solarchargers:
-			del self._solarchargers[service]
+		if service in self._solarsystem:
+			self._solarsystem.remove_charger(service)
 		elif service in self._vecan_services:
 			self._vecan_services.remove(service)
 		elif service in self._battery_services:
 			self._battery_services.remove(service)
-		if len(self._solarchargers) == 0 and len(self._vecan_services) == 0 and \
+		if len(self._solarsystem) == 0 and len(self._vecan_services) == 0 and \
 			len(self._battery_services) == 0 and self._timer is not None:
 			gobject.source_remove(self._timer)
 			self._timer = None
@@ -254,7 +277,7 @@ class Hub1Bridge(SystemCalcDelegate):
 		has_vecan_chargers = False
 		vedirect_chargers = []
 		network_mode_written = False
-		for charger in self._solarchargers.values():
+		for charger in self._solarsystem:
 			try:
 				if charger.connection == 'VE.Can':
 					has_vecan_chargers = True
