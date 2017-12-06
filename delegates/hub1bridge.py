@@ -10,6 +10,62 @@ from ve_utils import exit_on_error
 
 from delegates.base import SystemCalcDelegate
 
+class SolarCharger(object):
+	def __init__(self, monitor, service):
+		self.monitor = monitor
+		self.service = service
+
+	def _get_path(self, path):
+		return self.monitor.get_value(self.service, path)
+
+	def _set_path(self, path, v):
+		self.monitor.set_value(self.service, path, v)
+
+	@property
+	def connection(self):
+		return self._get_path('/Mgmt/Connection')
+
+	@property
+	def networkmode(self):
+		return self._get_path('/Link/NetworkMode')
+
+	@networkmode.setter
+	def networkmode(self, v):
+		self._set_path('/Link/NetworkMode', v)
+
+	@property
+	def chargecurrent(self):
+		return self._get_path('/Dc/0/Current')
+
+	@property
+	def maxchargecurrent(self):
+		return self._get_path('/Link/ChargeCurrent')
+
+	@maxchargecurrent.setter
+	def maxchargecurrent(self, v):
+		self._set_path('/Link/ChargeCurrent', v)
+
+	@property
+	def chargevoltage(self):
+		return self._get_path('/Link/ChargeVoltage')
+
+	@chargevoltage.setter
+	def chargevoltage(self, v):
+		self._set_path('/Link/ChargeVoltage', v)
+
+	@property
+	def currentlimit(self):
+		return self._get_path('/Settings/ChargeCurrentLimit')
+
+	@property
+	def state(self):
+		return self._get_path('/State')
+
+	def maximize_charge_current(self):
+		copy_dbus_value(self.monitor,
+			self.service, '/Settings/ChargeCurrentLimit',
+			self.service, '/Link/ChargeCurrent')
+
 class Hub1Bridge(SystemCalcDelegate):
 	# if ChargeCurrent > ChangeCurrentLimitedFactor * MaxChargeCurrent we assume that the solar charger is
 	# current limited, and yield do more power if we increase the MaxChargeCurrent
@@ -19,7 +75,7 @@ class Hub1Bridge(SystemCalcDelegate):
 
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)
-		self._solarchargers = []
+		self._solarchargers = {}
 		self._vecan_services = []
 		self._battery_services = []
 		self._timer = None
@@ -70,7 +126,7 @@ class Hub1Bridge(SystemCalcDelegate):
 	def device_added(self, service, instance, do_service_change=True):
 		service_type = service.split('.')[2]
 		if service_type == 'solarcharger':
-			self._solarchargers.append(service)
+			self._solarchargers[service] = SolarCharger(self._dbusmonitor, service)
 			self._on_timer()
 		elif service_type == 'vecan':
 			self._vecan_services.append(service)
@@ -90,7 +146,7 @@ class Hub1Bridge(SystemCalcDelegate):
 
 	def device_removed(self, service, instance):
 		if service in self._solarchargers:
-			self._solarchargers.remove(service)
+			del self._solarchargers[service]
 		elif service in self._vecan_services:
 			self._vecan_services.remove(service)
 		elif service in self._battery_services:
@@ -198,15 +254,15 @@ class Hub1Bridge(SystemCalcDelegate):
 		has_vecan_chargers = False
 		vedirect_chargers = []
 		network_mode_written = False
-		for service in self._solarchargers:
+		for charger in self._solarchargers.values():
 			try:
-				if self._dbusmonitor.get_value(service, '/Mgmt/Connection') == 'VE.Can':
+				if charger.connection == 'VE.Can':
 					has_vecan_chargers = True
 				# We use /Link/NetworkMode to detect Hub support in the solarcharger. Existence of this item
 				# implies existence of the other /Link/* fields.
-				if self._dbusmonitor.get_value(service, '/Link/NetworkMode') is not None:
-					vedirect_chargers.append(service)
-					self._dbusmonitor.set_value(service, '/Link/NetworkMode', network_mode)
+				if charger.networkmode is not None:
+					vedirect_chargers.append(charger)
+					charger.networkmode = network_mode
 					network_mode_written = True
 			except DBusException:
 				pass
@@ -235,18 +291,10 @@ class Hub1Bridge(SystemCalcDelegate):
 			return 0
 
 		voltage_written = 0
-		for service in vedirect_chargers:
+		for charger in vedirect_chargers:
 			try:
-				self._dbusmonitor.set_value(service, '/Link/ChargeVoltage', charge_voltage)
+				charger.chargevoltage = charge_voltage
 				voltage_written = 1
-				# solarcharger firmware v1.17 does not support link items. Version v1.17 itself requires
-				# the vebus state to be copied to the solarcharger (otherwise the charge voltage would be
-				# ignored). v1.18 and later do not have this requirement.
-				firmware_version = self._dbusmonitor.get_value(service, '/FirmwareVersion')
-				if firmware_version is not None and (firmware_version & 0x0FFF) == 0x0117:
-					state = self._dbusmonitor.get_value(vebus_path, '/State')
-					if state is not None:
-						self._dbusmonitor.set_value(service, '/State', state)
 			except DBusException:
 				pass
 
@@ -278,11 +326,9 @@ class Hub1Bridge(SystemCalcDelegate):
 		except DBusException:
 			logging.debug(traceback.format_exc())
 
-		for service in vedirect_chargers:
+		for charger in vedirect_chargers:
 			try:
-				copy_dbus_value(self._dbusmonitor,
-					service, '/Settings/ChargeCurrentLimit',
-					service, '/Link/ChargeCurrent')
+				charger.maximize_charge_current()
 			except DBusException:
 				logging.debug(traceback.format_exc())
 
@@ -297,21 +343,21 @@ class Hub1Bridge(SystemCalcDelegate):
 		upscalable_chargers = []
 		static_chargers = []
 		all_chargers = []
-		for service in vedirect_chargers:
-			charge_current = self._dbusmonitor.get_value(service, '/Dc/0/Current')
+		for charger in vedirect_chargers:
+			charge_current = charger.chargecurrent
 			solar_charger_current = safeadd(solar_charger_current, charge_current)
-			max_charge_current = self._dbusmonitor.get_value(service, '/Link/ChargeCurrent')
-			state = self._dbusmonitor.get_value(service, '/State')
+			max_charge_current = charger.maxchargecurrent
+			state = charger.state
 			if state != 0:  # Off
-				all_chargers.append(service)
+				all_chargers.append(charger)
 				# See if we can increase PV yield by increasing the maximum charge current of this solar
 				# charger. It is assumed that a PV yield can be increased if the actual current is close to
 				# the maximum.
 				if max_charge_current is None or \
 					charge_current >= Hub1Bridge.ChargeCurrentLimitedFactor * max_charge_current:
-					upscalable_chargers.append(service)
+					upscalable_chargers.append(charger)
 				else:
-					static_chargers.append(service)
+					static_chargers.append(charger)
 
 		if len(upscalable_chargers) == 0:
 			upscalable_chargers = static_chargers
@@ -360,9 +406,7 @@ class Hub1Bridge(SystemCalcDelegate):
 				solar_charger_factor = max(0.0, 1 + float(extra_solar_charger_max_current) / solar_charger_current)
 			for charger in all_chargers:
 				try:
-					charge_current = self._dbusmonitor.get_value(charger, '/Dc/0/Current')
-					max_charge_current = solar_charger_factor * charge_current if charge_current > 0 else 0
-					self._dbusmonitor.set_value(charger, '/Link/ChargeCurrent', max_charge_current)
+					charger.maxchargecurrent = solar_charger_factor * charger.chargecurrent if charger.chargecurrent > 0 else 0
 				except DBusException:
 					logging.debug(traceback.format_exc())
 
@@ -375,13 +419,13 @@ class Hub1Bridge(SystemCalcDelegate):
 		limits = []
 
 		for charger in chargers:
-			actual_currents.append(max(0, self._dbusmonitor.get_value(charger, '/Dc/0/Current')))
-			limits.append(self._dbusmonitor.get_value(charger, '/Settings/ChargeCurrentLimit'))
+			actual_currents.append(max(0, charger.chargecurrent))
+			limits.append(charger.currentlimit)
 		max_currents = Hub1Bridge.distribute(actual_currents, limits, increment)
 		i = 0
 		for charger in chargers:
 			try:
-				self._dbusmonitor.set_value(charger, '/Link/ChargeCurrent', scale * max_currents[i])
+				charger.maxchargecurrent = scale * max_currents[i]
 				increment += actual_currents[i] - max_currents[i]
 				i += 1
 			except DBusException:

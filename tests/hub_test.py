@@ -60,8 +60,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self._update_values(3000)
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO1': {
-				'/Link/ChargeVoltage': 12.6,
-				'/State': 2
+				'/Link/ChargeVoltage': 12.6
 			}})
 		self._check_values({
 			'/Control/SolarChargeVoltage': 1,
@@ -117,7 +116,6 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/ChargeVoltage'))
 		self.assertEqual(12.5, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2',
 			'/Link/ChargeVoltage'))
-		self.assertEqual(2, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1', '/State'))
 		self.assertEqual(0, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2', '/State'))
 		self._check_values({'/Control/SolarChargeVoltage': 1})
 
