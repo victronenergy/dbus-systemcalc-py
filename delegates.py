@@ -10,6 +10,7 @@ import os
 import sc_utils
 import sys
 import traceback
+from glob import glob
 
 # Victron packages
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), 'ext', 'velib_python'))
@@ -356,7 +357,12 @@ class VebusSocWriter(SystemCalcDelegate):
 class RelayState(SystemCalcDelegate):
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
-		relays = sc_utils.gpio_paths('/etc/venus/relays')
+		if os.path.exists('/dev/gpio'):
+			relays = glob('/dev/gpio/relay_*')
+		else:
+			# FIXME When the CCGX grows /dev/gpio, we can kill this.
+			relays = sc_utils.gpio_paths('/etc/venus/relays')
+
 		if len(relays) == 0:
 			logging.info('No relays found')
 			return
