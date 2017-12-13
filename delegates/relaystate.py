@@ -2,6 +2,7 @@ import gobject
 import logging
 import os
 import traceback
+from glob import glob
 
 # Victron packages
 from sc_utils import gpio_paths
@@ -18,7 +19,12 @@ class RelayState(SystemCalcDelegate):
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
-		relays = gpio_paths(RelayState.RELAY_PATH)
+		if os.path.exists('/dev/gpio'):
+			relays = glob('/dev/gpio/relay_*')
+		else:
+			# FIXME When the CCGX grows /dev/gpio, we can kill this.
+			relays = gpio_paths(RelayState.RELAY_PATH)
+
 		if len(relays) == 0:
 			logging.info('No relays found')
 			return
