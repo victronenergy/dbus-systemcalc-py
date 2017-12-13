@@ -273,7 +273,6 @@ class BatteryLife(SystemCalcDelegate):
 		# Cannot start without a multi or an soc
 		if self.vebus is None or self.soc is None:
 			logging.debug("[BatteryLife] No vebus or no valid SoC")
-			self.state = State.BLDisabled
 			return
 
 		# Cannot start without ESS available
