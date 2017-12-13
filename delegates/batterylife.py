@@ -278,7 +278,6 @@ class BatteryLife(SystemCalcDelegate):
 		# Cannot start without ESS available
 		if self._dbusmonitor.get_value(self.vebus, '/Hub4/AssistantId') is None:
 			logging.debug("[BatteryLife] No ESS Assistant found")
-			self.state = State.BLDisabled
 			return
 
 		# The values we received might transition our state machine through

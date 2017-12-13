@@ -46,13 +46,30 @@ class TestBatteryLife(TestSystemCalcBase):
         self._update_values()
 
     def test_no_ess(self):
-        """ No ESS or hub4 assistant in the multi, go to the disabled state. """
+        """ No ESS or hub4 assistant in the multi, check that state remains untouched. """
         self._monitor.set_value(self.vebus, '/Hub4/AssistantId', None)
-        self._update_values()
-        self._check_settings({
-            'state': State.BLDisabled, # Disabled
-            'flags': 0, # No flags
-        })
+        # For any of the 13 possible states (0-12), ensure that if ESS assistant is gone
+        # we just leave matters alone.
+        for initialstate in xrange(13):
+            self._set_setting('/Settings/CGwacs/BatteryLife/State', initialstate)
+            self._update_values()
+            self._check_settings({
+                'state': initialstate,
+                'flags': 0
+            })
+
+    def test_no_vebus(self):
+        """ If there is no vebus, do nothing at all. """
+        self._monitor.remove_service(self.vebus)
+        # There's 12 possible ESS states, crudely test that it never hops if
+        # there is no vebus.
+        for initialstate in xrange(13):
+            self._set_setting('/Settings/CGwacs/BatteryLife/State', initialstate)
+            self._update_values()
+            self._check_settings({
+                'state': initialstate,
+                'flags': 0
+            })
 
     def test_default(self):
         """ If assistant installed and SOC is above the minumum, go to default
