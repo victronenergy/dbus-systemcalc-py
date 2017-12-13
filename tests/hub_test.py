@@ -378,6 +378,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Info/MaxChargeCurrent': 25,
 				'/Info/MaxChargeVoltage': 58.2,
 				'/Info/MaxDischargeCurrent': 50})
+		self._update_values(interval=10000)
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO0': {
 				'/Link/NetworkMode': 13,
@@ -502,6 +503,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Settings/ChargeCurrentLimit': 100,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 30,
+			'/Link/ChargeCurrent': None,
 			'/FirmwareVersion': 0x0116},
 			connection='VE.Direct')
 		self._add_device('com.victronenergy.battery.ttyO2',
@@ -715,10 +717,12 @@ class TestHubSystem(TestSystemCalcBase):
 
 	def test_solar_subsys(self):
 		from delegates.hub1bridge import SolarChargerSubsystem
+		from delegates.hub1bridge import BatterySubsystem
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
 			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 9.3
@@ -727,12 +731,18 @@ class TestHubSystem(TestSystemCalcBase):
 			'/State': 0,
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
 			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 9.3
 		}, connection='VE.Direct')
+		self._add_device('com.victronenergy.solarcharger.socketcan_can0_di0_uc30688', {
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 9.3
+		}, connection='VE.Can')
 
-		system = SolarChargerSubsystem(self._system_calc._dbusmonitor)
+		system = SolarChargerSubsystem(self._system_calc._dbusmonitor,
+			BatterySubsystem(self._system_calc._dbusmonitor))
 		system.add_charger('com.victronenergy.solarcharger.ttyO1')
 		system.add_charger('com.victronenergy.solarcharger.ttyO2')
 
@@ -748,3 +758,83 @@ class TestHubSystem(TestSystemCalcBase):
 		chargers = list(system)
 		self.assertTrue(chargers[0].service == 'com.victronenergy.solarcharger.ttyO1')
 		self.assertTrue(chargers[1].service == 'com.victronenergy.solarcharger.ttyO2')
+
+		# Add vecan charger
+		self.assertFalse(system.has_vecan_chargers)
+		system.add_charger('com.victronenergy.solarcharger.socketcan_can0_di0_uc30688')
+		self.assertTrue(system.has_vecan_chargers)
+
+	def test_solar_subsys_distribution(self):
+		from delegates.hub1bridge import SolarChargerSubsystem
+		from delegates.hub1bridge import BatterySubsystem
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': 14.5,
+			'/Link/ChargeCurrent': 50,
+			'/Link/VoltageSense': None,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 40,
+			'/Settings/ChargeCurrentLimit': 70,
+		}, connection='VE.Direct')
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': 14.5,
+			'/Link/ChargeCurrent': 32,
+			'/Link/VoltageSense': None,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 30,
+			'/Settings/ChargeCurrentLimit': 35,
+		}, connection='VE.Direct')
+		self._add_device('com.victronenergy.solarcharger.ttyO3', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': 14.5,
+			'/Link/ChargeCurrent': 12,
+			'/Link/VoltageSense': None,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 10,
+			'/Settings/ChargeCurrentLimit': 15,
+		}, connection='VE.Direct')
+
+		system = SolarChargerSubsystem(self._system_calc._dbusmonitor,
+			BatterySubsystem(self._system_calc._dbusmonitor))
+		system.add_charger('com.victronenergy.solarcharger.ttyO1')
+		system.add_charger('com.victronenergy.solarcharger.ttyO2')
+		system.add_charger('com.victronenergy.solarcharger.ttyO3')
+
+		self.assertTrue(system.capacity == 120)
+		self.assertTrue(system.maxchargecurrent == 94)
+		self.assertTrue(system.chargecurrent == 80)
+
+	def test_battery_subsys_no_bms(self):
+		from delegates.hub1bridge import BatterySubsystem
+		self._add_device('com.victronenergy.battery.socketcan_can0_di0_uc30688', {
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 9.3
+		}, connection='VE.Can')
+
+		system = BatterySubsystem(self._system_calc._dbusmonitor)
+		system.add_battery('com.victronenergy.battery.socketcan_can0_di0_uc30688')
+		self.assertTrue(system.bms is None)
+
+		# Test magic methods
+		self.assertTrue('com.victronenergy.battery.socketcan_can0_di0_uc30688' in system)
+		self.assertTrue(len(system)==1)
+		batteries = list(system)
+		self.assertTrue(batteries[0].service == 'com.victronenergy.battery.socketcan_can0_di0_uc30688')
+
+	def test_battery_subsys_bms(self):
+		from delegates.hub1bridge import BatterySubsystem
+		self._add_device('com.victronenergy.battery.socketcan_can0_di0_uc30688', {
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 9.3,
+			'/Info/MaxChargeVoltage': 15,
+			'/Info/MaxChargeCurrent': 100,
+			'/Info/MaxDischargeCurrent': 100
+		}, connection='VE.Can')
+
+		system = BatterySubsystem(self._system_calc._dbusmonitor)
+		battery = system.add_battery('com.victronenergy.battery.socketcan_can0_di0_uc30688')
+		self.assertTrue(system.bms is battery)
