@@ -167,19 +167,6 @@ class SolarChargerSubsystem(object):
 		""" Total current we're limited to now. """
 		return safeadd(*(c.maxchargecurrent for c in self._solarchargers.values()))
 
-	@maxchargecurrent.setter
-	def maxchargecurrent(self, v):
-		if v is None:
-			self._maxchargecurrent = None
-			self.maximize_charge_current()
-		else:
-			self._maxchargecurrent = float(v)
-			# Spread the current across the chargers according to their capacities.
-			capacity = self.capacity
-			for charger in self._solarchargers.values():
-				c = v * charger.currentlimit/capacity
-				charger.maxchargecurrent = c
-
 	def maximize_charge_current(self):
 		for charger in self._solarchargers.values():
 			if charger.connection == 'VE.Can': continue
@@ -244,7 +231,6 @@ class SolarChargerSubsystem(object):
 		""" This is called if there are two or more solar chargers. It distributes the
 		    charge current over all of them. """
 		# Distribute the current over chargers
-		import pdb; pdb.set_trace()
 		if self._batterysystem.smoothed_current <= max_charge_current:
 			# Increase the solar charger limits
 			# List all chargers with space at the top
@@ -268,7 +254,6 @@ class SolarChargerSubsystem(object):
 					charger.maxchargecurrent *= ratio
 
 	def update_values(self, new_values):
-		import pdb; pdb.set_trace()
 		for charger in self._solarchargers.values():
 			charger.update_values(new_values)
 
@@ -400,8 +385,7 @@ class Hub1Bridge(SystemCalcDelegate):
 			# we write a value to its D-Bus service. Writing too often may block text messages. In MPPT
 			# firmware v1.23 and later, all relevant values will be transmitted as asynchronous message,
 			# so the update rate could be increased.
-			self._timer = gobject.timeout_add(3000, exit_on_error, self._on_timer_frequent)
-			self._timer = gobject.timeout_add(10000, exit_on_error, self._on_timer_less_frequent)
+			self._timer = gobject.timeout_add(3000, exit_on_error, self._on_timer)
 
 	def device_removed(self, service, instance):
 		if service in self._solarsystem:
@@ -429,7 +413,7 @@ class Hub1Bridge(SystemCalcDelegate):
 
 		return None
 
-	def _on_timer_frequent(self):
+	def _on_timer(self):
 		""" Contains things we synchronise frequently. """
 		bms_service = self._batterysystem.bms
 		bms_parameters_written = self._update_battery_operational_limits(bms_service)
@@ -455,11 +439,6 @@ class Hub1Bridge(SystemCalcDelegate):
 			except DBusException:
 				logging.debug(traceback.format_exc())
 
-		return True
-
-	def _on_timer_less_frequent(self):
-		""" Things we sunchronise less frequently, to make them less jittery. """
-		bms_service = self._batterysystem.bms
 		voltage_written, current_written = self._update_solarchargers(bms_service)
 		self._dbusservice['/Control/SolarChargeVoltage'] = voltage_written
 		self._dbusservice['/Control/SolarChargeCurrent'] = current_written
