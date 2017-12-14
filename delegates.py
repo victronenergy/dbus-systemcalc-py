@@ -358,7 +358,7 @@ class RelayState(SystemCalcDelegate):
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 		if os.path.exists('/dev/gpio'):
-			relays = glob('/dev/gpio/relay_*')
+			relays = sorted(glob('/dev/gpio/relay_*'))
 		else:
 			# FIXME When the CCGX grows /dev/gpio, we can kill this.
 			relays = sc_utils.gpio_paths('/etc/venus/relays')
