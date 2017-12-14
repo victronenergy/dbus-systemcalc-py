@@ -111,7 +111,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Dc/0/Current': 9.3,
 			'/FirmwareVersion': 0x0118},
 			connection='VE.Direct')
-		self._update_values()
+		self._update_values(3000)
 		self.assertEqual(12.5, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1',
 			'/Link/ChargeVoltage'))
 		self.assertEqual(12.5, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2',
@@ -147,10 +147,12 @@ class TestHubSystem(TestSystemCalcBase):
 			connection='VE.Can')
 		self._add_device('com.victronenergy.vecan.can0', {
 			'/Link/ChargeVoltage': None})
+		self._update_values(3000)
 		self.assertEqual(12.63, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 13.2)
 		self._add_device('com.victronenergy.vecan.can1', {
 			'/Link/ChargeVoltage': None})
+		self._update_values(3000)
 		self.assertEqual(13.2, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
 		self.assertEqual(13.2, self._monitor.get_value('com.victronenergy.vecan.can1', '/Link/ChargeVoltage'))
 		self._remove_device('com.victronenergy.vecan.can0')
@@ -181,6 +183,7 @@ class TestHubSystem(TestSystemCalcBase):
 			connection='VE.Can')
 		self._add_device('com.victronenergy.vecan.can0', {
 			'/Link/ChargeVoltage': 12.3})
+		self._update_values(3000)
 		self.assertEqual(12.63, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
 		self._add_device('com.victronenergy.solarcharger.ttyO2', {
 			'/State': 0,
@@ -191,6 +194,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Dc/0/Current': 9.3,
 			'/FirmwareVersion': 0x0118},
 			connection='VE.Direct')
+		self._update_values(3000)
 		self.assertEqual(12.63, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
 		self.assertEqual(12.63, self._monitor.get_value('com.victronenergy.solarcharger.ttyO2',
 			'/Link/ChargeVoltage'))
