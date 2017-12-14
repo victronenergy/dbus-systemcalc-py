@@ -441,25 +441,32 @@ class SystemCalc:
 				newvalues['/Dc/Battery/Power'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Power')
 
 			elif batteryservicetype == 'vebus':
+				# There is no smart battery or battery monitor available. Do the best we can with data available:
+				# voltage = solarcharger-voltage if available, otherwise the one from vebus
+ 				# current = vebus-current + mppt-current
+
+				vebus_voltage = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Voltage')
+				vebus_current = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
+				vebus_power = None if vebus_voltage is None or vebus_current is None else vebus_current * vebus_voltage
+
+				# Prefer the solar charger voltage reading over the VE.Bus one (why? I don't remember why we preferred
+				# this).
+				newvalues['/Dc/Battery/Voltage'] = solarcharger_batteryvoltage or vebus_voltage
+				newvalues['/Dc/Battery/VoltageService'] = solarcharger_batteryvoltage_service or self._batteryservice
+
+				# Determine the current
 				if self._settings['hasdcsystem'] == 1 or \
 					newvalues.get('/Dc/Pv/Power') is None or \
 					self._dbusmonitor.get_value(self._batteryservice, '/ExtraBatteryCurrent') is None:
-					newvalues['/Dc/Battery/Voltage'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Voltage')
-					newvalues['/Dc/Battery/VoltageService'] = self._batteryservice
+
 					newvalues['/Dc/Battery/Current'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
-					if newvalues['/Dc/Battery/Voltage'] is not None and newvalues['/Dc/Battery/Current'] is not None:
-						newvalues['/Dc/Battery/Power'] = (
-							newvalues['/Dc/Battery/Voltage'] * newvalues['/Dc/Battery/Current'])
 				else:
-					vebus_voltage = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Voltage')
-					vebus_current = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
-					vebus_power = None if vebus_voltage is None or vebus_current is None else vebus_current * vebus_voltage
 					battery_power = _safeadd(newvalues.get('/Dc/Pv/Power', 0), vebus_power)
-					battery_voltage = solarcharger_batteryvoltage or vebus_voltage
 					newvalues['/Dc/Battery/Current'] = battery_power / battery_voltage if battery_voltage > 0 else None
-					newvalues['/Dc/Battery/Power'] = battery_power
-					newvalues['/Dc/Battery/Voltage'] = battery_voltage
-					newvalues['/Dc/Battery/VoltageService'] = solarcharger_batteryvoltage_service or self._batteryservice
+
+				# Calculate the power.
+				if newvalues['/Dc/Battery/Voltage'] is not None and newvalues['/Dc/Battery/Current'] is not None:
+					newvalues['/Dc/Battery/Power'] = (newvalues['/Dc/Battery/Voltage'] * newvalues['/Dc/Battery/Current'])
 
 			p = newvalues.get('/Dc/Battery/Power', None)
 			if p is not None:
