@@ -39,6 +39,8 @@ s = DbusDummyService(
 		'/Dc/0/Voltage': {'initial': 11},
 		'/Dc/0/Current': {'initial': 12},
 		'/Dc/0/MaxChargeCurrent': {'initial': None},
+		'/Devices/0/Assistants': {'initial': [0]*56},
+		'/FirmwareFeatures/BolUBatAndTBatSense': {'initial': None},
 		'/Soc': {'initial': 10},
 		'/State': {'initial': None},
 		'/VebusMainState': {'initial': None},
@@ -47,7 +49,8 @@ s = DbusDummyService(
 		'/BatteryOperationalLimits/MaxChargeVoltage': {'initial': None},
 		'/BatteryOperationalLimits/MaxChargeCurrent': {'initial': None},
 		'/BatteryOperationalLimits/MaxDischargeCurrent': {'initial': None},
-		'/BatteryOperationalLimits/BatteryLowVoltage': {'initial': None}},
+		'/BatteryOperationalLimits/BatteryLowVoltage': {'initial': None},
+		'/BatteryOperationalLimits/SenseVoltage': {'initial': None}},
     productname='Multi 12/3000',
     connection='CCGX-VE.Bus port')
 
