@@ -149,3 +149,34 @@ class VoltageSenseTest(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/SenseVoltage': 12.15}})
+
+	def test_voltage_sense_disabled(self):
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1',
+			'/FirmwareFeatures/BolUBatAndTBatSense', 1)
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1',
+			'/BatteryOperationalLimits/SenseVoltage', None)
+		self._set_setting('/Settings/SystemSetup/WriteVoltageSense', 0)
+
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.15,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2})
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Link/VoltageSense': None,
+			'/Dc/0/Voltage': 12.2,
+			'/Dc/0/Current': 9.7},
+			connection='VE.Direct')
+		self._update_values(5000)
+		# Check that other devices were left alone
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/SenseVoltage': None}})
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/SenseVoltage': None}})

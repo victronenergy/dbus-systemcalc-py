@@ -19,7 +19,14 @@ class VoltageSense(SystemCalcDelegate):
 			('com.victronenergy.vebus', [
 				'/Dc/0/Voltage',
 				'/BatteryOperationalLimits/SenseVoltage',
-				'/FirmwareFeatures/BolUBatAndTBatSense'])]
+				'/FirmwareFeatures/BolUBatAndTBatSense']),
+			('com.victronenergy.settings', [
+				'/Settings/SystemSetup/WriteVoltageSense'])]
+
+	def get_settings(self):
+		return [
+			('enabled', "/Settings/SystemSetup/WriteVoltageSense", 1, 0, 0),
+		]
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
@@ -27,7 +34,8 @@ class VoltageSense(SystemCalcDelegate):
 		self._timer = gobject.timeout_add(3000, exit_on_error, self._on_timer)
 
 	def _on_timer(self):
-		self._dbusservice['/Control/SolarChargerVoltageSense'] = self._distribute_sense_voltage()
+		self._dbusservice['/Control/SolarChargerVoltageSense'] = \
+			int(self._settings['enabled']) and self._distribute_sense_voltage()
 		return True
 
 	def _distribute_sense_voltage(self):
