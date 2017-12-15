@@ -108,6 +108,10 @@ class SystemState(SystemCalcDelegate):
 			flags.ChargeDisabled, flags.DischargeDisabled = map(
 				lambda x: int(not x), self.bms_state(vebus))
 
+			# BatteryLife state
+			hubstate = self._dbusmonitor.get_value('com.victronenergy.settings',
+				'/Settings/CGwacs/BatteryLife/State')
+
 			# User limit
 			user_discharge_limit = self._dbusmonitor.get_value(
 				'com.victronenergy.settings',
@@ -115,12 +119,10 @@ class SystemState(SystemCalcDelegate):
 			user_charge_limit = self._dbusmonitor.get_value(
 				'com.victronenergy.settings',
 				'/Settings/SystemSetup/MaxChargeCurrent')
-			flags.UserDischargeLimited = int(user_discharge_limit == 0)
+			flags.UserDischargeLimited = int(user_discharge_limit == 0 and hubstate != SOCG.KeepCharged)
 			flags.UserChargeLimited = int(user_charge_limit == 0)
 
 			# ESS state
-			hubstate = self._dbusmonitor.get_value('com.victronenergy.settings',
-				'/Settings/CGwacs/BatteryLife/State')
 			if hubstate in (BL.Default, BL.Absorption, BL.Float, SOCG.Default):
 				if newvalues.get('/Dc/Battery/Power') < -30:
 					ss = SystemState.DISCHARGING

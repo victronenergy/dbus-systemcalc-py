@@ -178,3 +178,18 @@ class TestEssStates(TestSystemCalcBase):
             '/SystemState/SlowCharge': 0,
             '/SystemState/UserChargeLimited': 1,
             '/SystemState/UserDischargeLimited': 0})
+
+    def test_user_discharge_limited_keepcharged(self):
+        self._monitor.set_value(self.settings,
+            '/Settings/CGwacs/BatteryLife/State', 9)
+        self._monitor.set_value(self.settings,
+            '/Settings/CGwacs/MaxDischargePower', 0)
+        self._update_values()
+        self._check_values({
+            '/SystemState/LowSoc': 0,
+            '/SystemState/BatteryLife': 0,
+            '/SystemState/ChargeDisabled': 0,
+            '/SystemState/DischargeDisabled': 0,
+            '/SystemState/SlowCharge': 0,
+            '/SystemState/UserChargeLimited': 0,
+            '/SystemState/UserDischargeLimited': 0})
