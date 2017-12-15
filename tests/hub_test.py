@@ -242,7 +242,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Info/MaxChargeCurrent': 25,
 				'/Info/MaxChargeVoltage': 58.2,
 				'/Info/MaxDischargeCurrent': 50})
-		self._update_values(interval=10000)
+		self._update_values(interval=60000)
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO2': {
 				'/Link/NetworkMode': 13,
@@ -286,7 +286,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Info/MaxChargeCurrent': 25,
 				'/Info/MaxChargeVoltage': 58.2,
 				'/Info/MaxDischargeCurrent': 50})
-		self._update_values(interval=10000)
+		self._update_values(interval=60000)
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO2': {
 				'/Link/NetworkMode': 13,
@@ -327,7 +327,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Info/MaxChargeCurrent': 25,
 				'/Info/MaxChargeVoltage': 58.2,
 				'/Info/MaxDischargeCurrent': 50})
-		self._update_values(interval=10000)
+		self._update_values(interval=60000)
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO2': {
 				'/Link/NetworkMode': 13,
@@ -382,22 +382,40 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Info/MaxChargeCurrent': 25,
 				'/Info/MaxChargeVoltage': 58.2,
 				'/Info/MaxDischargeCurrent': 50})
-		self._update_values(interval=10000)
+
+		# Simulate the solar charger moving towards the requested limit
+		for _ in range(12):
+			self._update_values(interval=1000)
+
+			for c in ('com.victronenergy.solarcharger.ttyO0',
+					'com.victronenergy.solarcharger.ttyO2'):
+				self._monitor.set_value(c, '/Dc/0/Current', min(100.0,
+					self._monitor.get_value(c, '/Link/ChargeCurrent')))
+
+		total = self._monitor.get_value('com.victronenergy.vebus.ttyO1',
+				'/Dc/0/Current') + \
+			self._monitor.get_value('com.victronenergy.solarcharger.ttyO0',
+				'/Dc/0/Current') + \
+			self._monitor.get_value('com.victronenergy.solarcharger.ttyO2',
+				'/Dc/0/Current')
+
+		# Check that total is within 5%
+		self.assertTrue(abs(total - 25) <= 1.25)
+
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO0': {
 				'/Link/NetworkMode': 13,
-				'/Link/ChargeCurrent': 25 - 7 + 8,
 				'/Link/ChargeVoltage': 58.2},
 			'com.victronenergy.solarcharger.ttyO2': {
 				'/Link/NetworkMode': 13,
-				'/Link/ChargeCurrent': 7 * 1.1 / 0.9,
 				'/Link/ChargeVoltage': 58.2},
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
 				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
-				'/Dc/0/MaxChargeCurrent': math.floor((25 - 14.3 - 7) * 0.8)}})
+				# Difference goes to the multi
+				'/Dc/0/MaxChargeCurrent': 0 }})
 		self._check_values({
 			'/Control/SolarChargeCurrent': 1,
 			'/Control/SolarChargeVoltage': 1,
@@ -411,13 +429,13 @@ class TestHubSystem(TestSystemCalcBase):
 		self._monitor.add_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn', 1)
 		self._add_device('com.victronenergy.solarcharger.ttyO2', {
 			'/State': 1,
-			'/Settings/ChargeCurrentLimit': 100,
+			'/Settings/ChargeCurrentLimit': 35,
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
 			'/Link/ChargeCurrent': None,
 			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
-			'/Dc/0/Current': 31,
+			'/Dc/0/Current': 35,
 			'/FirmwareVersion': 0x0118},
 			connection='VE.Direct')
 		self._add_device('com.victronenergy.battery.ttyO2',
@@ -429,21 +447,21 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Soc': 15.3,
 				'/DeviceInstance': 2,
 				'/Info/BatteryLowVoltage': 47,
-				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeCurrent': 45,
 				'/Info/MaxChargeVoltage': 58.2,
 				'/Info/MaxDischargeCurrent': 50})
 		self._update_values(interval=10000)
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO2': {
 				'/Link/NetworkMode': 13,
-				'/Link/ChargeCurrent': 100,
+				'/Link/ChargeCurrent': 35,
 				'/Link/ChargeVoltage': 58.3},
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
-				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 45,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
-				'/Dc/0/MaxChargeCurrent': 25}})
+				'/Dc/0/MaxChargeCurrent': 10}})
 		self._check_values({
 			'/SystemType': 'ESS',
 			'/Control/SolarChargeCurrent': 1,
@@ -481,7 +499,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Info/MaxChargeCurrent': 25,
 				'/Info/MaxChargeVoltage': 58.2,
 				'/Info/MaxDischargeCurrent': 50})
-		self._update_values(interval=10000)
+		self._update_values(interval=60000)
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO2': {
 				'/Link/NetworkMode': 13,
@@ -522,14 +540,14 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Info/MaxChargeCurrent': 25,
 				'/Info/MaxChargeVoltage': 58.2,
 				'/Info/MaxDischargeCurrent': 50})
-		self._update_values(interval=10000)
+		self._update_values(interval=60000)
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
 				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
-				'/Dc/0/MaxChargeCurrent': 25}})
+				'/Dc/0/MaxChargeCurrent': 0}})
 		self._check_values({
 			'/Control/SolarChargeCurrent': 0,
 			'/Control/SolarChargeVoltage': 0,
@@ -721,7 +739,6 @@ class TestHubSystem(TestSystemCalcBase):
 
 	def test_solar_subsys(self):
 		from delegates.hub1bridge import SolarChargerSubsystem
-		from delegates.hub1bridge import BatterySubsystem
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
 			'/Link/NetworkMode': 0,
@@ -745,8 +762,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Dc/0/Current': 9.3
 		}, connection='VE.Can')
 
-		system = SolarChargerSubsystem(self._system_calc._dbusmonitor,
-			BatterySubsystem(self._system_calc._dbusmonitor))
+		system = SolarChargerSubsystem(self._system_calc._dbusmonitor)
 		system.add_charger('com.victronenergy.solarcharger.ttyO1')
 		system.add_charger('com.victronenergy.solarcharger.ttyO2')
 
@@ -770,7 +786,11 @@ class TestHubSystem(TestSystemCalcBase):
 
 	def test_solar_subsys_distribution(self):
 		from delegates.hub1bridge import SolarChargerSubsystem
-		from delegates.hub1bridge import BatterySubsystem
+		self._add_device('com.victronenergy.battery.socketcan_can0_di0_uc30688', {
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 9.3,
+			'/Info/MaxChargeCurrent': 100
+		}, connection='VE.Can')
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
 			'/Link/NetworkMode': 0,
@@ -802,8 +822,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Settings/ChargeCurrentLimit': 15,
 		}, connection='VE.Direct')
 
-		system = SolarChargerSubsystem(self._system_calc._dbusmonitor,
-			BatterySubsystem(self._system_calc._dbusmonitor))
+		system = SolarChargerSubsystem(self._system_calc._dbusmonitor)
 		system.add_charger('com.victronenergy.solarcharger.ttyO1')
 		system.add_charger('com.victronenergy.solarcharger.ttyO2')
 		system.add_charger('com.victronenergy.solarcharger.ttyO3')
@@ -811,6 +830,8 @@ class TestHubSystem(TestSystemCalcBase):
 		self.assertTrue(system.capacity == 120)
 		self.assertTrue(system.maxchargecurrent == 94)
 		self.assertTrue(system.chargecurrent == 80)
+
+		self._monitor.set_value('com.victronenergy.battery.socketcan_can0_di0_uc30688', '/Info/MaxChargeCurrent', 100)
 
 	def test_battery_subsys_no_bms(self):
 		from delegates.hub1bridge import BatterySubsystem
@@ -842,3 +863,40 @@ class TestHubSystem(TestSystemCalcBase):
 		system = BatterySubsystem(self._system_calc._dbusmonitor)
 		battery = system.add_battery('com.victronenergy.battery.socketcan_can0_di0_uc30688')
 		self.assertTrue(system.bms is battery)
+
+	def test_distribute(self):
+		from delegates.hub1bridge import distribute
+
+		actual = [1, 2, 3, 4, 5] # 15 amps
+		limits = [5, 5, 5, 5, 5] # 25 amps
+
+		# add 5 amps
+		newlimits = distribute(actual, limits, 5)
+		self.assertTrue(sum(newlimits)==20)
+
+		# max it out
+		newlimits = distribute(actual, limits, 10)
+		self.assertTrue(sum(newlimits)==25)
+
+		# overflow it
+		newlimits = distribute(actual, limits, 11)
+		self.assertTrue(sum(newlimits)==25)
+
+		# Drop 5 amps
+		newlimits = distribute(actual, limits, -5)
+		self.assertTrue(sum(newlimits)==10)
+
+		# Drop 10 amps
+		newlimits = distribute(actual, limits, -10)
+		self.assertTrue(sum(newlimits)==5)
+
+		# All of it
+		newlimits = distribute(actual, limits, -15)
+		self.assertTrue(sum(newlimits)==0)
+
+		# Attempt to go negative
+		newlimits = distribute(actual, limits, -20)
+		self.assertTrue(sum(newlimits)==0)
+
+		newlimits = distribute([2, 2], [2, 2], 20)
+		print newlimits
