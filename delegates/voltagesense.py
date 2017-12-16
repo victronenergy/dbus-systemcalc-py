@@ -21,11 +21,11 @@ class VoltageSense(SystemCalcDelegate):
 				'/BatteryOperationalLimits/SenseVoltage',
 				'/FirmwareFeatures/BolUBatAndTBatSense']),
 			('com.victronenergy.settings', [
-				'/Settings/SystemSetup/WriteVoltageSense'])]
+				'/Settings/SystemSetup/SharedVoltageSense'])]
 
 	def get_settings(self):
 		return [
-			('enabled', "/Settings/SystemSetup/WriteVoltageSense", 1, 0, 0),
+			('enabled', "/Settings/SystemSetup/SharedVoltageSense", 1, 0, 0),
 		]
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):

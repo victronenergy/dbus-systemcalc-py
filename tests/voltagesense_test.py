@@ -155,7 +155,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 			'/FirmwareFeatures/BolUBatAndTBatSense', 1)
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1',
 			'/BatteryOperationalLimits/SenseVoltage', None)
-		self._set_setting('/Settings/SystemSetup/WriteVoltageSense', 0)
+		self._set_setting('/Settings/SystemSetup/SharedVoltageSense', 0)
 
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',
