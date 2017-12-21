@@ -34,7 +34,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeCurrent': None,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': None,
 				'/BatteryOperationalLimits/BatteryLowVoltage': None,
-				'/BatteryOperationalLimits/SenseVoltage': None,
+                '/BatterySense/Voltage': None,
 				'/FirmwareFeatures/BolFrame': 1,
 				'/FirmwareFeatures/BolUBatAndTBatSense': 1
 			})

@@ -18,7 +18,7 @@ class VoltageSense(SystemCalcDelegate):
 				'/Link/VoltageSense']),
 			('com.victronenergy.vebus', [
 				'/Dc/0/Voltage',
-				'/BatteryOperationalLimits/SenseVoltage',
+				'/BatterySense/Voltage',
 				'/FirmwareFeatures/BolUBatAndTBatSense']),
 			('com.victronenergy.settings', [
 				'/Settings/SystemSetup/SharedVoltageSense'])]
@@ -64,7 +64,7 @@ class VoltageSense(SystemCalcDelegate):
 			vebus_path != sense_voltage_service and \
 			self._dbusmonitor.get_value(vebus_path, '/FirmwareFeatures/BolUBatAndTBatSense') == 1:
 			try:
-				self._dbusmonitor.set_value(vebus_path, '/BatteryOperationalLimits/SenseVoltage',
+				self._dbusmonitor.set_value(vebus_path, '/BatterySense/Voltage',
 					sense_voltage)
 				voltagesense_written = 1
 			except DBusException:

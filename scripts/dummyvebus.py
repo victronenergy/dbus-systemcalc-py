@@ -50,7 +50,7 @@ s = DbusDummyService(
 		'/BatteryOperationalLimits/MaxChargeCurrent': {'initial': None},
 		'/BatteryOperationalLimits/MaxDischargeCurrent': {'initial': None},
 		'/BatteryOperationalLimits/BatteryLowVoltage': {'initial': None},
-		'/BatteryOperationalLimits/SenseVoltage': {'initial': None}},
+        '/BatterySense/Voltage': {'initial': None}},
     productname='Multi 12/3000',
     connection='CCGX-VE.Bus port')
 
