@@ -900,3 +900,52 @@ class TestHubSystem(TestSystemCalcBase):
 
 		newlimits = distribute([2, 2], [2, 2], 20)
 		print newlimits
+
+	def test_hub1bridge_distr_1(self):
+		from delegates.hub1bridge import distribute
+		actual_values = [1, 2, 3]
+		max_values = [6, 5, 4]
+		new_values = distribute(actual_values, max_values, 3)
+		self.assertEqual(new_values, [2, 3, 4])
+
+	def test_hub1bridge_distr_2(self):
+		from delegates.hub1bridge import distribute
+		actual_values = [1, 2, 3]
+		max_values = [6, 5, 4]
+		new_values = distribute(actual_values, max_values, 9.0)
+		self.assertEqual(new_values, [6, 5, 4])
+
+	def test_hub1bridge_distr_3(self):
+		from delegates.hub1bridge import distribute
+		actual_values = [1, 2, 3]
+		max_values = [6, 5, 4]
+		new_values = distribute(actual_values, max_values, 10.0)
+		self.assertEqual(new_values, [6, 5, 4])
+
+	def test_hub1bridge_distr_4(self):
+		from delegates.hub1bridge import distribute
+		actual_values = [1, 2, 3]
+		max_values = [6, 5, 4]
+		new_values = distribute(actual_values, max_values, 6.0)
+		self.assertEqual(new_values, [3.5, 4.5, 4])
+
+	def test_hub1bridge_distr_5(self):
+		from delegates.hub1bridge import distribute
+		actual_values = [3, 2, 1]
+		max_values = [4, 5, 6]
+		new_values = distribute(actual_values, max_values, 6.0)
+		self.assertEqual(new_values, [4, 4.5, 3.5])
+
+	def test_hub1bridge_distr_6(self):
+		from delegates.hub1bridge import distribute
+		actual_values = [4, 5, 6]
+		max_values = [1, 2, 8]
+		new_values = distribute(actual_values, max_values, 0.0)
+		self.assertEqual(new_values, [1, 2, 8])
+
+	def test_hub1bridge_distr_7(self):
+		from delegates.hub1bridge import distribute
+		actual_values = [1]
+		max_values = [5]
+		new_values = distribute(actual_values, max_values, 6.0)
+		self.assertEqual(new_values, [5])
