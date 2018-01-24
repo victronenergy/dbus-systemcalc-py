@@ -517,7 +517,10 @@ class SystemCalc:
 		# ===== AC IN SOURCE =====
 		ac_in_source = None
 		active_input = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/ActiveInput')
-		if active_input is not None:
+		if active_input == 0xF0:
+			# Not connected
+			ac_in_source = 240
+		elif active_input is not None:
 			settings_path = '/Settings/SystemSetup/AcInput%s' % (active_input + 1)
 			ac_in_source = self._dbusmonitor.get_value('com.victronenergy.settings', settings_path)
 		newvalues['/Ac/ActiveIn/Source'] = ac_in_source
