@@ -40,6 +40,7 @@ s = DbusDummyService(
 		'/Dc/0/Current': {'initial': 12},
 		'/Dc/0/MaxChargeCurrent': {'initial': None},
 		'/Devices/0/Assistants': {'initial': [0]*56},
+		'/FirmwareFeatures/BolFrame': {'initial': None},
 		'/FirmwareFeatures/BolUBatAndTBatSense': {'initial': None},
 		'/Soc': {'initial': 10},
 		'/State': {'initial': None},
