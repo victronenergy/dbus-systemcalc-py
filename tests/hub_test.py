@@ -947,3 +947,22 @@ class TestHubSystem(TestSystemCalcBase):
 		max_values = [5]
 		new_values = distribute(actual_values, max_values, 6.0)
 		self.assertEqual(new_values, [5])
+
+	def test_debug_solarvoltageoffset(self):
+		self._update_values()
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 12.6)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', 2)
+		self._service.set_value('/Debug/SolarVoltageOffset', 0.4)
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/VoltageSense': None,
+			'/Dc/0/Voltage': 12.4,
+			'/Dc/0/Current': 9.7},
+			connection='VE.Direct')
+		self._update_values(3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeVoltage': 13
+			}})

@@ -4,6 +4,7 @@ import logging
 from math import pi, floor, ceil
 import traceback
 from itertools import izip, count
+from functools import partial
 
 # Victron packages
 from sc_utils import safeadd, copy_dbus_value
@@ -514,6 +515,16 @@ class Hub1Bridge(SystemCalcDelegate):
 
 		return None if max_charge_current < 0 else max_charge_current
 
+
+	def _property(path, self):
+		# Due to the use of partial, path and self is reversed.
+		try:
+			return float(self._dbusservice[path])
+		except ValueError:
+			return None
+
+	solarvoltageoffset = property(partial(_property, '/Debug/SolarVoltageOffset'))
+
 	def _on_timer(self):
 		self._tickcount -= 1; self._tickcount %= ADJUST
 
@@ -613,8 +624,8 @@ class Hub1Bridge(SystemCalcDelegate):
 			charge_voltage = self._dbusmonitor.get_value(bms_service.service, '/Info/MaxChargeVoltage')
 		if charge_voltage is not None:
 			try:
-				charge_voltage += float(self._dbusservice['/Debug/SolarVoltageOffset'])
-			except ValueError:
+				charge_voltage += self.solarvoltageoffset
+			except (ValueError, TypeError):
 				pass
 
 		if charge_voltage is None and max_charge_current is None:
