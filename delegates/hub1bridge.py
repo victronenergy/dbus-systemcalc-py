@@ -19,29 +19,18 @@ from delegates.base import SystemCalcDelegate
 # above.
 ADJUST = 3
 
-def _distribute_currents(chargers, increment, scale=1.0):
-	if increment < 0:
-		return increment
-	if len(chargers) == 0:
-		return increment
-	actual_currents = []
-	limits = []
-
-	for charger in chargers:
-		actual_currents.append(max(0, charger.chargecurrent))
-		limits.append(charger.currentlimit)
-	max_currents = distribute(actual_currents, limits, increment)
-	i = 0
-	for charger in chargers:
-		try:
-			charger.maxchargecurrent = scale * max_currents[i]
-			increment += actual_currents[i] - max_currents[i]
-			i += 1
-		except DBusException:
-			logging.debug(traceback.format_exc())
-	return increment
-
 def distribute(current_values, max_values, increment):
+	""" current_values and max_values are lists of equal size containing the
+	    current limits, and the maximum they can be increased to. increment
+	    contains the amount by which we want to increase the total, ie the sum
+	    of the values in current_values, while staying below max_values.
+
+	    This is done simply by first attempting to spread the increment
+	    equally. If a value exceeds the max in that process, the remainder is
+	    thrown back into the pot and distributed equally among the rest.
+
+	    Negative values are also handled, and zero is assumed to be the
+	    implicit lower limit. """
 	n = cn = len(current_values)
 	new_values = [-1] * n
 	for j in range(0, n):
@@ -69,7 +58,10 @@ def distribute(current_values, max_values, increment):
 	return new_values
 
 class SolarCharger(object):
-	# Used for low-pass filter
+	""" Encapsulates a solar charger on dbus. Exposes dbus paths as convenient
+	    attributes. """
+
+	# Used for the low-pass filter that determines smoothed_current below.
 	OMEGA = (2 * pi)/20
 
 	def __init__(self, monitor, service):
@@ -127,19 +119,28 @@ class SolarCharger(object):
 
 	@property
 	def smoothed_current(self):
+		""" Returns the internal low-pass filtered current value. """
 		return self._smoothed_current
 
 	def maximize_charge_current(self):
+		""" Max out the charge current of this solar charger by setting
+		    ChargeCurrent to the configured limit in settings. """
 		copy_dbus_value(self.monitor,
 			self.service, '/Settings/ChargeCurrentLimit',
 			self.service, '/Link/ChargeCurrent')
 
 	def update_values(self):
+		# This is called periodically from a timer to maintain
+		# a smooth current value.
 		v = self.monitor.get_value(self.service, '/Dc/0/Current')
 		if v is not None:
 			self._smoothed_current += (v - self._smoothed_current) * self.OMEGA
 
 class SolarChargerSubsystem(object):
+	""" Encapsulates a collection of solar chargers that collectively make up
+	    a charging system (sans Multi). Properties related to the whole
+	    system or some combination of the individual chargers are exposed
+		here as attributes. """
 	def __init__(self, monitor):
 		self.monitor = monitor
 		self._solarchargers = {}
@@ -162,6 +163,9 @@ class SolarChargerSubsystem(object):
 
 	@property
 	def has_vecan_chargers(self):
+		""" Returns true if we have any VE.Can chargers in the system. This is
+		    used elsewhere to enable broadcasting charge voltages on the relevant
+		    can device. """
 		return any((s.connection == 'VE.Can' for s in self._solarchargers.values()))
 
 	@property
@@ -170,21 +174,13 @@ class SolarChargerSubsystem(object):
 		return safeadd(*(c.currentlimit for c in self._solarchargers.values()))
 
 	@property
-	def chargecurrent(self):
-		""" Total current generated this instant. """
-		return safeadd(*(c.chargecurrent for c in self._solarchargers.values()))
-
-	@property
-	def maxchargecurrent(self):
-		""" Total current we're limited to now. """
-		return safeadd(*(c.maxchargecurrent for c in self._solarchargers.values()))
-
-	@property
 	def smoothed_current(self):
-		""" Total smoothed current. """
+		""" Total smoothed current, calculated by adding the smoothed current
+		    of the individual chargers. """
 		return safeadd(*(c.smoothed_current for c in self._solarchargers.values())) or 0
 
 	def maximize_charge_current(self):
+		""" Max out all chargers. """
 		for charger in self._solarchargers.values():
 			if charger.connection == 'VE.Can': continue
 			try:
@@ -193,6 +189,13 @@ class SolarChargerSubsystem(object):
 				logging.debug(traceback.format_exc())
 
 	def set_networked(self, has_bms, charge_voltage, max_charge_current, feedback_allowed):
+		""" This is the main entry-point into the solar charger subsystem. This
+		    sets all chargers to the same charge_voltage, and distributes
+		    max_charge_current between the chargers. If feedback_allowed, then
+		    we simply max out the chargers. We also don't bother with
+		    distribution if there's only one charger in the system or if
+		    it exceeds our total capacity.
+		"""
 		# Network mode:
 		# bit 0: Operated in network environment
 		# bit 2: Remote Hub-1 control (MPPT will accept charge voltage and max charge current)
@@ -212,7 +215,7 @@ class SolarChargerSubsystem(object):
 			except DBusException:
 				pass
 
-		# Distribute the voltage setpoint
+		# Distribute the voltage setpoint. Simply write it to all of them.
 		voltage_written = 0
 		if charge_voltage is not None:
 			voltage_written = int(len(vedirect_chargers)>0)
@@ -229,13 +232,17 @@ class SolarChargerSubsystem(object):
 		# avoids a problem that we do not know if extra MPPT power will be fed
 		# back to the grid when we decide to increase the MPPT max charge
 		# current.
+		#
+		# Additionally, don't bother with chargers that are disconnected or
+		# VE.Can based.
 		chargers = filter(lambda x: x.state !=0 and x.connection != 'VE.Can', self._solarchargers.values())
 		if len(chargers) > 0:
 			if feedback_allowed:
 				self.maximize_charge_current()
 			elif max_charge_current is not None:
 				if len(chargers) == 1:
-					# The simple case, simply assign the limit to the charger
+					# The simple case: Only one charger. Simply assign the
+					# limit to the charger
 					sc = chargers[0]
 					cc = min(ceil(max_charge_current), sc.currentlimit)
 					sc.maxchargecurrent = cc
@@ -261,30 +268,51 @@ class SolarChargerSubsystem(object):
 		actual = [c.smoothed_current for c in chargers]
 		limits = [c.maxchargecurrent for c in chargers]
 		ceilings = [c.currentlimit for c in chargers]
+
+		# We cannot have a max_charge_current higher than the sum of the
+		# ceilings.
 		max_charge_current = min(sum(ceilings), max_charge_current)
+
+
+		# Check how far we have to move our adjustment. If it doesn't have to
+		# move much (or at all), then just balance the charge limits. Our
+		# threshold for doing an additional distribution of charge is relative
+		# to the number of chargers, as it makes no sense to attempt a
+		# distribution if there is too little to be gained. The chosen value
+		# here is 100mA per charger.
 		delta = max_charge_current - sum(limits)
 		if abs(delta) > 0.1 * len(chargers):
-			# No point in disturbing chargers if the increment is too low.
 			limits = distribute(limits, ceilings, delta)
 		else:
 			# Balance the limits so they have the same headroom at the top.
-			# Round the figure a little for discrete distribution and
-			# stability
+			# This works well for the most part. A previous version of this
+			# algorithm attempted to balance the headroom percentage according
+			# to the capacity of the charger. This tended to break at the edges
+			# of the spectrum. The current algorithm may load a
+			# disproportionately smaller charger a bit harder, but in practice
+			# it seems to work well enough.
+			#
+			# We also round the figure a little for discrete distribution and
+			# stability.
 			margins = [max(0, l - a) for a, l in izip(actual, limits)]
 			avgmargin = sum(margins)/len(margins)
 			deltas = [round(avgmargin - x, 1) for x in margins]
 			for i, a, d in izip(count(), actual, deltas):
 				limits[i] += d
 
-		# Set the limits
+		# Finally set the limits. Do this every time, otherwise the chargers
+		# go back to their default algorithm.
 		for charger, limit in izip(chargers, limits):
 			charger.maxchargecurrent = limit
 
 	def update_values(self):
+		# This is called periodically from a timer to update contained
+		# solar chargers with values that they track.
 		for charger in self._solarchargers.values():
 			charger.update_values()
 
 class Battery(object):
+	""" Class that encapsulates the battery and/or BMS. """
 	def __init__(self, monitor, service):
 		self.monitor = monitor
 		self.service = service
@@ -301,6 +329,8 @@ class Battery(object):
 		return self.monitor.get_value(self.service, '/Info/MaxChargeCurrent')
 
 class BatterySubsystem(object):
+	""" Encapsulates multiple battery services. We may have both a BMV and a
+	    BMS. """
 	def __init__(self, monitor):
 		self.monitor = monitor
 		self._battery_services = {}
@@ -329,6 +359,8 @@ class BatterySubsystem(object):
 		return None
 
 class Multi(object):
+	""" Encapsulates the multi. Makes access to dbus paths a bit neater by
+	    exposing them as attributes. """
 	# Used for low-pass filter
 	OMEGA = (2 * pi)/30
 
@@ -387,12 +419,7 @@ class Multi(object):
 		self._dc_current += (c - self._dc_current) * self.OMEGA
 
 class Hub1Bridge(SystemCalcDelegate):
-	# if ChargeCurrent > ChangeCurrentLimitedFactor * MaxChargeCurrent we assume that the solar charger is
-	# current limited, and yield do more power if we increase the MaxChargeCurrent
-	ChargeCurrentLimitedFactor = 0.9
-	VebusChargeFactor = 0.8
-	StaticScaleFactor = 1.1 / ChargeCurrentLimitedFactor
-
+	""" This is the main DVCC delegate object. """
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)
 		self._solarsystem = None
@@ -475,7 +502,7 @@ class Hub1Bridge(SystemCalcDelegate):
 
 	@property
 	def maxchargecurrent(self):
-		""" Returns maxumum charge current published by the BMS. """
+		""" Returns maximum charge current published by the BMS. """
 		bms_service = self._batterysystem.bms
 		bms_max_charge_current = None if bms_service is None else bms_service.maxchargecurrent
 		max_charge_current = self._settings['maxchargecurrent']
@@ -497,12 +524,14 @@ class Hub1Bridge(SystemCalcDelegate):
 		# Below are things we only do every ADJUST seconds
 		if self._tickcount > 0: return True
 
+		# Write the BMS parameters to the Multi
 		bms_service = self._batterysystem.bms
 		bms_parameters_written = self._update_battery_operational_limits(bms_service)
 		self._dbusservice['/Control/BmsParameters'] = bms_parameters_written
 
-		# @todo EV What if ESS + OvervoltageFeedIn? In that case there is no charge current control on the
-		# MPPTs.
+		# @todo EV What if ESS + OvervoltageFeedIn? In that case there is no
+		# charge current control on the MPPTs, but we'll still indicate that
+		# the control is active here. Should we?
 		self._dbusservice['/Control/MaxChargeCurrent'] = \
 			not self._multi.active or self._multi.has_bolframe
 
@@ -519,7 +548,11 @@ class Hub1Bridge(SystemCalcDelegate):
 			bms_service, _max_charge_current)
 
 		# Using the original uncompensated max_charge_current, set the multi
-		# to make up the difference between the mppts and this value.
+		# to make up the difference between the mppts and this value. We do
+		# this because the charging current is also represented in
+		# vebus_dc_current and we don't want to account for it twice.
+		# TODO: If the max_charge_current becomes None, we should write a large
+		# value to the Multi to reset its charging limits.
 		if max_charge_current is not None:
 			remainder = floor(max_charge_current - self._solarsystem.smoothed_current)
 			try:
@@ -532,6 +565,8 @@ class Hub1Bridge(SystemCalcDelegate):
 		return True
 
 	def _update_battery_operational_limits(self, bms_service):
+		""" This function only writes the bms parameters across to the Multi.
+		    Other charge current limits are handled elsewhere. """
 		if bms_service is None:
 			return 0
 		if not self._multi.active:
@@ -556,6 +591,9 @@ class Hub1Bridge(SystemCalcDelegate):
 			return 0
 
 	def _update_solarchargers(self, bms_service, max_charge_current):
+		""" This function updates the solar chargers only. Parameters
+		    related to the Multi are handled elsewhere. """
+
 		has_ess_assistant = self._multi.active and self._multi.has_ess_assistant
 
 		# Feedback allowed is defined as 'ESS present and FeedInOvervoltage is
@@ -580,9 +618,6 @@ class Hub1Bridge(SystemCalcDelegate):
 				pass
 
 		if charge_voltage is None and max_charge_current is None:
-			# @todo EV Reset vebus_max_charge_current here? To what value? We get here if the BMS battery
-			# service disappears or the max charge current setting is reset.
-			# TODO IB Writing a large value to the Multi will reset it to max.
 			return 0, 0
 
 		voltage_written, current_written = self._solarsystem.set_networked(bms_service is not None,

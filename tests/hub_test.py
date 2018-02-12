@@ -828,8 +828,6 @@ class TestHubSystem(TestSystemCalcBase):
 		system.add_charger('com.victronenergy.solarcharger.ttyO3')
 
 		self.assertTrue(system.capacity == 120)
-		self.assertTrue(system.maxchargecurrent == 94)
-		self.assertTrue(system.chargecurrent == 80)
 
 		self._monitor.set_value('com.victronenergy.battery.socketcan_can0_di0_uc30688', '/Info/MaxChargeCurrent', 100)
 
