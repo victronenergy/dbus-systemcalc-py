@@ -897,7 +897,6 @@ class TestHubSystem(TestSystemCalcBase):
 		self.assertTrue(sum(newlimits)==0)
 
 		newlimits = distribute([2, 2], [2, 2], 20)
-		print newlimits
 
 	def test_hub1bridge_distr_1(self):
 		from delegates.hub1bridge import distribute
@@ -948,7 +947,7 @@ class TestHubSystem(TestSystemCalcBase):
 		new_values = distribute(actual_values, max_values, 6.0)
 		self.assertEqual(new_values, [5])
 
-	def test_debug_solarvoltageoffset(self):
+	def test_debug_chargeoffsets(self):
 		self._update_values()
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 12.6)
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', 2)
@@ -961,8 +960,43 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Dc/0/Voltage': 12.4,
 			'/Dc/0/Current': 9.7},
 			connection='VE.Direct')
+		self._add_device('com.victronenergy.battery.ttyO2', product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.5,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 10,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 12.6,
+				'/Info/MaxDischargeCurrent': 50})
 		self._update_values(3000)
+
+		# Check that debug voltage works for solar chargers
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO1': {
 				'/Link/ChargeVoltage': 13
+			}})
+
+		# Check that we can also offset the Multi's voltage and current
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeVoltage': 12.6
+			}})
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeCurrent': 25
+			}})
+		self._service.set_value('/Debug/InverterVoltageOffset', 0.2)
+		self._service.set_value('/Debug/CurrentOffset', 5)
+		self._update_values(3000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeVoltage': 12.8
+			}})
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeCurrent': 30,
+				'/Dc/0/MaxChargeCurrent': 20 # because solar provides 9.7.
 			}})

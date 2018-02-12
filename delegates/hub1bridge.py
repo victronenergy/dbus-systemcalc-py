@@ -474,6 +474,8 @@ class Hub1Bridge(SystemCalcDelegate):
 		self._dbusservice.add_path('/Control/BmsParameters', value=0)
 		self._dbusservice.add_path('/Control/MaxChargeCurrent', value=0)
 		self._dbusservice.add_path('/Debug/SolarVoltageOffset', value=0, writeable=True)
+		self._dbusservice.add_path('/Debug/InverterVoltageOffset', value=0, writeable=True)
+		self._dbusservice.add_path('/Debug/CurrentOffset', value=0, writeable=True)
 
 	def device_added(self, service, instance, do_service_change=True):
 		service_type = service.split('.')[2]
@@ -524,6 +526,8 @@ class Hub1Bridge(SystemCalcDelegate):
 			return None
 
 	solarvoltageoffset = property(partial(_property, '/Debug/SolarVoltageOffset'))
+	invertervoltageoffset = property(partial(_property, '/Debug/InverterVoltageOffset'))
+	currentoffset = property(partial(_property, '/Debug/CurrentOffset'))
 
 	def _on_timer(self):
 		self._tickcount -= 1; self._tickcount %= ADJUST
@@ -546,7 +550,15 @@ class Hub1Bridge(SystemCalcDelegate):
 		self._dbusservice['/Control/MaxChargeCurrent'] = \
 			not self._multi.active or self._multi.has_bolframe
 
-		max_charge_current = _max_charge_current = self.maxchargecurrent
+		max_charge_current = self.maxchargecurrent
+
+		# If a debug offset is to be added, add it now.
+		if max_charge_current is not None:
+			max_charge_current = safeadd(max_charge_current, self.currentoffset)
+
+		# We need to keep a copy of the original value for later. We will be
+		# modifying one of them to compensate for vebus current.
+		_max_charge_current = max_charge_current
 
 		# If we have vebus current, we have to compensate for it
 		vebus_dc_current = self._multi.dc_current
@@ -586,10 +598,12 @@ class Hub1Bridge(SystemCalcDelegate):
 		try:
 			copy_dbus_value(self._dbusmonitor,
 				bms_service.service, '/Info/MaxChargeVoltage',
-				self._multi.service, '/BatteryOperationalLimits/MaxChargeVoltage')
+				self._multi.service, '/BatteryOperationalLimits/MaxChargeVoltage',
+				offset=self.invertervoltageoffset)
 			copy_dbus_value(self._dbusmonitor,
 				bms_service.service, '/Info/MaxChargeCurrent',
-				self._multi.service, '/BatteryOperationalLimits/MaxChargeCurrent')
+				self._multi.service, '/BatteryOperationalLimits/MaxChargeCurrent',
+				offset=self.currentoffset)
 			copy_dbus_value(self._dbusmonitor,
 				bms_service.service, '/Info/BatteryLowVoltage',
 				self._multi.service, '/BatteryOperationalLimits/BatteryLowVoltage')
