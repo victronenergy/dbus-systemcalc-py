@@ -42,9 +42,10 @@ def gpio_paths(etc_path):
 		return []
 
 
-def copy_dbus_value(monitor, src_service, src_path, dest_service, dest_path, copy_invalid=False):
+def copy_dbus_value(monitor, src_service, src_path, dest_service, dest_path, copy_invalid=False, offset=None):
 	value = monitor.get_value(src_service, src_path)
 	if copy_invalid or value is not None:
+		if offset is not None: value += offset
 		monitor.set_value(dest_service, dest_path, value)
 
 
