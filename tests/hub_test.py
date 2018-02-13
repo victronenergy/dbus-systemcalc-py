@@ -951,7 +951,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self._update_values()
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 12.6)
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', 2)
-		self._service.set_value('/Debug/SolarVoltageOffset', 0.4)
+		self._service.set_value('/Debug/BatteryOperationalLimits/SolarVoltageOffset', 0.4)
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
 			'/Link/NetworkMode': 0,
@@ -988,8 +988,8 @@ class TestHubSystem(TestSystemCalcBase):
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/MaxChargeCurrent': 25
 			}})
-		self._service.set_value('/Debug/InverterVoltageOffset', 0.2)
-		self._service.set_value('/Debug/CurrentOffset', 5)
+		self._service.set_value('/Debug/BatteryOperationalLimits/VebusVoltageOffset', 0.2)
+		self._service.set_value('/Debug/BatteryOperationalLimits/CurrentOffset', 5)
 		self._update_values(3000)
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {

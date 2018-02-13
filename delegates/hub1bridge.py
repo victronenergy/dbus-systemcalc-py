@@ -473,9 +473,9 @@ class Hub1Bridge(SystemCalcDelegate):
 		self._dbusservice.add_path('/Control/SolarChargeCurrent', value=0)
 		self._dbusservice.add_path('/Control/BmsParameters', value=0)
 		self._dbusservice.add_path('/Control/MaxChargeCurrent', value=0)
-		self._dbusservice.add_path('/Debug/SolarVoltageOffset', value=0, writeable=True)
-		self._dbusservice.add_path('/Debug/InverterVoltageOffset', value=0, writeable=True)
-		self._dbusservice.add_path('/Debug/CurrentOffset', value=0, writeable=True)
+		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/SolarVoltageOffset', value=0, writeable=True)
+		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/VebusVoltageOffset', value=0, writeable=True)
+		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/CurrentOffset', value=0, writeable=True)
 
 	def device_added(self, service, instance, do_service_change=True):
 		service_type = service.split('.')[2]
@@ -525,9 +525,9 @@ class Hub1Bridge(SystemCalcDelegate):
 		except ValueError:
 			return None
 
-	solarvoltageoffset = property(partial(_property, '/Debug/SolarVoltageOffset'))
-	invertervoltageoffset = property(partial(_property, '/Debug/InverterVoltageOffset'))
-	currentoffset = property(partial(_property, '/Debug/CurrentOffset'))
+	solarvoltageoffset = property(partial(_property, '/Debug/BatteryOperationalLimits/SolarVoltageOffset'))
+	invertervoltageoffset = property(partial(_property, '/Debug/BatteryOperationalLimits/VebusVoltageOffset'))
+	currentoffset = property(partial(_property, '/Debug/BatteryOperationalLimits/CurrentOffset'))
 
 	def _on_timer(self):
 		self._tickcount -= 1; self._tickcount %= ADJUST
