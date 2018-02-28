@@ -77,6 +77,10 @@ class SolarCharger(object):
 		self.monitor.set_value(self.service, path, v)
 
 	@property
+	def firmwareversion(self):
+		firmware_version = self._get_path('/FirmwareVersion')
+
+	@property
 	def connection(self):
 		return self._get_path('/Mgmt/Connection')
 
@@ -117,6 +121,10 @@ class SolarCharger(object):
 	@property
 	def state(self):
 		return self._get_path('/State')
+
+	@state.setter
+	def state(self, v):
+		self._set_path('/State', v)
 
 	@property
 	def smoothed_current(self):
@@ -415,6 +423,10 @@ class Multi(object):
 	def maxchargecurrent(self, v):
 		self.monitor.set_value(self.service, '/Dc/0/MaxChargeCurrent', v)
 
+	@property
+	def state(self):
+		return self.monitor.get_value(self.service, '/State')
+
 	def update_values(self):
 		c = self.monitor.get_value(self.service, '/Dc/0/Current', 0)
 		self._dc_current += (c - self._dc_current) * self.OMEGA
@@ -532,6 +544,25 @@ class Dvcc(SystemCalcDelegate):
 	currentoffset = property(partial(_property, '/Debug/BatteryOperationalLimits/CurrentOffset'))
 
 	def _on_timer(self):
+		bol_support = self._dbusmonitor.get_value(
+			'com.victronenergy.settings', '/Settings/Services/Bol') == 1
+
+		if not bol_support:
+			# Update subsystems a bit less frequently. No reason than that is
+			# roughly how often we used to do it.
+			self._tickcount -= 1; self._tickcount %= (ADJUST*3)
+			if self._tickcount > 0: return True
+
+			voltage_written, current_written = self._legacy_update_solarchargers()
+			self._dbusservice['/Control/SolarChargeVoltage'] = voltage_written
+			self._dbusservice['/Control/SolarChargeCurrent'] = current_written
+			self._dbusservice['/Control/BmsParameters'] = 0
+			self._dbusservice['/Control/MaxChargeCurrent'] = 0
+			self._dbusservice['/Control/Dvcc'] = 0
+			return True
+
+
+		# BOL/DVCC support below
 		self._tickcount -= 1; self._tickcount %= ADJUST
 
 		# Update subsystems
@@ -664,3 +695,79 @@ class Dvcc(SystemCalcDelegate):
 					pass
 
 		return voltage_written, current_written
+
+	def _legacy_update_solarchargers(self):
+		""" This is the old implementation we used before DVCC. It is kept
+		    here so we can fall back to it where DVCC is not fully supported,
+			and to avoid maintaining two copies of systemcalc. """
+
+		max_charge_current = None
+		for battery in self._batterysystem:
+			max_charge_current = safeadd(max_charge_current, \
+				self._dbusmonitor.get_value(battery.service, '/Info/MaxChargeCurrent'))
+
+		# Workaround: copying the max charge current from BMS batteries to the solarcharger leads to problems:
+		# excess PV power is not fed back to the grid any more, and loads on AC-out are not fed with PV power.
+		# PV power is used for charging the batteries only.
+		# So we removed this feature, until we have a complete solution for solar charger support. Until then
+		# we set a 'high' max charge current to avoid 'BMS connection lost' alarms from the solarcharger.
+		if max_charge_current is not None:
+			max_charge_current = 1000
+
+		vebus_path = self._multi.service if self._multi.active else None
+		charge_voltage = None if vebus_path is None else \
+			self._dbusmonitor.get_value(vebus_path, '/Hub/ChargeVoltage')
+
+		if charge_voltage is None and max_charge_current is None:
+			return (0, 0)
+
+		# Network mode:
+		# bit 0: Operated in network environment
+		# bit 2: Remote Hub-1 control
+		# bit 3: Remote BMS control
+		network_mode = 1 | (0 if charge_voltage is None else 4) | (0 if max_charge_current is None else 8)
+		voltage_written = 0
+		current_written = 0
+		for charger in self._solarsystem:
+			try:
+				# We use /Link/NetworkMode to detect Hub support in the solarcharger. Existence of this item
+				# implies existence of the other /Link/* fields.
+				if charger.networkmode is None:
+					continue
+				charger.networkmode = network_mode
+
+				if charge_voltage is not None:
+					charger.chargevoltage = charge_voltage
+					voltage_written = 1
+
+					# solarcharger firmware v1.17 does not support link items. Version v1.17 itself requires
+					# the vebus state to be copied to the solarcharger (otherwise the charge voltage would be
+					# ignored). v1.18 and later do not have this requirement.
+					firmware_version = charger.firmwareversion
+					if firmware_version is not None and (firmware_version & 0x0FFF) == 0x0117:
+						state = self._multi.state
+						if state is not None:
+							charger.state = state
+
+				if max_charge_current is not None:
+					charger.maxchargecurrent = max_charge_current
+					current_written = 1
+			except DBusException:
+				pass
+
+		if charge_voltage is not None and self._solarsystem.has_vecan_chargers:
+			# Charge voltage cannot by written directly to the CAN-bus solar chargers, we have to use
+			# the com.victronenergy.vecan.* service instead.
+			# Writing charge current to CAN-bus solar charger is not supported yet.
+			for service in self._vecan_services:
+				try:
+					# Note: we don't check the value of charge_voltage_item because it may be invalid,
+					# for example if the D-Bus path has not been written for more than 60 (?) seconds.
+					# In case there is no path at all, the set_value below will raise an DBusException
+					# which we will ignore cheerfully.
+					self._dbusmonitor.set_value(service, '/Link/ChargeVoltage', charge_voltage)
+					voltage_written = 1
+				except DBusException:
+					pass
+
+		return (voltage_written, current_written)

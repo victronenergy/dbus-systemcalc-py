@@ -41,6 +41,7 @@ class TestSystemCalcNoMulti(TestSystemCalcBase):
 			'/AutoSelectedBatteryService': 'battery on dummy'})
 
 	def test_hub1_control_vedirect_solarcharger_bms_battery(self):
+		self._monitor.add_value('com.victronenergy.settings', '/Settings/Services/Bol', 1)
 		self._add_device('com.victronenergy.solarcharger.ttyO2', {
 			'/State': 3,
 			'/Settings/ChargeCurrentLimit': 100,
@@ -76,6 +77,7 @@ class TestSystemCalcNoMulti(TestSystemCalcBase):
 			'/Control/BmsParameters': 0})
 
 	def test_hub1_control_bms_battery_vedirect_solarcharger_off(self):
+		self._monitor.add_value('com.victronenergy.settings', '/Settings/Services/Bol', 1)
 		self._add_device('com.victronenergy.solarcharger.ttyO0', {
 			'/State': 0,
 			'/Settings/ChargeCurrentLimit': 100,

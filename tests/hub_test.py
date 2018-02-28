@@ -43,6 +43,8 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Settings/SystemSetup/AcInput1': 1,
 				'/Settings/SystemSetup/AcInput2': 2,
 			})
+		self._monitor.add_value('com.victronenergy.settings',
+			'/Settings/Services/Bol', 1)
 
 	def test_hub1_control_voltage_with_state(self):
 		self._update_values()
@@ -999,4 +1001,69 @@ class TestHubSystem(TestSystemCalcBase):
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/MaxChargeCurrent': 30,
 				'/Dc/0/MaxChargeCurrent': 20 # because solar provides 9.7.
+			}})
+
+	def test_hub1_legacy_voltage_control(self):
+		# BOL support is off initialy
+		self._monitor.set_value('com.victronenergy.settings', '/Settings/Services/Bol', 0)
+		self._update_values()
+
+		# Start without a BMS. No Current sharing should be done, only
+		# voltage.
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1',
+			'/Hub/ChargeVoltage', 12.6)
+
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 252,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
+			'/Dc/0/Voltage': 12.4,
+			'/Dc/0/Current': 9.7,
+			'/Settings/ChargeCurrentLimit': 35,
+			'/FirmwareVersion': 0x0119},
+			connection='VE.Direct')
+		self._update_values(10000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeVoltage': 12.6,
+				'/Link/ChargeCurrent': None,
+				'/Link/NetworkMode': 5,
+			}})
+
+		# Add a BMS
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.7,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 67,
+				'/Soc': 25.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 10,
+				'/Info/MaxChargeCurrent': 10,
+				'/Info/MaxChargeVoltage': 15,
+				'/Info/MaxDischargeCurrent': 10})
+		self._update_values(10000)
+
+		# Current should be shared with solar chargers. Voltage
+		# reflects the Multi's /Hub/ChargeVoltage
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeVoltage': 12.6,
+				'/Link/ChargeCurrent': 35,
+				'/Link/NetworkMode': 13,
+			}})
+
+		# Switch to DVCC
+		self._monitor.set_value('com.victronenergy.settings', '/Settings/Services/Bol', 1)
+		self._update_values(10000)
+
+		# Now the charge current of the BMS was used.
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeVoltage': 12.6,
+				'/Link/ChargeCurrent': 18, # 10 + 8 for the Multi
+				'/Link/NetworkMode': 13,
 			}})
