@@ -738,7 +738,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_values({'/Control/VebusSoc': 0})
 
 	def test_solar_subsys(self):
-		from delegates.hub1bridge import SolarChargerSubsystem
+		from delegates.dvcc import SolarChargerSubsystem
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
 			'/Link/NetworkMode': 0,
@@ -785,7 +785,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self.assertTrue(system.has_vecan_chargers)
 
 	def test_solar_subsys_distribution(self):
-		from delegates.hub1bridge import SolarChargerSubsystem
+		from delegates.dvcc import SolarChargerSubsystem
 		self._add_device('com.victronenergy.battery.socketcan_can0_di0_uc30688', {
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 9.3,
@@ -832,7 +832,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self._monitor.set_value('com.victronenergy.battery.socketcan_can0_di0_uc30688', '/Info/MaxChargeCurrent', 100)
 
 	def test_battery_subsys_no_bms(self):
-		from delegates.hub1bridge import BatterySubsystem
+		from delegates.dvcc import BatterySubsystem
 		self._add_device('com.victronenergy.battery.socketcan_can0_di0_uc30688', {
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 9.3
@@ -849,7 +849,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self.assertTrue(batteries[0].service == 'com.victronenergy.battery.socketcan_can0_di0_uc30688')
 
 	def test_battery_subsys_bms(self):
-		from delegates.hub1bridge import BatterySubsystem
+		from delegates.dvcc import BatterySubsystem
 		self._add_device('com.victronenergy.battery.socketcan_can0_di0_uc30688', {
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 9.3,
@@ -863,7 +863,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self.assertTrue(system.bms is battery)
 
 	def test_distribute(self):
-		from delegates.hub1bridge import distribute
+		from delegates.dvcc import distribute
 
 		actual = [1, 2, 3, 4, 5] # 15 amps
 		limits = [5, 5, 5, 5, 5] # 25 amps
@@ -899,49 +899,49 @@ class TestHubSystem(TestSystemCalcBase):
 		newlimits = distribute([2, 2], [2, 2], 20)
 
 	def test_hub1bridge_distr_1(self):
-		from delegates.hub1bridge import distribute
+		from delegates.dvcc import distribute
 		actual_values = [1, 2, 3]
 		max_values = [6, 5, 4]
 		new_values = distribute(actual_values, max_values, 3)
 		self.assertEqual(new_values, [2, 3, 4])
 
 	def test_hub1bridge_distr_2(self):
-		from delegates.hub1bridge import distribute
+		from delegates.dvcc import distribute
 		actual_values = [1, 2, 3]
 		max_values = [6, 5, 4]
 		new_values = distribute(actual_values, max_values, 9.0)
 		self.assertEqual(new_values, [6, 5, 4])
 
 	def test_hub1bridge_distr_3(self):
-		from delegates.hub1bridge import distribute
+		from delegates.dvcc import distribute
 		actual_values = [1, 2, 3]
 		max_values = [6, 5, 4]
 		new_values = distribute(actual_values, max_values, 10.0)
 		self.assertEqual(new_values, [6, 5, 4])
 
 	def test_hub1bridge_distr_4(self):
-		from delegates.hub1bridge import distribute
+		from delegates.dvcc import distribute
 		actual_values = [1, 2, 3]
 		max_values = [6, 5, 4]
 		new_values = distribute(actual_values, max_values, 6.0)
 		self.assertEqual(new_values, [3.5, 4.5, 4])
 
 	def test_hub1bridge_distr_5(self):
-		from delegates.hub1bridge import distribute
+		from delegates.dvcc import distribute
 		actual_values = [3, 2, 1]
 		max_values = [4, 5, 6]
 		new_values = distribute(actual_values, max_values, 6.0)
 		self.assertEqual(new_values, [4, 4.5, 3.5])
 
 	def test_hub1bridge_distr_6(self):
-		from delegates.hub1bridge import distribute
+		from delegates.dvcc import distribute
 		actual_values = [4, 5, 6]
 		max_values = [1, 2, 8]
 		new_values = distribute(actual_values, max_values, 0.0)
 		self.assertEqual(new_values, [1, 2, 8])
 
 	def test_hub1bridge_distr_7(self):
-		from delegates.hub1bridge import distribute
+		from delegates.dvcc import distribute
 		actual_values = [1]
 		max_values = [5]
 		new_values = distribute(actual_values, max_values, 6.0)

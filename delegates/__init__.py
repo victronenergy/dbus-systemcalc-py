@@ -5,7 +5,7 @@ from delegates.base import SystemCalcDelegate
 
 # All delegates
 from delegates.hubtype import HubTypeSelect
-from delegates.hub1bridge import Hub1Bridge
+from delegates.dvcc import Dvcc
 from delegates.servicemapper import ServiceMapper
 from delegates.vebussocwriter import VebusSocWriter
 from delegates.relaystate import RelayState

@@ -4,7 +4,6 @@
 import context
 
 # our own packages
-from delegates import Hub1Bridge
 from base import TestSystemCalcBase
 
 # Monkey patching for unit tests

@@ -4,7 +4,7 @@ import logging
 from math import pi, floor, ceil
 import traceback
 from itertools import izip, count
-from functools import partial
+from functools import partial, wraps
 
 # Victron packages
 from sc_utils import safeadd, copy_dbus_value
@@ -419,7 +419,7 @@ class Multi(object):
 		c = self.monitor.get_value(self.service, '/Dc/0/Current', 0)
 		self._dc_current += (c - self._dc_current) * self.OMEGA
 
-class Hub1Bridge(SystemCalcDelegate):
+class Dvcc(SystemCalcDelegate):
 	""" This is the main DVCC delegate object. """
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)
@@ -457,8 +457,9 @@ class Hub1Bridge(SystemCalcDelegate):
 				'/Mgmt/Connection']),
 			('com.victronenergy.vecan',
 				['/Link/ChargeVoltage']),
-			('com.victronenergy.settings',
-				['/Settings/CGwacs/OvervoltageFeedIn'])]
+			('com.victronenergy.settings', [
+				 '/Settings/CGwacs/OvervoltageFeedIn',
+				 '/Settings/Services/Bol'])]
 
 	def get_settings(self):
 		return [('maxchargecurrent', '/Settings/SystemSetup/MaxChargeCurrent', -1, -1, 10000)]
@@ -473,6 +474,7 @@ class Hub1Bridge(SystemCalcDelegate):
 		self._dbusservice.add_path('/Control/SolarChargeCurrent', value=0)
 		self._dbusservice.add_path('/Control/BmsParameters', value=0)
 		self._dbusservice.add_path('/Control/MaxChargeCurrent', value=0)
+		self._dbusservice.add_path('/Control/Dvcc', value=1)
 		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/SolarVoltageOffset', value=0, writeable=True)
 		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/VebusVoltageOffset', value=0, writeable=True)
 		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/CurrentOffset', value=0, writeable=True)
@@ -541,7 +543,9 @@ class Hub1Bridge(SystemCalcDelegate):
 
 		# Write the BMS parameters to the Multi
 		bms_service = self._batterysystem.bms
-		bms_parameters_written = self._update_battery_operational_limits(bms_service)
+		bms_parameters_written = 0
+		if bms_service is not None and self._multi.active:
+			bms_parameters_written = self._update_battery_operational_limits(bms_service)
 		self._dbusservice['/Control/BmsParameters'] = bms_parameters_written
 
 		# @todo EV What if ESS + OvervoltageFeedIn? In that case there is no
@@ -590,11 +594,6 @@ class Hub1Bridge(SystemCalcDelegate):
 	def _update_battery_operational_limits(self, bms_service):
 		""" This function only writes the bms parameters across to the Multi.
 		    Other charge current limits are handled elsewhere. """
-		if bms_service is None:
-			return 0
-		if not self._multi.active:
-			return 0
-
 		try:
 			copy_dbus_value(self._dbusmonitor,
 				bms_service.service, '/Info/MaxChargeVoltage',

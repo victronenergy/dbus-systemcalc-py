@@ -116,7 +116,7 @@ class SystemCalc:
 			delegates.RelayState(),
 			delegates.BuzzerControl(),
 			delegates.LgCircuitBreakerDetect(),
-			delegates.Hub1Bridge(),
+			delegates.Dvcc(),
 			delegates.VoltageSense(),
 			delegates.SystemState(),
 			delegates.BatteryLife()]
