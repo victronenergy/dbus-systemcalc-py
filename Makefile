@@ -10,7 +10,7 @@ FILES = \
 DELEGATES = \
 	$(SOURCEDIR)/delegates/base.py \
 	$(SOURCEDIR)/delegates/buzzercontrol.py \
-	$(SOURCEDIR)/delegates/hub1bridge.py \
+	$(SOURCEDIR)/delegates/dvcc.py \
 	$(SOURCEDIR)/delegates/hubtype.py \
 	$(SOURCEDIR)/delegates/__init__.py \
 	$(SOURCEDIR)/delegates/lgbattery.py \
