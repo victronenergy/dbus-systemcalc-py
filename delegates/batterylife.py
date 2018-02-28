@@ -81,7 +81,7 @@ class BatteryLife(SystemCalcDelegate):
 
 	def get_settings(self):
 		return [
-			('state', STATE_PATH, 1, 0, 0),
+			('state', STATE_PATH, 1, 0, 0, 1),
 			('flags', FLAGS_PATH, 0, 0, 0, 1),
 			('dischargedtime', DISCHARGED_TIME_PATH, 0, 0, 0, 1),
 			('soclimit', SOC_LIMIT_PATH, 10.0, 0, 100, 1),
