@@ -34,7 +34,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeCurrent': None,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': None,
 				'/BatteryOperationalLimits/BatteryLowVoltage': None,
-                '/BatterySense/Voltage': None,
+				'/BatterySense/Voltage': None,
 				'/FirmwareFeatures/BolFrame': 1,
 				'/FirmwareFeatures/BolUBatAndTBatSense': 1
 			})
@@ -43,8 +43,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Settings/SystemSetup/AcInput1': 1,
 				'/Settings/SystemSetup/AcInput2': 2,
 			})
-		self._monitor.add_value('com.victronenergy.settings',
-			'/Settings/Services/Bol', 1)
+		self._set_setting('/Settings/Services/Bol', 1)
 
 	def test_hub1_control_voltage_with_state(self):
 		self._update_values()
@@ -1005,7 +1004,7 @@ class TestHubSystem(TestSystemCalcBase):
 
 	def test_hub1_legacy_voltage_control(self):
 		# BOL support is off initialy
-		self._monitor.set_value('com.victronenergy.settings', '/Settings/Services/Bol', 0)
+		self._set_setting('/Settings/Services/Bol', 0)
 		self._update_values()
 
 		# Start without a BMS. No Current sharing should be done, only
@@ -1057,7 +1056,7 @@ class TestHubSystem(TestSystemCalcBase):
 			}})
 
 		# Switch to DVCC
-		self._monitor.set_value('com.victronenergy.settings', '/Settings/Services/Bol', 1)
+		self._set_setting('/Settings/Services/Bol', 1)
 		self._update_values(10000)
 
 		# Now the charge current of the BMS was used.

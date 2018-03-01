@@ -65,7 +65,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/Link/VoltageSense': None}})
 
 	def test_voltage_sense_no_battery_monitor_old_mppt_firmware(self):
-		self._monitor.add_value('com.victronenergy.settings', '/Settings/Services/Bol', 1)
+		self._set_setting('/Settings/Services/Bol', 1)
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/BatterySense/Voltage', None)
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
@@ -82,7 +82,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/BatterySense/Voltage': 12.32}})
 
 	def test_voltage_sense_no_battery_monitor(self):
-		self._monitor.add_value('com.victronenergy.settings', '/Settings/Services/Bol', 1)
+		self._set_setting('/Settings/Services/Bol', 1)
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/FirmwareFeatures/BolUBatAndTBatSense', 1)
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/BatterySense/Voltage', None)
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
@@ -104,7 +104,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/Link/VoltageSense': None}})
 
 	def test_voltage_sense_mppt_and_battery_monitor(self):
-		self._monitor.add_value('com.victronenergy.settings', '/Settings/Services/Bol', 1)
+		self._set_setting('/Settings/Services/Bol', 1)
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/FirmwareFeatures/BolUBatAndTBatSense', 1)
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/BatterySense/Voltage', None)
 		self._add_device('com.victronenergy.battery.ttyO2',
@@ -134,7 +134,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/Link/VoltageSense': 12.15}})
 
 	def test_voltage_sense_vebus_and_battery_monitor(self):
-		self._monitor.add_value('com.victronenergy.settings', '/Settings/Services/Bol', 1)
+		self._set_setting('/Settings/Services/Bol', 1)
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/FirmwareFeatures/BolUBatAndTBatSense', 1)
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/BatterySense/Voltage', None)
 		self._add_device('com.victronenergy.battery.ttyO2',
@@ -156,7 +156,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/BatterySense/Voltage': 12.15}})
 
 	def test_voltage_sense_disabled(self):
-		self._monitor.add_value('com.victronenergy.settings', '/Settings/Services/Bol', 1)
+		self._set_setting('/Settings/Services/Bol', 1)
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1',
 			'/FirmwareFeatures/BolUBatAndTBatSense', 1)
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1',
@@ -192,7 +192,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/Link/SenseVoltage': None}})
 
 	def test_no_dvcc_no_voltage_sense(self):
-		self._monitor.add_value('com.victronenergy.settings', '/Settings/Services/Bol', 0)
+		self._set_setting('/Settings/Services/Bol', 0)
 		self._set_setting('/Settings/SystemSetup/SharedVoltageSense', 1)
 
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1',

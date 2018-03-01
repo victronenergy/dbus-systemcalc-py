@@ -27,6 +27,7 @@ class VoltageSense(SystemCalcDelegate):
 	def get_settings(self):
 		return [
 			('enabled', "/Settings/SystemSetup/SharedVoltageSense", 1, 0, 0),
+			('bol', '/Settings/Services/Bol', 0, 0, 1)
 		]
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
@@ -35,10 +36,8 @@ class VoltageSense(SystemCalcDelegate):
 		self._timer = gobject.timeout_add(3000, exit_on_error, self._on_timer)
 
 	def _on_timer(self):
-		bol_support = self._dbusmonitor.get_value(
-			'com.victronenergy.settings', '/Settings/Services/Bol') == 1
 		self._dbusservice['/Control/SolarChargerVoltageSense'] = \
-			int(self._settings['enabled'] and bol_support) and \
+			int(self._settings['enabled'] and self._settings['bol']) and \
 			self._distribute_sense_voltage()
 		return True
 

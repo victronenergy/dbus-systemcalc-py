@@ -474,7 +474,10 @@ class Dvcc(SystemCalcDelegate):
 				 '/Settings/Services/Bol'])]
 
 	def get_settings(self):
-		return [('maxchargecurrent', '/Settings/SystemSetup/MaxChargeCurrent', -1, -1, 10000)]
+		return [
+			('maxchargecurrent', '/Settings/SystemSetup/MaxChargeCurrent', -1, -1, 10000),
+			('bol', '/Settings/Services/Bol', 0, 0, 1)
+		]
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
@@ -544,8 +547,7 @@ class Dvcc(SystemCalcDelegate):
 	currentoffset = property(partial(_property, '/Debug/BatteryOperationalLimits/CurrentOffset'))
 
 	def _on_timer(self):
-		bol_support = self._dbusmonitor.get_value(
-			'com.victronenergy.settings', '/Settings/Services/Bol') == 1
+		bol_support = self._settings['bol'] == 1
 
 		if not bol_support:
 			# Update subsystems a bit less frequently. No reason than that is
