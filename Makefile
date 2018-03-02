@@ -37,20 +37,20 @@ help:
 install_delegates : $(DELEGATES)
 	@if [ "$^" != "" ]; then \
 		$(INSTALL_CMD) -d $(DESTDIR)$(bindir)/delegates; \
-		$(INSTALL_CMD) -t $(DESTDIR)$(bindir)/delegates $^; \
+		$(INSTALL_CMD) -m 644 -t $(DESTDIR)$(bindir)/delegates $^; \
 	fi
 
 install_app : $(FILES)
 	@if [ "$^" != "" ]; then \
-		$(INSTALL_CMD) -d $(DESTDIR)$(bindir); \
-		$(INSTALL_CMD) -t $(DESTDIR)$(bindir) $^; \
+		$(INSTALL_CMD) -m 755 -d $(DESTDIR)$(bindir); \
+		$(INSTALL_CMD) -m 755 -t $(DESTDIR)$(bindir) $^; \
 		echo installed $(DESTDIR)$(bindir)/$(notdir $^); \
 	fi
 
 install_velib_python: $(VEDLIB_FILES)
 	@if [ "$^" != "" ]; then \
-		$(INSTALL_CMD) -d $(DESTDIR)$(LIBDIR); \
-		$(INSTALL_CMD) -t $(DESTDIR)$(LIBDIR) $^; \
+		$(INSTALL_CMD) -m 755 -d $(DESTDIR)$(LIBDIR); \
+		$(INSTALL_CMD) -m 644 -t $(DESTDIR)$(LIBDIR) $^; \
 		echo installed $(DESTDIR)$(LIBDIR)/$(notdir $^); \
 	fi
 
