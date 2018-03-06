@@ -337,6 +337,17 @@ class Battery(object):
 		""" Returns maxumum charge current published by the BMS. """
 		return self.monitor.get_value(self.service, '/Info/MaxChargeCurrent')
 
+	@property
+	def chargevoltage(self):
+		""" Returns charge voltage published by the BMS. """
+		return self.monitor.get_value(self.service, '/Info/MaxChargeVoltage')
+
+	@property
+	def voltage(self):
+		""" Returns current voltage of battery. """
+		return self.monitor.get_value(self.service, '/Dc/0/Voltage')
+
+
 class BatterySubsystem(object):
 	""" Encapsulates multiple battery services. We may have both a BMV and a
 	    BMS. """
@@ -367,6 +378,36 @@ class BatterySubsystem(object):
 			if b.is_bms: return b
 		return None
 
+class BatteryOperationalLimits(object):
+	""" Only used to encapsulate this part of the Multi's functionality.
+	"""
+	def __init__(self, multi):
+		self._multi = multi
+
+	def _property(path, self):
+		# Due to the use of partial, path and self is reversed.
+		return self._multi.monitor.get_value(self._multi.service, path)
+
+	def _set_property(path, self, v):
+		# None of these values can be negative
+		if v is not None:
+			v = max(0, v)
+		self._multi.monitor.set_value(self._multi.service, path, v)
+
+	chargevoltage = property(
+		partial(_property, '/BatteryOperationalLimits/MaxChargeVoltage'),
+		partial(_set_property, '/BatteryOperationalLimits/MaxChargeVoltage'))
+	maxchargecurrent = property(
+		partial(_property, '/BatteryOperationalLimits/MaxChargeCurrent'),
+		partial(_set_property, '/BatteryOperationalLimits/MaxChargeCurrent'))
+	maxdischargecurrent = property(
+		partial(_property, '/BatteryOperationalLimits/MaxDischargeCurrent'),
+		partial(_set_property, '/BatteryOperationalLimits/MaxDischargeCurrent'))
+	batterylowvoltage = property(
+		partial(_property, '/BatteryOperationalLimits/BatteryLowVoltage'),
+		partial(_set_property, '/BatteryOperationalLimits/BatteryLowVoltage'))
+
+
 class Multi(object):
 	""" Encapsulates the multi. Makes access to dbus paths a bit neater by
 	    exposing them as attributes. """
@@ -376,6 +417,7 @@ class Multi(object):
 	def __init__(self, monitor, service):
 		self.monitor = monitor
 		self._service = service
+		self.bol = BatteryOperationalLimits(self)
 		self._dc_current = monitor.get_value(service, '/Dc/0/Current', 0)
 
 	@property
@@ -631,14 +673,16 @@ class Dvcc(SystemCalcDelegate):
 		""" This function only writes the bms parameters across to the Multi.
 		    Other charge current limits are handled elsewhere. """
 		try:
-			copy_dbus_value(self._dbusmonitor,
-				bms_service.service, '/Info/MaxChargeVoltage',
-				self._multi.service, '/BatteryOperationalLimits/MaxChargeVoltage',
-				offset=self.invertervoltageoffset)
-			copy_dbus_value(self._dbusmonitor,
-				bms_service.service, '/Info/MaxChargeCurrent',
-				self._multi.service, '/BatteryOperationalLimits/MaxChargeCurrent',
-				offset=self.currentoffset)
+			cv = safeadd(bms_service.chargevoltage, self.invertervoltageoffset)
+			mcc = safeadd(bms_service.maxchargecurrent, self.currentoffset)
+
+			if cv is not None:
+				self._multi.bol.chargevoltage = cv
+
+			if mcc is not None:
+				self._multi.bol.maxchargecurrent = mcc
+
+			# Copy the rest unmodified
 			copy_dbus_value(self._dbusmonitor,
 				bms_service.service, '/Info/BatteryLowVoltage',
 				self._multi.service, '/BatteryOperationalLimits/BatteryLowVoltage')

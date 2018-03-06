@@ -738,6 +738,44 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_values({'/Control/ExtraBatteryCurrent': 1})
 		self._check_values({'/Control/VebusSoc': 0})
 
+	def test_multi_class(self):
+		from delegates.dvcc import Multi
+		multi = Multi(self._system_calc._dbusmonitor, self._service)
+		self.assertIsNone(multi.bol.chargevoltage)
+		self.assertIsNone(multi.bol.maxchargecurrent)
+
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/BatteryOperationalLimits/MaxChargeVoltage', 26)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/BatteryOperationalLimits/MaxChargeCurrent', 99)
+		self._update_values()
+		self.assertEqual(multi.bol.chargevoltage, 26)
+		self.assertEqual(multi.bol.maxchargecurrent, 99)
+
+		multi.bol.chargevoltage = 27
+		multi.bol.maxchargecurrent = 55
+
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeVoltage': 27,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 55,
+			}})
+
+	def test_multi_nobol(self):
+		from dbus.exceptions import DBusException
+		from delegates.dvcc import Multi
+
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._add_device('com.victronenergy.vebus.ttyB1',
+			product_name='Multi',
+			values={
+				'/State': 3,
+			})
+		self._update_values()
+		multi = Multi(self._system_calc._dbusmonitor, self._service)
+		with self.assertRaises(DBusException):
+			multi.bol.chargevoltage = 22
+		self.assertIsNone(multi.bol.chargevoltage)
+
+
 	def test_solar_subsys(self):
 		from delegates.dvcc import SolarChargerSubsystem
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
@@ -862,6 +900,9 @@ class TestHubSystem(TestSystemCalcBase):
 		system = BatterySubsystem(self._system_calc._dbusmonitor)
 		battery = system.add_battery('com.victronenergy.battery.socketcan_can0_di0_uc30688')
 		self.assertTrue(system.bms is battery)
+		self.assertTrue(battery.maxchargecurrent == 100)
+		self.assertTrue(battery.chargevoltage == 15)
+		self.assertEqual(battery.voltage, 12.6)
 
 	def test_distribute(self):
 		from delegates.dvcc import distribute
