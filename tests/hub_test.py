@@ -1030,6 +1030,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Link/ChargeCurrent': None,
 				'/Link/NetworkMode': 5,
 			}})
+		self._check_values({'/Control/Dvcc': 0})
 
 		# Add a BMS
 		self._add_device('com.victronenergy.battery.ttyO2',
@@ -1054,6 +1055,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Link/ChargeCurrent': 35,
 				'/Link/NetworkMode': 13,
 			}})
+		self._check_values({'/Control/Dvcc': 0})
 
 		# Switch to DVCC
 		self._set_setting('/Settings/Services/Bol', 1)
@@ -1066,3 +1068,4 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Link/ChargeCurrent': 18, # 10 + 8 for the Multi
 				'/Link/NetworkMode': 13,
 			}})
+		self._check_values({'/Control/Dvcc': 1})
