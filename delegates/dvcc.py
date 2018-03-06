@@ -574,6 +574,9 @@ class Dvcc(SystemCalcDelegate):
 		# Below are things we only do every ADJUST seconds
 		if self._tickcount > 0: return True
 
+		# Signal Dvcc support to other processes
+		self._dbusservice['/Control/Dvcc'] = 1
+
 		# Write the BMS parameters to the Multi
 		bms_service = self._batterysystem.bms
 		bms_parameters_written = 0
