@@ -1041,3 +1041,34 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeCurrent': 30,
 				'/Dc/0/MaxChargeCurrent': 20 # because solar provides 9.7.
 			}})
+
+	def test_byd_quirks(self):
+		""" BYD batteries should float at 55V when they send CCL=0. """
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 55.1,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 165.3,
+				'/Soc': 100,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 100,
+				'/Info/MaxChargeVoltage': 56.5,
+				'/Info/MaxDischargeCurrent': 100,
+				'/ProductId': 0xB00A})
+		self._update_values(interval=10000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeCurrent': 100
+			}
+		})
+
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeCurrent', 0)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeCurrent': 2,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 55
+			}
+		})
