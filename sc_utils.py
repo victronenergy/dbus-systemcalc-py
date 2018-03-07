@@ -2,16 +2,12 @@ VictronServicePrefix = 'com.victronenergy'
 
 
 def safeadd(*values):
-	'''Adds all parameters passed to this function. Parameters which are None are ignored. If all parameters
-	are None, the function will return None as well.'''
-	r = None
-	for v in values:
-		if v is not None:
-			if r is None:
-				r = v
-			else:
-				r += v
-	return r
+	""" Adds all parameters passed to this function. Parameters which are None
+		are ignored. If all parameters are None, the function will return None
+		as well.
+	"""
+	values = [v for v in values if v is not None]
+	return sum(values) if values else None
 
 
 def safemax(v0, v1):
@@ -44,3 +40,20 @@ def gpio_paths(etc_path):
 			return r.read().strip().split()
 	except IOError:
 		return []
+
+
+def copy_dbus_value(monitor, src_service, src_path, dest_service, dest_path, copy_invalid=False, offset=None):
+	value = monitor.get_value(src_service, src_path)
+	if copy_invalid or value is not None:
+		if offset is not None: value += offset
+		monitor.set_value(dest_service, dest_path, value)
+
+
+class SmartDict(dict):
+	def __getattr__(self, n):
+		try:
+			return self[n]
+		except IndexError:
+			raise AttributeError(n)
+	def __setattr__(self, k, v):
+		self[k] = v

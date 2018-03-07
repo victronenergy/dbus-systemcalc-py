@@ -19,7 +19,7 @@ from logger import setup_logging
 import delegates
 from sc_utils import safeadd as _safeadd, safemax as _safemax
 
-softwareVersion = '1.47'
+softwareVersion = '1.48'
 
 class SystemCalc:
 	def __init__(self):
@@ -105,7 +105,8 @@ class SystemCalc:
 			'com.victronenergy.settings' : {
 				'/Settings/SystemSetup/AcInput1' : dummy,
 				'/Settings/SystemSetup/AcInput2' : dummy,
-				'/Settings/CGwacs/RunWithoutGridMeter' : dummy}
+				'/Settings/CGwacs/RunWithoutGridMeter' : dummy,
+				'/Settings/System/TimeZone' : dummy}
 		}
 
 		self._modules = [
@@ -115,7 +116,10 @@ class SystemCalc:
 			delegates.RelayState(),
 			delegates.BuzzerControl(),
 			delegates.LgCircuitBreakerDetect(),
-			delegates.Hub1Bridge()]
+			delegates.Dvcc(),
+			delegates.VoltageSense(),
+			delegates.SystemState(),
+			delegates.BatteryLife()]
 
 		for m in self._modules:
 			for service, paths in m.get_input():
@@ -199,6 +203,7 @@ class SystemCalc:
 			'/Dc/Pv/Power': {'gettext': '%.0F W'},
 			'/Dc/Pv/Current': {'gettext': '%.1F A'},
 			'/Dc/Battery/Voltage': {'gettext': '%.2F V'},
+			'/Dc/Battery/VoltageService': {'gettext': '%s'},
 			'/Dc/Battery/Current': {'gettext': '%.1F A'},
 			'/Dc/Battery/Power': {'gettext': '%.0F W'},
 			'/Dc/Battery/Soc': {'gettext': '%.0F %%'},
@@ -346,6 +351,12 @@ class SystemCalc:
 
 	def _updatevalues(self):
 		# ==== PREPARATIONS ====
+		# Set the user timezone
+		if 'TZ' not in os.environ:
+			tz = self._dbusmonitor.get_value('com.victronenergy.settings', '/Settings/System/TimeZone')
+			if tz is not None:
+				os.environ['TZ'] = tz
+
 		# Determine values used in logic below
 		vebusses = self._dbusmonitor.get_service_list('com.victronenergy.vebus')
 		vebuspower = 0
@@ -376,6 +387,7 @@ class SystemCalc:
 		# ==== SOLARCHARGERS ====
 		solarchargers = self._dbusmonitor.get_service_list('com.victronenergy.solarcharger')
 		solarcharger_batteryvoltage = None
+		solarcharger_batteryvoltage_service = None
 		for solarcharger in solarchargers:
 			v = self._dbusmonitor.get_value(solarcharger, '/Dc/0/Voltage')
 			if v is None:
@@ -388,6 +400,7 @@ class SystemCalc:
 				newvalues['/Dc/Pv/Power'] = v * i
 				newvalues['/Dc/Pv/Current'] = i
 				solarcharger_batteryvoltage = v
+				solarcharger_batteryvoltage_service = solarcharger
 			else:
 				newvalues['/Dc/Pv/Power'] += v * i
 				newvalues['/Dc/Pv/Current'] += i
@@ -395,6 +408,7 @@ class SystemCalc:
 		# ==== CHARGERS ====
 		chargers = self._dbusmonitor.get_service_list('com.victronenergy.charger')
 		charger_batteryvoltage = None
+		charger_batteryvoltage_service = None
 		for charger in chargers:
 			# Assume the battery connected to output 0 is the main battery
 			v = self._dbusmonitor.get_value(charger, '/Dc/0/Voltage')
@@ -402,6 +416,7 @@ class SystemCalc:
 				continue
 
 			charger_batteryvoltage = v
+			charger_batteryvoltage_service = charger
 
 			i = self._dbusmonitor.get_value(charger, '/Dc/0/Current')
 			if i is None:
@@ -421,6 +436,7 @@ class SystemCalc:
 
 			if batteryservicetype == 'battery':
 				newvalues['/Dc/Battery/Voltage'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Voltage')
+				newvalues['/Dc/Battery/VoltageService'] = self._batteryservice
 				newvalues['/Dc/Battery/Current'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
 				newvalues['/Dc/Battery/Power'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Power')
 
@@ -429,6 +445,7 @@ class SystemCalc:
 					newvalues.get('/Dc/Pv/Power') is None or \
 					self._dbusmonitor.get_value(self._batteryservice, '/ExtraBatteryCurrent') is None:
 					newvalues['/Dc/Battery/Voltage'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Voltage')
+					newvalues['/Dc/Battery/VoltageService'] = self._batteryservice
 					newvalues['/Dc/Battery/Current'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
 					if newvalues['/Dc/Battery/Voltage'] is not None and newvalues['/Dc/Battery/Current'] is not None:
 						newvalues['/Dc/Battery/Power'] = (
@@ -442,6 +459,7 @@ class SystemCalc:
 					newvalues['/Dc/Battery/Current'] = battery_power / battery_voltage if battery_voltage > 0 else None
 					newvalues['/Dc/Battery/Power'] = battery_power
 					newvalues['/Dc/Battery/Voltage'] = battery_voltage
+					newvalues['/Dc/Battery/VoltageService'] = solarcharger_batteryvoltage_service or self._batteryservice
 
 			p = newvalues.get('/Dc/Battery/Power', None)
 			if p is not None:
@@ -456,8 +474,10 @@ class SystemCalc:
 			batteryservicetype = None
 			if solarcharger_batteryvoltage is not None:
 				newvalues['/Dc/Battery/Voltage'] = solarcharger_batteryvoltage
+				newvalues['/Dc/Battery/VoltageService'] = solarcharger_batteryvoltage_service
 			elif charger_batteryvoltage is not None:
 				newvalues['/Dc/Battery/Voltage'] = charger_batteryvoltage
+				newvalues['/Dc/Battery/VoltageService'] = charger_batteryvoltage_service
 			else:
 				# CCGX-connected system consists of only a Multi, but it is not user-selected, nor
 				# auto-selected as the battery-monitor, probably because there are other loads or chargers.
@@ -467,6 +487,7 @@ class SystemCalc:
 					v = self._dbusmonitor.get_value(vebus, '/Dc/0/Voltage')
 					if v is not None:
 						newvalues['/Dc/Battery/Voltage'] = v
+						newvalues['/Dc/Battery/VoltageService'] = vebus
 
 			if self._settings['hasdcsystem'] == 0 and '/Dc/Battery/Voltage' in newvalues:
 				# No unmonitored DC loads or chargers, and also no battery monitor: derive battery watts
@@ -661,6 +682,12 @@ class SystemCalc:
 		if (dbusPath in ['/Connected', '/ProductName', '/Mgmt/Connection'] or
 			(dbusPath == '/State' and dbusServiceName.split('.')[0:3] == ['com', 'victronenergy', 'vebus'])):
 			self._handleservicechange()
+
+		# Track the timezone changes
+		if dbusPath == '/Settings/System/TimeZone':
+			tz = changes.get('Value')
+			if tz is not None:
+				os.environ['TZ'] = tz
 
 	def _device_added(self, service, instance, do_service_change=True):
 		if do_service_change:
