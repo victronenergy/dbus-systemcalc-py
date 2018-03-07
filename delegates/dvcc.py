@@ -5,6 +5,7 @@ from math import pi, floor, ceil
 import traceback
 from itertools import izip, count
 from functools import partial, wraps
+from collections import namedtuple
 
 # Victron packages
 from sc_utils import safeadd, copy_dbus_value
@@ -19,6 +20,14 @@ from delegates.base import SystemCalcDelegate
 # message, so the update rate could be increased. For now, keep this at 3 and
 # above.
 ADJUST = 3
+
+# This is a place to account for some BMS quirks where we may have to ignore
+# the BMS value and substitute our own.
+Quirk = namedtuple('Quirk', ['product_id', 'floatvoltage', 'floatcurrent'])
+QUIRKS = {
+	# For BYD battery, when we receive CCL=0, we float at 55V max 2A.
+	0xB00A: Quirk(0xB00A, 55, 2),
+}
 
 def distribute(current_values, max_values, increment):
 	""" current_values and max_values are lists of equal size containing the
@@ -347,6 +356,11 @@ class Battery(object):
 		""" Returns current voltage of battery. """
 		return self.monitor.get_value(self.service, '/Dc/0/Voltage')
 
+	@property
+	def product_id(self):
+		""" Returns Product ID of battery. """
+		return self.monitor.get_value(self.service, '/ProductId')
+
 
 class BatterySubsystem(object):
 	""" Encapsulates multiple battery services. We may have both a BMV and a
@@ -562,21 +576,6 @@ class Dvcc(SystemCalcDelegate):
 			gobject.source_remove(self._timer)
 			self._timer = None
 
-	@property
-	def maxchargecurrent(self):
-		""" Returns maximum charge current published by the BMS. """
-		bms_service = self._batterysystem.bms
-		bms_max_charge_current = None if bms_service is None else bms_service.maxchargecurrent
-		max_charge_current = self._settings['maxchargecurrent']
-
-		if max_charge_current < 0:
-			return bms_max_charge_current
-		elif bms_max_charge_current is not None:
-			return min(max_charge_current, bms_max_charge_current)
-
-		return None if max_charge_current < 0 else max_charge_current
-
-
 	def _property(path, self):
 		# Due to the use of partial, path and self is reversed.
 		try:
@@ -622,8 +621,9 @@ class Dvcc(SystemCalcDelegate):
 		# Write the BMS parameters to the Multi
 		bms_service = self._batterysystem.bms
 		bms_parameters_written = 0
-		if bms_service is not None and self._multi.active:
-			bms_parameters_written = self._update_battery_operational_limits(bms_service)
+		max_charge_current = None
+		if bms_service is not None:
+			bms_parameters_written, max_charge_current = self._update_battery_operational_limits(bms_service)
 		self._dbusservice['/Control/BmsParameters'] = bms_parameters_written
 
 		# @todo EV What if ESS + OvervoltageFeedIn? In that case there is no
@@ -632,11 +632,14 @@ class Dvcc(SystemCalcDelegate):
 		self._dbusservice['/Control/MaxChargeCurrent'] = \
 			not self._multi.active or self._multi.has_bolframe
 
-		max_charge_current = self.maxchargecurrent
+		# Get the user current limit, if set
+		user_max_charge_current = self._settings['maxchargecurrent']
+		if user_max_charge_current < 0: user_max_charge_current = None
 
-		# If a debug offset is to be added, add it now.
-		if max_charge_current is not None:
-			max_charge_current = safeadd(max_charge_current, self.currentoffset)
+		# Take the lesser of the limits, wherever they exist
+		maximae = filter(lambda x: x is not None,
+			(user_max_charge_current, max_charge_current))
+		max_charge_current = min(maximae) if maximae else None
 
 		# We need to keep a copy of the original value for later. We will be
 		# modifying one of them to compensate for vebus current.
@@ -669,30 +672,51 @@ class Dvcc(SystemCalcDelegate):
 		self._dbusservice['/Control/SolarChargeCurrent'] = current_written
 		return True
 
+	def _adjust_battery_operational_limits(self, bms_service, cv, mcc):
+		""" Take the charge voltage and maximum charge current from the BMS
+		    and adjust it as necessary. For now we only implement quirks
+		    for batteries known to have them.
+		"""
+		if mcc == 0:
+			quirk = QUIRKS.get(bms_service.product_id)
+			if quirk is not None:
+				# If any quirks are registered for this battery, use that
+				# instead. For safety, let's cap the voltage to what the BMS
+				# requests: A quirk can only lower the voltage.
+				return min(quirk.floatvoltage, cv), quirk.floatcurrent
+
+		return cv, mcc
+
 	def _update_battery_operational_limits(self, bms_service):
-		""" This function only writes the bms parameters across to the Multi.
-		    Other charge current limits are handled elsewhere. """
-		try:
-			cv = safeadd(bms_service.chargevoltage, self.invertervoltageoffset)
-			mcc = safeadd(bms_service.maxchargecurrent, self.currentoffset)
+		""" This function writes the bms parameters across to the Multi
+		    if it exists. The parameters may be modified before being
+		    copied across. The modified current value is returned to be
+		    used elsewhere. """
+		cv = safeadd(bms_service.chargevoltage, self.invertervoltageoffset)
+		mcc = safeadd(bms_service.maxchargecurrent, self.currentoffset)
+		cv, mcc = self._adjust_battery_operational_limits(bms_service,
+			cv, mcc)
 
-			if cv is not None:
-				self._multi.bol.chargevoltage = cv
+		if self._multi.active:
+			try:
+				if cv is not None:
+					self._multi.bol.chargevoltage = cv
 
-			if mcc is not None:
-				self._multi.bol.maxchargecurrent = mcc
+				if mcc is not None:
+					self._multi.bol.maxchargecurrent = mcc
 
-			# Copy the rest unmodified
-			copy_dbus_value(self._dbusmonitor,
-				bms_service.service, '/Info/BatteryLowVoltage',
-				self._multi.service, '/BatteryOperationalLimits/BatteryLowVoltage')
-			copy_dbus_value(self._dbusmonitor,
-				bms_service.service, '/Info/MaxDischargeCurrent',
-				self._multi.service, '/BatteryOperationalLimits/MaxDischargeCurrent')
-			return 1
-		except DBusException:
-			logging.debug(traceback.format_exc())
-			return 0
+				# Copy the rest unmodified
+				copy_dbus_value(self._dbusmonitor,
+					bms_service.service, '/Info/BatteryLowVoltage',
+					self._multi.service, '/BatteryOperationalLimits/BatteryLowVoltage')
+				copy_dbus_value(self._dbusmonitor,
+					bms_service.service, '/Info/MaxDischargeCurrent',
+					self._multi.service, '/BatteryOperationalLimits/MaxDischargeCurrent')
+				return 1, mcc
+			except DBusException:
+				logging.debug(traceback.format_exc())
+
+		return 0, mcc
 
 	def _update_solarchargers(self, bms_service, max_charge_current):
 		""" This function updates the solar chargers only. Parameters
