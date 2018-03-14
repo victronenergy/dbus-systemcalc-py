@@ -6,7 +6,7 @@ from delegates.base import SystemCalcDelegate
 from ve_utils import exit_on_error
 
 
-class VoltageSense(SystemCalcDelegate):
+class BatterySense(SystemCalcDelegate):
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)
 		self._timer = None
@@ -26,7 +26,7 @@ class VoltageSense(SystemCalcDelegate):
 
 	def get_settings(self):
 		return [
-			('enabled', "/Settings/SystemSetup/SharedVoltageSense", 1, 0, 0),
+			('vsense', "/Settings/SystemSetup/SharedVoltageSense", 1, 0, 0),
 			('bol', '/Settings/Services/Bol', 0, 0, 1)
 		]
 
@@ -37,7 +37,7 @@ class VoltageSense(SystemCalcDelegate):
 
 	def _on_timer(self):
 		self._dbusservice['/Control/SolarChargerVoltageSense'] = \
-			int(self._settings['enabled'] and self._settings['bol']) and \
+			int(self._settings['vsense'] and self._settings['bol']) and \
 			self._distribute_sense_voltage()
 		return True
 

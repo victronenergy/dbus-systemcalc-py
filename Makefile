@@ -18,7 +18,7 @@ DELEGATES = \
 	$(SOURCEDIR)/delegates/servicemapper.py \
 	$(SOURCEDIR)/delegates/vebussocwriter.py \
 	$(SOURCEDIR)/delegates/systemstate.py \
-	$(SOURCEDIR)/delegates/voltagesense.py \
+	$(SOURCEDIR)/delegates/batterysense.py \
 	$(SOURCEDIR)/delegates/batterylife.py
 
 VEDLIB_FILES = \
