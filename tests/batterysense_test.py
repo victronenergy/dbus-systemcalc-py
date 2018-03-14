@@ -35,6 +35,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxDischargeCurrent': None,
 				'/BatteryOperationalLimits/BatteryLowVoltage': None,
 				'/BatterySense/Voltage': None,
+				'/BatterySense/Temperature': None,
 				'/FirmwareFeatures/BolFrame': 1,
 				'/FirmwareFeatures/BolUBatAndTBatSense': 1
 			})
@@ -103,7 +104,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 			'com.victronenergy.solarcharger.ttyO1': {
 				'/Link/VoltageSense': None}})
 
-	def test_voltage_sense_mppt_and_battery_monitor(self):
+	def test_sense_mppt_and_battery_monitor(self):
 		self._set_setting('/Settings/Services/Bol', 1)
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/FirmwareFeatures/BolUBatAndTBatSense', 1)
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/BatterySense/Voltage', None)
@@ -113,25 +114,30 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/Dc/0/Voltage': 12.15,
 				'/Dc/0/Current': 5.3,
 				'/Dc/0/Power': 65,
+				'/Dc/0/Temperature': 25,
 				'/Soc': 15.3,
 				'/DeviceInstance': 2})
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
 			'/Link/NetworkMode': 0,
 			'/Link/VoltageSense': None,
+			'/Link/TemperatureSense': None,
 			'/Dc/0/Voltage': 12.2,
 			'/Dc/0/Current': 9.7},
 			connection='VE.Direct')
 		self._update_values(5000)
 		self._check_values({
 			'/Dc/Battery/Voltage': 12.15,
+			'/Dc/Battery/Temperature': 25,
 			'/Dc/Battery/VoltageService': 'com.victronenergy.battery.ttyO2'
 		})
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
-				'/BatterySense/Voltage': 12.15},
+				'/BatterySense/Voltage': 12.15,
+				'/BatterySense/Temperature': 25},
 			'com.victronenergy.solarcharger.ttyO1': {
-				'/Link/VoltageSense': 12.15}})
+				'/Link/VoltageSense': 12.15,
+				'/Link/TemperatureSense': 25}})
 
 	def test_voltage_sense_vebus_and_battery_monitor(self):
 		self._set_setting('/Settings/Services/Bol', 1)
@@ -191,9 +197,47 @@ class VoltageSenseTest(TestSystemCalcBase):
 			'com.victronenergy.solarcharger.ttyO1': {
 				'/Link/SenseVoltage': None}})
 
-	def test_no_dvcc_no_voltage_sense(self):
+	def test_temp_sense_disabled(self):
+		self._set_setting('/Settings/Services/Bol', 1)
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1',
+			'/FirmwareFeatures/BolUBatAndTBatSense', 1)
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1',
+			'/BatterySense/Voltage', None)
+		self._set_setting('/Settings/SystemSetup/SharedTemperatureSense', 0)
+
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.15,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Dc/0/Temperature': 27,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2})
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Link/TemperatureSense': None,
+			'/Dc/0/Voltage': 12.2,
+			'/Dc/0/Current': 9.7},
+			connection='VE.Direct')
+		self._update_values(5000)
+		# Check that tempsense is indicated as inactive
+		self._check_values({
+			'/Control/SolarChargerTemperatureSense': 0,
+		})
+		# Check that other devices were left alone
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatterySense/Temperature': None}})
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/TemperatureSense': None}})
+
+	def test_no_dvcc_no_sense(self):
 		self._set_setting('/Settings/Services/Bol', 0)
 		self._set_setting('/Settings/SystemSetup/SharedVoltageSense', 1)
+		self._set_setting('/Settings/SystemSetup/SharedTemperatureSense', 1)
 
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1',
 			'/FirmwareFeatures/BolUBatAndTBatSense', 1)
@@ -206,12 +250,14 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/Dc/0/Voltage': 12.15,
 				'/Dc/0/Current': 5.3,
 				'/Dc/0/Power': 65,
+				'/Dc/0/Temperature': 26,
 				'/Soc': 15.3,
 				'/DeviceInstance': 2})
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
 			'/Link/NetworkMode': 0,
 			'/Link/VoltageSense': None,
+			'/Link/TemperatureSense': None,
 			'/Dc/0/Voltage': 12.2,
 			'/Dc/0/Current': 9.7},
 			connection='VE.Direct')
@@ -223,7 +269,9 @@ class VoltageSenseTest(TestSystemCalcBase):
 		# Check that other devices were left alone
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
-				'/BatterySense/Voltage': None}})
+				'/BatterySense/Voltage': None,
+				'/BatterySense/Temperature': None}})
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO1': {
-				'/Link/SenseVoltage': None}})
+				'/Link/SenseVoltage': None,
+				'/Link/TemperatureSense': None}})
