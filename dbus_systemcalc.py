@@ -56,6 +56,7 @@ class SystemCalc:
 				'/Dc/0/Voltage': dummy,
 				'/Dc/0/Current': dummy,
 				'/Dc/0/Power': dummy,
+				'/Dc/0/Temperature': dummy,
 				'/Soc': dummy,
 				'/TimeToGo': dummy,
 				'/ConsumedAmphours': dummy,
@@ -203,7 +204,9 @@ class SystemCalc:
 			'/Dc/Pv/Power': {'gettext': '%.0F W'},
 			'/Dc/Pv/Current': {'gettext': '%.1F A'},
 			'/Dc/Battery/Voltage': {'gettext': '%.2F V'},
+			'/Dc/Battery/Temperature': {'gettext': '%.1F C'},
 			'/Dc/Battery/VoltageService': {'gettext': '%s'},
+			'/Dc/Battery/TemperatureService': {'gettext': '%s'},
 			'/Dc/Battery/Current': {'gettext': '%.1F A'},
 			'/Dc/Battery/Power': {'gettext': '%.0F W'},
 			'/Dc/Battery/Soc': {'gettext': '%.0F %%'},
@@ -428,6 +431,8 @@ class SystemCalc:
 				newvalues['/Dc/Charger/Power'] += v * i
 
 		# ==== BATTERY ====
+		newvalues['/Dc/Battery/Temperature'] = None
+		newvalues['/Dc/Battery/TemperatureService'] = None
 		if self._batteryservice is not None:
 			batteryservicetype = self._batteryservice.split('.')[2]  # either 'battery' or 'vebus'
 			newvalues['/Dc/Battery/Soc'] = self._dbusmonitor.get_value(self._batteryservice,'/Soc')
@@ -439,6 +444,12 @@ class SystemCalc:
 				newvalues['/Dc/Battery/VoltageService'] = self._batteryservice
 				newvalues['/Dc/Battery/Current'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
 				newvalues['/Dc/Battery/Power'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Power')
+
+				# Use temperature, if it has it
+				t = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Temperature')
+				if t is not None:
+					newvalues['/Dc/Battery/Temperature'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Temperature')
+					newvalues['/Dc/Battery/TemperatureService'] = self._batteryservice
 
 			elif batteryservicetype == 'vebus':
 				if self._settings['hasdcsystem'] == 1 or \
