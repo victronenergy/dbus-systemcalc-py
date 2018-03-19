@@ -424,7 +424,7 @@ class Multi(object):
 		self.monitor = monitor
 		self._service = service
 		self.bol = BatteryOperationalLimits(self)
-		self._dc_current = monitor.get_value(service, '/Dc/0/Current', 0)
+		self._dc_current = monitor.get_value(service, '/Dc/0/Current') or 0
 
 	@property
 	def service(self):
@@ -473,7 +473,8 @@ class Multi(object):
 
 	def update_values(self):
 		c = self.monitor.get_value(self.service, '/Dc/0/Current', 0)
-		self._dc_current += (c - self._dc_current) * self.OMEGA
+		if c is not None:
+			self._dc_current += (c - self._dc_current) * self.OMEGA
 
 class Dvcc(SystemCalcDelegate):
 	""" This is the main DVCC delegate object. """
