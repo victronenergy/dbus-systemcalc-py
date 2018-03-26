@@ -120,7 +120,8 @@ class SystemCalc:
 			delegates.Dvcc(),
 			delegates.BatterySense(),
 			delegates.SystemState(),
-			delegates.BatteryLife()]
+			delegates.BatteryLife(),
+			delegates.ScheduledCharging()]
 
 		for m in self._modules:
 			for service, paths in m.get_input():

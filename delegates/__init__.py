@@ -14,3 +14,4 @@ from delegates.lgbattery import LgCircuitBreakerDetect
 from delegates.systemstate import SystemState
 from delegates.batterysense import BatterySense
 from delegates.batterylife import BatteryLife
+from delegates.schedule import ScheduledCharging
