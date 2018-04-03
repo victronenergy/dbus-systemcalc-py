@@ -587,8 +587,9 @@ class Dvcc(SystemCalcDelegate):
 		bms_service = self._batterysystem.bms
 		bms_parameters_written = 0
 		max_charge_current = None
+		charge_voltage = None
 		if bms_service is not None:
-			bms_parameters_written, max_charge_current = self._update_battery_operational_limits(bms_service)
+			bms_parameters_written, charge_voltage, max_charge_current = self._update_battery_operational_limits(bms_service)
 		self._dbusservice['/Control/BmsParameters'] = bms_parameters_written
 
 		# @todo EV What if ESS + OvervoltageFeedIn? In that case there is no
@@ -618,7 +619,7 @@ class Dvcc(SystemCalcDelegate):
 
 		# Try to push the solar chargers to this value
 		voltage_written, current_written = self._update_solarchargers(
-			bms_service, _max_charge_current)
+			bms_service is not None, charge_voltage, _max_charge_current)
 
 		# Using the original uncompensated max_charge_current, set the multi
 		# to make up the difference between the mppts and this value. We do
@@ -677,13 +678,13 @@ class Dvcc(SystemCalcDelegate):
 				copy_dbus_value(self._dbusmonitor,
 					bms_service.service, '/Info/MaxDischargeCurrent',
 					self._multi.service, '/BatteryOperationalLimits/MaxDischargeCurrent')
-				return 1, mcc
+				return 1, cv, mcc
 			except DBusException:
 				logging.debug(traceback.format_exc())
 
-		return 0, mcc
+		return 0, cv, mcc
 
-	def _update_solarchargers(self, bms_service, max_charge_current):
+	def _update_solarchargers(self, has_bms, bms_charge_voltage, max_charge_current):
 		""" This function updates the solar chargers only. Parameters
 		    related to the Multi are handled elsewhere. """
 
@@ -702,8 +703,8 @@ class Dvcc(SystemCalcDelegate):
 		charge_voltage = None
 		if self._multi.active:
 			charge_voltage = self._multi.hub_voltage
-		if charge_voltage is None and bms_service is not None:
-			charge_voltage = self._dbusmonitor.get_value(bms_service.service, '/Info/MaxChargeVoltage')
+		if charge_voltage is None and bms_charge_voltage is not None:
+			charge_voltage = bms_charge_voltage
 		if charge_voltage is not None:
 			try:
 				charge_voltage += self.solarvoltageoffset
@@ -713,8 +714,8 @@ class Dvcc(SystemCalcDelegate):
 		if charge_voltage is None and max_charge_current is None:
 			return 0, 0
 
-		voltage_written, current_written = self._solarsystem.set_networked(bms_service is not None,
-				charge_voltage, max_charge_current, feedback_allowed)
+		voltage_written, current_written = self._solarsystem.set_networked(
+			has_bms, charge_voltage, max_charge_current, feedback_allowed)
 
 		# Charge voltage cannot by written directly to the CAN-bus solar chargers, we have to use
 		# the com.victronenergy.vecan.* service instead.
