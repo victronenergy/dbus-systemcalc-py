@@ -25,8 +25,8 @@ ADJUST = 3
 # the BMS value and substitute our own.
 Quirk = namedtuple('Quirk', ['product_id', 'floatvoltage', 'floatcurrent'])
 QUIRKS = {
-	# For BYD battery, when we receive CCL=0, we float at 55V max 2A.
-	0xB00A: Quirk(0xB00A, 55, 2),
+	# For BYD battery, when we receive CCL=0, we float at 55V max 40A.
+	0xB00A: Quirk(0xB00A, 55, 40),
 }
 
 def distribute(current_values, max_values, increment):
@@ -652,6 +652,15 @@ class Dvcc(SystemCalcDelegate):
 		if _max_charge_current is not None and vebus_dc_current is not None and \
 				vebus_dc_current < 0:
 			_max_charge_current = ceil(_max_charge_current - vebus_dc_current)
+
+		# If there is a Multi with BOL capability, but without ESS, the
+		# charge_voltage on the Multi will be used for the solar chargers
+		# as well. We add 0.1V to prioritise solar in this case. If there
+		# is no Multi or no BOL support, we leave it unchanged. If ESS
+		# is installed, _update_solarchargers will use that instead and the
+		# Multi will determine the required offset.
+		if bms_parameters_written and charge_voltage is not None:
+			charge_voltage += 0.1
 
 		# Try to push the solar chargers to this value
 		voltage_written, current_written = self._update_solarchargers(

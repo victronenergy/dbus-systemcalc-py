@@ -333,7 +333,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'com.victronenergy.solarcharger.ttyO2': {
 				'/Link/NetworkMode': 13,
 				'/Link/ChargeCurrent': 25 + 8,
-				'/Link/ChargeVoltage': 58.2},
+				'/Link/ChargeVoltage': 58.3},
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
 				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
@@ -406,10 +406,10 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO0': {
 				'/Link/NetworkMode': 13,
-				'/Link/ChargeVoltage': 58.2},
+				'/Link/ChargeVoltage': 58.3},
 			'com.victronenergy.solarcharger.ttyO2': {
 				'/Link/NetworkMode': 13,
-				'/Link/ChargeVoltage': 58.2},
+				'/Link/ChargeVoltage': 58.3},
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
 				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
@@ -1137,7 +1137,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self._update_values(interval=3000)
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
-				'/BatteryOperationalLimits/MaxChargeCurrent': 2,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 55
 			}
 		})
