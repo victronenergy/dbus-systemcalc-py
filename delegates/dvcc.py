@@ -253,7 +253,7 @@ class SolarChargerSubsystem(object):
 		#
 		# Additionally, don't bother with chargers that are disconnected or
 		# VE.Can based.
-		chargers = filter(lambda x: x.state !=0 and x.connection != 'VE.Can', self._solarchargers.values())
+		chargers = filter(lambda x: x.state !=0, vedirect_chargers)
 		if len(chargers) > 0:
 			if feedback_allowed:
 				self.maximize_charge_current()
