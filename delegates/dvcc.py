@@ -25,8 +25,8 @@ ADJUST = 3
 # the BMS value and substitute our own.
 Quirk = namedtuple('Quirk', ['product_id', 'floatvoltage', 'floatcurrent'])
 QUIRKS = {
-	# For BYD battery, when we receive CCL=0, we float at 55V max 2A.
-	0xB00A: Quirk(0xB00A, 55, 2),
+	# For BYD battery, when we receive CCL=0, we float at 55V max 40A.
+	0xB00A: Quirk(0xB00A, 55, 40),
 }
 
 def distribute(current_values, max_values, increment):
