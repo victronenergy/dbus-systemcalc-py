@@ -653,15 +653,6 @@ class Dvcc(SystemCalcDelegate):
 				vebus_dc_current < 0:
 			_max_charge_current = ceil(_max_charge_current - vebus_dc_current)
 
-		# If there is a Multi with BOL capability, but without ESS, the
-		# charge_voltage on the Multi will be used for the solar chargers
-		# as well. We add 0.1V to prioritise solar in this case. If there
-		# is no Multi or no BOL support, we leave it unchanged. If ESS
-		# is installed, _update_solarchargers will use that instead and the
-		# Multi will determine the required offset.
-		if bms_parameters_written and charge_voltage is not None:
-			charge_voltage += 0.1
-
 		# Try to push the solar chargers to this value
 		voltage_written, current_written = self._update_solarchargers(
 			bms_service is not None, charge_voltage, _max_charge_current)
