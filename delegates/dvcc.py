@@ -23,10 +23,28 @@ ADJUST = 3
 
 # This is a place to account for some BMS quirks where we may have to ignore
 # the BMS value and substitute our own.
-Quirk = namedtuple('Quirk', ['product_id', 'floatvoltage', 'floatcurrent'])
+
+def _byd_quirk(dvcc, charge_voltage, charge_current):
+	""" Quirk for the BYD batteries. When the battery sends CCL=0, float it at
+	   55V. """
+	if charge_current == 0:
+		return (55, 40)
+	return (charge_voltage, charge_current)
+
+def _sony_quirk(dvcc, charge_voltage, charge_current):
+	""" Quirk for Sony batteries. These batteries drop the charge limit to
+		2A per module whenever you go into discharge in an attempt to
+		facilitate a cleaner ramp-up afterwards. This messes up the feeding of
+		loads. """
+	# This is safe even if charge_current is None
+	if charge_current > 0:
+		return (charge_voltage, max(1000, charge_current))
+	return (charge_voltage, charge_current)
+
+# Quirk = namedtuple('Quirk', ['product_id', 'floatvoltage', 'floatcurrent'])
 QUIRKS = {
-	# For BYD battery, when we receive CCL=0, we float at 55V max 40A.
-	0xB00A: Quirk(0xB00A, 55, 40),
+	0xB00A: _byd_quirk,
+	0xB008: _sony_quirk,
 }
 
 def distribute(current_values, max_values, increment):
@@ -679,13 +697,13 @@ class Dvcc(SystemCalcDelegate):
 		    and adjust it as necessary. For now we only implement quirks
 		    for batteries known to have them.
 		"""
-		if mcc == 0:
-			quirk = QUIRKS.get(bms_service.product_id)
-			if quirk is not None:
-				# If any quirks are registered for this battery, use that
-				# instead. For safety, let's cap the voltage to what the BMS
-				# requests: A quirk can only lower the voltage.
-				return min(quirk.floatvoltage, cv), quirk.floatcurrent
+		quirk = QUIRKS.get(bms_service.product_id)
+		if quirk is not None:
+			# If any quirks are registered for this battery, use that
+			# instead. For safety, let's cap the voltage to what the BMS
+			# requests: A quirk can only lower the voltage.
+			voltage, current = quirk(self, cv, mcc)
+			return min(voltage, cv), current
 
 		return cv, mcc
 
