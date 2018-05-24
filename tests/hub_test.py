@@ -1176,3 +1176,28 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeVoltage': 57.2
 			}
 		})
+
+	def test_lg_quirks(self):
+		""" LG Batteries run at 57.7V, when we add an 0.4V offset we sometimes
+		    trip the overvoltage protection at 58.1V. So we attempt to avoid that
+			when feed-in is active. """
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 55.1,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 165.3,
+				'/Soc': 100,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 94.2,
+				'/Info/MaxChargeVoltage': 57.7,
+				'/Info/MaxDischargeCurrent': 100,
+				'/ProductId': 0xB004})
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeVoltage': 57.5,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 94.2
+			}
+		})

@@ -41,10 +41,21 @@ def _sony_quirk(dvcc, charge_voltage, charge_current):
 		return (charge_voltage, max(1000, charge_current))
 	return (charge_voltage, charge_current)
 
+def _lg_quirk(dvcc, charge_voltage, charge_current):
+	""" Quirk for LG batteries. The hard limit is 58V. Above that you risk
+	    tripping on high voltage. The batteries publish a charge voltage of 57.7V
+	    but we need to make room for an 0.4V overvoltage when feed-in is enabled.
+	"""
+	if charge_voltage is not None:
+		# Make room for a potential 0.4V at the top
+		return (min(charge_voltage, 57.5), charge_current)
+	return (charge_voltage, charge_current)
+
 # Quirk = namedtuple('Quirk', ['product_id', 'floatvoltage', 'floatcurrent'])
 QUIRKS = {
-	0xB00A: _byd_quirk,
+	0xB004: _lg_quirk,
 	0xB008: _sony_quirk,
+	0xB00A: _byd_quirk,
 }
 
 def distribute(current_values, max_values, increment):
