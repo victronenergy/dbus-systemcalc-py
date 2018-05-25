@@ -36,7 +36,8 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/BatteryLowVoltage': None,
 				'/BatterySense/Voltage': None,
 				'/FirmwareFeatures/BolFrame': 1,
-				'/FirmwareFeatures/BolUBatAndTBatSense': 1
+				'/FirmwareFeatures/BolUBatAndTBatSense': 1,
+				'/Hub4/L1/DoNotFeedInOvervoltage': 1
 			})
 		self._add_device('com.victronenergy.settings',
 			values={
@@ -1197,7 +1198,14 @@ class TestHubSystem(TestSystemCalcBase):
 		self._update_values(interval=3000)
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
-				'/BatteryOperationalLimits/MaxChargeVoltage': 57.5,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 57.7,
 				'/BatteryOperationalLimits/MaxChargeCurrent': 94.2
+			}
+		})
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub4/L1/DoNotFeedInOvervoltage', 0)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeVoltage': 57.5,
 			}
 		})

@@ -46,7 +46,7 @@ def _lg_quirk(dvcc, charge_voltage, charge_current):
 	    tripping on high voltage. The batteries publish a charge voltage of 57.7V
 	    but we need to make room for an 0.4V overvoltage when feed-in is enabled.
 	"""
-	if charge_voltage is not None:
+	if charge_voltage is not None and dvcc._multi.feedin_enabled:
 		# Make room for a potential 0.4V at the top
 		return (min(charge_voltage, 57.5), charge_current)
 	return (charge_voltage, charge_current)
@@ -512,6 +512,11 @@ class Multi(object):
 	def state(self):
 		return self.monitor.get_value(self.service, '/State')
 
+	@property
+	def feedin_enabled(self):
+		return self.monitor.get_value(self.service,
+			'/Hub4/L1/DoNotFeedInOvervoltage') == 0
+
 	def update_values(self):
 		c = self.monitor.get_value(self.service, '/Dc/0/Current', 0)
 		if c is not None:
@@ -543,7 +548,8 @@ class Dvcc(SystemCalcDelegate):
 				'/BatteryOperationalLimits/MaxChargeCurrent',
 				'/BatteryOperationalLimits/MaxChargeVoltage',
 				'/BatteryOperationalLimits/MaxDischargeCurrent',
-				'/FirmwareFeatures/BolFrame']),
+				'/FirmwareFeatures/BolFrame',
+				'/Hub4/L1/DoNotFeedInOvervoltage']),
 			('com.victronenergy.solarcharger', [
 				'/Dc/0/Current',
 				'/Link/NetworkMode',
