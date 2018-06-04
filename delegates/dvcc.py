@@ -51,10 +51,24 @@ def _lg_quirk(dvcc, charge_voltage, charge_current):
 		return (min(charge_voltage, 57.3), charge_current)
 	return (charge_voltage, charge_current)
 
+def _pylontech_quirk(dvcc, charge_voltage, charge_current):
+	""" Quirk for Pylontech. When feed-in is enabled, make a bit of room at the
+	    top. Pylontech says that at 51.8V the battery is 95% full, and that
+	    balancing starts at 90%. 53.2V is normally considered 100% full, and
+	    54V raises an alarm. By running the battery at 52V it should be close
+	    to 100% full, balancing should be active, and we should avoid
+	    high voltage alarms.
+	"""
+	if charge_voltage is not None and dvcc._multi.feedin_enabled:
+		# When feed-in is enabled, hold at 52V.
+		return (min(charge_voltage, 52), charge_current)
+	return (charge_voltage, charge_current)
+
 # Quirk = namedtuple('Quirk', ['product_id', 'floatvoltage', 'floatcurrent'])
 QUIRKS = {
 	0xB004: _lg_quirk,
 	0xB008: _sony_quirk,
+	0xB009: _pylontech_quirk,
 	0xB00A: _byd_quirk,
 }
 
