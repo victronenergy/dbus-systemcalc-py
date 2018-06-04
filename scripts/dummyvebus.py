@@ -13,12 +13,10 @@ from dbusdummyservice import DbusDummyService
 from logger import setup_logging
 
 # Argument parsing
-parser = argparse.ArgumentParser(
-    description='dummy dbus service'
-)
+parser = argparse.ArgumentParser(description='dummy dbus service')
 
 parser.add_argument("-n", "--name", help="the D-Bus service you want me to claim",
-                type=str, default="com.victronenergy.vebus.ttyO1")
+				type=str, default="com.victronenergy.vebus.ttyO1")
 
 args = parser.parse_args()
 
@@ -28,10 +26,7 @@ logger = setup_logging(debug=True)
 # Have a mainloop, so we can send/receive asynchronous calls to and from dbus
 DBusGMainLoop(set_as_default=True)
 
-s = DbusDummyService(
-    servicename=args.name,
-    deviceinstance=0,
-    paths={
+s = DbusDummyService(servicename=args.name, deviceinstance=0, paths={
 		'/Ac/ActiveIn/L1/P': {'initial': 0},
 		'/Ac/ActiveIn/ActiveInput': {'initial': 0},
 		'/Ac/ActiveIn/Connected': {'initial': 1},
@@ -52,9 +47,9 @@ s = DbusDummyService(
 		'/BatteryOperationalLimits/MaxChargeCurrent': {'initial': None},
 		'/BatteryOperationalLimits/MaxDischargeCurrent': {'initial': None},
 		'/BatteryOperationalLimits/BatteryLowVoltage': {'initial': None},
-        '/BatterySense/Voltage': {'initial': None}},
-    productname='Multi 12/3000',
-    connection='CCGX-VE.Bus port')
+		'/BatterySense/Voltage': {'initial': None}},
+	productname='Multi 12/3000',
+	connection='CCGX-VE.Bus port')
 
 logging.info('Connected to dbus, and switching over to gobject.MainLoop() (= event based)')
 mainloop = gobject.MainLoop()
