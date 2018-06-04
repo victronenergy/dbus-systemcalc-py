@@ -47,6 +47,7 @@ s = DbusDummyService(
 		'/VebusMainState': {'initial': None},
 		'/Hub4/AssistantId': {'initial': None},
 		'/Hub4/Sustain': {'initial': None},
+		'/Hub4/AcPowerSetpoint': {'initial': None},
 		'/BatteryOperationalLimits/MaxChargeVoltage': {'initial': None},
 		'/BatteryOperationalLimits/MaxChargeCurrent': {'initial': None},
 		'/BatteryOperationalLimits/MaxDischargeCurrent': {'initial': None},
