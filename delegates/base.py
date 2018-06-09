@@ -1,4 +1,22 @@
+class TrackInstance(type):
+	def __init__(klass, name, bases, attrs):
+		if not hasattr(klass, '_instance'):
+			klass._instance = None
+		else:
+			if klass._instance is not None:
+				raise RuntimeError("Multiple instances of {}".format(klass.__name__))
+			klass._instance = klass
+
+	@property
+	def instance(klass):
+		return klass._instance
+
 class SystemCalcDelegate(object):
+	__metaclass__ = TrackInstance
+	def __new__(klass):
+		klass._instance = super(SystemCalcDelegate, klass).__new__(klass)
+		return klass._instance
+
 	def __init__(self):
 		self._dbusmonitor = None
 		self._settings = None
