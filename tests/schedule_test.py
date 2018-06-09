@@ -27,6 +27,8 @@ class TestSchedule(TestSystemCalcBase):
         TestSystemCalcBase.setUp(self)
         self._add_device(self.vebus, product_name='Multi',
             values={
+                '/Hub4/AssistantId': 5,
+                '/VebusMainState': 9,
                 '/State': 3,
                 '/Soc': 53.2})
 
@@ -62,6 +64,9 @@ class TestSchedule(TestSystemCalcBase):
                 'com.victronenergy.hub4': {
                 '/Overrides/ForceCharge': 1,
         }})
+
+        # SystemState should indicate what happened
+        self._check_values({'/SystemState/State': 0x103})
 
         # Another minute or so, increase Soc as well, it should pop out again
         timer_manager.run(33000)

@@ -2,6 +2,7 @@
 
 import sc_utils
 from delegates.base import SystemCalcDelegate
+from delegates.schedule import ScheduledCharging
 
 class BL(object):
     Disabled = 0
@@ -30,6 +31,7 @@ class SystemState(SystemCalcDelegate):
 	DISCHARGING = 0x100
 	SUSTAIN = 0x101
 	RECHARGE = 0x102
+	SCHEDULEDCHARGE = 0x103
 
 	def __init__(self):
 		super(SystemState, self).__init__()
@@ -123,7 +125,9 @@ class SystemState(SystemCalcDelegate):
 			flags.UserChargeLimited = int(user_charge_limit == 0)
 
 			# ESS state
-			if hubstate in (BL.Default, BL.Absorption, BL.Float, SOCG.Default):
+			if ScheduledCharging.instance.active:
+				ss = SystemState.SCHEDULEDCHARGE
+			elif hubstate in (BL.Default, BL.Absorption, BL.Float, SOCG.Default):
 				if newvalues.get('/Dc/Battery/Power') < -30:
 					ss = SystemState.DISCHARGING
 			elif hubstate in (BL.Discharged, SOCG.Discharged):

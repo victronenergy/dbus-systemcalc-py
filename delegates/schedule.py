@@ -97,6 +97,7 @@ class ScheduledCharging(SystemCalcDelegate):
 	def __init__(self):
 		super(ScheduledCharging, self).__init__()
 		self.soc = None
+		self.active = False
 		self._timer = gobject.timeout_add(5000, exit_on_error, self._on_timer)
 
 	def get_input(self):
@@ -150,9 +151,11 @@ class ScheduledCharging(SystemCalcDelegate):
 		for w in self.charge_windows(today):
 			if now in w and not w.soc_reached(self.soc):
 				self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
+				self.active = True
 				break
 		else:
 				self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
+				self.active = False
 
 		return True
 
