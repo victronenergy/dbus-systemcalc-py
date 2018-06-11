@@ -19,7 +19,8 @@ DELEGATES = \
 	$(SOURCEDIR)/delegates/vebussocwriter.py \
 	$(SOURCEDIR)/delegates/systemstate.py \
 	$(SOURCEDIR)/delegates/batterysense.py \
-	$(SOURCEDIR)/delegates/batterylife.py
+	$(SOURCEDIR)/delegates/batterylife.py \
+	$(SOURCEDIR)/delegates/schedule.py
 
 VEDLIB_FILES = \
 	$(VEDLIBDIR)/logger.py \
