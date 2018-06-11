@@ -117,7 +117,7 @@ class ScheduledCharging(SystemCalcDelegate):
 			settings.append(("schedule_duration_{}".format(i),
 				BLPATH + "/Schedule/Charge/{}/Duration".format(i), 0, 0, 0))
 			settings.append(("schedule_soc_{}".format(i),
-				BLPATH + "/Schedule/Charge/{}/Soc".format(i), 0, 0, 100))
+				BLPATH + "/Schedule/Charge/{}/Soc".format(i), 100, 0, 100))
 
 		return settings
 
