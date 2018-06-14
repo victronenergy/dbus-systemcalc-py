@@ -102,7 +102,7 @@ class ScheduledCharging(SystemCalcDelegate):
 
 	def get_input(self):
 		return [
-			(HUB4_SERVICE, ['/Overrides/ForceCharge'])
+			(HUB4_SERVICE, ['/Overrides/ForceCharge', '/Overrides/MaxDischargePower'])
 		]
 
 	def get_settings(self):
@@ -149,12 +149,20 @@ class ScheduledCharging(SystemCalcDelegate):
 		today = now.date()
 
 		for w in self.charge_windows(today):
-			if now in w and not w.soc_reached(self.soc):
-				self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
+			if now in w:
+				# If the target SoC has been reached, but we are still in
+				# the charge window, disable discharge to hold the SoC.
+				if w.soc_reached(self.soc):
+					self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
+					self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/MaxDischargePower', 0)
+				else:
+					self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
+					self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
 				self.active = True
 				break
 		else:
 				self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
+				self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
 				self.active = False
 
 		return True

@@ -34,7 +34,8 @@ class TestSchedule(TestSystemCalcBase):
 
         self._add_device('com.victronenergy.hub4',
             values={
-                '/Overrides/ForceCharge': 0
+                '/Overrides/ForceCharge': 0,
+                '/Overrides/MaxDischargePower': None
         })
 
         self._update_values()
@@ -83,10 +84,10 @@ class TestSchedule(TestSystemCalcBase):
         midnight = datetime.combine(now.date(), time.min)
         stamp = (now-midnight).seconds
 
-		# Set a schedule to start in 2 minutes and stop in 10.
+		# Set a schedule to start in 2 minutes and stop in 4.
         self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Day', 7)
         self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Start', stamp+120)
-        self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Duration', 600)
+        self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Duration', 180)
         self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Soc', 70)
 
 		# Travel 1 minute ahead, state should remain unchanged.
@@ -112,12 +113,22 @@ class TestSchedule(TestSystemCalcBase):
                 '/Overrides/ForceCharge': 1,
         }})
 
-        # Another minute or so, Soc increases to right level
+        # Another minute or so, Soc increases to right level. Discharge
+		# is disabled while we are inside the window
         self._monitor.set_value(self.vebus, '/Soc', 70)
         timer_manager.run(66000)
         self._check_external_values({
                 'com.victronenergy.hub4': {
                 '/Overrides/ForceCharge': 0,
+                '/Overrides/MaxDischargePower': 0,
+        }})
+
+		# When we emerge from the charge window, discharge is allowed again.
+        timer_manager.run(66000)
+        self._check_external_values({
+                'com.victronenergy.hub4': {
+                '/Overrides/ForceCharge': 0,
+                '/Overrides/MaxDischargePower': -1,
         }})
 
 
