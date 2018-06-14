@@ -320,6 +320,10 @@ class TestSchedule(TestSystemCalcBase):
         self.assertTrue(window.soc_reached(99))
         self.assertTrue(window.soc_reached(100))
 
+        # Never stop on SoC is set to 100%
+        window = ScheduledChargeWindow(datetime(2018, 6, 6, 0, 0, 1), 2, 100)
+        self.assertFalse(window.soc_reached(100))
+
         # Wrap around midnight
         window = ScheduledChargeWindow(datetime(2018, 6, 6, 23, 50, 00), 1200, 97)
         self.assertTrue(datetime(2018, 6, 6, 23, 49, 0) not in window)
