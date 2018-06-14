@@ -151,10 +151,15 @@ class ScheduledCharging(SystemCalcDelegate):
 		for w in self.charge_windows(today):
 			if now in w:
 				# If the target SoC has been reached, but we are still in
-				# the charge window, disable discharge to hold the SoC.
+				# the charge window, disable discharge to hold the SoC. There
+				# may however be other chargers in the system, so if we
+				# inexplicably end up 3% above that, re-enable discharge.
 				if w.soc_reached(self.soc):
 					self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
-					self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/MaxDischargePower', 0)
+					if w.soc_reached(self.soc-3):
+						self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
+					else:
+						self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/MaxDischargePower', 0)
 				else:
 					self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
 					self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)

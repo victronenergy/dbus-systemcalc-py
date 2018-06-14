@@ -123,8 +123,19 @@ class TestSchedule(TestSystemCalcBase):
                 '/Overrides/MaxDischargePower': 0,
         }})
 
+        # If our SoC raises above the configured limit, we go to optimised
+        # mode.
+        self._monitor.set_value(self.vebus, '/Soc', 73)
+        timer_manager.run(33000)
+        self._check_external_values({
+                'com.victronenergy.hub4': {
+                '/Overrides/ForceCharge': 0,
+                '/Overrides/MaxDischargePower': -1,
+        }})
+
 		# When we emerge from the charge window, discharge is allowed again.
-        timer_manager.run(66000)
+        self._monitor.set_value(self.vebus, '/Soc', 70)
+        timer_manager.run(33000)
         self._check_external_values({
                 'com.victronenergy.hub4': {
                 '/Overrides/ForceCharge': 0,
