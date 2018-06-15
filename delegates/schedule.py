@@ -141,6 +141,23 @@ class ScheduledCharging(SystemCalcDelegate):
 		stopsocs = (self._settings['schedule_soc_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		return self._charge_windows(today, days, starttimes, durations, stopsocs)
 
+	@property
+	def forcecharge(self):
+		return self._dbusmonitor.get_value(HUB4_SERVICE, '/Overrides/ForceCharge')
+
+	@forcecharge.setter
+	def forcecharge(self, v):
+		return self._dbusmonitor.set_value(HUB4_SERVICE,
+			'/Overrides/ForceCharge', 1 if v else 0)
+
+	@property
+	def maxdischargepower(self):
+		return self._dbusmonitor.get_value(HUB4_SERVICE, '/Overrides/MaxDischargePower')
+
+	@maxdischargepower.setter
+	def maxdischargepower(self, v):
+		return self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/MaxDischargePower', v)
+
 	def _on_timer(self):
 		if self.soc is None:
 			return True
@@ -150,25 +167,20 @@ class ScheduledCharging(SystemCalcDelegate):
 
 		for w in self.charge_windows(today):
 			if now in w:
-				# If the target SoC has been reached, but we are still in
-				# the charge window, disable discharge to hold the SoC. There
-				# may however be other chargers in the system, so if we
-				# inexplicably end up 3% above that, re-enable discharge.
 				if w.soc_reached(self.soc):
-					self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
-					if w.soc_reached(self.soc-3):
-						self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
-					else:
-						self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/MaxDischargePower', 0)
+					self.forcecharge = False
 				else:
-					self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
-					self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
+					# SoC not reached yet
+					self.forcecharge = True
+
+				# Signal that scheduled charging is active
 				self.active = True
+				self.maxdischargepower = 0
 				break
 		else:
-				self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
-				self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
-				self.active = False
+			self.forcecharge = False
+			self.maxdischargepower = -1
+			self.active = False
 
 		return True
 
