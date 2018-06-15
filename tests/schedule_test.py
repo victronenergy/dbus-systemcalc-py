@@ -349,3 +349,24 @@ class TestSchedule(TestSystemCalcBase):
         # Failed corner case 1
         window = ScheduledChargeWindow(datetime(2018, 6, 6, 8, 0, 0), 57601, 98)
         self.assertTrue(datetime(2018, 6, 6, 17, 0, 0) in window)
+
+    def test_inactive_when_keepcharged(self):
+        # Determine seconds since midnight on timer right now.
+        now = timer_manager.datetime
+        midnight = datetime.combine(now.date(), time.min)
+        stamp = (now-midnight).seconds
+
+        # Set a schedule to start in 1 minutes and stop in another 1.
+        self._set_setting('/Settings/CGwacs/BatteryLife/State', 9)
+        self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Day', 7)
+        self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Start', stamp+60)
+        self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Duration', 60)
+        self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Soc', 100)
+
+        # Travel 1 minute ahead, but it should remain out of charge mode
+        # because we're in KeepBatteriesCharged.
+        timer_manager.run(66000)
+        self._check_external_values({
+                'com.victronenergy.hub4': {
+                '/Overrides/ForceCharge': 0,
+        }})
