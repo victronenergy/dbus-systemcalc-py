@@ -48,7 +48,7 @@ def _lg_quirk(dvcc, charge_voltage, charge_current):
 	"""
 	if charge_voltage is not None and dvcc._multi.feedin_enabled:
 		# Make room for a potential 0.4V at the top
-		return (min(charge_voltage, 57.5), charge_current)
+		return (min(charge_voltage, 57.3), charge_current)
 	return (charge_voltage, charge_current)
 
 # Quirk = namedtuple('Quirk', ['product_id', 'floatvoltage', 'floatcurrent'])

@@ -1206,6 +1206,6 @@ class TestHubSystem(TestSystemCalcBase):
 		self._update_values(interval=3000)
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
-				'/BatteryOperationalLimits/MaxChargeVoltage': 57.5,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 57.3,
 			}
 		})
