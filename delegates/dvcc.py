@@ -46,10 +46,8 @@ def _lg_quirk(dvcc, charge_voltage, charge_current):
 	    tripping on high voltage. The batteries publish a charge voltage of 57.7V
 	    but we need to make room for an 0.4V overvoltage when feed-in is enabled.
 	"""
-	if charge_voltage is not None and dvcc._multi.feedin_enabled:
-		# Make room for a potential 0.4V at the top
-		return (min(charge_voltage, 57.3), charge_current)
-	return (charge_voltage, charge_current)
+	# Make room for a potential 0.4V at the top
+	return (min(charge_voltage, 57.3), charge_current)
 
 def _pylontech_quirk(dvcc, charge_voltage, charge_current):
 	""" Quirk for Pylontech. When feed-in is enabled, make a bit of room at the
@@ -59,10 +57,8 @@ def _pylontech_quirk(dvcc, charge_voltage, charge_current):
 	    to 100% full, balancing should be active, and we should avoid
 	    high voltage alarms.
 	"""
-	if charge_voltage is not None and dvcc._multi.feedin_enabled:
-		# When feed-in is enabled, hold at 52V.
-		return (min(charge_voltage, 52), charge_current)
-	return (charge_voltage, charge_current)
+	# Hold at 52V.
+	return (min(charge_voltage, 52), charge_current)
 
 # Quirk = namedtuple('Quirk', ['product_id', 'floatvoltage', 'floatcurrent'])
 QUIRKS = {

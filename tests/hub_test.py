@@ -1198,21 +1198,14 @@ class TestHubSystem(TestSystemCalcBase):
 		self._update_values(interval=3000)
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
-				'/BatteryOperationalLimits/MaxChargeVoltage': 57.7,
-				'/BatteryOperationalLimits/MaxChargeCurrent': 94.2
-			}
-		})
-		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub4/L1/DoNotFeedInOvervoltage', 0)
-		self._update_values(interval=3000)
-		self._check_external_values({
-			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/MaxChargeVoltage': 57.3,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 94.2
 			}
 		})
 
 	def test_pylontech_quirks(self):
 		""" Pylontech Batteries run at 53.2V and raise an alarm at 54V.
-		    We attempt to avoid this when feed-in is active. """
+		    We attempt to avoid this with a lower charge voltage. """
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',
 			values={
@@ -1229,14 +1222,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self._update_values(interval=3000)
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
-				'/BatteryOperationalLimits/MaxChargeVoltage': 53.2,
-				'/BatteryOperationalLimits/MaxChargeCurrent': 25
-			}
-		})
-		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub4/L1/DoNotFeedInOvervoltage', 0)
-		self._update_values(interval=3000)
-		self._check_external_values({
-			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/MaxChargeVoltage': 52,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 25
 			}
 		})
