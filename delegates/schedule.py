@@ -100,6 +100,10 @@ class ScheduledCharging(SystemCalcDelegate):
 		self.active = False
 		self._timer = gobject.timeout_add(5000, exit_on_error, self._on_timer)
 
+	def set_sources(self, dbusmonitor, settings, dbusservice):
+		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
+		self._dbusservice.add_path('/Control/ScheduledCharge', value=0)
+
 	def get_input(self):
 		return [
 			(HUB4_SERVICE, ['/Overrides/ForceCharge', '/Overrides/MaxDischargePower'])
@@ -163,6 +167,7 @@ class ScheduledCharging(SystemCalcDelegate):
 			return True
 
 		if BatteryLife.instance.state == BatteryLifeState.KeepCharged:
+			self._dbusservice['/Control/ScheduledCharge'] = 0
 			return True
 
 		now = self._get_time()
@@ -185,6 +190,7 @@ class ScheduledCharging(SystemCalcDelegate):
 			self.maxdischargepower = -1
 			self.active = False
 
+		self._dbusservice['/Control/ScheduledCharge'] = int(self.active)
 		return True
 
 	def update_values(self, newvalues):
