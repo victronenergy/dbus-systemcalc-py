@@ -30,6 +30,7 @@ s = DbusDummyService(servicename=args.name, deviceinstance=0, paths={
 		'/Ac/ActiveIn/L1/P': {'initial': 0},
 		'/Ac/ActiveIn/ActiveInput': {'initial': 0},
 		'/Ac/ActiveIn/Connected': {'initial': 1},
+		'/Ac/Out/P': {'initial': 0},
 		'/Ac/Out/L1/P': {'initial': 0},
 		'/Dc/0/Voltage': {'initial': 11},
 		'/Dc/0/Current': {'initial': 12},
@@ -43,11 +44,13 @@ s = DbusDummyService(servicename=args.name, deviceinstance=0, paths={
 		'/Hub4/AssistantId': {'initial': None},
 		'/Hub4/Sustain': {'initial': None},
 		'/Hub4/AcPowerSetpoint': {'initial': None},
+		'/Hub4/DisableFeedIn': {'initial': None},
+		'/Hub4/TargetPowerIsMaxFeedIn': {'initial': 0},
+		'/Hub4/FixSolarOffsetTo100mV': {'initial': 0},
 		'/BatteryOperationalLimits/MaxChargeVoltage': {'initial': None},
 		'/BatteryOperationalLimits/MaxChargeCurrent': {'initial': None},
 		'/BatteryOperationalLimits/MaxDischargeCurrent': {'initial': None},
-		'/BatteryOperationalLimits/BatteryLowVoltage': {'initial': None},
-		'/BatterySense/Voltage': {'initial': None}},
+		'/BatteryOperationalLimits/BatteryLowVoltage': {'initial': None}},
 	productname='Multi 12/3000',
 	connection='CCGX-VE.Bus port')
 
