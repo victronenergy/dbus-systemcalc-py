@@ -82,18 +82,18 @@ class TestSchedule(TestSystemCalcBase):
         }})
 
     def test_scheduled_charge_stop_on_soc(self):
-		# Determine seconds since midnight on timer right now.
+        # Determine seconds since midnight on timer right now.
         now = timer_manager.datetime
         midnight = datetime.combine(now.date(), time.min)
         stamp = (now-midnight).seconds
 
-		# Set a schedule to start in 2 minutes and stop in 4.
+        # Set a schedule to start in 2 minutes and stop in 4.
         self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Day', 7)
         self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Start', stamp+120)
         self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Duration', 180)
         self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Soc', 70)
 
-		# Travel 1 minute ahead, state should remain unchanged.
+        # Travel 1 minute ahead, state should remain unchanged.
         timer_manager.run(60000)
         self._check_external_values({
                 'com.victronenergy.hub4': {
@@ -117,7 +117,7 @@ class TestSchedule(TestSystemCalcBase):
         }})
 
         # Another minute or so, Soc increases to right level. Discharge
-		# is disabled while we are inside the window
+        # is disabled while we are inside the window
         self._monitor.set_value(self.vebus, '/Soc', 70)
         timer_manager.run(66000)
         self._check_external_values({
@@ -126,7 +126,7 @@ class TestSchedule(TestSystemCalcBase):
                 '/Overrides/MaxDischargePower': 0,
         }})
 
-		# When we emerge from the charge window, discharge is allowed again.
+        # When we emerge from the charge window, discharge is allowed again.
         timer_manager.run(66000)
         self._check_external_values({
                 'com.victronenergy.hub4': {
@@ -136,12 +136,12 @@ class TestSchedule(TestSystemCalcBase):
 
 
     def test_scheduled_charge_multiple_windows(self):
-		# Determine seconds since midnight on timer right now.
+        # Determine seconds since midnight on timer right now.
         now = timer_manager.datetime
         midnight = datetime.combine(now.date(), time.min)
         stamp = (now-midnight).seconds
 
-		# Set a schedule to start in 1 minutes and stop in 2, then another
+        # Set a schedule to start in 1 minutes and stop in 2, then another
         # to start at 3 and stop at 4.
         self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Day', 7)
         self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Start', stamp+60)
