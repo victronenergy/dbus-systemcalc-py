@@ -131,7 +131,7 @@ class BatteryLife(SystemCalcDelegate):
 		if not self.sustain and (self.soc > self.switch_on_soc or self.soc >= 100):
 			return State.BLDefault
 		elif self.soc <= self.minsoclimit - Constants.LowSocChargeOffset:
-				return State.BLLowSocCharge
+			return State.BLLowSocCharge
 
 	def _lowsoccharge(self):
 		# We stop charging when we get back to the SoC we had when we entered
@@ -168,7 +168,7 @@ class BatteryLife(SystemCalcDelegate):
 		if self.soc >= min(100, self.minsoclimit + Constants.SocSwitchOffset):
 			return State.SocGuardDefault
 		elif self.soc <= self.minsoclimit - Constants.LowSocChargeOffset:
-				return State.SocGuardLowSocCharge
+			return State.SocGuardLowSocCharge
 
 	def _socguard_lowsoccharge(self):
 		if self.soc >= min(100, self.minsoclimit):
