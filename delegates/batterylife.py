@@ -167,13 +167,11 @@ class BatteryLife(SystemCalcDelegate):
 	def _socguard_discharged(self):
 		if self.soc >= min(100, self.minsoclimit + Constants.SocSwitchOffset):
 			return State.SocGuardDefault
-		elif self.soc <= 0 or self.soc < self.minsoclimit - Constants.LowSocChargeOffset:
+		elif self.soc < self.minsoclimit - Constants.LowSocChargeOffset:
 			return State.SocGuardLowSocCharge
 
 	def _socguard_lowsoccharge(self):
-		# If we switched into discharged state at 0%, we should switch out
-		# at something just less than SocSwitchOffset (3%).
-		if self.soc >= min(100, max(self.minsoclimit, Constants.SocSwitchOffset-1)):
+		if self.soc >= min(100, self.minsoclimit):
 			return State.SocGuardDischarged
 
 	def adjust_soc_limit(self, delta):

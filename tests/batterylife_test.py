@@ -922,37 +922,3 @@ class TestBatteryLife(TestSystemCalcBase):
             'state': State.BLDefault,
             'soclimit': 75
         })
-
-    def test_rechargeAtZeroSocLimit(self):
-        self._set_setting('/Settings/CGwacs/BatteryLife/State', State.SocGuardDefault)
-        self._set_setting('/Settings/CGwacs/BatteryLife/MinimumSocLimit', 5)
-        self._monitor.set_value(self.vebus, '/Soc', 0.1)
-        self._update_values()
-        self._check_settings({ 'state': State.SocGuardDischarged })
-
-        self._monitor.set_value(self.vebus, '/Soc', 0)
-        self._update_values()
-        self._check_settings({ 'state': State.SocGuardLowSocCharge })
-
-    def test_rechargeLittleWhenZeroMinSoc(self):
-        self._set_setting('/Settings/CGwacs/BatteryLife/State', State.SocGuardDefault)
-        self._set_setting('/Settings/CGwacs/BatteryLife/MinimumSocLimit', 0)
-        self._monitor.set_value(self.vebus, '/Soc', 0.1)
-        self._update_values()
-        self._check_settings({ 'state': State.SocGuardDefault })
-
-        self._monitor.set_value(self.vebus, '/Soc', 0)
-        self._update_values()
-        self._check_settings({ 'state': State.SocGuardLowSocCharge })
-
-        self._monitor.set_value(self.vebus, '/Soc', 1)
-        self._update_values()
-        self._check_settings({ 'state': State.SocGuardLowSocCharge })
-
-        self._monitor.set_value(self.vebus, '/Soc', 2)
-        self._update_values()
-        self._check_settings({ 'state': State.SocGuardDischarged })
-
-        self._monitor.set_value(self.vebus, '/Soc', 3)
-        self._update_values()
-        self._check_settings({ 'state': State.SocGuardDefault })
