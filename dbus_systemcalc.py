@@ -322,7 +322,7 @@ class SystemCalc:
 		if self._get_first_connected_service('com.victronenergy.charger') is not None:
 			return None
 
-		vebus_service = self._get_first_connected_service('com.victronenergy.vebus')
+		vebus_service = self._get_service_having_lowest_instance('com.victronenergy.vebus')
 		if vebus_service is None:
 			return None
 
@@ -527,8 +527,7 @@ class SystemCalc:
 				newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + vebuspower - battery_power
 
 		# ==== Vebus ====
-		# Assume there's only 1 multi service present on the D-Bus
-		multi = self._get_first_connected_service('com.victronenergy.vebus')
+		multi = self._get_service_having_lowest_instance('com.victronenergy.vebus')
 		multi_path = None
 		if multi is not None:
 			multi_path = multi[0]
@@ -737,11 +736,22 @@ class SystemCalc:
 		self._remove_unconnected_services(services)
 		return services
 
+	# returns a tuple (servicename, instance)
 	def _get_first_connected_service(self, classfilter=None):
 		services = self._get_connected_service_list(classfilter=classfilter)
 		if len(services) == 0:
 			return None
 		return services.items()[0]
+
+	# returns a tuple (servicename, instance)
+	def _get_service_having_lowest_instance(self, classfilter=None):
+		services = self._get_connected_service_list(classfilter=classfilter)
+		if len(services) == 0:
+			return None
+
+		# sort the dict by value; returns list of tuples: (value, key)
+		s = sorted((value, key) for (key,value) in services.items())
+		return (s[0][1], s[0][0])
 
 
 class DbusSystemCalc(SystemCalc):
