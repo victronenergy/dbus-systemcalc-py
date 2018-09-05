@@ -114,3 +114,61 @@ class TestMultipleVebusDevices(TestSystemCalcBase):
                         '/Ac/Grid/L1/Power': 127,
                         '/Ac/Consumption/L1/Power': 87
                 })
+
+	def test_sort_order(self):
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Soc': None,
+			'/ActiveBatteryService': None,
+			'/AutoSelectedBatteryService': 'No battery monitor found'})
+
+		self._add_device('com.victronenergy.vebus.ttyUSB1',
+			product_name='MultiUSB',
+			values={
+				'/Ac/ActiveIn/L1/P': 123,
+				'/Ac/ActiveIn/ActiveInput': 0,
+				'/Ac/ActiveIn/Connected': 1,
+				'/Ac/Out/L1/P': 100,
+				'/Dc/0/Voltage': 11.00,
+				'/Dc/0/Current': -8,
+				'/DeviceInstance': 266,
+				'/Dc/0/MaxChargeCurrent': None,
+				'/Soc': 53.2,
+				'/State': 3,
+				'/BatteryOperationalLimits/MaxChargeVoltage': None,
+				'/BatteryOperationalLimits/MaxChargeCurrent': None,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': None,
+				'/BatteryOperationalLimits/BatteryLowVoltage': None,
+			})
+
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Power':  -88.0,
+			'/ActiveBatteryService': 'com.victronenergy.vebus/266',
+			'/AutoSelectedBatteryService': 'MultiUSB on dummy'})
+
+
+		self._add_device('com.victronenergy.vebus.ttyO1',
+			product_name='MultiTTY',
+			values={
+				'/Ac/ActiveIn/L1/P': 123,
+				'/Ac/ActiveIn/ActiveInput': 0,
+				'/Ac/ActiveIn/Connected': 1,
+				'/Ac/Out/L1/P': 100,
+				'/Dc/0/Voltage': 12.0,
+				'/Dc/0/Current': 5,
+				'/DeviceInstance': 2,
+				'/Dc/0/MaxChargeCurrent': None,
+				'/Soc': 53.2,
+				'/State': 3,
+				'/BatteryOperationalLimits/MaxChargeVoltage': None,
+				'/BatteryOperationalLimits/MaxChargeCurrent': None,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': None,
+				'/BatteryOperationalLimits/BatteryLowVoltage': None,
+			})
+
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Power':  60,
+			'/ActiveBatteryService': 'com.victronenergy.vebus/2',
+			'/AutoSelectedBatteryService': 'MultiTTY on dummy'})
