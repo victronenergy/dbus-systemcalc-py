@@ -718,60 +718,6 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Ac/PvOnOutput/NumberOfPhases': None
 		})
 
-	def test_multiple_vebus_systems(self):
-		self._add_device('com.victronenergy.vebus.ttyO2',
-			product_name='Multi2',
-			connected=False,
-			values={
-				'/Ac/ActiveIn/L1/P': None,
-				'/Ac/ActiveIn/ActiveInput': None,
-				'/Ac/Out/L1/P': None,
-				'/Dc/0/Voltage': None,
-				'/Dc/0/Current': None,
-				'/DeviceInstance': None,
-				'/Soc': None,
-				'/State': 3
-			})
-
-		self._update_values()
-		self._check_values({
-			'/Ac/Grid/L1/Power': 123,
-			'/Ac/Consumption/L1/Power': 100
-		})
-
-	def test_multiple_vebus_systems_2(self):
-		self._add_device('com.victronenergy.vebus.ttyO2',
-			product_name='Multi2',
-			connected=True,
-			values={
-				'/Ac/ActiveIn/L1/P': 127,
-				'/Ac/ActiveIn/ActiveInput': 0,
-				'/Ac/Out/L1/P': 87,
-				'/Dc/0/Voltage': 12.25,
-				'/Dc/0/Current': -8,
-				'/DeviceInstance': 1,
-				'/Soc': 53.2,
-				'/State': 3
-			})
-		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Connected', 0)
-		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/ActiveIn/L1/P', None)
-		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Ac/ActiveIn/L2/P', None)
-		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Ac/ActiveIn/L3/P', None)
-		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/Out/L1/P', None)
-		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Ac/Out/L2/P', None)
-		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Ac/Out/L3/P', None)
-		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/ActiveIn/ActiveInput', None)
-		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Dc/0/Voltage', None)
-		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Dc/0/Current', None)
-		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Soc', None)
-		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', None)
-
-		self._update_values()
-		self._check_values({
-			'/Ac/Grid/L1/Power': 127,
-			'/Ac/Consumption/L1/Power': 87
-		})
-
 	def test_disconnected_vebus_is_ignored_in_auto_mode(self):
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Connected', 0)
 		self._update_values()
