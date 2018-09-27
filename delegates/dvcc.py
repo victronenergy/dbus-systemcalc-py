@@ -636,10 +636,9 @@ class Dvcc(SystemCalcDelegate):
 	def _on_timer(self):
 		bol_support = self._settings['bol'] == 1
 
+		self._tickcount -= 1; self._tickcount %= ADJUST
+
 		if not bol_support:
-			# Update subsystems a bit less frequently. No reason than that is
-			# roughly how often we used to do it.
-			self._tickcount -= 1; self._tickcount %= (ADJUST*3)
 			if self._tickcount > 0: return True
 
 			voltage_written, current_written = self._legacy_update_solarchargers()
@@ -652,7 +651,6 @@ class Dvcc(SystemCalcDelegate):
 
 
 		# BOL/DVCC support below
-		self._tickcount -= 1; self._tickcount %= ADJUST
 
 		# Update subsystems
 		self._solarsystem.update_values()
