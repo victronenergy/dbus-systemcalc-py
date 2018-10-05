@@ -9,6 +9,7 @@ from ve_utils import exit_on_error
 from delegates.base import SystemCalcDelegate
 from delegates.batterylife import BatteryLife, BLPATH
 from delegates.batterylife import State as BatteryLifeState
+from delegates.dvcc import Dvcc
 
 HUB4_SERVICE = 'com.victronenergy.hub4'
 
@@ -164,6 +165,9 @@ class ScheduledCharging(SystemCalcDelegate):
 
 	def _on_timer(self):
 		if self.soc is None:
+			return True
+
+		if not Dvcc.instance.has_ess_assistant:
 			return True
 
 		if BatteryLife.instance.state == BatteryLifeState.KeepCharged:

@@ -27,6 +27,7 @@ class TestSchedule(TestSystemCalcBase):
         TestSystemCalcBase.setUp(self)
         self._add_device(self.vebus, product_name='Multi',
             values={
+                '/Devices/0/Assistants': [0x55, 0x1] + (26 * [0]),
                 '/Hub4/AssistantId': 5,
                 '/VebusMainState': 9,
                 '/State': 3,
@@ -368,6 +369,29 @@ class TestSchedule(TestSystemCalcBase):
 
         # Travel 1 minute ahead, but it should remain out of charge mode
         # because we're in KeepBatteriesCharged.
+        timer_manager.run(66000)
+        self._check_external_values({
+                'com.victronenergy.hub4': {
+                '/Overrides/ForceCharge': 0,
+        }})
+
+    def test_inactive_when_no_ess(self):
+        # Determine seconds since midnight on timer right now.
+        now = timer_manager.datetime
+        midnight = datetime.combine(now.date(), time.min)
+        stamp = (now-midnight).seconds
+
+        # Set a schedule to start in 1 minutes and stop in another 1.
+        self._set_setting('/Settings/CGwacs/BatteryLife/State', 4)
+        self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Day', 7)
+        self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Start', stamp+60)
+        self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Duration', 60)
+        self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Soc', 100)
+
+        # No ESS installed
+        self._monitor.set_value(self.vebus, '/Hub4/AssistantId', None)
+
+        # Travel 1 minute ahead, Charging should remain inactive because no ESS
         timer_manager.run(66000)
         self._check_external_values({
                 'com.victronenergy.hub4': {

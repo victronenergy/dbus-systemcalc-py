@@ -633,6 +633,10 @@ class Dvcc(SystemCalcDelegate):
 	invertervoltageoffset = property(partial(_property, '/Debug/BatteryOperationalLimits/VebusVoltageOffset'))
 	currentoffset = property(partial(_property, '/Debug/BatteryOperationalLimits/CurrentOffset'))
 
+	@property
+	def has_ess_assistant(self):
+		return self._multi.active and self._multi.has_ess_assistant
+
 	def _on_timer(self):
 		bol_support = self._settings['bol'] == 1
 
@@ -767,11 +771,9 @@ class Dvcc(SystemCalcDelegate):
 		""" This function updates the solar chargers only. Parameters
 		    related to the Multi are handled elsewhere. """
 
-		has_ess_assistant = self._multi.active and self._multi.has_ess_assistant
-
 		# Feedback allowed is defined as 'ESS present and FeedInOvervoltage is
 		# enabled'. This ignores other setups which allow feedback: hub-1.
-		feedback_allowed = has_ess_assistant and self._multi.ac_connected and \
+		feedback_allowed = self.has_ess_assistant and self._multi.ac_connected and \
 			self._dbusmonitor.get_value('com.victronenergy.settings',
 				'/Settings/CGwacs/OvervoltageFeedIn') == 1
 
