@@ -124,7 +124,7 @@ class TestSchedule(TestSystemCalcBase):
         self._check_external_values({
                 'com.victronenergy.hub4': {
                 '/Overrides/ForceCharge': 0,
-                '/Overrides/MaxDischargePower': 0,
+                '/Overrides/MaxDischargePower': 1,
         }})
 
         # When we emerge from the charge window, discharge is allowed again.

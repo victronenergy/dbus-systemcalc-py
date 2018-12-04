@@ -187,7 +187,7 @@ class ScheduledCharging(SystemCalcDelegate):
 
 				# Signal that scheduled charging is active
 				self.active = True
-				self.maxdischargepower = 0
+				self.maxdischargepower = 1
 				break
 		else:
 			self.forcecharge = False
