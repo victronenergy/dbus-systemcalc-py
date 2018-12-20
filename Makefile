@@ -20,7 +20,8 @@ DELEGATES = \
 	$(SOURCEDIR)/delegates/systemstate.py \
 	$(SOURCEDIR)/delegates/batterysense.py \
 	$(SOURCEDIR)/delegates/batterylife.py \
-	$(SOURCEDIR)/delegates/schedule.py
+	$(SOURCEDIR)/delegates/schedule.py \
+	$(SOURCEDIR)/delegates/batterydata.py
 
 VEDLIB_FILES = \
 	$(VEDLIBDIR)/logger.py \

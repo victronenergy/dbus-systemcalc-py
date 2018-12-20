@@ -60,7 +60,8 @@ class SystemCalc:
 				'/Soc': dummy,
 				'/TimeToGo': dummy,
 				'/ConsumedAmphours': dummy,
-				'/ProductId': dummy},
+				'/ProductId': dummy,
+				'/CustomName': dummy},
 			'com.victronenergy.vebus' : {
 				'/Ac/ActiveIn/ActiveInput': dummy,
 				'/Ac/ActiveIn/L1/P': dummy,
@@ -121,7 +122,8 @@ class SystemCalc:
 			delegates.BatterySense(),
 			delegates.SystemState(),
 			delegates.BatteryLife(),
-			delegates.ScheduledCharging()]
+			delegates.ScheduledCharging(),
+			delegates.BatteryData()]
 
 		for m in self._modules:
 			for service, paths in m.get_input():
