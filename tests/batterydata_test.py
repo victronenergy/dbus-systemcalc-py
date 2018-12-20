@@ -36,7 +36,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/CustomName': 'Sled battery'})
 
 	def test_batteries_path(self):
-		self._update_values(3000)
+		self._update_values(5000)
 		data = json.loads(self._service._dbusobjects['/Batteries'])
 		self.assertTrue(len(data) == 2)
 
@@ -49,5 +49,5 @@ class TestHubSystem(TestSystemCalcBase):
 		self.assertEqual(di, {0: "battery", 1: "Sled battery"})
 
 		for b in data:
-			for f in ("id", "voltage", "current", "power", "state"):
+			for f in ("id", "voltage", "current", "power", "state", "soc", "timetogo"):
 				assert f in b

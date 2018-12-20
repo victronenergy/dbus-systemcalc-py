@@ -13,6 +13,7 @@ class Tracker(object):
 		'/Dc/0/Power',
 		'/Dc/0/Temperature',
 		'/Soc',
+		'/TimeToGo',
 		'/ProductName',
 		'/CustomName')
 
@@ -26,8 +27,6 @@ class Tracker(object):
 		changed = False
 		for k, v in self._tracked.iteritems():
 			n = self.monitor.get_value(self.service, k)
-			if isinstance(n, float):
-				n = round(n, 1)
 			if n != v:
 				self._tracked[k] = n
 				changed = True
@@ -43,6 +42,7 @@ class Tracker(object):
 			'power': power,
 			'temperature': self._tracked['/Dc/0/Temperature'],
 			'soc': self._tracked['/Soc'],
+			'timetogo': self._tracked['/TimeToGo'],
 			'name': self._tracked['/CustomName'] or self._tracked['/ProductName'],
 			'state': None if power is None else (1 if power > 30 else (2 if power < 30 else 0))
 		}
@@ -56,7 +56,7 @@ class BatteryData(SystemCalcDelegate):
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 		self._dbusservice.add_path('/Batteries', value=None)
-		self._timer = gobject.timeout_add(3000, self._on_timer)
+		self._timer = gobject.timeout_add(5000, self._on_timer)
 
 	def device_added(self, service, instance, do_service_change=True):
 		if service.startswith('com.victronenergy.battery.'):
