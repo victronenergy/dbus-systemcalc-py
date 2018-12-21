@@ -30,6 +30,10 @@ class BatteryTracker(object):
 		# It is valid if it has at least a voltage
 		return self._tracked['/Dc/0/Voltage'] is not None
 
+	@property
+	def name(self):
+		return self._tracked['/CustomName'] or self._tracked['/ProductName']
+
 	def update(self):
 		changed = False
 		for k, v in self._tracked.iteritems():
@@ -50,7 +54,7 @@ class BatteryTracker(object):
 			'temperature': self._tracked['/Dc/0/Temperature'],
 			'soc': self._tracked['/Soc'],
 			'timetogo': self._tracked['/TimeToGo'],
-			'name': self._tracked['/CustomName'] or self._tracked['/ProductName'],
+			'name': self.name,
 			'state': None if power is None else (1 if power > 30 else (2 if power < 30 else 0))
 		}
 
@@ -62,7 +66,10 @@ class SecondaryBatteryTracker(BatteryTracker):
 
 	def __new__(cls, service, monitor, channel):
 		instance = super(SecondaryBatteryTracker, cls).__new__(cls, service, None, monitor)
-		instance._paths = ('/Dc/{}/Voltage'.format(channel), '/Dc/{}/Current'.format(channel))
+		instance._paths = (
+			'/Dc/{}/Voltage'.format(channel),
+			'/Dc/{}/Current'.format(channel),
+			'/CustomName', '/ProductName')
 		return instance
 
 	def __init__(self, service, monitor, channel):
@@ -80,6 +87,7 @@ class SecondaryBatteryTracker(BatteryTracker):
 			'id': self.id,
 			'voltage': self._tracked['/Dc/{}/Voltage'.format(self.channel)],
 			'current': self._tracked['/Dc/{}/Current'.format(self.channel)],
+			'name': "{} #{}".format(self.name, self.channel)
 		}
 
 class BatteryData(SystemCalcDelegate):
