@@ -32,7 +32,7 @@ class BatteryTracker(object):
 
 	@property
 	def name(self):
-		return self._tracked['/CustomName'] or self._tracked['/ProductName']
+		return self._tracked.get('/CustomName', None) or self._tracked['/ProductName']
 
 	def update(self):
 		changed = False
@@ -53,7 +53,7 @@ class BatteryTracker(object):
 			'power': power,
 			'temperature': self._tracked['/Dc/0/Temperature'],
 			'soc': self._tracked['/Soc'],
-			'timetogo': self._tracked['/TimeToGo'],
+			'timetogo': self._tracked.get('/TimeToGo', None),
 			'name': self.name,
 			'state': None if power is None else (1 if power > 30 else (2 if power < 30 else 0))
 		}
@@ -90,6 +90,26 @@ class SecondaryBatteryTracker(BatteryTracker):
 			'name': "{} #{}".format(self.name, self.channel)
 		}
 
+class MultiTracker(BatteryTracker):
+	_paths = (
+		'/Dc/0/Voltage',
+		'/Dc/0/Current',
+		'/Dc/0/Power',
+		'/Dc/0/Temperature',
+		'/Soc',
+		'/ProductName')
+
+	def __init__(self, service, instance, dbusservice, monitor):
+		super(MultiTracker, self).__init__(service, instance, monitor)
+		self._dbusservice = dbusservice
+
+	@property
+	def valid(self):
+		# It is valid if the active battery service is the vebus
+		active = self._dbusservice['/ActiveBatteryService']
+		return active is not None and active.startswith(
+			'com.victronenergy.vebus/')
+
 class BatteryData(SystemCalcDelegate):
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)
@@ -113,6 +133,9 @@ class BatteryData(SystemCalcDelegate):
 				SecondaryBatteryTracker(service, self._dbusmonitor, 1),
 				SecondaryBatteryTracker(service, self._dbusmonitor, 2)))
 			self.changed = True
+		elif service.startswith('com.victronenergy.vebus.'):
+			self.batteries[service].append(
+				MultiTracker(service, instance, self._dbusservice, self._dbusmonitor))
 
 	def device_removed(self, service, instance):
 		if service in self.batteries:
