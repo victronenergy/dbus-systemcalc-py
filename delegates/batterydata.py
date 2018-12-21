@@ -1,4 +1,3 @@
-import json
 import gobject
 from collections import defaultdict
 from itertools import chain
@@ -149,11 +148,11 @@ class BatteryData(SystemCalcDelegate):
 
 	def _on_timer(self):
 		if self.changed:
-			# Update the json
+			# Update the summary
 			active = self._dbusservice['/ActiveBatteryService']
 			is_active = lambda x: self._dbusservice['/ActiveBatteryService'] == "{}/{}".format('.'.join(x.service.split('.')[:3]), x.instance)
-			self._dbusservice['/Batteries'] = json.dumps([
+			self._dbusservice['/Batteries'] = [
 				dict(tracked.data(), active_battery_service=is_active(tracked)) for tracked in chain.from_iterable(self.batteries.itervalues()) if tracked.valid
-			])
+			]
 			self.changed = False
 		return True

@@ -1,5 +1,3 @@
-import json
-
 # This adapts sys.path to include all relevant packages
 import context
 
@@ -37,7 +35,7 @@ class TestHubSystem(TestSystemCalcBase):
 
 	def test_batteries_path(self):
 		self._update_values(5000)
-		data = json.loads(self._service._dbusobjects['/Batteries'])
+		data = self._service._dbusobjects['/Batteries']
 		self.assertTrue(len(data) == 2)
 
 		# Check battery service selection
