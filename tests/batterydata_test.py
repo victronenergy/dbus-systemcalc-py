@@ -49,5 +49,5 @@ class TestHubSystem(TestSystemCalcBase):
 		self.assertEqual(di, {0: "battery", 1: "Sled battery"})
 
 		for b in data:
-			for f in ("id", "voltage", "current", "power", "state", "soc", "timetogo"):
+			for f in ("id", "voltage", "current"):
 				assert f in b
