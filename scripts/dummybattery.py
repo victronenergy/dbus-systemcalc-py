@@ -33,7 +33,9 @@ s = DbusDummyService(
     deviceinstance=0,
     paths={
         '/Soc': {'initial': 20},
+        '/TimeToGo': {'initial': 20},
         '/Dc/0/Voltage': {'initial': 21},
+        '/Dc/1/Voltage': {'initial': None},
         '/Dc/0/Current': {'initial': 22},
         '/Dc/0/Power': {'initial': 23},
         '/Dc/0/Temperature': {'initial': None},

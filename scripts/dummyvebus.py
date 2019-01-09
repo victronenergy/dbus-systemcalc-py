@@ -36,6 +36,7 @@ s = DbusDummyService(servicename=args.name, deviceinstance=0, paths={
 		'/Dc/0/Current': {'initial': 12},
 		'/Dc/0/MaxChargeCurrent': {'initial': None},
 		'/Devices/0/Assistants': {'initial': [0]*56},
+		'/ExtraBatteryCurrent': {'initial': 0},
 		'/FirmwareFeatures/BolFrame': {'initial': None},
 		'/FirmwareFeatures/BolUBatAndTBatSense': {'initial': None},
 		'/Soc': {'initial': 10},
