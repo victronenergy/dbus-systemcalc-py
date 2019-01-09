@@ -241,21 +241,21 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Soc': 15.3,
 				'/DeviceInstance': 2,
 				'/Info/BatteryLowVoltage': 47,
-				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeCurrent': 45,
 				'/Info/MaxChargeVoltage': 58.2,
 				'/Info/MaxDischargeCurrent': 50})
 		self._update_values(interval=60000)
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO2': {
 				'/Link/NetworkMode': 13,
-				'/Link/ChargeCurrent': 25 + 8,
+				'/Link/ChargeCurrent': 45 + 8,
 				'/Link/ChargeVoltage': 55.2},
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
-				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 15,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
-				'/Dc/0/MaxChargeCurrent': 0}})
+				'/Dc/0/MaxChargeCurrent': None}})
 		self._check_values({
 			'/Control/SolarChargeCurrent': 1,
 			'/Control/SolarChargeVoltage': 1,
@@ -264,7 +264,7 @@ class TestHubSystem(TestSystemCalcBase):
 	def test_vedirect_solarcharger_bms_battery_max_charge_current_setting(self):
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 55.2)
 		self._monitor.add_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn', 0)
-		self._set_setting('/Settings/SystemSetup/MaxChargeCurrent', 20)
+		self._set_setting('/Settings/SystemSetup/MaxChargeCurrent', 40)
 		self._add_device('com.victronenergy.solarcharger.ttyO2', {
 			'/State': 3,
 			'/Link/NetworkMode': 0,
@@ -285,21 +285,21 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Soc': 15.3,
 				'/DeviceInstance': 2,
 				'/Info/BatteryLowVoltage': 47,
-				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeCurrent': 45,
 				'/Info/MaxChargeVoltage': 58.2,
 				'/Info/MaxDischargeCurrent': 50})
 		self._update_values(interval=60000)
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO2': {
 				'/Link/NetworkMode': 13,
-				'/Link/ChargeCurrent': 20 + 8,
+				'/Link/ChargeCurrent': 40 + 8,
 				'/Link/ChargeVoltage': 55.2},
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
-				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 10,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
-				'/Dc/0/MaxChargeCurrent': 0}})
+				'/Dc/0/MaxChargeCurrent': None}})
 		self._check_values({
 			'/Control/SolarChargeCurrent': 1,
 			'/Control/SolarChargeVoltage': 1,
@@ -326,21 +326,21 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Soc': 15.3,
 				'/DeviceInstance': 2,
 				'/Info/BatteryLowVoltage': 47,
-				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeCurrent': 45,
 				'/Info/MaxChargeVoltage': 58.2,
 				'/Info/MaxDischargeCurrent': 50})
 		self._update_values(interval=60000)
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO2': {
 				'/Link/NetworkMode': 13,
-				'/Link/ChargeCurrent': 25 + 8,
+				'/Link/ChargeCurrent': 45 + 8,
 				'/Link/ChargeVoltage': 58.2},
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
-				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 14,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
-				'/Dc/0/MaxChargeCurrent': 0}})
+				'/Dc/0/MaxChargeCurrent': None}})
 		self._check_values({
 			'/Control/SolarChargeCurrent': 1,
 			'/Control/SolarChargeVoltage': 1,
@@ -413,7 +413,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Link/ChargeVoltage': 58.2},
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
-				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 0,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
 				# Difference goes to the multi
@@ -460,10 +460,10 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Link/ChargeVoltage': 58.3},
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
-				'/BatteryOperationalLimits/MaxChargeCurrent': 45,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 10,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
-				'/Dc/0/MaxChargeCurrent': 10}})
+				'/Dc/0/MaxChargeCurrent': None}})
 		self._check_values({
 			'/SystemType': 'ESS',
 			'/Control/SolarChargeCurrent': 1,
@@ -498,21 +498,21 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Soc': 15.3,
 				'/DeviceInstance': 2,
 				'/Info/BatteryLowVoltage': 47,
-				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeCurrent': 45,
 				'/Info/MaxChargeVoltage': 58.2,
 				'/Info/MaxDischargeCurrent': 50})
 		self._update_values(interval=60000)
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO2': {
 				'/Link/NetworkMode': 13,
-				'/Link/ChargeCurrent': 25 + 8,
+				'/Link/ChargeCurrent': 45 + 8,
 				'/Link/ChargeVoltage': 58.3},
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
-				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 14,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
-				'/Dc/0/MaxChargeCurrent': 0}})
+				'/Dc/0/MaxChargeCurrent': None}})
 		self._check_values({
 			'/SystemType': 'ESS',
 			'/Control/SolarChargeCurrent': 1,
@@ -526,7 +526,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/State': 0,
 			'/Settings/ChargeCurrentLimit': 100,
 			'/Dc/0/Voltage': 12.6,
-			'/Dc/0/Current': 30,
+			'/Dc/0/Current': 20,
 			'/Link/ChargeCurrent': None,
 			'/FirmwareVersion': 0x0116},
 			connection='VE.Direct')
@@ -546,10 +546,10 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
-				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 5,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
-				'/Dc/0/MaxChargeCurrent': 0}})
+				'/Dc/0/MaxChargeCurrent': None}})
 		self._check_values({
 			'/Control/SolarChargeCurrent': 0,
 			'/Control/SolarChargeVoltage': 0,
@@ -575,7 +575,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
-				'/Dc/0/MaxChargeCurrent': 25}})
+				'/Dc/0/MaxChargeCurrent': None}})
 		self._check_values({
 			'/Control/SolarChargeCurrent': 0,
 			'/Control/SolarChargeVoltage': 0,
@@ -1029,7 +1029,7 @@ class TestHubSystem(TestSystemCalcBase):
 			}})
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
-				'/BatteryOperationalLimits/MaxChargeCurrent': 25
+				'/BatteryOperationalLimits/MaxChargeCurrent': 15
 			}})
 		self._service.set_value('/Debug/BatteryOperationalLimits/VebusVoltageOffset', 0.2)
 		self._service.set_value('/Debug/BatteryOperationalLimits/CurrentOffset', 5)
@@ -1040,8 +1040,8 @@ class TestHubSystem(TestSystemCalcBase):
 			}})
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
-				'/BatteryOperationalLimits/MaxChargeCurrent': 30,
-				'/Dc/0/MaxChargeCurrent': 20 # because solar provides 9.7.
+				'/BatteryOperationalLimits/MaxChargeCurrent': 20,
+				'/Dc/0/MaxChargeCurrent': None
 			}})
 
 	def test_hub1_legacy_voltage_control(self):
@@ -1191,7 +1191,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Soc': 100,
 				'/DeviceInstance': 2,
 				'/Info/BatteryLowVoltage': 47,
-				'/Info/MaxChargeCurrent': 94.2,
+				'/Info/MaxChargeCurrent': 94,
 				'/Info/MaxChargeVoltage': 57.7,
 				'/Info/MaxDischargeCurrent': 100,
 				'/ProductId': 0xB004})
@@ -1199,7 +1199,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/MaxChargeVoltage': 57.3,
-				'/BatteryOperationalLimits/MaxChargeCurrent': 94.2
+				'/BatteryOperationalLimits/MaxChargeCurrent': 94
 			}
 		})
 
@@ -1226,3 +1226,36 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeCurrent': 25
 			}
 		})
+
+	def test_no_bms_max_charge_current_setting(self):
+		# Test that with no BMS but a user limit, /Dc/0/MaxChargeCurrent is correctly set.
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 55.2)
+		self._monitor.add_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn', 0)
+		self._set_setting('/Settings/SystemSetup/MaxChargeCurrent', 40)
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Dc/0/Voltage': 58.0,
+			'/Dc/0/Current': 30,
+			'/FirmwareVersion': 0x0118},
+			connection='VE.Direct')
+		self._update_values(interval=60000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/NetworkMode': 5,
+				'/Link/ChargeCurrent': 40 + 8,
+				'/Link/ChargeVoltage': 55.2},
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/BatteryLowVoltage': None,
+				'/BatteryOperationalLimits/MaxChargeCurrent': None,
+				'/BatteryOperationalLimits/MaxChargeVoltage': None,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': None,
+				'/Dc/0/MaxChargeCurrent': 10}})
+		self._check_values({
+			'/Control/SolarChargeCurrent': 1,
+			'/Control/SolarChargeVoltage': 1,
+			'/Control/BmsParameters': 0})

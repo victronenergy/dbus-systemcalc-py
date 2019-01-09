@@ -666,29 +666,27 @@ class Dvcc(SystemCalcDelegate):
 		# Signal Dvcc support to other processes
 		self._dbusservice['/Control/Dvcc'] = 1
 
-		# Write the BMS parameters to the Multi
+		# Get the user current limit, if set
+		user_max_charge_current = self._settings['maxchargecurrent']
+		if user_max_charge_current < 0: user_max_charge_current = None
+
+		# If there is a BMS, get the charge voltage and current from it
 		bms_service = self._batterysystem.bms
-		bms_parameters_written = 0
 		max_charge_current = None
 		charge_voltage = None
 		if bms_service is not None:
-			bms_parameters_written, charge_voltage, max_charge_current = self._update_battery_operational_limits(bms_service)
-		self._dbusservice['/Control/BmsParameters'] = bms_parameters_written
+			charge_voltage, max_charge_current = self._calculate_battery_operational_limits(bms_service)
+
+		# Take the lesser of the BMS and user limits, wherever they exist
+		maximae = filter(lambda x: x is not None,
+			(user_max_charge_current, max_charge_current))
+		max_charge_current = min(maximae) if maximae else None
 
 		# @todo EV What if ESS + OvervoltageFeedIn? In that case there is no
 		# charge current control on the MPPTs, but we'll still indicate that
 		# the control is active here. Should we?
 		self._dbusservice['/Control/MaxChargeCurrent'] = \
 			not self._multi.active or self._multi.has_bolframe
-
-		# Get the user current limit, if set
-		user_max_charge_current = self._settings['maxchargecurrent']
-		if user_max_charge_current < 0: user_max_charge_current = None
-
-		# Take the lesser of the limits, wherever they exist
-		maximae = filter(lambda x: x is not None,
-			(user_max_charge_current, max_charge_current))
-		max_charge_current = min(maximae) if maximae else None
 
 		# We need to keep a copy of the original value for later. We will be
 		# modifying one of them to compensate for vebus current.
@@ -700,26 +698,41 @@ class Dvcc(SystemCalcDelegate):
 				vebus_dc_current < 0:
 			_max_charge_current = ceil(_max_charge_current - vebus_dc_current)
 
-		# Try to push the solar chargers to this value
+		# Try to push the solar chargers to the vebus-compensated value
 		voltage_written, current_written = self._update_solarchargers(
 			bms_service is not None, charge_voltage, _max_charge_current)
-
-		# Using the original uncompensated max_charge_current, set the multi
-		# to make up the difference between the mppts and this value. We do
-		# this because the charging current is also represented in
-		# vebus_dc_current and we don't want to account for it twice.
-		# TODO: If the max_charge_current becomes None, we should write a large
-		# value to the Multi to reset its charging limits.
-		if max_charge_current is not None:
-			remainder = floor(max_charge_current - self._solarsystem.smoothed_current)
-			try:
-				self._multi.maxchargecurrent = remainder if remainder > 1 else 0
-			except DBusException:
-				logging.debug(traceback.format_exc())
-
 		self._dbusservice['/Control/SolarChargeVoltage'] = voltage_written
 		self._dbusservice['/Control/SolarChargeCurrent'] = current_written
+
+		# The Multi gets the remainder after subtracting what the solar chargers made
+		if max_charge_current is not None:
+			max_charge_current = max(0.0, round(max_charge_current - self._solarsystem.smoothed_current))
+
+		# If we have a BMS, update BOL parameters. Otherwise set the MaxChargeCurrent on the Multi. That
+		# overwrites the one set by veconfigure, but with no BMS the only possible value it could write
+		# is the user limit.
+		# TODO: If the max_charge_current becomes None, we should write a large
+		# value to the Multi to reset its charging limits.
+		bms_parameters_written = 0
+		if bms_service is None:
+			if max_charge_current is not None:
+				try:
+					# Don't bother setting a charge current at 1A or less
+					self._multi.maxchargecurrent = max_charge_current if max_charge_current > 1 else 0
+				except DBusException:
+					logging.debug(traceback.format_exc())
+		else:
+			bms_parameters_written = self._update_battery_operational_limits(bms_service, charge_voltage, max_charge_current)
+		self._dbusservice['/Control/BmsParameters'] = bms_parameters_written
+
 		return True
+
+	def _calculate_battery_operational_limits(self, bms_service):
+		""" This function obtains and calculates the charge voltage and
+		    charge current specified by the BMS. """
+		cv = safeadd(bms_service.chargevoltage, self.invertervoltageoffset)
+		mcc = safeadd(bms_service.maxchargecurrent, self.currentoffset)
+		return self._adjust_battery_operational_limits(bms_service, cv, mcc)
 
 	def _adjust_battery_operational_limits(self, bms_service, cv, mcc):
 		""" Take the charge voltage and maximum charge current from the BMS
@@ -736,16 +749,11 @@ class Dvcc(SystemCalcDelegate):
 
 		return cv, mcc
 
-	def _update_battery_operational_limits(self, bms_service):
+	def _update_battery_operational_limits(self, bms_service, cv, mcc):
 		""" This function writes the bms parameters across to the Multi
 		    if it exists. The parameters may be modified before being
 		    copied across. The modified current value is returned to be
 		    used elsewhere. """
-		cv = safeadd(bms_service.chargevoltage, self.invertervoltageoffset)
-		mcc = safeadd(bms_service.maxchargecurrent, self.currentoffset)
-		cv, mcc = self._adjust_battery_operational_limits(bms_service,
-			cv, mcc)
-
 		if self._multi.active:
 			try:
 				if cv is not None:
@@ -761,11 +769,11 @@ class Dvcc(SystemCalcDelegate):
 				copy_dbus_value(self._dbusmonitor,
 					bms_service.service, '/Info/MaxDischargeCurrent',
 					self._multi.service, '/BatteryOperationalLimits/MaxDischargeCurrent')
-				return 1, cv, mcc
+				return 1
 			except DBusException:
 				logging.debug(traceback.format_exc())
 
-		return 0, cv, mcc
+		return 0
 
 	def _update_solarchargers(self, has_bms, bms_charge_voltage, max_charge_current):
 		""" This function updates the solar chargers only. Parameters
