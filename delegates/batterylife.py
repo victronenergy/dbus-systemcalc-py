@@ -44,7 +44,7 @@ class Constants(object):
 	FloatLevel = 95.0
 	SocSwitchMax = AbsorptionLevel - SocSwitchIncrement
 	ForceChargeCurrent = 5.0
-	ForceChargeInterval = 5 * 24 * 60 * 60 # 5 days
+	ForceChargeInterval = 24 * 60 * 60 # 24 Hours
 
 def bound(low, v, high):
 	return max(low, min(v, high))
