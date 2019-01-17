@@ -1,3 +1,5 @@
+from functools import update_wrapper
+
 VictronServicePrefix = 'com.victronenergy'
 
 
@@ -57,3 +59,18 @@ class SmartDict(dict):
 			raise AttributeError(n)
 	def __setattr__(self, k, v):
 		self[k] = v
+
+class reify(object):
+	""" Decorator for class methods. Turns the method into a property that
+	    is evaluated once, and then replaces the property, effectively caching
+		it and evaluating it only once. """
+	def __init__(self, wrapped):
+		self.wrapped = wrapped
+		update_wrapper(self, wrapped)
+
+	def __get__(self, inst, objtype=None):
+		if inst is None:
+			return self
+		val = self.wrapped(inst)
+		setattr(inst, self.wrapped.__name__, val)
+		return val
