@@ -8,6 +8,7 @@ import argparse
 import sys
 import os
 import json
+from itertools import chain
 
 # Victron packages
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), 'ext', 'velib_python'))
@@ -39,7 +40,8 @@ class SystemCalc:
 				'/ProductName': dummy,
 				'/Mgmt/Connection': dummy,
 				'/Dc/0/Voltage': dummy,
-				'/Dc/0/Current': dummy},
+				'/Dc/0/Current': dummy,
+				'/Dc/0/Temperature': dummy},
 			'com.victronenergy.pvinverter': {
 				'/Connected': dummy,
 				'/ProductName': dummy,
@@ -80,6 +82,7 @@ class SystemCalc:
 				'/Dc/0/Voltage': dummy,
 				'/Dc/0/Current': dummy,
 				'/Dc/0/Power': dummy,
+				'/Dc/0/Temperature': dummy,
 				'/Soc': dummy},
 			'com.victronenergy.charger': {
 				'/Connected': dummy,
@@ -113,7 +116,13 @@ class SystemCalc:
 				'/Settings/SystemSetup/AcInput1' : dummy,
 				'/Settings/SystemSetup/AcInput2' : dummy,
 				'/Settings/CGwacs/RunWithoutGridMeter' : dummy,
-				'/Settings/System/TimeZone' : dummy}
+				'/Settings/System/TimeZone' : dummy},
+			'com.victronenergy.temperature': {
+				'/Connected': dummy,
+				'/ProductName': dummy,
+				'/Mgmt/Connection': dummy,
+				'/Temperature': dummy,
+				'/TemperatureType': dummy}
 		}
 
 		self._modules = [
@@ -169,6 +178,8 @@ class SystemCalc:
 			'/AutoSelectedBatteryMeasurement', value=None, gettextcallback=self._gettext)
 		self._dbusservice.add_path(
 			'/ActiveBatteryService', value=None, gettextcallback=self._gettext)
+		self._dbusservice.add_path(
+			'/AutoSelectedTemperatureService', value=None, gettextcallback=self._gettext)
 		self._dbusservice.add_path(
 			'/PvInvertersProductIds', value=None)
 		self._summeditems = {
@@ -341,6 +352,32 @@ class SystemCalc:
 
 		return vebus_service[0]
 
+	def _determine_temperature(self, battery_service):
+		# Business Logic:
+		# 1. If the selected battery service has temperature, use that.
+		# 2. If the VE.Bus service has temperature, then use that.
+		# 3. If a solar charger has temperature, use that (CAN-bus chargers).
+		# 4. Use the first available dedicated sensor
+		vebus_service = self._dbusservice['/VebusService']
+		for service in chain((battery_service,
+				vebus_service if vebus_service != battery_service else None),
+				self._get_connected_service_list('com.victronenergy.solarcharger').keys()):
+			if service is None: continue
+
+			t = self._dbusmonitor.get_value(service, '/Dc/0/Temperature')
+			if t is not None:
+				return t, service
+
+		for service in self._get_connected_service_list('com.victronenergy.temperature').keys():
+			if self._dbusmonitor.get_value(service, '/TemperatureType') != 0:
+				# Skip sensors that are not battery sensors
+				continue
+			t = self._dbusmonitor.get_value(service, '/Temperature')
+			if t is not None:
+				return t, service
+
+		return None, None
+
 	# Called on a one second timer
 	def _handletimertick(self):
 		if self._changed:
@@ -439,8 +476,6 @@ class SystemCalc:
 				newvalues['/Dc/Charger/Power'] += v * i
 
 		# ==== BATTERY ====
-		newvalues['/Dc/Battery/Temperature'] = None
-		newvalues['/Dc/Battery/TemperatureService'] = None
 		if self._batteryservice is not None:
 			batteryservicetype = self._batteryservice.split('.')[2]  # either 'battery' or 'vebus'
 			newvalues['/Dc/Battery/Soc'] = self._dbusmonitor.get_value(self._batteryservice,'/Soc')
@@ -452,12 +487,6 @@ class SystemCalc:
 				newvalues['/Dc/Battery/VoltageService'] = self._batteryservice
 				newvalues['/Dc/Battery/Current'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
 				newvalues['/Dc/Battery/Power'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Power')
-
-				# Use temperature, if it has it
-				t = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Temperature')
-				if t is not None:
-					newvalues['/Dc/Battery/Temperature'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Temperature')
-					newvalues['/Dc/Battery/TemperatureService'] = self._batteryservice
 
 			elif batteryservicetype == 'vebus':
 				if self._settings['hasdcsystem'] == 1 or \
@@ -479,6 +508,7 @@ class SystemCalc:
 					newvalues['/Dc/Battery/Power'] = battery_power
 					newvalues['/Dc/Battery/Voltage'] = battery_voltage
 					newvalues['/Dc/Battery/VoltageService'] = solarcharger_batteryvoltage_service or self._batteryservice
+
 
 			p = newvalues.get('/Dc/Battery/Power', None)
 			if p is not None:
@@ -517,6 +547,13 @@ class SystemCalc:
 				voltage = newvalues['/Dc/Battery/Voltage']
 				newvalues['/Dc/Battery/Current'] = p / voltage if voltage > 0 else None
 				newvalues['/Dc/Battery/Power'] = p
+
+		# Get a temperature value and service
+		newvalues['/Dc/Battery/Temperature'], temperature_service = \
+			self._determine_temperature(self._batteryservice)
+		newvalues['/Dc/Battery/TemperatureService'] = temperature_service
+		self._dbusservice['/AutoSelectedTemperatureService'] = None if temperature_service is None else \
+			self._get_readable_service_name(temperature_service)
 
 		# ==== SYSTEM ====
 		if self._settings['hasdcsystem'] == 1 and batteryservicetype == 'battery':
