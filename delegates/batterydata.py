@@ -148,7 +148,7 @@ class BatteryData(SystemCalcDelegate):
 		self.changed = False
 		self.configured_batteries = {}
 		self.confcount = 0
-		self.battery_service = None
+		self.active_battery_service = None
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
