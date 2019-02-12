@@ -250,7 +250,7 @@ class BatteryData(SystemCalcDelegate):
 			self._dbusservice['/Batteries'] = [
 				dict(tracked.data(), **kwargs(tracked)) \
 					for tracked in chain.from_iterable(self.batteries.itervalues()) \
-					if self.is_enabled(tracked) or is_active(tracked)
+					if (tracked.valid and self.is_enabled(tracked)) or is_active(tracked)
 			]
 
 		if self.deviceschanged or self.active_battery_service != active:
