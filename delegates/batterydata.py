@@ -77,12 +77,15 @@ class BatteryTracker(object):
 
 	def _data(self):
 		power = self._tracked['/Dc/0/Power']
+		voltage = self._tracked['/Dc/0/Voltage']
+		current = self._tracked['/Dc/0/Current']
+		calculated_power = voltage * current if None not in (voltage, current) else None
 		return {
 			'id': self.service,
 			'instance': self.instance,
-			'voltage': self._tracked['/Dc/0/Voltage'],
-			'current': self._tracked['/Dc/0/Current'],
-			'power': power,
+			'voltage': voltage,
+			'current': current,
+			'power': power or calculated_power,
 			'temperature': self._tracked['/Dc/0/Temperature'],
 			'soc': self._tracked['/Soc'],
 			'timetogo': self._tracked.get('/TimeToGo', None),
@@ -101,6 +104,7 @@ class SecondaryBatteryTracker(BatteryTracker):
 		instance._paths = (
 			'/Dc/{}/Voltage'.format(channel),
 			'/Dc/{}/Current'.format(channel),
+			'/Dc/{}/Power'.format(channel),
 			'/CustomName', '/ProductName')
 		return instance
 
@@ -121,10 +125,14 @@ class SecondaryBatteryTracker(BatteryTracker):
 		return "{}/{}/{}".format('.'.join(self.service.split('.')[:3]), self.instance, self.channel)
 
 	def _data(self):
+		voltage = self._tracked['/Dc/{}/Voltage'.format(self.channel)]
+		current = self._tracked['/Dc/{}/Current'.format(self.channel)]
+		calculated_power = voltage * current if None not in (voltage, current) else None
 		return {
 			'id': self.id,
-			'voltage': self._tracked['/Dc/{}/Voltage'.format(self.channel)],
-			'current': self._tracked['/Dc/{}/Current'.format(self.channel)],
+			'voltage': voltage,
+			'current': current,
+			'power': self._tracked['/Dc/{}/Power'.format(self.channel)] or calculated_power,
 			'name': self.name
 		}
 
