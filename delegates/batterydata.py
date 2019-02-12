@@ -161,8 +161,6 @@ class BatteryData(SystemCalcDelegate):
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 
-		self.configured_batteries, self.confcount = self.load_configured_batteries()
-
 		# Publish the battery configuration
 		self._dbusservice.add_path('/Batteries', value=None)
 		self._dbusservice.add_path('/AvailableBatteries', value=None)
@@ -182,6 +180,8 @@ class BatteryData(SystemCalcDelegate):
 		elif service.startswith('com.victronenergy.vebus.'):
 			self.add_trackers(service,
 				MultiTracker(service, instance, self._dbusservice, self._dbusmonitor))
+		elif service == 'com.victronenergy.settings':
+			self.configured_batteries, self.confcount = self.load_configured_batteries()
 
 	def device_removed(self, service, instance):
 		if service in self.batteries:
