@@ -8,7 +8,7 @@ from functools import partial, wraps
 from collections import namedtuple
 
 # Victron packages
-from sc_utils import safeadd, copy_dbus_value
+from sc_utils import safeadd, copy_dbus_value, reify
 from ve_utils import exit_on_error
 
 from delegates.base import SystemCalcDelegate
@@ -374,11 +374,21 @@ class Battery(object):
 		self.monitor = monitor
 		self.service = service
 
-	@property
+	@reify
 	def is_bms(self):
 		""" Indicates if this battery has a BMS that can communicate the
 		    preferred charge parameters. """
 		return self.monitor.get_value(self.service, '/Info/MaxChargeVoltage') is not None
+
+	@reify
+	def device_instance(self):
+		""" Returns the DeviceInstance of this device. """
+		return self.monitor.get_value(self.service, '/DeviceInstance')
+
+	@reify
+	def instance_service_name(self):
+		""" Returns a string in a format compatible with activebatteryservice. """
+		return '%s/%s' % ('.'.join(self.service.split('.')[:3]), self.device_instance)
 
 	@property
 	def maxchargecurrent(self):
@@ -395,7 +405,7 @@ class Battery(object):
 		""" Returns current voltage of battery. """
 		return self.monitor.get_value(self.service, '/Dc/0/Voltage')
 
-	@property
+	@reify
 	def product_id(self):
 		""" Returns Product ID of battery. """
 		return self.monitor.get_value(self.service, '/ProductId')
@@ -425,11 +435,10 @@ class BatterySubsystem(object):
 		del self._battery_services[service]
 
 	@property
-	def bms(self):
-		""" Returns the first battery service with a BMS. """
-		for b in self._battery_services.values():
-			if b.is_bms: return b
-		return None
+	def bmses(self):
+		""" Returns the battery services with a BMS. """
+		return filter(lambda b: b.is_bms,
+			self._battery_services.itervalues())
 
 class BatteryOperationalLimits(object):
 	""" Only used to encapsulate this part of the Multi's functionality.
@@ -632,10 +641,21 @@ class Dvcc(SystemCalcDelegate):
 	solarvoltageoffset = property(partial(_property, '/Debug/BatteryOperationalLimits/SolarVoltageOffset'))
 	invertervoltageoffset = property(partial(_property, '/Debug/BatteryOperationalLimits/VebusVoltageOffset'))
 	currentoffset = property(partial(_property, '/Debug/BatteryOperationalLimits/CurrentOffset'))
+	activebatteryservice = property(lambda s: s._dbusservice['/ActiveBatteryService'])
 
 	@property
 	def has_ess_assistant(self):
 		return self._multi.active and self._multi.has_ess_assistant
+
+	@property
+	def bms(self):
+		bmses = sorted(self._batterysystem.bmses,
+			key=lambda b: (b.instance_service_name != self.activebatteryservice, b.device_instance))
+		try:
+			return bmses[0]
+		except IndexError:
+			pass
+		return None
 
 	def _on_timer(self):
 		bol_support = self._settings['bol'] == 1
@@ -671,7 +691,7 @@ class Dvcc(SystemCalcDelegate):
 		if user_max_charge_current < 0: user_max_charge_current = None
 
 		# If there is a BMS, get the charge voltage and current from it
-		bms_service = self._batterysystem.bms
+		bms_service = self.bms
 		max_charge_current = None
 		charge_voltage = None
 		if bms_service is not None:

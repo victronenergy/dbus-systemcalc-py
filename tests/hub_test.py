@@ -880,7 +880,7 @@ class TestHubSystem(TestSystemCalcBase):
 
 		system = BatterySubsystem(self._system_calc._dbusmonitor)
 		system.add_battery('com.victronenergy.battery.socketcan_can0_di0_uc30688')
-		self.assertTrue(system.bms is None)
+		self.assertEqual(system.bmses, [])
 
 		# Test magic methods
 		self.assertTrue('com.victronenergy.battery.socketcan_can0_di0_uc30688' in system)
@@ -900,7 +900,7 @@ class TestHubSystem(TestSystemCalcBase):
 
 		system = BatterySubsystem(self._system_calc._dbusmonitor)
 		battery = system.add_battery('com.victronenergy.battery.socketcan_can0_di0_uc30688')
-		self.assertTrue(system.bms is battery)
+		self.assertTrue(system.bmses[0] is battery)
 		self.assertTrue(battery.maxchargecurrent == 100)
 		self.assertTrue(battery.chargevoltage == 15)
 		self.assertEqual(battery.voltage, 12.6)
@@ -1259,3 +1259,108 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Control/SolarChargeCurrent': 1,
 			'/Control/SolarChargeVoltage': 1,
 			'/Control/BmsParameters': 0})
+
+	def test_battery_properties(self):
+		""" Test the propertes of battery objects. """
+		from delegates.dvcc import Dvcc
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 51.8,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 155.4,
+				'/Soc': 95,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': None,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 53.2,
+				'/Info/MaxDischargeCurrent': 25,
+				'/ProductId': 0xB009})
+		self._update_values(interval=3000)
+
+		batteries = list(Dvcc.instance._batterysystem)
+		self.assertEqual(batteries[0].device_instance, 2)
+		self.assertEqual(batteries[0].instance_service_name, 'com.victronenergy.battery/2')
+		self.assertTrue(batteries[0].is_bms)
+
+	def test_bms_selection(self):
+		""" Test that if there is more than one BMS in the system,
+		    the active battery service is preferred. """
+		from delegates.dvcc import Dvcc
+
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.battery/1')
+		self.assertEqual(Dvcc.instance.activebatteryservice, None)
+
+		self._add_device('com.victronenergy.battery.ttyO1',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 51.8,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 155.4,
+				'/Soc': 95,
+				'/DeviceInstance': 0,
+				'/Info/BatteryLowVoltage': None,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 53.2,
+				'/Info/MaxDischargeCurrent': 25,
+				'/ProductId': 0xB009})
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 52.8,
+				'/Dc/0/Current': 4,
+				'/Dc/0/Power': 152.4,
+				'/Soc': 95,
+				'/DeviceInstance': 1,
+				'/Info/BatteryLowVoltage': None,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 53.2,
+				'/Info/MaxDischargeCurrent': 25,
+				'/ProductId': 0xB009})
+		self.assertEqual(Dvcc.instance.activebatteryservice, 'com.victronenergy.battery/1')
+		self.assertEqual(len(Dvcc.instance._batterysystem.bmses), 2)
+
+		# Check that the selected battery is chosen, as both here have BMSes
+		self.assertEqual(Dvcc.instance.bms.service, 'com.victronenergy.battery.ttyO2')
+
+	def test_bms_selection_lowest_deviceinstance(self):
+		""" Test that if there is more than one BMS in the system,
+		    the lowest device instance """
+		from delegates.dvcc import Dvcc
+
+		# Select a non-existent battery service to ensure that none is active
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.battery/111')
+
+		for did in (1, 0, 2):
+			self._add_device('com.victronenergy.battery.ttyO{}'.format(did),
+				product_name='battery',
+				values={
+					'/Dc/0/Voltage': 51.8,
+					'/Dc/0/Current': 3,
+					'/Dc/0/Power': 155.4,
+					'/Soc': 95,
+					'/DeviceInstance': did,
+					'/Info/BatteryLowVoltage': None,
+					'/Info/MaxChargeCurrent': 25,
+					'/Info/MaxChargeVoltage': 53.2,
+					'/Info/MaxDischargeCurrent': 25,
+					'/ProductId': 0xB009})
+		self.assertEqual(Dvcc.instance.activebatteryservice, None)
+		self.assertEqual(len(Dvcc.instance._batterysystem.bmses), 3)
+
+		# Check that the lowest deviceinstante is chosen, as all here have BMSes
+		self.assertEqual(Dvcc.instance.bms.service, 'com.victronenergy.battery.ttyO0')
+
+	def test_bms_selection_no_bms(self):
+		""" Test that delegate shows no BMS if none is available. """
+		from delegates.dvcc import Dvcc
+
+		self._add_device('com.victronenergy.battery.ttyO1',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 51.8,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 155.4,
+				'/Soc': 95,
+				'/DeviceInstance': 0})
+		self.assertEqual(Dvcc.instance.bms, None)
