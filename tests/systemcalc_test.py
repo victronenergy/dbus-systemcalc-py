@@ -598,6 +598,31 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Dc/Battery/Voltage': 12.25,
 			'/ActiveBatteryService': None})
 
+	def test_battery_selection_inverter(self):
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'nobattery')
+		self._add_device('com.victronenergy.inverter.ttyO1',
+						product_name='inverter',
+						values={
+								'/Dc/0/Voltage': 12.8,
+								'/Ac/Out/L1/V': 230,
+								'/Ac/Out/L1/I': 1.0 })
+		self._update_values()
+
+		# The vebus is still preferred
+		self._check_values({
+			'/Dc/Battery/Voltage': 12.25,
+			'/Dc/Battery/VoltageService': 'com.victronenergy.vebus.ttyO1'})
+
+		# ... but if the vebus is not suitable... use the first vedirect inverter
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Voltage': 12.8,
+			'/Dc/Battery/VoltageService': 'com.victronenergy.inverter.ttyO1',
+			'/Ac/Consumption/L1/Power': 230,
+			'/Ac/ConsumptionOnOutput/L1/Power': 230,
+			'/Ac/Consumption/NumberOfPhases': 1})
+
 	def test_battery_selection_solarcharger_extra_current(self):
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent', 0)
 		self._add_device('com.victronenergy.solarcharger.ttyO1',

@@ -122,7 +122,16 @@ class SystemCalc:
 				'/ProductName': dummy,
 				'/Mgmt/Connection': dummy,
 				'/Temperature': dummy,
-				'/TemperatureType': dummy}
+				'/TemperatureType': dummy},
+			'com.victronenergy.inverter': {
+				'/Connected': dummy,
+				'/ProductName': dummy,
+				'/Mgmt/Connection': dummy,
+				'/Dc/0/Voltage': dummy,
+				'/Ac/Out/L1/P': dummy,
+				'/Ac/Out/L1/V': dummy,
+				'/Ac/Out/L1/I': dummy,
+			}
 		}
 
 		self._modules = [
@@ -475,6 +484,11 @@ class SystemCalc:
 			else:
 				newvalues['/Dc/Charger/Power'] += v * i
 
+		# ==== VE.Direct Inverters ====
+		vedirect_inverter = self._get_service_having_lowest_instance('com.victronenergy.inverter')
+		if vedirect_inverter is not None:
+			vedirect_inverter = vedirect_inverter[0]
+
 		# ==== BATTERY ====
 		if self._batteryservice is not None:
 			batteryservicetype = self._batteryservice.split('.')[2]  # either 'battery' or 'vebus'
@@ -537,6 +551,15 @@ class SystemCalc:
 					if v is not None:
 						newvalues['/Dc/Battery/Voltage'] = v
 						newvalues['/Dc/Battery/VoltageService'] = vebus
+						break
+				else:
+					# This code is reached if no vebus above had a valid
+					# voltage
+					if vedirect_inverter is not None:
+						v = self._dbusmonitor.get_value(vedirect_inverter, '/Dc/0/Voltage')
+						if v is not None:
+							newvalues['/Dc/Battery/Voltage'] = v
+							newvalues['/Dc/Battery/VoltageService'] = vedirect_inverter
 
 			if self._settings['hasdcsystem'] == 0 and '/Dc/Battery/Voltage' in newvalues:
 				# No unmonitored DC loads or chargers, and also no battery monitor: derive battery watts
@@ -592,13 +615,19 @@ class SystemCalc:
 
 		# ===== AC IN SOURCE =====
 		ac_in_source = None
-		active_input = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/ActiveInput')
-		if active_input == 0xF0:
-			# Not connected
-			ac_in_source = 240
-		elif active_input is not None:
-			settings_path = '/Settings/SystemSetup/AcInput%s' % (active_input + 1)
-			ac_in_source = self._dbusmonitor.get_value('com.victronenergy.settings', settings_path)
+		if multi_path is None:
+			# Check if we have an non-VE.Bus inverter. If yes, then ActiveInput
+			# is disconnected.
+			if vedirect_inverter is not None:
+				ac_in_source = 240
+		else:
+			active_input = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/ActiveInput')
+			if active_input == 0xF0:
+				# Not connected
+				ac_in_source = 240
+			elif active_input is not None:
+				settings_path = '/Settings/SystemSetup/AcInput%s' % (active_input + 1)
+				ac_in_source = self._dbusmonitor.get_value('com.victronenergy.settings', settings_path)
 		newvalues['/Ac/ActiveIn/Source'] = ac_in_source
 
 		# ===== GRID METERS & CONSUMPTION ====
@@ -662,7 +691,18 @@ class SystemCalc:
 			c = None
 			if use_ac_out:
 				c = newvalues.get('/Ac/PvOnOutput/%s/Power' % phase)
-				if multi_path is not None:
+				if multi_path is None:
+					if vedirect_inverter is not None:
+						ac_out = self._dbusmonitor.get_value(vedirect_inverter, '/Ac/Out/%s/P' % phase)
+
+						# Some models don't show power, calculate it
+						if ac_out is None:
+							i = self._dbusmonitor.get_value(vedirect_inverter, '/Ac/Out/%s/I' % phase)
+							u = self._dbusmonitor.get_value(vedirect_inverter, '/Ac/Out/%s/V' % phase)
+							if None not in (i, u):
+								ac_out = i * u
+						c = _safeadd(c, ac_out)
+				else:
 					ac_out = self._dbusmonitor.get_value(multi_path, '/Ac/Out/%s/P' % phase)
 					c = _safeadd(c, ac_out)
 				c = _safemax(0, c)
