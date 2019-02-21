@@ -55,6 +55,7 @@ class SystemCalc:
 				'/Connected': dummy,
 				'/ProductName': dummy,
 				'/Mgmt/Connection': dummy,
+				'/DeviceInstance': dummy,
 				'/Dc/0/Voltage': dummy,
 				'/Dc/1/Voltage': dummy,
 				'/Dc/0/Current': dummy,
