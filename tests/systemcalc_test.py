@@ -169,6 +169,7 @@ class TestSystemCalc(TestSystemCalcBase):
 
 	def test_ac_gridmeter_3p_ignore_acout(self):
 		self._set_setting('/Settings/SystemSetup/HasAcOutSystem', 0)
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub4/AssistantId', 5)
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/Out/L1/P', 20)
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Ac/Out/L2/P', -10)
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Ac/Out/L3/P', 30)

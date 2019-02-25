@@ -685,8 +685,10 @@ class SystemCalc:
 			newvalues['/Ac/%s/DeviceType' % device_type] = device_type_id
 		# If we have an ESS system and RunWithoutGridMeter is set, there cannot be load on the AC-In, so it
 		# must be on AC-Out. Hence we do calculate AC-Out consumption even if 'useacout' is disabled.
+		# Similarly all load are by definition on the output if this is not an ESS system.
 		use_ac_out = \
 			self._settings['useacout'] == 1 or \
+			(multi_path is not None and self._dbusmonitor.get_value(multi_path, '/Hub4/AssistantId') not in (4, 5)) or \
 			self._dbusmonitor.get_value('com.victronenergy.settings', '/Settings/CGwacs/RunWithoutGridMeter') == 1
 		for phase in consumption:
 			c = None
