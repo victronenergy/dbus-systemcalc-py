@@ -154,6 +154,7 @@ class BatteryData(SystemCalcDelegate):
 		SystemCalcDelegate.__init__(self)
 		self.batteries = defaultdict(list)
 		self.changed = False
+		self.deviceschanged = False
 		self.configured_batteries = {}
 		self.confcount = 0
 		self.active_battery_service = None
