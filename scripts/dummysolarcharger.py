@@ -35,6 +35,7 @@ s = DbusDummyService(
         '/State': {'initial': 242},
         '/Dc/0/Voltage': {'initial': 41},
         '/Dc/0/Current': {'initial': 42},
+        '/Dc/0/Temperature': {'initial': None},
         '/Link/NetworkMode': {'initial': None},
         '/Link/NetworkStatus': {'initial': None},
         '/Link/ChargeVoltage': {'initial': None},

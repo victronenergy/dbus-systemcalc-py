@@ -17,6 +17,8 @@ parser = argparse.ArgumentParser(description='dummy dbus service')
 
 parser.add_argument("-n", "--name", help="the D-Bus service you want me to claim",
 				type=str, default="com.victronenergy.vebus.ttyO1")
+parser.add_argument("-i", "--instance", help="the device instance number",
+				type=int, default=0)
 
 args = parser.parse_args()
 
@@ -26,21 +28,34 @@ logger = setup_logging(debug=True)
 # Have a mainloop, so we can send/receive asynchronous calls to and from dbus
 DBusGMainLoop(set_as_default=True)
 
-s = DbusDummyService(servicename=args.name, deviceinstance=0, paths={
+s = DbusDummyService(servicename=args.name, deviceinstance=args.instance, paths={
 		'/Ac/ActiveIn/L1/P': {'initial': 0},
 		'/Ac/ActiveIn/ActiveInput': {'initial': 0},
 		'/Ac/ActiveIn/Connected': {'initial': 1},
 		'/Ac/Out/P': {'initial': 0},
 		'/Ac/Out/L1/P': {'initial': 0},
+		'/Ac/NumberOfPhases': {'initial': 1},
+		'/Alarms/HighTemperature': {'initial': 0},
+		'/Alarms/L1/HighTemperature': {'initial': 0},
+		'/Alarms/L1/LowBattery': {'initial': 0},
+		'/Alarms/L1/Overload': {'initial': 0},
+		'/Alarms/L1/Ripple': {'initial': 0},
+		'/Alarms/LowBattery': {'initial': 0},
+		'/Alarms/Overload': {'initial': 0},
+		'/Alarms/Ripple': {'initial': 0},
+		'/Alarms/TemperatureSensor': {'initial': 0},
+		'/Alarms/VoltageSensor': {'initial': 0},
 		'/Dc/0/Voltage': {'initial': 11},
 		'/Dc/0/Current': {'initial': 12},
 		'/Dc/0/MaxChargeCurrent': {'initial': None},
+		'/Dc/0/Temperature': {'initial': None},
 		'/Devices/0/Assistants': {'initial': [0]*56},
 		'/ExtraBatteryCurrent': {'initial': 0},
 		'/FirmwareFeatures/BolFrame': {'initial': None},
 		'/FirmwareFeatures/BolUBatAndTBatSense': {'initial': None},
 		'/Soc': {'initial': 10},
 		'/State': {'initial': None},
+		'/Mode': {'initial': None},
 		'/VebusMainState': {'initial': None},
 		'/Hub4/AssistantId': {'initial': None},
 		'/Hub4/Sustain': {'initial': None},
