@@ -40,9 +40,7 @@ class BatteryTracker(object):
 		'/Dc/0/Power',
 		'/Dc/0/Temperature',
 		'/Soc',
-		'/TimeToGo',
-		'/ProductName',
-		'/CustomName')
+		'/TimeToGo')
 
 	def __init__(self, service, instance, monitor):
 		self.service = service
@@ -58,7 +56,7 @@ class BatteryTracker(object):
 
 	@property
 	def name(self):
-		return self._tracked.get('/CustomName', None) or self._tracked['/ProductName']
+		return self.monitor.get_value(self.service, '/CustomName') or self.monitor.get_value(self.service, '/ProductName')
 
 	@reify
 	def service_id(self):
@@ -104,8 +102,7 @@ class SecondaryBatteryTracker(BatteryTracker):
 		instance._paths = (
 			'/Dc/{}/Voltage'.format(channel),
 			'/Dc/{}/Current'.format(channel),
-			'/Dc/{}/Power'.format(channel),
-			'/CustomName', '/ProductName')
+			'/Dc/{}/Power'.format(channel))
 		return instance
 
 	def __init__(self, service, instance, monitor, channel):
@@ -142,8 +139,7 @@ class MultiTracker(BatteryTracker):
 		'/Dc/0/Current',
 		'/Dc/0/Power',
 		'/Dc/0/Temperature',
-		'/Soc',
-		'/ProductName')
+		'/Soc')
 
 	def __init__(self, service, instance, dbusservice, monitor):
 		super(MultiTracker, self).__init__(service, instance, monitor)
