@@ -10,23 +10,27 @@ from delegates.base import SystemCalcDelegate
 class BatteryConfiguration(object):
 	""" Holds custom mapping information about a service that corresponds to a
 	    battery. """
-	def __init__(self, parent, number, service, name, enabled):
+	def __init__(self, parent, service):
 		self.parent = parent
-		self.number = number
 		self.service = str(service)
-		self.name = None if name is None else str(name)
-		self.enabled = bool(enabled)
+		self.name = None
+		self.enabled = False
+		self.bind_settings()
 
+	def bind_settings(self):
+		config_id = self.service.replace('.', '_')
 		self.service_item = self.parent._settings.addSetting(
-			"/Settings/SystemSetup/Batteries/Configuration/{}/Service".format(number),
+			"/Settings/SystemSetup/Batteries/Configuration/{}/Service".format(config_id),
 			"", 0, 0, callback=partial(self.on_setting_change, "service", str))
 		self.name_item = self.parent._settings.addSetting(
-			"/Settings/SystemSetup/Batteries/Configuration/{}/Name".format(number),
+			"/Settings/SystemSetup/Batteries/Configuration/{}/Name".format(config_id),
 			"", 0, 0, callback=partial(self.on_setting_change, "name", str))
 		self.enabled_item = self.parent._settings.addSetting(
-			"/Settings/SystemSetup/Batteries/Configuration/{}/Enabled".format(number),
+			"/Settings/SystemSetup/Batteries/Configuration/{}/Enabled".format(config_id),
 			0, 0, 1, callback=partial(self.on_setting_change, "enabled", bool))
-		self.service_item.set_value(service)
+		self.service_item.set_value(self.service)
+		self.enabled = bool(self.enabled_item.get_value())
+		self.name = str(self.name_item.get_value())
 
 	def on_setting_change(self, key, cast, service, path, value):
 		setattr(self, key, cast(value['Value']))
@@ -152,7 +156,6 @@ class BatteryData(SystemCalcDelegate):
 		self.changed = False
 		self.deviceschanged = False
 		self.configured_batteries = {}
-		self.confcount = 0
 		self.active_battery_service = None
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
@@ -165,6 +168,7 @@ class BatteryData(SystemCalcDelegate):
 
 	def device_added(self, service, instance, do_service_change=True):
 		self.deviceschanged = True
+		self.changed = True
 		if service.startswith('com.victronenergy.battery.'):
 			self.add_trackers(service,
 				BatteryTracker(service, instance, self._dbusmonitor),
@@ -178,7 +182,8 @@ class BatteryData(SystemCalcDelegate):
 			self.add_trackers(service,
 				MultiTracker(service, instance, self._dbusservice, self._dbusmonitor))
 		elif service == 'com.victronenergy.settings':
-			self.configured_batteries, self.confcount = self.load_configured_batteries()
+			for cb in self.configured_batteries.itervalues():
+				cb.bind_settings()
 
 	def device_removed(self, service, instance):
 		if service in self.batteries:
@@ -206,35 +211,9 @@ class BatteryData(SystemCalcDelegate):
 		self.changed = any([tracker.update() for tracker in chain.from_iterable(
 			self.batteries.itervalues())]) or self.changed
 
-	def load_configured_batteries(self):
-		""" Load all batteries and turn it into something that can be
-		    quickly indexed. """
-		# Get the whole config in one blob
-		maxconf = 0
-		di = {}
-		config = defaultdict(smart_dict)
-		get_value = lambda n, s: self._dbusservice.dbusconn.get_object(
-			'com.victronenergy.settings',
-			"/Settings/SystemSetup/Batteries/Configuration/{}/{}".format(n, s),
-			introspect=False).GetValue()
-
-		while True:
-			try:
-				config[maxconf]["service"] = get_value(maxconf, "Service")
-				config[maxconf]["name"] = get_value(maxconf, "Name")
-				config[maxconf]["enabled"] = get_value(maxconf, "Enabled")
-			except Exception, e:
-				break
-			else:
-				maxconf += 1
-
-		return {y.service: y for y in (BatteryConfiguration(self, n, x.service, x.get("name", None),
-			x.get("enabled", False)) for n, x in config.iteritems())}, maxconf
-
 	def add_configured_battery(self, service):
 		self.configured_batteries[service] = BatteryConfiguration(
-			self, self.confcount, service, None, False)
-		self.confcount += 1
+			self, service)
 
 	def _on_timer(self):
 		active = self._dbusservice['/ActiveBatteryService']
@@ -257,7 +236,7 @@ class BatteryData(SystemCalcDelegate):
 				b.service_id: {
 					'name': b.name,
 					'channel': b.channel
-				} for b in chain.from_iterable(self.batteries.itervalues()) })
+				} for b in chain.from_iterable(self.batteries.itervalues()) if b.valid })
 			self.deviceschanged = False
 
 			self.changed = False
