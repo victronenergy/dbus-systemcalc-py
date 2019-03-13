@@ -88,7 +88,7 @@ class BatteryTracker(object):
 			'soc': self._tracked['/Soc'],
 			'timetogo': self._tracked.get('/TimeToGo', None),
 			'name': self.name,
-			'state': None if power is None else (1 if power > 30 else (2 if power < 30 else 0))
+			'state': None if power is None else (1 if power > 30 else (2 if power < -30 else 0))
 		}
 
 	def data(self):
