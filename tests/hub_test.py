@@ -57,7 +57,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.4,
 			'/Dc/0/Current': 9.7,
-			'/FirmwareVersion': 0xE117},
+			'/FirmwareVersion': 0x129},
 			connection='VE.Direct')
 		self._update_values(3000)
 		self._check_external_values({
@@ -79,7 +79,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.4,
 			'/Dc/0/Current': 9.7,
-			'/FirmwareVersion': 0x0119},
+			'/FirmwareVersion': 0x0129},
 			connection='VE.Direct')
 		self._update_values(3000)
 		self._check_external_values({
@@ -102,7 +102,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.4,
 			'/Dc/0/Current': 9.7,
-			'/FirmwareVersion': 0x0117},
+			'/FirmwareVersion': 0x0129},
 			connection='VE.Direct')
 		self._add_device('com.victronenergy.solarcharger.ttyO2', {
 			'/State': 0,
@@ -111,7 +111,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 9.3,
-			'/FirmwareVersion': 0x0118},
+			'/FirmwareVersion': 0x0129},
 			connection='VE.Direct')
 		self._update_values(3000)
 		self.assertEqual(12.5, self._monitor.get_value('com.victronenergy.solarcharger.ttyO1',
@@ -194,7 +194,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 9.3,
-			'/FirmwareVersion': 0x0118},
+			'/FirmwareVersion': 0x0129},
 			connection='VE.Direct')
 		self._update_values(3000)
 		self.assertEqual(12.63, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
@@ -230,7 +230,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Settings/ChargeCurrentLimit': 100,
 			'/Dc/0/Voltage': 58.0,
 			'/Dc/0/Current': 30,
-			'/FirmwareVersion': 0x0118},
+			'/FirmwareVersion': 0x0129},
 			connection='VE.Direct')
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',
@@ -274,7 +274,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Settings/ChargeCurrentLimit': 100,
 			'/Dc/0/Voltage': 58.0,
 			'/Dc/0/Current': 30,
-			'/FirmwareVersion': 0x0118},
+			'/FirmwareVersion': 0x0129},
 			connection='VE.Direct')
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',
@@ -315,7 +315,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 31,
-			'/FirmwareVersion': 0x0118},
+			'/FirmwareVersion': 0x0129},
 			connection='VE.Direct')
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',
@@ -359,7 +359,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 14.3,
-			'/FirmwareVersion': 0x0118},
+			'/FirmwareVersion': 0x0129},
 			connection='VE.Direct')
 		self._add_device('com.victronenergy.solarcharger.ttyO2', {
 			'/State': 3,
@@ -370,7 +370,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 7,
-			'/FirmwareVersion': 0x0118},
+			'/FirmwareVersion': 0x0129},
 			connection='VE.Direct')
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',
@@ -438,7 +438,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 35,
-			'/FirmwareVersion': 0x0118},
+			'/FirmwareVersion': 0x0129},
 			connection='VE.Direct')
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',
@@ -487,7 +487,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 31,
-			'/FirmwareVersion': 0x0118},
+			'/FirmwareVersion': 0x0129},
 			connection='VE.Direct')
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',
@@ -1001,7 +1001,8 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/ChargeVoltage': None,
 			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.4,
-			'/Dc/0/Current': 9.7},
+			'/Dc/0/Current': 9.7,
+			'/FirmwareVersion': 0x129},
 			connection='VE.Direct')
 		self._add_device('com.victronenergy.battery.ttyO2', product_name='battery',
 			values={
@@ -1063,7 +1064,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Dc/0/Voltage': 12.4,
 			'/Dc/0/Current': 9.7,
 			'/Settings/ChargeCurrentLimit': 35,
-			'/FirmwareVersion': 0x0119},
+			'/FirmwareVersion': 0x0117},
 			connection='VE.Direct')
 		self._update_values(10000)
 		self._check_external_values({
@@ -1101,6 +1102,19 @@ class TestHubSystem(TestSystemCalcBase):
 
 		# Switch to DVCC
 		self._set_setting('/Settings/Services/Bol', 1)
+		self._update_values(10000)
+
+		# charge current is not used because firmware is old. Charge state
+		# is synced.
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeVoltage': 12.6,
+				'/Link/ChargeCurrent': 35,
+				'/Link/NetworkMode': 13
+			}})
+
+		# Upgrade solarcharger firmware
+		self._monitor.set_value('com.victronenergy.solarcharger.ttyO1', '/FirmwareVersion', 0x0130)
 		self._update_values(10000)
 
 		# Now the charge current of the BMS was used.
@@ -1241,7 +1255,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Settings/ChargeCurrentLimit': 100,
 			'/Dc/0/Voltage': 58.0,
 			'/Dc/0/Current': 30,
-			'/FirmwareVersion': 0x0118},
+			'/FirmwareVersion': 0x0129},
 			connection='VE.Direct')
 		self._update_values(interval=60000)
 		self._check_external_values({

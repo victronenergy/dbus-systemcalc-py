@@ -41,7 +41,8 @@ class SystemCalc:
 				'/Mgmt/Connection': dummy,
 				'/Dc/0/Voltage': dummy,
 				'/Dc/0/Current': dummy,
-				'/Dc/0/Temperature': dummy},
+				'/Dc/0/Temperature': dummy,
+				'/FirmwareVersion': dummy},
 			'com.victronenergy.pvinverter': {
 				'/Connected': dummy,
 				'/ProductName': dummy,

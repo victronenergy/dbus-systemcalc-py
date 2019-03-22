@@ -51,7 +51,7 @@ class TestSystemCalcNoMulti(TestSystemCalcBase):
 			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 24,
-			'/FirmwareVersion': 0x0118},
+			'/FirmwareVersion': 0x0129},
 			connection='VE.Direct')
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',
@@ -87,7 +87,7 @@ class TestSystemCalcNoMulti(TestSystemCalcBase):
 			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 0,
-			'/FirmwareVersion': 0x0118},
+			'/FirmwareVersion': 0x0129},
 			connection='VE.Direct')
 		self._add_device('com.victronenergy.solarcharger.ttyO2', {
 			'/State': 3,
@@ -98,7 +98,7 @@ class TestSystemCalcNoMulti(TestSystemCalcBase):
 			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 24,
-			'/FirmwareVersion': 0x0118},
+			'/FirmwareVersion': 0x0129},
 			connection='VE.Direct')
 		self._add_device('com.victronenergy.battery.ttyUSB0',
 			product_name='battery',

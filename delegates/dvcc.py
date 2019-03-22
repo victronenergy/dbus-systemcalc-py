@@ -126,7 +126,7 @@ class SolarCharger(object):
 
 	@property
 	def firmwareversion(self):
-		firmware_version = self._get_path('/FirmwareVersion')
+		return self._get_path('/FirmwareVersion')
 
 	@property
 	def connection(self):
@@ -240,10 +240,7 @@ class SolarChargerSubsystem(object):
 		""" Max out all chargers. """
 		for charger in self._solarchargers.values():
 			if charger.connection == 'VE.Can': continue
-			try:
-				charger.maximize_charge_current()
-			except DBusException:
-				logging.debug(traceback.format_exc())
+			charger.maximize_charge_current()
 
 	def set_networked(self, has_bms, charge_voltage, max_charge_current, feedback_allowed):
 		""" This is the main entry-point into the solar charger subsystem. This
@@ -261,26 +258,21 @@ class SolarChargerSubsystem(object):
 		vedirect_chargers = []
 		network_mode_written = False
 		for charger in self._solarchargers.values():
-			try:
-				# We use /Link/NetworkMode to detect Hub support in the
-				# solarcharger. Existence of this item implies existence of the
-				# other /Link/* fields.
-				if charger.networkmode is not None:
-					vedirect_chargers.append(charger)
-					charger.networkmode = network_mode
-					network_mode_written = True
-			except DBusException:
-				pass
+			# We use /Link/NetworkMode to detect Hub support in the
+			# solarcharger. Existence of this item implies existence of the
+			# other /Link/* fields. We also skip chargers with old firmware.
+			if charger.networkmode is not None and \
+					(charger.firmwareversion or 0) & 0x0FFF >= 0x0129:
+				vedirect_chargers.append(charger)
+				charger.networkmode = network_mode
+				network_mode_written = True
 
 		# Distribute the voltage setpoint. Simply write it to all of them.
 		voltage_written = 0
 		if charge_voltage is not None:
 			voltage_written = int(len(vedirect_chargers)>0)
 			for charger in vedirect_chargers:
-				try:
-					charger.chargevoltage = charge_voltage
-				except DBusException:
-					pass
+				charger.chargevoltage = charge_voltage
 
 		# Do not limit max charge current when feedback is allowed. The
 		# rationale behind this is that MPPT charge power should match the
@@ -736,11 +728,8 @@ class Dvcc(SystemCalcDelegate):
 		bms_parameters_written = 0
 		if bms_service is None:
 			if max_charge_current is not None:
-				try:
-					# Don't bother setting a charge current at 1A or less
-					self._multi.maxchargecurrent = max_charge_current if max_charge_current > 1 else 0
-				except DBusException:
-					logging.debug(traceback.format_exc())
+				# Don't bother setting a charge current at 1A or less
+				self._multi.maxchargecurrent = max_charge_current if max_charge_current > 1 else 0
 		else:
 			bms_parameters_written = self._update_battery_operational_limits(bms_service, charge_voltage, max_charge_current)
 		self._dbusservice['/Control/BmsParameters'] = bms_parameters_written
@@ -775,23 +764,20 @@ class Dvcc(SystemCalcDelegate):
 		    copied across. The modified current value is returned to be
 		    used elsewhere. """
 		if self._multi.active:
-			try:
-				if cv is not None:
-					self._multi.bol.chargevoltage = cv
+			if cv is not None:
+				self._multi.bol.chargevoltage = cv
 
-				if mcc is not None:
-					self._multi.bol.maxchargecurrent = mcc
+			if mcc is not None:
+				self._multi.bol.maxchargecurrent = mcc
 
-				# Copy the rest unmodified
-				copy_dbus_value(self._dbusmonitor,
-					bms_service.service, '/Info/BatteryLowVoltage',
-					self._multi.service, '/BatteryOperationalLimits/BatteryLowVoltage')
-				copy_dbus_value(self._dbusmonitor,
-					bms_service.service, '/Info/MaxDischargeCurrent',
-					self._multi.service, '/BatteryOperationalLimits/MaxDischargeCurrent')
-				return 1
-			except DBusException:
-				logging.debug(traceback.format_exc())
+			# Copy the rest unmodified
+			copy_dbus_value(self._dbusmonitor,
+				bms_service.service, '/Info/BatteryLowVoltage',
+				self._multi.service, '/BatteryOperationalLimits/BatteryLowVoltage')
+			copy_dbus_value(self._dbusmonitor,
+				bms_service.service, '/Info/MaxDischargeCurrent',
+				self._multi.service, '/BatteryOperationalLimits/MaxDischargeCurrent')
+			return 1
 
 		return 0
 
@@ -888,19 +874,13 @@ class Dvcc(SystemCalcDelegate):
 					charger.chargevoltage = charge_voltage
 					voltage_written = 1
 
-					# solarcharger firmware v1.17 does not support link items. Version v1.17 itself requires
-					# the vebus state to be copied to the solarcharger (otherwise the charge voltage would be
-					# ignored). v1.18 and later do not have this requirement.
-					firmware_version = charger.firmwareversion
-					if firmware_version is not None and (firmware_version & 0x0FFF) == 0x0117:
-						state = self._multi.state
-						if state is not None:
-							charger.state = state
-
 				if max_charge_current is not None:
 					charger.maxchargecurrent = max_charge_current
 					current_written = 1
 			except DBusException:
+				# If the charger for whatever reason doesn't have the /Link
+				# path, ignore it. This is the legacy implementation and
+				# better to keep it for the moment.
 				pass
 
 		if charge_voltage is not None and self._solarsystem.has_vecan_chargers:
