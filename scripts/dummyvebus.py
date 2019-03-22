@@ -57,6 +57,7 @@ s = DbusDummyService(servicename=args.name, deviceinstance=args.instance, paths=
 		'/State': {'initial': None},
 		'/Mode': {'initial': None},
 		'/VebusMainState': {'initial': None},
+		'/Hub/ChargeVoltage': {'initial': None},
 		'/Hub4/AssistantId': {'initial': None},
 		'/Hub4/Sustain': {'initial': None},
 		'/Hub4/AcPowerSetpoint': {'initial': None},
