@@ -25,6 +25,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/Ac/Out/L1/P': 100,
 				'/Dc/0/Voltage': 12.25,
 				'/Dc/0/Current': -8,
+				'/Dc/0/Temperature': None,
 				'/DeviceInstance': 0,
 				'/Devices/0/Assistants': [0x55, 0x1] + (26 * [0]),  # Hub-4 assistant
 				'/Dc/0/MaxChargeCurrent': None,
@@ -51,6 +52,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 			'/State': 0,
 			'/Link/NetworkMode': 0,
 			'/Link/VoltageSense': None,
+			'/Link/TemperatureSense': None,
 			'/Dc/0/Voltage': 12.32,
 			'/Dc/0/Current': 9.7},
 			connection='VE.Direct')
@@ -90,6 +92,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 			'/State': 0,
 			'/Link/NetworkMode': 0,
 			'/Link/VoltageSense': None,
+			'/Link/TemperatureSense': None,
 			'/Dc/0/Voltage': 12.2,
 			'/Dc/0/Current': 9.7},
 			connection='VE.Direct')
@@ -187,6 +190,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 			'/State': 0,
 			'/Link/NetworkMode': 0,
 			'/Link/VoltageSense': None,
+			'/Link/TemperatureSense': None,
 			'/Dc/0/Voltage': 12.2,
 			'/Dc/0/Current': 9.7},
 			connection='VE.Direct')
@@ -223,6 +227,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
 			'/Link/NetworkMode': 0,
+			'/Link/VoltageSense': None,
 			'/Link/TemperatureSense': None,
 			'/Dc/0/Voltage': 12.2,
 			'/Dc/0/Current': 9.7},
@@ -289,9 +294,11 @@ class VoltageSenseTest(TestSystemCalcBase):
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
 			'/Link/NetworkMode': 0,
+			'/Link/VoltageSense': None,
 			'/Link/TemperatureSense': None,
 			'/Dc/0/Voltage': 12.2,
-			'/Dc/0/Current': 9.7},
+			'/Dc/0/Current': 9.7,
+			'/Dc/0/Temperature': None},
 			connection='VE.Direct')
 
 		# A temperature sensor of the wrong kind is not used
@@ -324,7 +331,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/Link/TemperatureSense': 9}})
 
 		# If the solarcharger does have temperature
-		self._monitor.add_value('com.victronenergy.solarcharger.ttyO1', '/Dc/0/Temperature', 6)
+		self._monitor.set_value('com.victronenergy.solarcharger.ttyO1', '/Dc/0/Temperature', 6)
 		self._update_values(9000)
 		self._check_values({
 			'/Dc/Battery/Temperature': 6,
@@ -333,8 +340,8 @@ class VoltageSenseTest(TestSystemCalcBase):
 		})
 
 		# Multi takes priority over external temp sense
-		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Dc/0/Temperature', 7)
-		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/BatterySense/Temperature', None)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Dc/0/Temperature', 7)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/BatterySense/Temperature', None)
 		self._update_values(9000)
 		self._check_values({
 			'/Dc/Battery/Temperature': 7,

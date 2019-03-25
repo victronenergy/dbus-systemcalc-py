@@ -69,21 +69,17 @@ class BatterySense(SystemCalcDelegate):
 			# implies existence of the other /Link/* fields.
 			if self._dbusmonitor.get_value(service, '/Link/NetworkMode') is None:
 				continue
-			try:
-				self._dbusmonitor.set_value(service, '/Link/VoltageSense', sense_voltage)
-				voltagesense_written = 1
-			except DBusException:
-				pass
+			self._dbusmonitor.set_value_async(service, '/Link/VoltageSense', sense_voltage)
+			voltagesense_written = 1
+
 		vebus_path = self._dbusservice['/VebusService']
 		if vebus_path is not None and \
 			vebus_path != sense_voltage_service and \
 			self._dbusmonitor.get_value(vebus_path, '/FirmwareFeatures/BolUBatAndTBatSense') == 1:
-			try:
-				self._dbusmonitor.set_value(vebus_path, '/BatterySense/Voltage',
-					sense_voltage)
-				voltagesense_written = 1
-			except DBusException:
-				pass
+			self._dbusmonitor.set_value_async(vebus_path, '/BatterySense/Voltage',
+				sense_voltage)
+			voltagesense_written = 1
+
 		return voltagesense_written
 
 	def _distribute_sense_temperature(self):
@@ -108,21 +104,15 @@ class BatterySense(SystemCalcDelegate):
 
 			# VE.Can chargers don't have this path, and we will cheerfully
 			# ignore any errors coming from them.
-			try:
-				self._dbusmonitor.set_value(charger,
-					'/Link/TemperatureSense', sense_temp)
-				written = 1
-			except DBusException:
-				pass
+			self._dbusmonitor.set_value_async(charger,
+				'/Link/TemperatureSense', sense_temp)
+			written = 1
 
 		# Also update the multi
 		vebus = self._dbusservice['/VebusService']
 		if vebus is not None and vebus != sense_temp_service and self._dbusmonitor.get_value(vebus,
 				'/FirmwareFeatures/BolUBatAndTBatSense') == 1:
-			try:
-				self._dbusmonitor.set_value(vebus, '/BatterySense/Temperature',
-					sense_temp)
-				written = 1
-			except DBusException:
-				pass
+			self._dbusmonitor.set_value_async(vebus, '/BatterySense/Temperature',
+				sense_temp)
+			written = 1
 		return written
