@@ -133,10 +133,16 @@ class VoltageSenseTest(TestSystemCalcBase):
 		})
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
-				'/BatterySense/Voltage': 12.15,
+				'/BatterySense/Voltage': 12.15},
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/VoltageSense': 12.15}})
+
+		# Temperature is slower
+		self._update_values(13000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
 				'/BatterySense/Temperature': 25},
 			'com.victronenergy.solarcharger.ttyO1': {
-				'/Link/VoltageSense': 12.15,
 				'/Link/TemperatureSense': 25}})
 
 	def test_voltage_sense_vebus_and_battery_monitor(self):
@@ -307,7 +313,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 			values={
 				'/Temperature': 9,
 				'/TemperatureType': 0})
-		self._update_values(3000)
+		self._update_values(9000)
 		self._check_values({
 			'/Dc/Battery/Temperature': 9,
 			'/Dc/Battery/TemperatureService': 'com.victronenergy.temperature.ttyO3',
@@ -319,7 +325,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 
 		# If the solarcharger does have temperature
 		self._monitor.add_value('com.victronenergy.solarcharger.ttyO1', '/Dc/0/Temperature', 6)
-		self._update_values(3000)
+		self._update_values(9000)
 		self._check_values({
 			'/Dc/Battery/Temperature': 6,
 			'/Dc/Battery/TemperatureService': 'com.victronenergy.solarcharger.ttyO1',
@@ -329,7 +335,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 		# Multi takes priority over external temp sense
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Dc/0/Temperature', 7)
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/BatterySense/Temperature', None)
-		self._update_values(6000)
+		self._update_values(9000)
 		self._check_values({
 			'/Dc/Battery/Temperature': 7,
 			'/Dc/Battery/TemperatureService': 'com.victronenergy.vebus.ttyO1',
@@ -340,7 +346,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/Link/TemperatureSense': 7}})
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
-				'/BatterySense/Temperature': 6}}) # Stale value last received from solarcharger
+				'/BatterySense/Temperature': None}})
 
 		# If the battery has temperature, that takes priority over the rest
 		self._add_device('com.victronenergy.battery.ttyO2',
@@ -352,7 +358,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/Dc/0/Temperature': 8,
 				'/Soc': 15.3,
 				'/DeviceInstance': 2})
-		self._update_values(3000)
+		self._update_values(9000)
 		self._check_values({
 			'/Dc/Battery/Temperature': 8,
 			'/Dc/Battery/TemperatureService': 'com.victronenergy.battery.ttyO2',

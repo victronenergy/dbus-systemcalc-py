@@ -5,11 +5,14 @@ from delegates.base import SystemCalcDelegate
 # Victron packages
 from ve_utils import exit_on_error
 
+# Write temperature this often (in 3-second units)
+TEMPERATURE_INTERVAL = 3
 
 class BatterySense(SystemCalcDelegate):
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)
 		self._timer = None
+		self.tick = TEMPERATURE_INTERVAL
 
 	def get_input(self):
 		return [
@@ -43,9 +46,11 @@ class BatterySense(SystemCalcDelegate):
 		self._dbusservice['/Control/SolarChargerVoltageSense'] = \
 			int(self._settings['vsense'] and self._settings['bol']) and \
 			self._distribute_sense_voltage()
-		self._dbusservice['/Control/SolarChargerTemperatureSense'] = \
-			int(self._settings['tsense'] and self._settings['bol']) and \
-			self._distribute_sense_temperature()
+		if self.tick == 0:
+			self._dbusservice['/Control/SolarChargerTemperatureSense'] = \
+				int(self._settings['tsense'] and self._settings['bol']) and \
+				self._distribute_sense_temperature()
+		self.tick = (self.tick - 1) % TEMPERATURE_INTERVAL
 		return True
 
 	def _distribute_sense_voltage(self):
