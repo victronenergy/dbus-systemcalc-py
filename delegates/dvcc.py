@@ -122,7 +122,7 @@ class SolarCharger(object):
 		return self.monitor.get_value(self.service, path)
 
 	def _set_path(self, path, v):
-		self.monitor.set_value(self.service, path, v)
+		self.monitor.set_value_async(self.service, path, v)
 
 	@property
 	def firmwareversion(self):
@@ -169,10 +169,6 @@ class SolarCharger(object):
 	@property
 	def state(self):
 		return self._get_path('/State')
-
-	@state.setter
-	def state(self, v):
-		self._set_path('/State', v)
 
 	@property
 	def smoothed_current(self):
@@ -446,7 +442,7 @@ class BatteryOperationalLimits(object):
 		# None of these values can be negative
 		if v is not None:
 			v = max(0, v)
-		self._multi.monitor.set_value(self._multi.service, path, v)
+		self._multi.monitor.set_value_async(self._multi.service, path, v)
 
 	chargevoltage = property(
 		partial(_property, '/BatteryOperationalLimits/MaxChargeVoltage'),
@@ -517,7 +513,7 @@ class Multi(object):
 
 	@maxchargecurrent.setter
 	def maxchargecurrent(self, v):
-		self.monitor.set_value(self.service, '/Dc/0/MaxChargeCurrent', v)
+		self.monitor.set_value_async(self.service, '/Dc/0/MaxChargeCurrent', v)
 
 	@property
 	def state(self):
