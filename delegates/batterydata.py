@@ -6,6 +6,8 @@ from functools import partial
 from sc_utils import reify, smart_dict
 from delegates.base import SystemCalcDelegate
 
+# Victron packages
+from ve_utils import exit_on_error
 
 class BatteryConfiguration(object):
 	""" Holds custom mapping information about a service that corresponds to a
@@ -164,7 +166,7 @@ class BatteryData(SystemCalcDelegate):
 		# Publish the battery configuration
 		self._dbusservice.add_path('/Batteries', value=None)
 		self._dbusservice.add_path('/AvailableBatteries', value=None)
-		self._timer = gobject.timeout_add(5000, self._on_timer)
+		self._timer = gobject.timeout_add(5000, exit_on_error, self._on_timer)
 
 	def device_added(self, service, instance, do_service_change=True):
 		self.deviceschanged = True
