@@ -98,6 +98,7 @@ class ScheduledCharging(SystemCalcDelegate):
 	def __init__(self):
 		super(ScheduledCharging, self).__init__()
 		self.soc = None
+		self.pvpower = 0
 		self.active = False
 		self._timer = gobject.timeout_add(5000, exit_on_error, self._on_timer)
 
@@ -187,7 +188,16 @@ class ScheduledCharging(SystemCalcDelegate):
 
 				# Signal that scheduled charging is active
 				self.active = True
-				self.maxdischargepower = 1
+
+				# The discharge is limited to 1W or whatever is available
+				# from PV. 1W essentially disables discharge without
+				# disabling feed-in, so Power-Assist and feeding in
+				# the excess continues to work. Setting this to the pv-power
+				# causes it to directly consume the PV for loads and charge
+				# only with the excess. Scale it between 80% and 93%
+				# of PV-power depending on the SOC.
+				scale = 0.8 + min(max(0, self.soc - w.soc), 1.3)*0.1
+				self.maxdischargepower = max(1, round(self.pvpower*scale))
 				break
 		else:
 			self.forcecharge = False
@@ -199,3 +209,4 @@ class ScheduledCharging(SystemCalcDelegate):
 
 	def update_values(self, newvalues):
 		self.soc = newvalues.get('/Dc/Battery/Soc')
+		self.pvpower = max(newvalues.get('/Dc/Pv/Power'), 0)

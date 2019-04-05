@@ -31,7 +31,8 @@ class TestSchedule(TestSystemCalcBase):
                 '/Hub4/AssistantId': 5,
                 '/VebusMainState': 9,
                 '/State': 3,
-                '/Soc': 53.2})
+                '/Soc': 53.2,
+                '/ExtraBatteryCurrent': 0})
 
         self._add_device('com.victronenergy.hub4',
             values={
@@ -83,6 +84,16 @@ class TestSchedule(TestSystemCalcBase):
         }})
 
     def test_scheduled_charge_stop_on_soc(self):
+        # Add solar charger
+        self._add_device('com.victronenergy.solarcharger.ttyO1', {
+            '/State': 252,
+            '/Link/NetworkMode': 5,
+            '/Link/ChargeVoltage': 26,
+            '/Link/VoltageSense': None,
+            '/Dc/0/Voltage': 24,
+            '/Dc/0/Current': 10,
+            '/FirmwareVersion': 0x129}, connection='VE.Direct')
+
         # Determine seconds since midnight on timer right now.
         now = timer_manager.datetime
         midnight = datetime.combine(now.date(), time.min)
@@ -124,7 +135,7 @@ class TestSchedule(TestSystemCalcBase):
         self._check_external_values({
                 'com.victronenergy.hub4': {
                 '/Overrides/ForceCharge': 0,
-                '/Overrides/MaxDischargePower': 1,
+                '/Overrides/MaxDischargePower': 192, # 80% of available PV
         }})
 
         # When we emerge from the charge window, discharge is allowed again.
