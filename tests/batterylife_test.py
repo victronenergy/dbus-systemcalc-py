@@ -323,26 +323,26 @@ class TestBatteryLife(TestSystemCalcBase):
         })
 
         # Down to zero. We don't go into BLLowSocCharge when MinSoc < 5%.
-        self._set_setting('/Settings/CGwacs/BatteryLife/SocLimit', 0)
-        self._set_setting('/Settings/CGwacs/BatteryLife/MinimumSocLimit', 0)
+        self._set_setting('/Settings/CGwacs/BatteryLife/SocLimit', 1)
+        self._set_setting('/Settings/CGwacs/BatteryLife/MinimumSocLimit', 1)
 
         transitions = sweep(10, 0, State.BLDefault)
         self.assertEqual(transitions, {
-            State.BLDischarged: 0,
+            State.BLDischarged: 1,
         })
         transitions = sweep(0, 10, State.BLDischarged)
         self.assertEqual(transitions, {
-            State.BLDefault: 3.1
+            State.BLDefault: 4.1
         })
 
         # Repeat the tests for SocGuard
         transitions = sweep(10, 0, State.SocGuardDefault)
         self.assertEqual(transitions, {
-            State.SocGuardDischarged: 0,
+            State.SocGuardDischarged: 1,
         })
         transitions = sweep(0, 10, State.SocGuardDischarged)
         self.assertEqual(transitions, {
-            State.SocGuardDefault: 3.0
+            State.SocGuardDefault: 4.0
         })
 
     def test_socguard_auto_recharge_at_5(self):
@@ -360,8 +360,8 @@ class TestBatteryLife(TestSystemCalcBase):
         self._check_settings({ 'state': State.SocGuardLowSocCharge })
 
         self._set_setting('/Settings/CGwacs/BatteryLife/State', State.SocGuardDefault)
-        self._set_setting('/Settings/CGwacs/BatteryLife/MinimumSocLimit', 0)
-        self._monitor.set_value(self.vebus, '/Soc', 1)
+        self._set_setting('/Settings/CGwacs/BatteryLife/MinimumSocLimit', 1)
+        self._monitor.set_value(self.vebus, '/Soc', 1.1)
         self._update_values()
         self._check_settings({ 'state': State.SocGuardDefault })
 
@@ -371,7 +371,7 @@ class TestBatteryLife(TestSystemCalcBase):
 
     def test_batterylife_auto_recharge_at_5(self):
         # If MinSoC=5%, activate recharge at 0%. If MinSoC < 5%, never activate
-        # recharge.
+        # recharge. If MinsoC = 0%, never stop.
         self._set_setting('/Settings/CGwacs/BatteryLife/State', State.BLDefault)
         self._set_setting('/Settings/CGwacs/BatteryLife/SocLimit', 5)
         self._set_setting('/Settings/CGwacs/BatteryLife/MinimumSocLimit', 5)
@@ -393,7 +393,7 @@ class TestBatteryLife(TestSystemCalcBase):
 
         self._monitor.set_value(self.vebus, '/Soc', 0)
         self._update_values()
-        self._check_settings({ 'state': State.BLDischarged })
+        self._check_settings({ 'state': State.BLDefault })
 
 
     def test_recharge_moving_goalpost(self):
@@ -568,13 +568,13 @@ class TestBatteryLife(TestSystemCalcBase):
         self._monitor.set_value(self.vebus, '/Soc', 0)
         self._update_values()
         self._check_settings({
-            'state': State.BLDischarged,
-            'soclimit': 5
+            'state': State.BLDefault,
+            'soclimit': 0
         })
 
         self._monitor.set_value(self.vebus, '/Soc', 3)
         self._update_values()
-        self._check_settings({ 'state': State.BLDischarged })
+        self._check_settings({ 'state': State.BLDefault })
 
         self._monitor.set_value(self.vebus, '/Soc', 9)
         self._update_values()

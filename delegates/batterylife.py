@@ -116,8 +116,13 @@ class BatteryLife(SystemCalcDelegate):
 		# Do the same as in the default case
 		return self._default(False)
 
+	@property
+	def is_active_soc_low(self):
+		limit = self.active_soclimit
+		return self.sustain or (limit > 0 and self.soc <= limit and self.soc < 100)
+
 	def _default(self, adjust=True):
-		if self.sustain or (self.soc <= self.active_soclimit and self.soc < 100):
+		if self.is_active_soc_low:
 			return self.on_discharged(adjust)
 		elif self.soc >= Constants.FloatLevel:
 			return self.on_float(adjust)
@@ -147,7 +152,7 @@ class BatteryLife(SystemCalcDelegate):
 			return State.BLDischarged
 
 	def _absorption(self):
-		if self.sustain or (self.soc <= self.active_soclimit and self.soc < 100):
+		if self.is_active_soc_low:
 			return self.on_discharged(True)
 		elif self.soc > Constants.FloatLevel:
 			return self.on_float(True)
@@ -155,13 +160,13 @@ class BatteryLife(SystemCalcDelegate):
 			return State.BLDefault
 
 	def _float(self):
-		if self.sustain or (self.soc <= self.active_soclimit and self.soc < 100):
+		if self.is_active_soc_low:
 			return self.on_discharged(True)
 		elif self.soc < Constants.FloatLevel - Constants.SocSwitchOffset:
 			return State.BLAbsorption
 
 	def _socguard_default(self):
-		if self.soc < 100 and self.soc <= self.minsoclimit:
+		if self.soc < 100 and self.minsoclimit > 0 and self.soc <= self.minsoclimit:
 			return State.SocGuardDischarged
 
 	def _socguard_discharged(self):
