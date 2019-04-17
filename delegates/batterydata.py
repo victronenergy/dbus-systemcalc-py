@@ -65,6 +65,12 @@ class BatteryTracker(object):
 		return self.monitor.get_value(self.service, '/CustomName') or self.monitor.get_value(self.service, '/ProductName')
 
 	@reify
+	def service_type(self):
+		""" Return the third item in the dbus service, eg battery for
+		    com.victronenergy.battery. """
+		return self.service.split('.')[2]
+
+	@reify
 	def service_id(self):
 		""" Generate an identifier that uniquely identifies the type
 			of service and the instance. """
@@ -237,7 +243,8 @@ class BatteryData(SystemCalcDelegate):
 			self._dbusservice['/AvailableBatteries'] = json.dumps({
 				b.service_id: {
 					'name': b.name,
-					'channel': b.channel
+					'channel': b.channel,
+					'type': b.service_type
 				} for b in chain.from_iterable(self.batteries.itervalues()) if b.valid })
 			self.deviceschanged = False
 
