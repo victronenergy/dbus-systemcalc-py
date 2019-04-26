@@ -29,6 +29,7 @@ logger = setup_logging(debug=True)
 DBusGMainLoop(set_as_default=True)
 
 s = DbusDummyService(servicename=args.name, deviceinstance=args.instance, paths={
+		'/Ac/ActiveIn/P': {'initial': 0},
 		'/Ac/ActiveIn/L1/P': {'initial': 0},
 		'/Ac/ActiveIn/ActiveInput': {'initial': 0},
 		'/Ac/ActiveIn/Connected': {'initial': 1},
@@ -60,7 +61,7 @@ s = DbusDummyService(servicename=args.name, deviceinstance=args.instance, paths=
 		'/Hub/ChargeVoltage': {'initial': None},
 		'/Hub4/AssistantId': {'initial': None},
 		'/Hub4/Sustain': {'initial': None},
-		'/Hub4/AcPowerSetpoint': {'initial': None},
+		'/Hub4/L1/AcPowerSetpoint': {'initial': None},
 		'/Hub4/DisableFeedIn': {'initial': None},
 		'/Hub4/TargetPowerIsMaxFeedIn': {'initial': 0},
 		'/Hub4/FixSolarOffsetTo100mV': {'initial': 0},
