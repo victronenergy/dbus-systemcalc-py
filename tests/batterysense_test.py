@@ -58,8 +58,8 @@ class VoltageSenseTest(TestSystemCalcBase):
 			connection='VE.Direct')
 		self._update_values(5000)
 		self._check_values({
-			'/Dc/Battery/Voltage': 12.32,
-			'/Dc/Battery/VoltageService': 'com.victronenergy.solarcharger.ttyO1'
+			'/Dc/Battery/Voltage': 12.25,
+			'/Dc/Battery/VoltageService': 'com.victronenergy.vebus.ttyO1'
 		})
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
@@ -73,16 +73,18 @@ class VoltageSenseTest(TestSystemCalcBase):
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
 			'/Dc/0/Voltage': 12.32,
-			'/Dc/0/Current': 9.7},
+			'/Dc/0/Current': 9.7,
+			'/Link/NetworkMode': 5,
+			'/Link/VoltageSense': None},
 			connection='VE.Direct')
 		self._update_values(5000)
 		self._check_values({
-			'/Dc/Battery/Voltage': 12.32,
-			'/Dc/Battery/VoltageService': 'com.victronenergy.solarcharger.ttyO1'
+			'/Dc/Battery/Voltage': 12.25,
+			'/Dc/Battery/VoltageService': 'com.victronenergy.vebus.ttyO1'
 		})
 		self._check_external_values({
-			'com.victronenergy.vebus.ttyO1': {
-				'/BatterySense/Voltage': 12.32}})
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/VoltageSense': 12.25}})
 
 	def test_voltage_sense_no_battery_monitor(self):
 		self._set_setting('/Settings/Services/Bol', 1)
@@ -98,14 +100,14 @@ class VoltageSenseTest(TestSystemCalcBase):
 			connection='VE.Direct')
 		self._update_values(5000)
 		self._check_values({
-			'/Dc/Battery/Voltage': 12.2,
-			'/Dc/Battery/VoltageService': 'com.victronenergy.solarcharger.ttyO1'
+			'/Dc/Battery/Voltage': 12.25,
+			'/Dc/Battery/VoltageService': 'com.victronenergy.vebus.ttyO1'
 		})
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
-				'/BatterySense/Voltage': 12.2},
+				'/BatterySense/Voltage': None},
 			'com.victronenergy.solarcharger.ttyO1': {
-				'/Link/VoltageSense': None}})
+				'/Link/VoltageSense': 12.25}})
 
 	def test_sense_mppt_and_battery_monitor(self):
 		self._set_setting('/Settings/Services/Bol', 1)

@@ -565,9 +565,9 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Dc/Battery/Soc': None,
-			'/Dc/Battery/Current': (9.7 * 12.4 - 12.25 * 8) / 12.4,
+			'/Dc/Battery/Current': (9.7 * 12.4 - 12.25 * 8) / 12.25,
 			'/Dc/Battery/Power': 9.7 * 12.4 - 12.25 * 8,
-			'/Dc/Battery/Voltage': 12.4,
+			'/Dc/Battery/Voltage': 12.25,
 			'/ActiveBatteryService': None})
 
 	def test_battery_selection_solarcharger_no_vebus_voltage(self):
@@ -634,9 +634,9 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Dc/Battery/Soc': 53.2,
-			'/Dc/Battery/Current': (12.4 * 9.7 - 12.25 * 8) / 12.4,
+			'/Dc/Battery/Current': (12.4 * 9.7 - 12.25 * 8) / 12.25,
 			'/Dc/Battery/Power': 12.4 * 9.7 - 12.25 * 8,
-			'/Dc/Battery/Voltage': 12.4,
+			'/Dc/Battery/Voltage': 12.25,
 			'/ActiveBatteryService': 'com.victronenergy.vebus/0'})
 		self.assertEqual(9.7, self._monitor.get_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent'))
 
@@ -816,9 +816,10 @@ class TestSystemCalc(TestSystemCalcBase):
 							'/Dc/0/Current': 9.7})
 		self._update_values()
 		self._check_values({
-			'/Dc/Battery/Voltage': 12.4})
+			'/Dc/Battery/Voltage': 12.25})
 
 	def test_battery_voltage_charger(self):
+		self._monitor.remove_service('com.victronenergy.vebus.ttyO1')
 		self._add_device('com.victronenergy.charger.ttyO1',
 						product_name='charger',
 						values={
@@ -829,17 +830,18 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Dc/Battery/Voltage': 12.4})
 
 	def test_battery_voltage_sequence(self):
-		self._update_values()
-		self._check_values({
-			'/Dc/Battery/Voltage': 12.25})
-
-		self._update_values()
 		self._add_device('com.victronenergy.solarcharger.ttyO1',
 						product_name='solarcharger',
 						values={
 							'/Dc/0/Voltage': 12.4,
 							'/Dc/0/Current': 9.7})
 		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Voltage': 12.25})
+
+		self._monitor.remove_service('com.victronenergy.vebus.ttyO1')
+		self._update_values()
+
 		self._check_values({
 			'/Dc/Battery/Voltage': 12.4})
 
@@ -856,11 +858,6 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Dc/Battery/Voltage': 12.7})
-
-		self._monitor.remove_service('com.victronenergy.charger.ttyO1')
-		self._update_values()
-		self._check_values({
-			'/Dc/Battery/Voltage': 12.25})
 
 	def test_do_not_autoselect_vebus_soc_when_charger_is_present(self):
 		self._update_values()
@@ -971,8 +968,8 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Dc/Battery/Power':  12.4 * 9.7 + 12.7 * 6.3 - 12.25 * 8,
-			'/Dc/Battery/Current':  (12.4 * 9.7 + 12.7 * 6.3 - 12.25 * 8) / 12.4,
-			'/Dc/Battery/Voltage':  12.4})
+			'/Dc/Battery/Current':  (12.4 * 9.7 + 12.7 * 6.3 - 12.25 * 8) / 12.25,
+			'/Dc/Battery/Voltage':  12.25})
 
 	def test_available_battery_measurement(self):
 		self._update_values()
