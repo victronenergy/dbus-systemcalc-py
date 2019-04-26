@@ -21,6 +21,10 @@ parser.add_argument("-n", "--name",
     help="the D-Bus service you want me to claim",
     type=str, default="com.victronenergy.battery.socketcan_can0")
 
+parser.add_argument("-i", "--instance",
+	help="DeviceInstance",
+	type=int, default=0)
+
 args = parser.parse_args()
 
 print(__file__ + " is starting up, use -h argument to see optional arguments")
@@ -31,7 +35,7 @@ DBusGMainLoop(set_as_default=True)
 
 s = DbusDummyService(
     servicename=args.name,
-    deviceinstance=0,
+    deviceinstance=args.instance,
     paths={
         '/Alarms/CellImbalance': {'initial': 0},
         '/Alarms/HighChargeCurrent': {'initial': 0},
@@ -54,7 +58,7 @@ s = DbusDummyService(
         '/Info/MaxChargeVoltage': {'initial': 28.4},
         '/Info/MaxDischargeCurrent': {'initial': 600},
     },
-    productname='ACME BMS battery',
+    productname='ACME BMS battery {}'.format(args.instance),
     connection='CAN-bus')
 
 logger.info('Connected to dbus, and switching over to gobject.MainLoop() (= event based)')
