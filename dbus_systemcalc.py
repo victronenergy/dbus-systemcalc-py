@@ -148,6 +148,7 @@ class SystemCalc:
 			delegates.SystemState(),
 			delegates.BatteryLife(),
 			delegates.ScheduledCharging(),
+			delegates.SourceTimers(),
 			delegates.BatteryData()]
 
 		for m in self._modules:

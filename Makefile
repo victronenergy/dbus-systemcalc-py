@@ -21,6 +21,7 @@ DELEGATES = \
 	$(SOURCEDIR)/delegates/batterysense.py \
 	$(SOURCEDIR)/delegates/batterylife.py \
 	$(SOURCEDIR)/delegates/schedule.py \
+	$(SOURCEDIR)/delegates/sourcetimers.py \
 	$(SOURCEDIR)/delegates/batterydata.py
 
 VEDLIB_FILES = \
