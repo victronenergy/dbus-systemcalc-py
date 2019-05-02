@@ -48,7 +48,7 @@ class TestTimers(TestSystemCalcBase):
 		# Start at zero
 		self._check_values({
 			'/Timers/TimeOnGrid': 0,
-			'/Timers/TimeOnGenset': 0,
+			'/Timers/TimeOnGenerator': 0,
 			'/Timers/TimeOnInverter': 0,
 			'/Timers/TimeOff': 0,
 		})
@@ -57,18 +57,18 @@ class TestTimers(TestSystemCalcBase):
 		self._update_values(20000)
 		self._check_values({
 			'/Timers/TimeOnGrid': 20,
-			'/Timers/TimeOnGenset': 0,
+			'/Timers/TimeOnGenerator': 0,
 			'/Timers/TimeOnInverter': 0,
 			'/Timers/TimeOff': 0,
 		})
 
 
-		# Genset
+		# Generator
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/ActiveIn/ActiveInput', 1)
 		self._update_values(10000)
 		self._check_values({
 			'/Timers/TimeOnGrid': 20,
-			'/Timers/TimeOnGenset': 10,
+			'/Timers/TimeOnGenerator': 10,
 			'/Timers/TimeOnInverter': 0,
 			'/Timers/TimeOff': 0,
 		})
@@ -78,7 +78,7 @@ class TestTimers(TestSystemCalcBase):
 		self._update_values(10000)
 		self._check_values({
 			'/Timers/TimeOnGrid': 20,
-			'/Timers/TimeOnGenset': 10,
+			'/Timers/TimeOnGenerator': 10,
 			'/Timers/TimeOnInverter': 10,
 			'/Timers/TimeOff': 0,
 		})
@@ -88,7 +88,7 @@ class TestTimers(TestSystemCalcBase):
 		self._update_values(10000)
 		self._check_values({
 			'/Timers/TimeOnGrid': 20,
-			'/Timers/TimeOnGenset': 10,
+			'/Timers/TimeOnGenerator': 10,
 			'/Timers/TimeOnInverter': 10,
 			'/Timers/TimeOff': 10,
 		})

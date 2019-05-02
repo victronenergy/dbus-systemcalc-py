@@ -7,10 +7,10 @@ from delegates.base import SystemCalcDelegate
 
 class SourceTimers(SystemCalcDelegate):
 	""" Watches the active input, and based on settings determines how much
-	    time was spent on Grid/Genset/Inverter or Off. """
+	    time was spent on Grid/Generator/Inverter or Off. """
 	_paths = {
 		1: '/Timers/TimeOnGrid',
-		2: '/Timers/TimeOnGenset',
+		2: '/Timers/TimeOnGenerator',
 		3: '/Timers/TimeOnGrid', # Shore is deemed to be the same as grid
 		0xF0: '/Timers/TimeOnInverter'
 	}
