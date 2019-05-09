@@ -202,7 +202,7 @@ class BatteryData(SystemCalcDelegate):
 	def add_trackers(self, service, *args):
 		self.batteries[service].extend(args)
 		for t in args:
-			if t.service_id not in self.configured_batteries and t.valid:
+			if t.service_id not in self.configured_batteries:
 				self.add_configured_battery(t.service_id)
 
 	def is_enabled(self, tracker):
