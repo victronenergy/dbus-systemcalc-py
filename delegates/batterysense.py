@@ -48,7 +48,7 @@ class BatterySense(SystemCalcDelegate):
 		self._dbusservice['/Control/SolarChargerVoltageSense'] = \
 			int(self._settings['vsense'] and self._settings['bol']) and \
 			self._distribute_sense_voltage()
-		self._distribute_battery_current()
+		#self._distribute_battery_current() # Disabled for now
 		if self.tick == 0:
 			self._dbusservice['/Control/SolarChargerTemperatureSense'] = \
 				int(self._settings['tsense'] and self._settings['bol']) and \
