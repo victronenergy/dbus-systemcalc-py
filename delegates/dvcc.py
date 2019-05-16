@@ -362,7 +362,7 @@ class Battery(object):
 		self.monitor = monitor
 		self.service = service
 
-	@reify
+	@property
 	def is_bms(self):
 		""" Indicates if this battery has a BMS that can communicate the
 		    preferred charge parameters. """
