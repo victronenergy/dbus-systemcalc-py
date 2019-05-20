@@ -716,11 +716,21 @@ class Dvcc(SystemCalcDelegate):
 		if max_charge_current is not None:
 			max_charge_current = max(0.0, round(max_charge_current - self._solarsystem.smoothed_current))
 
-		# If we have a BMS, update BOL parameters. Otherwise set the MaxChargeCurrent on the Multi. That
-		# overwrites the one set by veconfigure, but with no BMS the only possible value it could write
-		# is the user limit.
-		# TODO: If the max_charge_current becomes None, we should write a large
-		# value to the Multi to reset its charging limits.
+		# Write the remainder to the Multi.
+		# There are two ways to limit the charge current of a VE.Bus system. If we have a BMS,
+		# the BOL parameter is used.
+		# If not, then the BOL parameters are not available, and the /Dc/0/MaxChargeCurrent path is
+		# used instead. This path relates to the MaxChargeCurrent setting as also available in
+		# VEConfigure, except that writing to it only changes the value in RAM in the Multi.
+		# Unlike VEConfigure it's not necessary to take the number of units in a system into account.
+		#
+		# Venus OS v2.30 fixes in mk2-dbus related to /Dc/0/MaxChargeCurrent:
+		# 1) Fix charge current too high in systems with multiple units per phase. mk2-bus was dividing
+		#    the received current only by the number of phases in the system instead of dividing by the
+		#    number of units in the system.
+		# 2) Fix setted charge current still active after disabling the "Limit charge current" setting.
+		#    It used to be necessary to set a high current; and only then disable the setting or reset
+		#    the VE.Bus system to re-initialise from the stored setting as per VEConfigure.
 		bms_parameters_written = 0
 		if bms_service is None:
 			if max_charge_current is not None:
