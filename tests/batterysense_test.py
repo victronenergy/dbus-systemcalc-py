@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import unittest
 
 # This adapts sys.path to include all relevant packages
 import context
@@ -289,6 +290,51 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/Link/SenseVoltage': None,
 				'/Link/TemperatureSense': None}})
 
+	def test_shared_temperature_sense(self):
+		self._set_setting('/Settings/Services/Bol', 1)
+
+		# This solarcharger has no temperature sensor
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Link/VoltageSense': None,
+			'/Link/TemperatureSense': None,
+			'/Dc/0/Voltage': 12.2,
+			'/Dc/0/Current': 9.7,
+			'/Dc/0/Temperature': None},
+			connection='VE.Direct')
+		self._update_values(9000)
+		self._check_values({
+			'/Dc/Battery/Temperature': None,
+			'/Dc/Battery/TemperatureService': None,
+			'/AutoSelectedTemperatureService': None
+		})
+
+		# If the battery has temperature, use it
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.15,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Dc/0/Temperature': 8,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2})
+		self._update_values(9000)
+		self._check_values({
+			'/Dc/Battery/Temperature': 8,
+			'/Dc/Battery/TemperatureService': 'com.victronenergy.battery.ttyO2',
+			'/AutoSelectedTemperatureService': 'battery on dummy'
+		})
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/TemperatureSense': 8}})
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatterySense/Temperature': 8}})
+
+
+	@unittest.skip("Skip temperature sense testing until after 2.30")
 	def test_temperature_sense_order(self):
 		self._set_setting('/Settings/Services/Bol', 1)
 

@@ -370,23 +370,30 @@ class SystemCalc:
 		# 2. If the VE.Bus service has temperature, then use that.
 		# 3. If a solar charger has temperature, use that (CAN-bus chargers).
 		# 4. Use the first available dedicated sensor
-		vebus_service = self._dbusservice['/VebusService']
-		for service in chain((battery_service,
-				vebus_service if vebus_service != battery_service else None),
-				self._get_connected_service_list('com.victronenergy.solarcharger').keys()):
-			if service is None: continue
 
-			t = self._dbusmonitor.get_value(service, '/Dc/0/Temperature')
+		# For 2.30 release, consider only the selected battery service
+		if battery_service is not None:
+			t = self._dbusmonitor.get_value(battery_service, '/Dc/0/Temperature')
 			if t is not None:
-				return t, service
+				return t, battery_service
 
-		for service in self._get_connected_service_list('com.victronenergy.temperature').keys():
-			if self._dbusmonitor.get_value(service, '/TemperatureType') != 0:
-				# Skip sensors that are not battery sensors
-				continue
-			t = self._dbusmonitor.get_value(service, '/Temperature')
-			if t is not None:
-				return t, service
+		#vebus_service = self._dbusservice['/VebusService']
+		#for service in chain((battery_service,
+		#		vebus_service if vebus_service != battery_service else None),
+		#		self._get_connected_service_list('com.victronenergy.solarcharger').keys()):
+		#	if service is None: continue
+
+		#	t = self._dbusmonitor.get_value(service, '/Dc/0/Temperature')
+		#	if t is not None:
+		#		return t, service
+
+		#for service in self._get_connected_service_list('com.victronenergy.temperature').keys():
+		#	if self._dbusmonitor.get_value(service, '/TemperatureType') != 0:
+		#		# Skip sensors that are not battery sensors
+		#		continue
+		#	t = self._dbusmonitor.get_value(service, '/Temperature')
+		#	if t is not None:
+		#		return t, service
 
 		return None, None
 
