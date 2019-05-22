@@ -469,6 +469,7 @@ class Multi(object):
 		self._service = service
 		self.bol = BatteryOperationalLimits(self)
 		self._dc_current = monitor.get_value(service, '/Dc/0/Current') or 0
+		self._charge_current_limit = None
 
 	@property
 	def service(self):
@@ -513,7 +514,12 @@ class Multi(object):
 
 	@maxchargecurrent.setter
 	def maxchargecurrent(self, v):
-		self.monitor.set_value_async(self.service, '/Dc/0/MaxChargeCurrent', v)
+		# The maximum present charge current is 6-parallel 12V 5kva units, 6*220 = 1320A.
+		# We will consider 10000A to be unlimited. Write to dbus only when it changes
+		# to avoid frequent dbus writes.
+		if self._charge_current_limit != v:
+			self.monitor.set_value_async(self.service, '/Dc/0/MaxChargeCurrent', v if v is not None else 10000)
+		self._charge_current_limit = v
 
 	@property
 	def state(self):
@@ -733,7 +739,9 @@ class Dvcc(SystemCalcDelegate):
 		#    the VE.Bus system to re-initialise from the stored setting as per VEConfigure.
 		bms_parameters_written = 0
 		if bms_service is None:
-			if max_charge_current is not None:
+			if max_charge_current is None:
+				self._multi.maxchargecurrent = None
+			else:
 				# Don't bother setting a charge current at 1A or less
 				self._multi.maxchargecurrent = max_charge_current if max_charge_current > 1 else 0
 		else:
