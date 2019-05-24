@@ -107,13 +107,12 @@ class BatterySense(SystemCalcDelegate):
 
 		sense_temp_service = self._dbusservice['/Dc/Battery/TemperatureService']
 
-		# Write the tempeature to all solar chargers. Since we do not (yet)
-		# use a solarcharger as a temperature source, we don't have to
-		# explicitly exclude the potential source as destination.
+		# Write the tempeature to all solar chargers.
 		written = 0
 		for charger in self._dbusmonitor.get_service_list('com.victronenergy.solarcharger'):
 			# Don't write the temperature back to its source
-			if charger == sense_temp_service: continue
+			if charger == sense_temp_service:
+				continue
 
 			# We use /Link/NetworkMode to detect Hub support in the
 			# solarcharger.
