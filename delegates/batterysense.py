@@ -22,6 +22,9 @@ class BatterySense(SystemCalcDelegate):
 				'/Link/VoltageSense',
 				'/Link/BatteryCurrent',
 				'/Link/TemperatureSense']),
+			('com.victronenergy.vecan', [
+				'/Link/VoltageSense',
+				'/Link/TemperatureSense']),
 			('com.victronenergy.vebus', [
 				'/Dc/0/Voltage',
 				'/BatterySense/Voltage',
@@ -66,7 +69,7 @@ class BatterySense(SystemCalcDelegate):
 		for service in self._dbusmonitor.get_service_list('com.victronenergy.solarcharger'):
 			if service == sense_voltage_service:
 				continue
-			# There's now way (yet) to send the sense voltage to VE.Can chargers.
+			# On VE.Can the voltage is broadcasted, see below.
 			if self._dbusmonitor.get_value(service, '/Mgmt/Connection') == 'VE.Can':
 				continue
 			# We use /Link/NetworkMode to detect Hub support in the solarcharger. Existence of this item
@@ -75,6 +78,14 @@ class BatterySense(SystemCalcDelegate):
 				continue
 			self._dbusmonitor.set_value_async(service, '/Link/VoltageSense', sense_voltage)
 			voltagesense_written = 1
+
+		# Only forward to the VE.Can if the voltage is not comming from it.
+		vecan = self._dbusmonitor.get_service_list('com.victronenergy.vecan')
+		if len(vecan) == 1:
+			sense_origin = self._dbusmonitor.get_value(sense_voltage_service, '/Mgmt/Connection')
+			if sense_origin and sense_origin != 'VE.Can':
+				self._dbusmonitor.set_value_async(vecan.keys()[0], '/Link/VoltageSense', sense_voltage)
+				voltagesense_written = 1
 
 		vebus_path = self._dbusservice['/VebusService']
 		if vebus_path is not None and \
@@ -119,10 +130,9 @@ class BatterySense(SystemCalcDelegate):
 			if self._dbusmonitor.get_value(charger, '/Link/NetworkMode') is None:
 				continue
 
-			# VE.Can chargers don't have this path, and we will cheerfully
-			# ignore any errors coming from them.
-			self._dbusmonitor.set_value_async(charger,
-				'/Link/TemperatureSense', sense_temp)
+			# VE.Can chargers don't have this path, so only set it when it has been seen
+			if self._dbusmonitor.seen(charger, '/Link/TemperatureSense'):
+				self._dbusmonitor.set_value_async(charger, '/Link/TemperatureSense', sense_temp)
 			written = 1
 
 		# Also update the multi
@@ -132,4 +142,13 @@ class BatterySense(SystemCalcDelegate):
 			self._dbusmonitor.set_value_async(vebus, '/BatterySense/Temperature',
 				sense_temp)
 			written = 1
+
+		# Update vecan only if there is one..
+		vecan = self._dbusmonitor.get_service_list('com.victronenergy.vecan')
+		if len(vecan) == 1:
+			sense_origin = self._dbusmonitor.get_value(sense_temp_service, '/Mgmt/Connection')
+			if sense_origin and sense_origin != 'VE.Can':
+				self._dbusmonitor.set_value_async(vecan.keys()[0], '/Link/TemperatureSense', sense_temp)
+				written = 1
+
 		return written
