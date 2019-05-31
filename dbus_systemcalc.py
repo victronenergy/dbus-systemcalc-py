@@ -550,7 +550,8 @@ class SystemCalc:
 			vebusses = self._dbusmonitor.get_service_list('com.victronenergy.vebus')
 			for vebus in vebusses:
 				v = self._dbusmonitor.get_value(vebus, '/Dc/0/Voltage')
-				if v is not None and v > 0:
+				s = self._dbusmonitor.get_value(vebus, '/State')
+				if v is not None and s not in (0, None):
 					newvalues['/Dc/Battery/Voltage'] = v
 					newvalues['/Dc/Battery/VoltageService'] = vebus
 					break # Skip the else below
