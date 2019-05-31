@@ -533,8 +533,8 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Dc/Battery/Current': None,
-			'/Dc/Battery/Voltage': 0,
-			'/Dc/Battery/Power': 0})
+			'/Dc/Battery/Voltage': None,
+			'/Dc/Battery/Power': None})
 
 	def test_battery_selection(self):
 		self._update_values()
