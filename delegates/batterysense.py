@@ -69,12 +69,7 @@ class BatterySense(SystemCalcDelegate):
 		for service in self._dbusmonitor.get_service_list('com.victronenergy.solarcharger'):
 			if service == sense_voltage_service:
 				continue
-			# On VE.Can the voltage is broadcasted, see below.
-			if self._dbusmonitor.get_value(service, '/Mgmt/Connection') == 'VE.Can':
-				continue
-			# We use /Link/NetworkMode to detect Hub support in the solarcharger. Existence of this item
-			# implies existence of the other /Link/* fields.
-			if self._dbusmonitor.get_value(service, '/Link/NetworkMode') is None:
+			if not self._dbusmonitor.seen(service, '/Link/VoltageSense'):
 				continue
 			self._dbusmonitor.set_value_async(service, '/Link/VoltageSense', sense_voltage)
 			voltagesense_written = 1
@@ -137,8 +132,7 @@ class BatterySense(SystemCalcDelegate):
 
 		# Also update the multi
 		vebus = self._dbusservice['/VebusService']
-		if vebus is not None and vebus != sense_temp_service and self._dbusmonitor.get_value(vebus,
-				'/FirmwareFeatures/BolUBatAndTBatSense') == 1:
+		if vebus is not None and vebus != sense_temp_service and self._dbusmonitor.seen(vebus, '/BatterySense/Temperature'):
 			self._dbusmonitor.set_value_async(vebus, '/BatterySense/Temperature',
 				sense_temp)
 			written = 1

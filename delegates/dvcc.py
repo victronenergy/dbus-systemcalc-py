@@ -122,7 +122,8 @@ class SolarCharger(object):
 		return self.monitor.get_value(self.service, path)
 
 	def _set_path(self, path, v):
-		self.monitor.set_value_async(self.service, path, v)
+		if self.monitor.seen(self.service, path):
+			self.monitor.set_value_async(self.service, path, v)
 
 	@property
 	def firmwareversion(self):
@@ -257,11 +258,17 @@ class SolarChargerSubsystem(object):
 			# We use /Link/NetworkMode to detect Hub support in the
 			# solarcharger. Existence of this item implies existence of the
 			# other /Link/* fields. We also skip chargers with old firmware.
-			if charger.networkmode is not None and \
-					(charger.firmwareversion or 0) & 0x0FFF >= 0x0129:
-				vedirect_chargers.append(charger)
-				charger.networkmode = network_mode
-				network_mode_written = True
+			#if charger.networkmode is not None and \
+			#		(charger.firmwareversion or 0) & 0x0FFF >= 0x0129:
+			vedirect_chargers.append(charger)
+			charger.networkmode = network_mode
+			network_mode_written = True
+
+		# Update vecan only if there is one..
+		vecan = self.monitor.get_service_list('com.victronenergy.vecan')
+		if len(vecan) == 1:
+			self.monitor.set_value_async(vecan.keys()[0], '/Link/NetworkMode', network_mode)
+			network_mode_written = True
 
 		# Distribute the voltage setpoint. Simply write it to all of them.
 		voltage_written = 0
@@ -278,8 +285,7 @@ class SolarChargerSubsystem(object):
 		# back to the grid when we decide to increase the MPPT max charge
 		# current.
 		#
-		# Additionally, don't bother with chargers that are disconnected or
-		# VE.Can based.
+		# Additionally, don't bother with chargers that are disconnected.
 		chargers = filter(lambda x: x.state !=0, vedirect_chargers)
 		if len(chargers) > 0:
 			if feedback_allowed:
@@ -572,8 +578,9 @@ class Dvcc(SystemCalcDelegate):
 				'/State',
 				'/FirmwareVersion',
 				'/Mgmt/Connection']),
-			('com.victronenergy.vecan',
-				['/Link/ChargeVoltage']),
+			('com.victronenergy.vecan',	[
+				'/Link/ChargeVoltage',
+				'/Link/NetworkMode']),
 			('com.victronenergy.settings', [
 				 '/Settings/CGwacs/OvervoltageFeedIn',
 				 '/Settings/Services/Bol'])]
@@ -828,7 +835,6 @@ class Dvcc(SystemCalcDelegate):
 
 		# Charge voltage cannot by written directly to the CAN-bus solar chargers, we have to use
 		# the com.victronenergy.vecan.* service instead.
-		# Writing charge current to CAN-bus solar charger is not supported yet.
 		if self._solarsystem.has_vecan_chargers:
 			for service in self._vecan_services:
 				try:
