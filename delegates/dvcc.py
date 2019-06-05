@@ -266,8 +266,9 @@ class SolarChargerSubsystem(object):
 
 		# Update vecan only if there is one..
 		vecan = self.monitor.get_service_list('com.victronenergy.vecan')
-		if len(vecan) == 1:
-			self.monitor.set_value_async(vecan.keys()[0], '/Link/NetworkMode', network_mode)
+		if len(vecan):
+			for _ in vecan.iterkeys():
+				self.monitor.set_value_async(_, '/Link/NetworkMode', network_mode)
 			network_mode_written = True
 
 		# Distribute the voltage setpoint. Simply write it to all of them.

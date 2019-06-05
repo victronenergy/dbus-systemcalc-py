@@ -76,10 +76,11 @@ class BatterySense(SystemCalcDelegate):
 
 		# Only forward to the VE.Can if the voltage is not comming from it.
 		vecan = self._dbusmonitor.get_service_list('com.victronenergy.vecan')
-		if len(vecan) == 1:
+		if len(vecan):
 			sense_origin = self._dbusmonitor.get_value(sense_voltage_service, '/Mgmt/Connection')
 			if sense_origin and sense_origin != 'VE.Can':
-				self._dbusmonitor.set_value_async(vecan.keys()[0], '/Link/VoltageSense', sense_voltage)
+				for _ in vecan.iterkeys():
+					self._dbusmonitor.set_value_async(_, '/Link/VoltageSense', sense_voltage)
 				voltagesense_written = 1
 
 		vebus_path = self._dbusservice['/VebusService']
@@ -139,10 +140,11 @@ class BatterySense(SystemCalcDelegate):
 
 		# Update vecan only if there is one..
 		vecan = self._dbusmonitor.get_service_list('com.victronenergy.vecan')
-		if len(vecan) == 1:
+		if len(vecan):
 			sense_origin = self._dbusmonitor.get_value(sense_temp_service, '/Mgmt/Connection')
 			if sense_origin and sense_origin != 'VE.Can':
-				self._dbusmonitor.set_value_async(vecan.keys()[0], '/Link/TemperatureSense', sense_temp)
+				for _ in vecan.iterkeys():
+					self._dbusmonitor.set_value_async(_, '/Link/TemperatureSense', sense_temp)
 				written = 1
 
 		return written
