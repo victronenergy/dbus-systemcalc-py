@@ -25,9 +25,11 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Ac/Out/L1/P': 100,
 				'/Dc/0/Voltage': 12.25,
 				'/Dc/0/Current': -8,
+				'/Dc/0/Temperature': 24,
 				'/DeviceInstance': 0,
 				'/Devices/0/Assistants': [0x55, 0x1] + (26 * [0]),  # Hub-4 assistant
 				'/Dc/0/MaxChargeCurrent': None,
+				'/ExtraBatteryCurrent': 0,
 				'/Soc': 53.2,
 				'/State': 3,
 				'/BatteryOperationalLimits/MaxChargeVoltage': None,
@@ -148,18 +150,31 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Dc/0/Current': 9.7},
 			connection='VE.Can')
 		self._add_device('com.victronenergy.vecan.can0', {
-			'/Link/ChargeVoltage': None})
-		self._update_values(3000)
+			'/Link/ChargeVoltage': None,
+			'/Link/NetworkMode': None,
+			'/Link/TemperatureSense': None,
+			'/Link/VoltageSense': None})
+		self._update_values(12000)
 		self.assertEqual(12.63, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
+		self.assertEqual(5, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/NetworkMode'))
+		self.assertEqual(12.25, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/VoltageSense'))
+		self.assertEqual(24, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/TemperatureSense'))
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 13.2)
 		self._add_device('com.victronenergy.vecan.can1', {
-			'/Link/ChargeVoltage': None})
-		self._update_values(3000)
+			'/Link/ChargeVoltage': None,
+			'/Link/NetworkMode': None,
+			'/Link/TemperatureSense': None,
+			'/Link/VoltageSense': None})
+		self._update_values(9000)
 		self.assertEqual(13.2, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
 		self.assertEqual(13.2, self._monitor.get_value('com.victronenergy.vecan.can1', '/Link/ChargeVoltage'))
+		self.assertEqual(5, self._monitor.get_value('com.victronenergy.vecan.can1', '/Link/NetworkMode'))
+		self.assertEqual(12.25, self._monitor.get_value('com.victronenergy.vecan.can1', '/Link/VoltageSense'))
+		self.assertEqual(24, self._monitor.get_value('com.victronenergy.vecan.can1', '/Link/TemperatureSense'))
+
 		self._remove_device('com.victronenergy.vecan.can0')
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 13.1)
-		self._update_values(interval=10000)
+		self._update_values(interval=3000)
 		self.assertEqual(None, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
 		self.assertEqual(13.1, self._monitor.get_value('com.victronenergy.vecan.can1', '/Link/ChargeVoltage'))
 		self._check_values({'/Control/SolarChargeVoltage': 1})
@@ -184,7 +199,10 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Dc/0/Current': 9.7},
 			connection='VE.Can')
 		self._add_device('com.victronenergy.vecan.can0', {
-			'/Link/ChargeVoltage': 12.3})
+			'/Link/ChargeVoltage': 12.3,
+			'/Link/NetworkMode': None,
+			'/Link/VoltageSense': None,
+			'/Link/TemperatureSense': None})
 		self._update_values(3000)
 		self.assertEqual(12.63, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
 		self._add_device('com.victronenergy.solarcharger.ttyO2', {
@@ -519,42 +537,6 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Control/SolarChargeVoltage': 1,
 			'/Control/BmsParameters': 1})
 
-	def test_hub1_control_vedirect_solarcharger_bms_battery_no_link(self):
-		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 55.2)
-		# Solar chargers with firmware < 1.17 do not publish the /Link section.
-		self._add_device('com.victronenergy.solarcharger.ttyO2', {
-			'/State': 0,
-			'/Settings/ChargeCurrentLimit': 100,
-			'/Dc/0/Voltage': 12.6,
-			'/Dc/0/Current': 20,
-			'/Link/ChargeCurrent': None,
-			'/FirmwareVersion': 0x0116},
-			connection='VE.Direct')
-		self._add_device('com.victronenergy.battery.ttyO2',
-			product_name='battery',
-			values={
-				'/Dc/0/Voltage': 12.3,
-				'/Dc/0/Current': 5.3,
-				'/Dc/0/Power': 65,
-				'/Soc': 15.3,
-				'/DeviceInstance': 2,
-				'/Info/BatteryLowVoltage': 47,
-				'/Info/MaxChargeCurrent': 25,
-				'/Info/MaxChargeVoltage': 58.2,
-				'/Info/MaxDischargeCurrent': 50})
-		self._update_values(interval=60000)
-		self._check_external_values({
-			'com.victronenergy.vebus.ttyO1': {
-				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
-				'/BatteryOperationalLimits/MaxChargeCurrent': 5,
-				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
-				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
-				'/Dc/0/MaxChargeCurrent': None}})
-		self._check_values({
-			'/Control/SolarChargeCurrent': 0,
-			'/Control/SolarChargeVoltage': 0,
-			'/Control/BmsParameters': 1})
-
 	def test_hub1_control_vedirect_solarcharger_bms_battery_no_solarcharger(self):
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',
@@ -772,8 +754,6 @@ class TestHubSystem(TestSystemCalcBase):
 			})
 		self._update_values()
 		multi = Multi(self._system_calc._dbusmonitor, self._service)
-		with self.assertRaises(DBusException):
-			multi.bol.chargevoltage = 22
 		self.assertIsNone(multi.bol.chargevoltage)
 
 
@@ -1064,7 +1044,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Dc/0/Voltage': 12.4,
 			'/Dc/0/Current': 9.7,
 			'/Settings/ChargeCurrentLimit': 35,
-			'/FirmwareVersion': 0x0117},
+			'/FirmwareVersion': 0x0139},
 			connection='VE.Direct')
 		self._update_values(10000)
 		self._check_external_values({
@@ -1102,19 +1082,6 @@ class TestHubSystem(TestSystemCalcBase):
 
 		# Switch to DVCC
 		self._set_setting('/Settings/Services/Bol', 1)
-		self._update_values(10000)
-
-		# charge current is not used because firmware is old. Charge state
-		# is synced.
-		self._check_external_values({
-			'com.victronenergy.solarcharger.ttyO1': {
-				'/Link/ChargeVoltage': 12.6,
-				'/Link/ChargeCurrent': 35,
-				'/Link/NetworkMode': 13
-			}})
-
-		# Upgrade solarcharger firmware
-		self._monitor.set_value('com.victronenergy.solarcharger.ttyO1', '/FirmwareVersion', 0x0130)
 		self._update_values(10000)
 
 		# Now the charge current of the BMS was used.
