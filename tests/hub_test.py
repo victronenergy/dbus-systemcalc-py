@@ -28,7 +28,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Dc/0/Temperature': 24,
 				'/DeviceInstance': 0,
 				'/Devices/0/Assistants': [0x55, 0x1] + (26 * [0]),  # Hub-4 assistant
-				'/Dc/0/MaxChargeCurrent': None,
+				'/Dc/0/MaxChargeCurrent': 999,
 				'/ExtraBatteryCurrent': 0,
 				'/Soc': 53.2,
 				'/State': 3,
@@ -273,7 +273,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeCurrent': 15,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
-				'/Dc/0/MaxChargeCurrent': None}})
+				'/Dc/0/MaxChargeCurrent': 999}})
 		self._check_values({
 			'/Control/SolarChargeCurrent': 1,
 			'/Control/SolarChargeVoltage': 1,
@@ -317,7 +317,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeCurrent': 10,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
-				'/Dc/0/MaxChargeCurrent': None}})
+				'/Dc/0/MaxChargeCurrent': 999}})
 		self._check_values({
 			'/Control/SolarChargeCurrent': 1,
 			'/Control/SolarChargeVoltage': 1,
@@ -358,7 +358,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeCurrent': 14,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
-				'/Dc/0/MaxChargeCurrent': None}})
+				'/Dc/0/MaxChargeCurrent': 999}})
 		self._check_values({
 			'/Control/SolarChargeCurrent': 1,
 			'/Control/SolarChargeVoltage': 1,
@@ -481,7 +481,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeCurrent': 10,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
-				'/Dc/0/MaxChargeCurrent': None}})
+				'/Dc/0/MaxChargeCurrent': 999}})
 		self._check_values({
 			'/SystemType': 'ESS',
 			'/Control/SolarChargeCurrent': 1,
@@ -530,7 +530,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeCurrent': 14,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
-				'/Dc/0/MaxChargeCurrent': None}})
+				'/Dc/0/MaxChargeCurrent': 999}})
 		self._check_values({
 			'/SystemType': 'ESS',
 			'/Control/SolarChargeCurrent': 1,
@@ -557,7 +557,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeCurrent': 25,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
-				'/Dc/0/MaxChargeCurrent': None}})
+				'/Dc/0/MaxChargeCurrent': 999}})
 		self._check_values({
 			'/Control/SolarChargeCurrent': 0,
 			'/Control/SolarChargeVoltage': 0,
@@ -1022,7 +1022,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/MaxChargeCurrent': 20,
-				'/Dc/0/MaxChargeCurrent': None
+				'/Dc/0/MaxChargeCurrent': 999
 			}})
 
 	def test_hub1_legacy_voltage_control(self):
