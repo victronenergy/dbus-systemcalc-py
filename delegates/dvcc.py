@@ -475,12 +475,15 @@ class Multi(object):
 		self.monitor = monitor
 		self._service = service
 		self.bol = BatteryOperationalLimits(self)
-		self._dc_current = monitor.get_value(service, '/Dc/0/Current') or 0
+		self._dc_current = 0
 		self._charge_current_limit = None
 
 	@property
 	def service(self):
-		return self._service['/VebusService']
+		try:
+			return self._service['/VebusService']
+		except KeyError:
+			return None
 
 	@property
 	def active(self):
