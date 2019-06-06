@@ -477,10 +477,6 @@ class Multi(object):
 		self.bol = BatteryOperationalLimits(self)
 		self._dc_current = 0
 
-		# The maximum present charge current is 6-parallel 12V 5kva units, 6*220 = 1320A.
-		# We will consider 10000A to be impossibly high.
-		self._maximized_charge_current = 10000
-
 	@property
 	def service(self):
 		try:
@@ -529,18 +525,9 @@ class Multi(object):
 	def maxchargecurrent(self, v):
 		# If the Multi is not ready, don't write to it just yet
 		if self.active and self.maxchargecurrent is not None:
-			v = self.maximized_charge_current if v is None else min(v, self.maximized_charge_current)
-			# Write to dbus only when it changes to avoid frequent dbus writes.
-			if self.maxchargecurrent != v:
-				self.monitor.set_value_async(self.service, '/Dc/0/MaxChargeCurrent', v)
-
-	@property
-	def maximized_charge_current(self):
-		if self._maximized_charge_current >= 10000:
-			# If the Multi is fully primed, ask for the real maximum
-			self._maximized_charge_current = self.monitor.dbusConn.call_blocking(self.service, '/Dc/0/MaxChargeCurrent',
-				dbus_interface='com.victronenergy.BusItem', method='GetMax', signature=None, args=[])
-		return self._maximized_charge_current
+			# The maximum present charge current is 6-parallel 12V 5kva units, 6*220 = 1320A.
+			# We will consider 10000A to be impossibly high.
+			self.monitor.set_value_async(self.service, '/Dc/0/MaxChargeCurrent', 10000 if v is None else v)
 
 	@property
 	def state(self):

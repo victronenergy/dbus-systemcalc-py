@@ -27,9 +27,6 @@ class TestSystemCalcBase(unittest.TestCase):
 		self._monitor = self._system_calc._dbusmonitor
 		self._service = self._system_calc._dbusservice
 
-		from delegates.dvcc import Dvcc
-		Dvcc.instance._multi._maximized_charge_current = 1000 # bypass fetching the Max from the Multi
-
 	def _update_values(self, interval=1000):
 		mock_gobject.timer_manager.run(interval)
 
