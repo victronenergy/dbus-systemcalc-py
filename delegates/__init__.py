@@ -17,3 +17,4 @@ from delegates.batterylife import BatteryLife
 from delegates.schedule import ScheduledCharging
 from delegates.batterydata import BatteryData
 from delegates.sourcetimers import SourceTimers
+from delegates.gridalarm import GridAlarm
