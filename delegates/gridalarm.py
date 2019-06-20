@@ -25,7 +25,8 @@ class GridAlarm(SystemCalcDelegate):
 		return False
 
 	def raise_alarm(self):
-		self._timer = gobject.timeout_add(self.ALARM_TIMEOUT, self._raise_alarm)
+		if self._timer is None:
+			self._timer = gobject.timeout_add(self.ALARM_TIMEOUT, self._raise_alarm)
 
 	def cancel_alarm(self):
 		if self._timer is not None:
