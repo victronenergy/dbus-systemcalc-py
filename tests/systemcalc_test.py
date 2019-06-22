@@ -337,15 +337,28 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Ac/PvOnGenset/L1/Power': 500
 		})
 
-	def test_dc_charger(self):
+	def test_solar_charger_no_load_output(self):
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
-			'/Dc/0/Voltage': 12.4,
-			'/Dc/0/Current': 9.7
+			'/Dc/0/Voltage': 12,
+			'/Dc/0/Current': 8
 		})
 		self._update_values()
 		self._check_values({
 			'/Dc/System/Power': None,
-			'/Dc/Pv/Power': 12.4 * 9.7})
+			'/Dc/Pv/Power': 96})
+
+	def test_solar_charger_with_load_output(self):
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/Dc/0/Voltage': 12,
+			'/Dc/0/Current': 8,
+			# The load current would be in /Load/I, for example 5 amps
+			# adding it into the dict leads to an error in the tests:
+			# Path not found: com.victronenergy.solarcharger.ttyO1/Load/I (check dbusTree passed to __init__)
+		})
+		self._update_values()
+		self._check_values({
+			'/Dc/System/Power': None,
+			'/Dc/Pv/Power': 12 * (8 + 5)})
 
 	def test_multi_dc_power(self):
 		self._update_values()
