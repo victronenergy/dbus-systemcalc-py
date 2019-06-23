@@ -42,6 +42,7 @@ class SystemCalc:
 				'/Dc/0/Voltage': dummy,
 				'/Dc/0/Current': dummy,
 				'/Dc/0/Temperature': dummy,
+				'/Load/I': dummy,
 				'/FirmwareVersion': dummy},
 			'com.victronenergy.pvinverter': {
 				'/Connected': dummy,
@@ -419,6 +420,8 @@ class SystemCalc:
 
 	def _updatevalues(self):
 		# ==== PREPARATIONS ====
+		newvalues = {}
+
 		# Set the user timezone
 		if 'TZ' not in os.environ:
 			tz = self._dbusmonitor.get_value('com.victronenergy.settings', '/Settings/System/TimeZone')
@@ -436,7 +439,6 @@ class SystemCalc:
 
 		# ==== PVINVERTERS ====
 		pvinverters = self._dbusmonitor.get_service_list('com.victronenergy.pvinverter')
-		newvalues = {}
 		pos = {0: '/Ac/PvOnGrid', 1: '/Ac/PvOnOutput', 2: '/Ac/PvOnGenset'}
 		for pvinverter in pvinverters:
 			# Position will be None if PV inverter service has just been removed (after retrieving the
@@ -456,6 +458,9 @@ class SystemCalc:
 		solarchargers = self._dbusmonitor.get_service_list('com.victronenergy.solarcharger')
 		solarcharger_batteryvoltage = None
 		solarcharger_batteryvoltage_service = None
+		solarchargers_charge_power = 0
+		solarchargers_loadoutput_power = None
+
 		for solarcharger in solarchargers:
 			v = self._dbusmonitor.get_value(solarcharger, '/Dc/0/Voltage')
 			if v is None:
@@ -463,15 +468,32 @@ class SystemCalc:
 			i = self._dbusmonitor.get_value(solarcharger, '/Dc/0/Current')
 			if i is None:
 				continue
+			l = self._dbusmonitor.get_value(solarcharger, '/Load/I', 0)
+
+			if l is not None:
+				if solarchargers_loadoutput_power is None:
+					solarchargers_loadoutput_power = l * v
+				else:
+					solarchargers_loadoutput_power += l * v
+
+			solarchargers_charge_power += v * i
+
+			# Note that this path is not in the _summeditems{}, making for it to not be
+			# published on D-Bus. Which fine. The only one needing it is the vebussocwriter-
+			# delegate.
+			if '/Dc/Pv/ChargeCurrent' not in newvalues:
+				newvalues['/Dc/Pv/ChargeCurrent'] = i
+			else:
+				newvalues['/Dc/Pv/ChargeCurrent'] += i
 
 			if '/Dc/Pv/Power' not in newvalues:
-				newvalues['/Dc/Pv/Power'] = v * i
-				newvalues['/Dc/Pv/Current'] = i
+				newvalues['/Dc/Pv/Power'] = v * (i + l)
+				newvalues['/Dc/Pv/Current'] = i + l
 				solarcharger_batteryvoltage = v
 				solarcharger_batteryvoltage_service = solarcharger
 			else:
-				newvalues['/Dc/Pv/Power'] += v * i
-				newvalues['/Dc/Pv/Current'] += i
+				newvalues['/Dc/Pv/Power'] += v * (i + l)
+				newvalues['/Dc/Pv/Current'] += i + l
 
 		# ==== CHARGERS ====
 		chargers = self._dbusmonitor.get_service_list('com.victronenergy.charger')
@@ -502,7 +524,9 @@ class SystemCalc:
 
 		# ==== BATTERY ====
 		if self._batteryservice is not None:
-			batteryservicetype = self._batteryservice.split('.')[2]  # either 'battery' or 'vebus'
+			batteryservicetype = self._batteryservice.split('.')[2]
+			assert batteryservicetype in ('battery', 'vebus')
+
 			newvalues['/Dc/Battery/Soc'] = self._dbusmonitor.get_value(self._batteryservice,'/Soc')
 			newvalues['/Dc/Battery/TimeToGo'] = self._dbusmonitor.get_value(self._batteryservice,'/TimeToGo')
 			newvalues['/Dc/Battery/ConsumedAmphours'] = self._dbusmonitor.get_value(self._batteryservice,'/ConsumedAmphours')
@@ -525,7 +549,7 @@ class SystemCalc:
 					if vebus_power is not None:
 						newvalues['/Dc/Battery/Power'] = vebus_power
 				else:
-					battery_power = _safeadd(newvalues.get('/Dc/Pv/Power', 0), vebus_power)
+					battery_power = _safeadd(solarchargers_charge_power, vebus_power)
 					newvalues['/Dc/Battery/Current'] = battery_power / vebus_voltage if vebus_voltage > 0 else None
 					newvalues['/Dc/Battery/Power'] = battery_power
 
@@ -575,7 +599,7 @@ class SystemCalc:
 				# and amps from vebus, solarchargers and chargers.
 				assert '/Dc/Battery/Power' not in newvalues
 				assert '/Dc/Battery/Current' not in newvalues
-				p = newvalues.get('/Dc/Pv/Power', 0) + newvalues.get('/Dc/Charger/Power', 0) + vebuspower
+				p = solarchargers_charge_power + newvalues.get('/Dc/Charger/Power', 0) + vebuspower
 				voltage = newvalues['/Dc/Battery/Voltage']
 				newvalues['/Dc/Battery/Current'] = p / voltage if voltage > 0 else None
 				newvalues['/Dc/Battery/Power'] = p
@@ -587,9 +611,10 @@ class SystemCalc:
 		self._dbusservice['/AutoSelectedTemperatureService'] = None if temperature_service is None else \
 			self._get_readable_service_name(temperature_service)
 
-		# ==== SYSTEM ====
+		# ==== SYSTEM POWER ====
 		if self._settings['hasdcsystem'] == 1 and batteryservicetype == 'battery':
 			# Calculate power being generated/consumed by not measured devices in the network.
+			# For MPPTs, take all the power, including power going out of the load output.
 			# /Dc/System: positive: consuming power
 			# VE.Bus: Positive: current flowing from the Multi to the dc system or battery
 			# Solarcharger & other chargers: positive: charging
@@ -601,6 +626,9 @@ class SystemCalc:
 				dc_pv_power = newvalues.get('/Dc/Pv/Power', 0)
 				charger_power = newvalues.get('/Dc/Charger/Power', 0)
 				newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + vebuspower - battery_power
+
+		elif self._settings['hasdcsystem'] == 1 and solarchargers_loadoutput_power is not None:
+			newvalues['/Dc/System/Power'] = solarchargers_loadoutput_power
 
 		# ==== Vebus ====
 		multi = self._get_service_having_lowest_instance('com.victronenergy.vebus')

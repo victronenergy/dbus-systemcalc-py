@@ -340,25 +340,53 @@ class TestSystemCalc(TestSystemCalcBase):
 	def test_solar_charger_no_load_output(self):
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/Dc/0/Voltage': 12,
-			'/Dc/0/Current': 8
+			'/Dc/0/Current': 8,
 		})
 		self._update_values()
 		self._check_values({
 			'/Dc/System/Power': None,
-			'/Dc/Pv/Power': 96})
+			'/Dc/Pv/Power': 12 * 8})
+
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/Dc/0/Voltage': 12.5,
+			'/Dc/0/Current': 10,
+		})
+		self._update_values()
+		self._check_values({
+			'/Dc/System/Power': None,
+			'/Dc/Pv/Power': (12 * 8) + (12.5 * 10)})
 
 	def test_solar_charger_with_load_output(self):
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/Dc/0/Voltage': 12,
 			'/Dc/0/Current': 8,
-			# The load current would be in /Load/I, for example 5 amps
-			# adding it into the dict leads to an error in the tests:
-			# Path not found: com.victronenergy.solarcharger.ttyO1/Load/I (check dbusTree passed to __init__)
+			'/Load/I': 5
 		})
 		self._update_values()
+
 		self._check_values({
 			'/Dc/System/Power': None,
 			'/Dc/Pv/Power': 12 * (8 + 5)})
+
+
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/Dc/0/Voltage': 12.5,
+			'/Dc/0/Current': 10,
+			'/Load/I': 5
+		})
+		self._update_values()
+
+		self._check_values({
+			'/Dc/System/Power': None,
+			'/Dc/Pv/Power': 12 * (8 + 5) + 12.5 * (10 + 5)})
+
+		self._set_setting('/Settings/SystemSetup/HasDcSystem', 1)
+		self._update_values()
+
+		print("test 3")
+		self._check_values({
+			'/Dc/System/Power': 12 * 5 + 12.5 * 5,
+			'/Dc/Pv/Power': 12 * (8 + 5) + 12.5 * (10 + 5)})
 
 	def test_multi_dc_power(self):
 		self._update_values()
@@ -395,6 +423,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._add_device('com.victronenergy.solarcharger.ttyO1',
 						product_name='solarcharger',
 						values={
+								'/Load/I': 5,
 								'/Dc/0/Voltage': 12.4,
 								'/Dc/0/Current': 9.7})
 		self._add_device('com.victronenergy.battery.ttyO2',
@@ -407,9 +436,9 @@ class TestSystemCalc(TestSystemCalcBase):
 
 		self._update_values()
 		self._check_values({
-			'/Dc/System/Power': 12.4 * 9.7 - 120 - 12.25 * 8,
+			'/Dc/System/Power': 12.4 * 9.7 - 120 - 12.25 * 8 + 12.4 * 5,
 			'/Dc/Battery/Power': 120,
-			'/Dc/Pv/Power': 12.4 * 9.7})
+			'/Dc/Pv/Power': 12.4 * (9.7 + 5)})
 
 	def test_hub1(self):
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Mgmt/Connection', "VE.Bus")
@@ -417,19 +446,21 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._add_device('com.victronenergy.solarcharger.ttyO1',
 						product_name='solarcharger',
 						values={
+								'/Load/I': 5,
 								'/Dc/0/Voltage': 12.4,
 								'/Dc/0/Current': 9.7})
 		self._add_device('com.victronenergy.solarcharger.ttyO2',
 						product_name='solarcharger',
 						values={
-								'/Dc/0/Voltage': 24.3,
+								'/Load/I': 5,
+								'/Dc/0/Voltage': 12.3,
 								'/Dc/0/Current': 5.6})
 
 		self._update_values()
 		self._check_values({
 			'/Hub': 1,
 			'/SystemType': 'Hub-1',
-			'/Dc/Pv/Power': 12.4 * 9.7 + 24.3 * 5.6})
+			'/Dc/Pv/Power': 12.4 * (9.7 + 5) + 12.3 * (5.6 + 5)})
 
 	def test_hub1_vecan(self):
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Mgmt/Connection', "VE.Can")
@@ -575,11 +606,17 @@ class TestSystemCalc(TestSystemCalcBase):
 						values={
 								'/Dc/0/Voltage': 12.4,
 								'/Dc/0/Current': 9.7})
+		self._add_device('com.victronenergy.solarcharger.ttyO2',
+						product_name='solarcharger',
+						values={
+								'/Load/I': 5,
+								'/Dc/0/Voltage': 12.5,
+								'/Dc/0/Current': 10})
 		self._update_values()
 		self._check_values({
 			'/Dc/Battery/Soc': None,
-			'/Dc/Battery/Current': (9.7 * 12.4 - 12.25 * 8) / 12.25,
-			'/Dc/Battery/Power': 9.7 * 12.4 - 12.25 * 8,
+			'/Dc/Battery/Current': (12.4 * 9.7 + 12.5 * 10 - 12.25 * 8) / 12.25,
+			'/Dc/Battery/Power': 12.4 * 9.7 + 12.5 * 10 - 12.25 * 8,
 			'/Dc/Battery/Voltage': 12.25,
 			'/ActiveBatteryService': None})
 
@@ -642,16 +679,23 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._add_device('com.victronenergy.solarcharger.ttyO1',
 						product_name='solarcharger',
 						values={
+								'/Load/I': 5,
 								'/Dc/0/Voltage': 12.4,
 								'/Dc/0/Current': 9.7})
+		self._add_device('com.victronenergy.solarcharger.ttyO2',
+						product_name='solarcharger',
+						values={
+								'/Load/I': 10,
+								'/Dc/0/Voltage': 12,
+								'/Dc/0/Current': 10})
 		self._update_values()
 		self._check_values({
 			'/Dc/Battery/Soc': 53.2,
-			'/Dc/Battery/Current': (12.4 * 9.7 - 12.25 * 8) / 12.25,
-			'/Dc/Battery/Power': 12.4 * 9.7 - 12.25 * 8,
+			'/Dc/Battery/Current': (12.4 * 9.7 + 12 * 10 - 12.25 * 8) / 12.25,
+			'/Dc/Battery/Power': 12.4 * 9.7 + 12 * 10 - 12.25 * 8,
 			'/Dc/Battery/Voltage': 12.25,
 			'/ActiveBatteryService': 'com.victronenergy.vebus/0'})
-		self.assertEqual(9.7, self._monitor.get_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent'))
+		self.assertEqual(9.7 + 10, self._monitor.get_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent'))
 
 	def test_battery_selection_no_battery(self):
 		self._update_values()
@@ -688,8 +732,13 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._add_device('com.victronenergy.solarcharger.ttyO1',
 						product_name='solarcharger',
 						values={
-								'/Dc/0/Voltage': 12.4,
-								'/Dc/0/Current': 9.7})
+								'/Dc/0/Voltage': 12,
+								'/Dc/0/Current': 10})
+		self._add_device('com.victronenergy.solarcharger.ttyO2',
+						product_name='solarcharger',
+						values={
+								'/Dc/0/Voltage': 12.5,
+								'/Dc/0/Current': 20})
 		self._add_device('com.victronenergy.battery.ttyO2',
 						product_name='battery',
 						values={
@@ -703,7 +752,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._check_values({
 			'/Dc/System/Power': None,
 			'/Dc/Battery/Power': None,
-			'/Dc/Pv/Power': 12.4 * 9.7,
+			'/Dc/Pv/Power': 12 * 10 + 12.5 * 20,
 			'/ActiveBatteryService': 'com.victronenergy.battery/2'})
 
 	def test_removed_services(self):
@@ -924,21 +973,33 @@ class TestSystemCalc(TestSystemCalcBase):
 						product_name='solarcharger',
 						values={
 							'/Dc/0/Voltage': 12.4,
-							'/Dc/0/Current': 9.7})
+							'/Dc/0/Current': 9.7,
+							'/Load/I': 5})
+		self._add_device('com.victronenergy.solarcharger.ttyO2',
+						product_name='solarcharger',
+						values={
+							'/Dc/0/Voltage': 12.3,
+							'/Dc/0/Current': 10,
+							'/Load/I': 11})
 		self._add_device('com.victronenergy.charger.ttyO1',
 						product_name='charger',
 						values={
 							'/Dc/0/Voltage': 12.7,
 							'/Dc/0/Current': 6.3})
+		self._add_device('com.victronenergy.charger.ttyO4',
+						product_name='charger',
+						values={
+							'/Dc/0/Voltage': 12.9,
+							'/Dc/0/Current': 6})
 		self._set_setting('/Settings/SystemSetup/HasDcSystem', 1)
 		self._update_values()
 		self._check_values({
-			'/Dc/System/Power':  12.7 * 6.3 + 12.4 * 9.7 - 12.25 * 8 - 65})
+			'/Dc/System/Power':  12.4 * (9.7 + 5) + 12.3 * (10 + 11) + 12.7 * 6.3 + 12.9 * 6 - 12.25 * 8 - 65})
 
 		self._monitor.remove_service('com.victronenergy.battery.ttyO2')
 		self._update_values()
 		self._check_values({
-			'/Dc/System/Power': None})
+			'/Dc/System/Power': 12.4 * 5 + 12.3 * 11})
 
 	def test_battery_state(self):
 		self._check_values({
@@ -970,6 +1031,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._add_device('com.victronenergy.solarcharger.ttyO1',
 						product_name='solarcharger',
 						values={
+							'/Load/I': 5,
 							'/Dc/0/Voltage': 12.4,
 							'/Dc/0/Current': 9.7})
 		self._add_device('com.victronenergy.charger.ttyO1',
