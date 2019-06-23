@@ -53,7 +53,9 @@ class VebusSocWriter(SystemCalcDelegate):
 			# Always write the extra current, even if there is no solarcharger present. We need this because
 			# once an SoC is written to the vebus service, the vebus device will stop adjusting its SoC until
 			# an extra current is written.
-			total_charge_current = newvalues.get('/Dc/Pv/Current', 0)
+
+			# Take only the charge current. Total current includes output on the load output terminals
+			total_charge_current = newvalues.get('/Dc/Pv/ChargeCurrent', 0)
 			try:
 				charge_current = self._dbusmonitor.get_value(vebus_service, '/ExtraBatteryCurrent')
 				if charge_current is not None:

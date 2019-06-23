@@ -68,6 +68,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
 			'/Link/NetworkMode': 0,
+			'/Load/I': 5,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 9.7},
 			connection='VE.Direct')
