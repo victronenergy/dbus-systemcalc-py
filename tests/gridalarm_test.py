@@ -42,7 +42,7 @@ class TestGridAlarm(TestSystemCalcBase):
         self._set_setting('/Settings/Alarm/System/GridLost', 0)
         self._monitor.set_value(self.vebus, '/Ac/ActiveIn/ActiveInput', 0xF0)
         self._update_values(interval=6000)
-        self._check_values({'/Ac/Alarms/GridLost': 0})
+        self._check_values({'/Ac/Alarms/GridLost': None})
 
     def test_grid_alarm_enabled(self):
         self._set_setting('/Settings/Alarm/System/GridLost', 1)

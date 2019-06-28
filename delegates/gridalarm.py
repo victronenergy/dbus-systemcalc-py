@@ -11,7 +11,7 @@ class GridAlarm(SystemCalcDelegate):
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(GridAlarm, self).set_sources(dbusmonitor, settings, dbusservice)
-		self._dbusservice.add_path('/Ac/Alarms/GridLost', value=0)
+		self._dbusservice.add_path('/Ac/Alarms/GridLost', value=None)
 
 	def get_settings(self):
 		return [
@@ -27,10 +27,10 @@ class GridAlarm(SystemCalcDelegate):
 		if self._timer is None:
 			self._timer = gobject.timeout_add(self.ALARM_TIMEOUT, self._raise_alarm)
 
-	def cancel_alarm(self):
+	def cancel_alarm(self, v=0):
 		if self._timer is not None:
 			gobject.source_remove(self._timer)
-		self._dbusservice['/Ac/Alarms/GridLost'] = 0
+		self._dbusservice['/Ac/Alarms/GridLost'] = v
 
 	def update_values(self, newvalues):
 		if self._settings['grid_alarm_enabled']:
@@ -47,4 +47,4 @@ class GridAlarm(SystemCalcDelegate):
 				# 3: Shore - same as grid
 				self.cancel_alarm()
 		else:
-			self.cancel_alarm()
+			self.cancel_alarm(None)
