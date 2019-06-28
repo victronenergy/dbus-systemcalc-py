@@ -7,14 +7,10 @@ import context
 from mock_gobject import timer_manager
 
 # our own packages
-from delegates import GridAlarm
 from base import TestSystemCalcBase
 
 # Monkey patching for unit tests
 import patches
-
-# Shorten timeout
-GridAlarm.ALARM_TIMEOUT = 5000
 
 class TestGridAlarm(TestSystemCalcBase):
     vebus = 'com.victronenergy.vebus.ttyO1'
@@ -43,53 +39,64 @@ class TestGridAlarm(TestSystemCalcBase):
         self._update_values()
 
     def test_grid_alarm_disabled(self):
-        self._set_setting('/Settings/Alarm/System/AcLost', 0)
+        self._set_setting('/Settings/Alarm/System/GridLost', 0)
         self._monitor.set_value(self.vebus, '/Ac/ActiveIn/ActiveInput', 0xF0)
         self._update_values(interval=6000)
-        self._check_values({'/Ac/Alarms/AcLost': 0})
+        self._check_values({'/Ac/Alarms/GridLost': 0})
 
     def test_grid_alarm_enabled(self):
-        self._set_setting('/Settings/Alarm/System/AcLost', 1)
-        self._monitor.set_value(self.vebus, '/Ac/ActiveIn/ActiveInput', 0)
-        self._monitor.set_value(self.settings, '/Settings/SystemSetup/AcInput1', 0) # Not available
+        self._set_setting('/Settings/Alarm/System/GridLost', 1)
+        self._monitor.set_value(self.vebus, '/Ac/ActiveIn/ActiveInput', 1)
         self._update_values()
-
-        # Alarm not armed because AC explicitly marked as unavailable
-        self.assertTrue(not GridAlarm.instance.armed)
-
-        self._monitor.set_value(self.settings, '/Settings/SystemSetup/AcInput1', 2) # Available
-        self._update_values()
-        # Alarm armed because AC available
-        self.assertTrue(GridAlarm.instance.armed)
 
         # Grid fails
         self._monitor.set_value(self.vebus, '/Ac/ActiveIn/ActiveInput', 0xF0)
 
         # Alarm doesn't activate immediately
         self._update_values(interval=3000)
-        self._check_values({'/Ac/Alarms/AcLost': 0})
+        self._check_values({'/Ac/Alarms/GridLost': 0})
 
         # Alarm activates after timeout
         self._update_values(interval=3000)
-        self._check_values({'/Ac/Alarms/AcLost': 2})
+        self._check_values({'/Ac/Alarms/GridLost': 2})
 
         # Alarm resets if the grid come back
-        self._monitor.set_value(self.vebus, '/Ac/ActiveIn/ActiveInput', 0)
+        self._monitor.set_value(self.vebus, '/Ac/ActiveIn/ActiveInput', 1)
         self._update_values()
-        self._check_values({'/Ac/Alarms/AcLost': 0})
+        self._check_values({'/Ac/Alarms/GridLost': 0})
 
     def test_grid_alarm_cancel(self):
-        self._set_setting('/Settings/Alarm/System/AcLost', 1)
-        self._monitor.set_value(self.vebus, '/Ac/ActiveIn/ActiveInput', 0)
+        self._set_setting('/Settings/Alarm/System/GridLost', 1)
+        self._monitor.set_value(self.vebus, '/Ac/ActiveIn/ActiveInput', 1)
         self._update_values()
-        self.assertTrue(GridAlarm.instance.armed) # Armed
 
         # Fail, no alarm
         self._monitor.set_value(self.vebus, '/Ac/ActiveIn/ActiveInput', 0xF0)
         self._update_values(interval=3000)
-        self._check_values({'/Ac/Alarms/AcLost': 0})
+        self._check_values({'/Ac/Alarms/GridLost': 0})
 
         # AC Return before the timeout
-        self._monitor.set_value(self.vebus, '/Ac/ActiveIn/ActiveInput', 0)
+        self._monitor.set_value(self.vebus, '/Ac/ActiveIn/ActiveInput', 1)
         self._update_values(interval=3000)
-        self._check_values({'/Ac/Alarms/AcLost': 0})
+        self._check_values({'/Ac/Alarms/GridLost': 0})
+
+    def test_grid_alarm_on_genertor(self):
+        self._set_setting('/Settings/Alarm/System/GridLost', 1)
+        self._monitor.set_value(self.vebus, '/Ac/ActiveIn/ActiveInput', 1) # Grid
+        self._update_values()
+
+		# Switch to generator
+        self._monitor.set_value(self.vebus, '/Ac/ActiveIn/ActiveInput', 0)
+
+        # Alarm doesn't activate immediately
+        self._update_values(interval=3000)
+        self._check_values({'/Ac/Alarms/GridLost': 0})
+
+        # Alarm activates after timeout
+        self._update_values(interval=3000)
+        self._check_values({'/Ac/Alarms/GridLost': 2})
+
+		# Grid returns
+        self._monitor.set_value(self.vebus, '/Ac/ActiveIn/ActiveInput', 1) # Grid
+        self._update_values()
+        self._check_values({'/Ac/Alarms/GridLost': 0})
