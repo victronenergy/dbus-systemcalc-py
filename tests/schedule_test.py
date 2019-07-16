@@ -408,3 +408,64 @@ class TestSchedule(TestSystemCalcBase):
 				'com.victronenergy.hub4': {
 				'/Overrides/ForceCharge': 0,
 		}})
+
+	def test_hysteresis(self):
+		""" Test that battery is allowed to drop 5% before re-acivating
+		    recharge, to avoid pulse-charging in a large window if target SOC
+		    is reached early. """
+		# Determine seconds since midnight on timer right now.
+		now = timer_manager.datetime
+		midnight = datetime.combine(now.date(), time.min)
+		stamp = (now-midnight).seconds
+
+		# Set a schedule to start now and stop in 5 minutes
+		self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Day', 7)
+		self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Start', stamp)
+		self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Duration', 300)
+		self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Soc', 70)
+
+		# Travel just far enough ahead to trigger the 5-second task in the delegate
+		timer_manager.run(5000)
+		self._check_external_values({
+				'com.victronenergy.hub4': {
+				'/Overrides/ForceCharge': 1,
+		}})
+
+		# Increase the SOC to match the target, check that charging stopped.
+		self._monitor.set_value(self.vebus, '/Soc', 70)
+		timer_manager.run(5000)
+		self._check_external_values({
+				'com.victronenergy.hub4': {
+				'/Overrides/ForceCharge': 0,
+		}})
+
+		# Reduce the SOC a little and check that hysteresis is applied
+		self._monitor.set_value(self.vebus, '/Soc', 65)
+		timer_manager.run(5000)
+		self._check_external_values({
+				'com.victronenergy.hub4': {
+				'/Overrides/ForceCharge': 0,
+		}})
+
+		# Reduce SOC below the lower limit and check that charging reactivates
+		self._monitor.set_value(self.vebus, '/Soc', 64.9)
+		timer_manager.run(5000)
+		self._check_external_values({
+				'com.victronenergy.hub4': {
+				'/Overrides/ForceCharge': 1,
+		}})
+
+		# Check again that it stops once the target is reached.
+		self._monitor.set_value(self.vebus, '/Soc', 69.9)
+		timer_manager.run(5000)
+		self._check_external_values({
+				'com.victronenergy.hub4': {
+				'/Overrides/ForceCharge': 1,
+		}})
+
+		self._monitor.set_value(self.vebus, '/Soc', 70)
+		timer_manager.run(5000)
+		self._check_external_values({
+				'com.victronenergy.hub4': {
+				'/Overrides/ForceCharge': 0,
+		}})

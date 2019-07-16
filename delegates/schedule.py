@@ -182,8 +182,15 @@ class ScheduledCharging(SystemCalcDelegate):
 			if now in w:
 				if w.soc_reached(self.soc):
 					self.forcecharge = False
+				elif w.soc_reached(self.soc + 5):
+					# If we are within 5%, keep it the same, but write it to
+					# avoid a timeout.
+					self.forcecharge = self.forcecharge
 				else:
 					# SoC not reached yet
+					# Note: soc_reached always returns False for a target of
+					# 100%, so this is the only branch that is ever excuted
+					# in those cases.
 					self.forcecharge = True
 
 				# Signal that scheduled charging is active
