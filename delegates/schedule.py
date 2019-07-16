@@ -84,7 +84,7 @@ class ScheduledChargeWindow(ScheduledWindow):
 		self.soc = soc
 
 	def soc_reached(self, s):
-		return False if self.soc >= 100 else s >= self.soc
+		return not self.soc >= 100 and s >= self.soc
 
 	def __repr__(self):
 		return "Start charge: {}, Stop: {}, Soc: {}".format(
