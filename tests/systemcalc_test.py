@@ -383,7 +383,6 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._set_setting('/Settings/SystemSetup/HasDcSystem', 1)
 		self._update_values()
 
-		print("test 3")
 		self._check_values({
 			'/Dc/System/Power': 12 * 5 + 12.5 * 5,
 			'/Dc/Pv/Power': 12 * (8 + 5) + 12.5 * (10 + 5)})
