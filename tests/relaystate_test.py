@@ -35,35 +35,35 @@ class RelayStateTest(TestSystemCalcBase):
 			'/VebusMainState': 9})
 
 	def test_relay_state(self):
-		with tempfile.NamedTemporaryFile(mode='wt') as relay_path_fd:
-			gpio1_dir = tempfile.mkdtemp()
-			gpio1_state = os.path.join(gpio1_dir, 'value')
-			gpio2_dir = tempfile.mkdtemp()
-			gpio2_state = os.path.join(gpio2_dir, 'value')
-			try:
-				with file(relay_path_fd.name, 'wt') as f:
-					f.write('{} {}'.format(gpio1_dir, gpio2_dir))
-				with file(gpio1_state, 'wt') as f:
-					f.write('1')
-				with file(gpio2_state, 'wt') as f:
-					f.write('0')
-				RelayState.RELAY_PATH = relay_path_fd.name
+		gpio_dir = tempfile.mkdtemp()
+		os.mkdir(os.path.join(gpio_dir, 'relay_1'))
+		os.mkdir(os.path.join(gpio_dir, 'relay_2'))
+		gpio1_state = os.path.join(gpio_dir, 'relay_1', 'value')
+		gpio2_state = os.path.join(gpio_dir, 'relay_2', 'value')
+		RelayState.RELAY_GLOB = os.path.join(gpio_dir, 'relay_*')
 
-				rs = RelayState()
-				rs.set_sources(self._monitor, self._system_calc._settings, self._service)
+		try:
+			with file(gpio1_state, 'wt') as f:
+				f.write('1')
+			with file(gpio2_state, 'wt') as f:
+				f.write('0')
 
-				self._update_values(5000)
-				self.assertEqual(self._service['/Relay/0/State'], 1)
+			rs = RelayState()
+			rs.set_sources(self._monitor, self._system_calc._settings, self._service)
 
-				self._service.set_value('/Relay/0/State', 0)
-				self.assertEqual(file(gpio1_state, 'rt').read(), '0')
-				self.assertEqual(self._service['/Relay/0/State'], 0)
+			self._update_values(5000)
+			self.assertEqual(self._service['/Relay/0/State'], 1)
 
-				self._service.set_value('/Relay/0/State', 1)
-				self.assertEqual(file(gpio1_state, 'rt').read(), '1')
-				self.assertEqual(self._service['/Relay/0/State'], 1)
-			finally:
-				os.remove(gpio1_state)
-				os.removedirs(gpio1_dir)
-				os.remove(gpio2_state)
-				os.removedirs(gpio2_dir)
+			self._service.set_value('/Relay/0/State', 0)
+			self.assertEqual(file(gpio1_state, 'rt').read(), '0')
+			self.assertEqual(self._service['/Relay/0/State'], 0)
+
+			self._service.set_value('/Relay/0/State', 1)
+			self.assertEqual(file(gpio1_state, 'rt').read(), '1')
+			self.assertEqual(self._service['/Relay/0/State'], 1)
+		finally:
+			os.remove(gpio1_state)
+			os.remove(gpio2_state)
+			os.rmdir(os.path.join(gpio_dir, 'relay_1'))
+			os.rmdir(os.path.join(gpio_dir, 'relay_2'))
+			os.rmdir(gpio_dir)

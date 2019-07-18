@@ -5,13 +5,12 @@ import traceback
 from glob import glob
 
 # Victron packages
-from sc_utils import gpio_paths
 from ve_utils import exit_on_error
 
 from delegates.base import SystemCalcDelegate
 
 class RelayState(SystemCalcDelegate):
-	RELAY_PATH = '/etc/venus/relays'
+	RELAY_GLOB = '/dev/gpio/relay_*'
 
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)
@@ -19,11 +18,7 @@ class RelayState(SystemCalcDelegate):
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
-		if os.path.exists('/dev/gpio'):
-			relays = sorted(glob('/dev/gpio/relay_*'))
-		else:
-			# FIXME When the CCGX grows /dev/gpio, we can kill this.
-			relays = gpio_paths(RelayState.RELAY_PATH)
+		relays = sorted(glob(self.RELAY_GLOB))
 
 		if len(relays) == 0:
 			logging.info('No relays found')
