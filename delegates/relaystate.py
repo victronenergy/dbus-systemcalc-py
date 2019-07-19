@@ -16,6 +16,22 @@ class RelayState(SystemCalcDelegate):
 		SystemCalcDelegate.__init__(self)
 		self._relays = {}
 
+	def get_input(self):
+		return [
+			('com.victronenergy.settings', [
+				 '/Settings/Relay/Function'])] # Managed by the gui
+
+	def get_settings(self):
+		return [
+			('/Relay/0/InitialState', '/Settings/Relay/0/InitialState', 0, 0, 1),
+			('/Relay/1/InitialState', '/Settings/Relay/1/InitialState', 0, 0, 1)
+		]
+
+	@property
+	def relay_function(self):
+		return self._dbusmonitor.get_value('com.victronenergy.settings',
+			'/Settings/Relay/Function')
+
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 		relays = sorted(glob(self.RELAY_GLOB))
@@ -23,17 +39,34 @@ class RelayState(SystemCalcDelegate):
 		if len(relays) == 0:
 			logging.info('No relays found')
 			return
-		i = 0
-		for r in relays:
-			path = os.path.join(r, 'value')
-			dbus_path = '/Relay/{}/State'.format(i)
-			self._relays[dbus_path] = path
+
+		self._relays.update({'/Relay/{}/InitialState'.format(i): os.path.join(r, 'value') \
+			for i, r in enumerate(relays) })
+
+		gobject.idle_add(exit_on_error, self._init_relay_state)
+		for dbus_path in self._relays.iterkeys():
 			self._dbusservice.add_path(dbus_path, value=None, writeable=True,
 				onchangecallback=self._on_relay_state_changed)
-			i += 1
+
 		logging.info('Relays found: {}'.format(', '.join(self._relays.values())))
-		gobject.idle_add(exit_on_error, lambda: not self._update_relay_state())
+
+	def _init_relay_state(self):
+		if self.relay_function is None:
+			return True # Try again on the next idle event
+
+		for dbus_path, path in self._relays.iteritems():
+			if self.relay_function != 2 and dbus_path == '/Relay/0/InitialState':
+				continue # Skip primary relay if function is not manual
+			state = self._settings[dbus_path]
+			self._dbusservice[dbus_path] = state
+			self.__on_relay_state_changed(dbus_path, state)
+
+		# Sync state back to dbus
+		self._update_relay_state()
+
+		# Watch changes and update dbus. Do we still need this?
 		gobject.timeout_add(5000, exit_on_error, self._update_relay_state)
+		return False
 
 	def _update_relay_state(self):
 		# @todo EV Do we still need this? Maybe only at startup?
@@ -46,12 +79,24 @@ class RelayState(SystemCalcDelegate):
 				traceback.print_exc()
 		return True
 
-	def _on_relay_state_changed(self, dbus_path, value):
+	def __on_relay_state_changed(self, dbus_path, state):
 		try:
 			path = self._relays[dbus_path]
 			with open(path, 'wt') as w:
-				w.write('1' if int(value) == 1 else '0')
-			return True
-		except (IOError, ValueError):
+				w.write(str(state))
+		except IOError:
 			traceback.print_exc()
 			return False
+		return True
+
+	def _on_relay_state_changed(self, dbus_path, value):
+		try:
+			state = int(bool(value))
+		except ValueError:
+			traceback.print_exc()
+			return False
+		try:
+			return self.__on_relay_state_changed(dbus_path, state)
+		finally:
+			# Remember the state to restore after a restart
+			self._settings[dbus_path] = state

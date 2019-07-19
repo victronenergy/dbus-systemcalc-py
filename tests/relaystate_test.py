@@ -34,36 +34,91 @@ class RelayStateTest(TestSystemCalcBase):
 			'/State': 3,  # Bulk
 			'/VebusMainState': 9})
 
+		self._add_device('com.victronenergy.settings', values={
+			'/Settings/Relay/Function': 1, # Generator
+		})
+
+		self.gpio_dir = tempfile.mkdtemp()
+		os.mkdir(os.path.join(self.gpio_dir, 'relay_1'))
+		os.mkdir(os.path.join(self.gpio_dir, 'relay_2'))
+		self.gpio1_state = os.path.join(self.gpio_dir, 'relay_1', 'value')
+		self.gpio2_state = os.path.join(self.gpio_dir, 'relay_2', 'value')
+		RelayState.RELAY_GLOB = os.path.join(self.gpio_dir, 'relay_*')
+
+		# Relay 1 is on, relay 2 is off
+		with file(self.gpio1_state, 'wt') as f:
+			f.write('1')
+		with file(self.gpio2_state, 'wt') as f:
+			f.write('0')
+
+	def tearDown(self):
+		os.remove(self.gpio1_state)
+		os.remove(self.gpio2_state)
+		os.rmdir(os.path.join(self.gpio_dir, 'relay_1'))
+		os.rmdir(os.path.join(self.gpio_dir, 'relay_2'))
+		os.rmdir(self.gpio_dir)
+
 	def test_relay_state(self):
-		gpio_dir = tempfile.mkdtemp()
-		os.mkdir(os.path.join(gpio_dir, 'relay_1'))
-		os.mkdir(os.path.join(gpio_dir, 'relay_2'))
-		gpio1_state = os.path.join(gpio_dir, 'relay_1', 'value')
-		gpio2_state = os.path.join(gpio_dir, 'relay_2', 'value')
-		RelayState.RELAY_GLOB = os.path.join(gpio_dir, 'relay_*')
+		rs = RelayState()
+		rs.set_sources(self._monitor, self._system_calc._settings, self._service)
 
-		try:
-			with file(gpio1_state, 'wt') as f:
-				f.write('1')
-			with file(gpio2_state, 'wt') as f:
-				f.write('0')
+		self._update_values(6000)
+		self.assertEqual(self._service['/Relay/0/InitialState'], 1)
 
-			rs = RelayState()
-			rs.set_sources(self._monitor, self._system_calc._settings, self._service)
+		self._service.set_value('/Relay/0/InitialState', 0)
+		self.assertEqual(file(self.gpio1_state, 'rt').read(), '0')
+		self.assertEqual(self._service['/Relay/0/InitialState'], 0)
 
-			self._update_values(5000)
-			self.assertEqual(self._service['/Relay/0/State'], 1)
+		self._service.set_value('/Relay/0/InitialState', 1)
+		self.assertEqual(file(self.gpio1_state, 'rt').read(), '1')
+		self.assertEqual(self._service['/Relay/0/InitialState'], 1)
 
-			self._service.set_value('/Relay/0/State', 0)
-			self.assertEqual(file(gpio1_state, 'rt').read(), '0')
-			self.assertEqual(self._service['/Relay/0/State'], 0)
 
-			self._service.set_value('/Relay/0/State', 1)
-			self.assertEqual(file(gpio1_state, 'rt').read(), '1')
-			self.assertEqual(self._service['/Relay/0/State'], 1)
-		finally:
-			os.remove(gpio1_state)
-			os.remove(gpio2_state)
-			os.rmdir(os.path.join(gpio_dir, 'relay_1'))
-			os.rmdir(os.path.join(gpio_dir, 'relay_2'))
-			os.rmdir(gpio_dir)
+	def test_stored_state(self):
+		rs = RelayState()
+		rs.set_sources(self._monitor, self._system_calc._settings, self._service)
+
+		self._service.set_value('/Relay/0/InitialState', 0)
+		self._service.set_value('/Relay/1/InitialState', 1)
+		self._check_settings({
+			'/Relay/0/InitialState': 0,
+			'/Relay/1/InitialState': 1})
+
+		self._service.set_value('/Relay/0/InitialState', 1)
+		self._service.set_value('/Relay/1/InitialState', 0)
+		self._check_settings({
+			'/Relay/0/InitialState': 1,
+			'/Relay/1/InitialState': 0})
+
+	def test_relay_function(self):
+		rs = RelayState()
+		rs.set_sources(self._monitor, self._system_calc._settings, self._service)
+		self.assertEqual(rs.relay_function, 1)
+
+	def test_relay_init(self):
+		rs = RelayState()
+		rs.set_sources(self._monitor, self._system_calc._settings, self._service)
+
+		return self._monitor.set_value('com.victronenergy.settings',
+			'/Settings/Relay/Function', 2) # Manual
+
+		self._set_setting('/Settings/Relay/0/InitialState', 0)
+		self._set_setting('/Settings/Relay/1/InitialState', 1)
+
+		self._update_values(5000)
+		self.assertEqual(self._service['/Relay/0/InitialState'], 0)
+		self.assertEqual(self._service['/Relay/1/InitialState'], 1)
+		self.assertEqual(file(self.gpio1_state, 'rt').read(), '0')
+		self.assertEqual(file(self.gpio2_state, 'rt').read(), '1')
+
+	def test_relay_init_no_manual(self):
+		rs = RelayState()
+		rs.set_sources(self._monitor, self._system_calc._settings, self._service)
+
+		return self._monitor.set_value('com.victronenergy.settings',
+			'/Settings/Relay/Function', 0) # Alarms
+
+		self._set_setting('/Settings/Relay/0/InitialState', 0)
+		self._update_values(5000)
+		self.assertEqual(self._service['/Relay/0/InitialState'], 1) # Unaffected
+		self.assertEqual(file(self.gpio1_state, 'rt').read(), '1') # Unaffected
