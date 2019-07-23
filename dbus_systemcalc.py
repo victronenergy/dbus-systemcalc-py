@@ -287,6 +287,20 @@ class SystemCalc:
 		self._determinebatteryservice()
 		self._changed = True
 
+	def _find_device_instance(self, serviceclass, instance):
+		""" Gets a mapping of services vs DeviceInstance using
+		    get_service_list.  Then searches for the specified DeviceInstance
+		    and returns the service name. """
+		services = self._dbusmonitor.get_service_list(classfilter=serviceclass)
+
+		# According to https://www.python.org/dev/peps/pep-3106/, dict.keys()
+		# and dict.values() always have the same order. This is also much
+		# faster than you would expect.
+		try:
+			return services.keys()[services.values().index(instance)]
+		except ValueError: # If instance not in values
+			return None
+
 	def _determinebatteryservice(self):
 		auto_battery_service = self._autoselect_battery_service()
 		auto_battery_measurement = None
@@ -316,15 +330,11 @@ class SystemCalc:
 				logger.error("The battery setting (%s) is invalid!" % self._settings['batteryservice'])
 			serviceclass = s[0]
 			instance = int(s[1]) if len(s) == 2 else None
-			services = self._dbusmonitor.get_service_list(classfilter=serviceclass)
-			if instance not in services.values():
-				# Once chosen battery monitor does not exist. Don't auto change the setting (it might come
-				# back). And also don't autoselect another.
-				newbatteryservice = None
-			else:
-				# According to https://www.python.org/dev/peps/pep-3106/, dict.keys() and dict.values()
-				# always have the same order.
-				newbatteryservice = services.keys()[services.values().index(instance)]
+
+			# newbatteryservice might turn into None if a chosen battery
+			# monitor no longer exists. Don't auto change the setting (it might
+			# come back) and don't autoselect another.
+			newbatteryservice = self._find_device_instance(serviceclass, instance)
 
 		if newbatteryservice != self._batteryservice:
 			services = self._dbusmonitor.get_service_list()
