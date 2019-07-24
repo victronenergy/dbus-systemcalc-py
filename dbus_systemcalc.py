@@ -191,8 +191,6 @@ class SystemCalc:
 		self._dbusservice.add_path(
 			'/ActiveBatteryService', value=None, gettextcallback=self._gettext)
 		self._dbusservice.add_path(
-			'/AutoSelectedTemperatureService', value=None, gettextcallback=self._gettext)
-		self._dbusservice.add_path(
 			'/PvInvertersProductIds', value=None)
 		self._summeditems = {
 			'/Ac/Grid/L1/Power': {'gettext': '%.0F W'},
@@ -235,9 +233,7 @@ class SystemCalc:
 			'/Dc/Pv/Power': {'gettext': '%.0F W'},
 			'/Dc/Pv/Current': {'gettext': '%.1F A'},
 			'/Dc/Battery/Voltage': {'gettext': '%.2F V'},
-			'/Dc/Battery/Temperature': {'gettext': '%.1F C'},
 			'/Dc/Battery/VoltageService': {'gettext': '%s'},
-			'/Dc/Battery/TemperatureService': {'gettext': '%s'},
 			'/Dc/Battery/Current': {'gettext': '%.1F A'},
 			'/Dc/Battery/Power': {'gettext': '%.0F W'},
 			'/Dc/Battery/Soc': {'gettext': '%.0F %%'},
@@ -373,39 +369,6 @@ class SystemCalc:
 			return None
 
 		return vebus_service[0]
-
-	def _determine_temperature(self, battery_service):
-		# Business Logic:
-		# 1. If the selected battery service has temperature, use that.
-		# 2. If the VE.Bus service has temperature, then use that.
-		# 3. If a solar charger has temperature, use that (CAN-bus chargers).
-		# 4. Use the first available dedicated sensor
-
-		# For 2.30 release, consider only the selected battery service
-		if battery_service is not None:
-			t = self._dbusmonitor.get_value(battery_service, '/Dc/0/Temperature')
-			if t is not None:
-				return t, battery_service
-
-		#vebus_service = self._dbusservice['/VebusService']
-		#for service in chain((battery_service,
-		#		vebus_service if vebus_service != battery_service else None),
-		#		self._get_connected_service_list('com.victronenergy.solarcharger').keys()):
-		#	if service is None: continue
-
-		#	t = self._dbusmonitor.get_value(service, '/Dc/0/Temperature')
-		#	if t is not None:
-		#		return t, service
-
-		#for service in self._get_connected_service_list('com.victronenergy.temperature').keys():
-		#	if self._dbusmonitor.get_value(service, '/TemperatureType') != 0:
-		#		# Skip sensors that are not battery sensors
-		#		continue
-		#	t = self._dbusmonitor.get_value(service, '/Temperature')
-		#	if t is not None:
-		#		return t, service
-
-		return None, None
 
 	# Called on a one second timer
 	def _handletimertick(self):
@@ -615,12 +578,6 @@ class SystemCalc:
 				newvalues['/Dc/Battery/Current'] = p / voltage if voltage > 0 else None
 				newvalues['/Dc/Battery/Power'] = p
 
-		# Get a temperature value and service
-		newvalues['/Dc/Battery/Temperature'], temperature_service = \
-			self._determine_temperature(self._batteryservice)
-		newvalues['/Dc/Battery/TemperatureService'] = temperature_service
-		self._dbusservice['/AutoSelectedTemperatureService'] = None if temperature_service is None else \
-			self._get_readable_service_name(temperature_service)
 
 		# ==== SYSTEM POWER ====
 		if self._settings['hasdcsystem'] == 1 and batteryservicetype == 'battery':

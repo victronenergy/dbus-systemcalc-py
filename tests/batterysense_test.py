@@ -334,7 +334,6 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/BatterySense/Temperature': 8}})
 
 
-	@unittest.skip("Skip temperature sense testing until after 2.30")
 	def test_temperature_sense_order(self):
 		self._set_setting('/Settings/Services/Bol', 1)
 
@@ -350,11 +349,13 @@ class VoltageSenseTest(TestSystemCalcBase):
 			connection='VE.Direct')
 
 		# A temperature sensor of the wrong kind is not used
+		self._set_setting('/Settings/SystemSetup/TemperatureService', 'com.victronenergy.temperature/4/Temperature')
 		self._add_device('com.victronenergy.temperature.ttyO4',
 			product_name='temperature sensor',
 			values={
 				'/Temperature': -9,
-				'/TemperatureType': 1})
+				'/TemperatureType': 1,
+				'/DeviceInstance': 4})
 		self._update_values(3000)
 		self._check_values({
 			'/Dc/Battery/Temperature': None,
@@ -362,12 +363,14 @@ class VoltageSenseTest(TestSystemCalcBase):
 			'/AutoSelectedTemperatureService': None
 		})
 
-		# Testing in reverse. Temperature sensor is the last resort
+		# The right kind is used.
+		self._set_setting('/Settings/SystemSetup/TemperatureService', 'com.victronenergy.temperature/3/Temperature')
 		self._add_device('com.victronenergy.temperature.ttyO3',
 			product_name='temperature sensor',
 			values={
 				'/Temperature': 9,
-				'/TemperatureType': 0})
+				'/TemperatureType': 0,
+				'/DeviceInstance': 3})
 		self._update_values(9000)
 		self._check_values({
 			'/Dc/Battery/Temperature': 9,
@@ -378,16 +381,8 @@ class VoltageSenseTest(TestSystemCalcBase):
 			'com.victronenergy.solarcharger.ttyO1': {
 				'/Link/TemperatureSense': 9}})
 
-		# If the solarcharger does have temperature
-		self._monitor.set_value('com.victronenergy.solarcharger.ttyO1', '/Dc/0/Temperature', 6)
-		self._update_values(9000)
-		self._check_values({
-			'/Dc/Battery/Temperature': 6,
-			'/Dc/Battery/TemperatureService': 'com.victronenergy.solarcharger.ttyO1',
-			'/AutoSelectedTemperatureService': 'dummy on VE.Direct'
-		})
-
-		# Multi takes priority over external temp sense
+		# Multi as temp sense
+		self._set_setting('/Settings/SystemSetup/TemperatureService', 'com.victronenergy.vebus/0/Dc/0/Temperature')
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Dc/0/Temperature', 7)
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/BatterySense/Temperature', None)
 		self._update_values(9000)
@@ -403,7 +398,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatterySense/Temperature': None}})
 
-		# If the battery has temperature, that takes priority over the rest
+		# Battery as temp sense. First check that battery is used as default.
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',
 			values={
@@ -413,15 +408,43 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/Dc/0/Temperature': 8,
 				'/Soc': 15.3,
 				'/DeviceInstance': 2})
+		for selected in ('default', 'com.victronenergy.battery/2/Dc/0/Temperature'):
+			self._set_setting('/Settings/SystemSetup/TemperatureService', selected)
+			self._update_values(9000)
+			self._check_values({
+				'/Dc/Battery/Temperature': 8,
+				'/Dc/Battery/TemperatureService': 'com.victronenergy.battery.ttyO2',
+				'/AutoSelectedTemperatureService': 'battery on dummy'
+			})
+			self._check_external_values({
+				'com.victronenergy.solarcharger.ttyO1': {
+					'/Link/TemperatureSense': 8}})
+			self._check_external_values({
+				'com.victronenergy.vebus.ttyO1': {
+					'/BatterySense/Temperature': 8}})
+
+		# No sense
+		self._set_setting('/Settings/SystemSetup/TemperatureService', 'nosensor')
 		self._update_values(9000)
 		self._check_values({
-			'/Dc/Battery/Temperature': 8,
-			'/Dc/Battery/TemperatureService': 'com.victronenergy.battery.ttyO2',
-			'/AutoSelectedTemperatureService': 'battery on dummy'
+			'/Dc/Battery/Temperature': None,
+			'/Dc/Battery/TemperatureService': None,
+			'/AutoSelectedTemperatureService': None
+		})
+
+		# If Multi is battery service and it has a temp sensor, use it
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.vebus/0')
+		self._set_setting('/Settings/SystemSetup/TemperatureService', 'default')
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/BatterySense/Temperature', None)
+		self._update_values(9000)
+		self._check_values({
+			'/Dc/Battery/Temperature': 7,
+			'/Dc/Battery/TemperatureService': 'com.victronenergy.vebus.ttyO1',
+			'/AutoSelectedTemperatureService': 'Multi on dummy'
 		})
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO1': {
-				'/Link/TemperatureSense': 8}})
+				'/Link/TemperatureSense': 7}})
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
-				'/BatterySense/Temperature': 8}})
+				'/BatterySense/Temperature': None}})
