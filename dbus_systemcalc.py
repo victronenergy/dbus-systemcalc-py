@@ -487,13 +487,13 @@ class SystemCalc:
 				newvalues['/Dc/Pv/ChargeCurrent'] += i
 
 			if '/Dc/Pv/Power' not in newvalues:
-				newvalues['/Dc/Pv/Power'] = v * (i + l)
-				newvalues['/Dc/Pv/Current'] = i + l
+				newvalues['/Dc/Pv/Power'] = v * _safeadd(i, l)
+				newvalues['/Dc/Pv/Current'] = _safeadd(i, l)
 				solarcharger_batteryvoltage = v
 				solarcharger_batteryvoltage_service = solarcharger
 			else:
-				newvalues['/Dc/Pv/Power'] += v * (i + l)
-				newvalues['/Dc/Pv/Current'] += i + l
+				newvalues['/Dc/Pv/Power'] += v * _safeadd(i, l)
+				newvalues['/Dc/Pv/Current'] += _safeadd(i, l)
 
 		# ==== CHARGERS ====
 		chargers = self._dbusmonitor.get_service_list('com.victronenergy.charger')
