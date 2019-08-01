@@ -117,7 +117,7 @@ class ScheduledCharging(SystemCalcDelegate):
 		# Paths for scheduled charging. We'll allow 4 for now.
 		for i in range(NUM_SCHEDULES):
 			settings.append(("schedule_day_{}".format(i),
-				BLPATH + "/Schedule/Charge/{}/Day".format(i), -1, -1, 9))
+				BLPATH + "/Schedule/Charge/{}/Day".format(i), -7, -9, 9))
 			settings.append(("schedule_start_{}".format(i),
 				BLPATH + "/Schedule/Charge/{}/Start".format(i), 0, 0, 0))
 			settings.append(("schedule_duration_{}".format(i),
