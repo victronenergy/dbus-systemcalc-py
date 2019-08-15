@@ -543,8 +543,11 @@ class SystemCalc:
 				vebus_power = None if vebus_voltage is None or vebus_current is None else vebus_current * vebus_voltage
 				newvalues['/Dc/Battery/Voltage'] = vebus_voltage
 				newvalues['/Dc/Battery/VoltageService'] = self._batteryservice
-				if self._settings['hasdcsystem'] == 1 or newvalues.get('/Dc/Pv/Power') is None or \
-						self._dbusmonitor.get_value(self._batteryservice, '/ExtraBatteryCurrent') is None:
+				if self._settings['hasdcsystem'] == 1:
+					# hasdcsystem will normally disqualify the multi from being
+					# auto-selected as battery monitor, so the only way we're
+					# here is if the user explicitly selected the multi as the
+					# battery service
 					newvalues['/Dc/Battery/Current'] = vebus_current
 					if vebus_power is not None:
 						newvalues['/Dc/Battery/Power'] = vebus_power
