@@ -448,3 +448,49 @@ class VoltageSenseTest(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatterySense/Temperature': None}})
+
+	def test_distribute_current_from_battery(self):
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.15,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Dc/0/Temperature': 8,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2})
+
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 0,
+			'/FirmwareVersion': 0x0142,
+			'/Link/NetworkMode': 0,
+			'/Link/VoltageSense': None,
+			'/Link/TemperatureSense': None,
+			'/Link/BatteryCurrent': None,
+			'/Dc/0/Voltage': 12.2,
+			'/Dc/0/Current': 9.7,
+			'/Dc/0/Temperature': None},
+			connection='VE.Direct')
+		self._update_values(3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/BatteryCurrent': 5.3}})
+
+	def test_distribute_current_not_vebus(self):
+		# Explicitly select Multi as battery service
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.vebus/0')
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 0,
+			'/FirmwareVersion': 0x0142,
+			'/Link/NetworkMode': 0,
+			'/Link/VoltageSense': None,
+			'/Link/TemperatureSense': None,
+			'/Link/BatteryCurrent': None,
+			'/Dc/0/Voltage': 12.2,
+			'/Dc/0/Current': 9.7,
+			'/Dc/0/Temperature': None},
+			connection='VE.Direct')
+		self._update_values(3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/BatteryCurrent': None}})

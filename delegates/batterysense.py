@@ -163,10 +163,17 @@ class BatterySense(SystemCalcDelegate):
 			self.update_temperature_sensors()
 
 	def _on_timer(self):
+		# Distribute the voltage if svs and dvcc is on
 		self._dbusservice['/Control/SolarChargerVoltageSense'] = \
 			int(self._settings['vsense'] and self._settings['bol']) and \
 			self._distribute_sense_voltage()
-		#self._distribute_battery_current() # Disabled for now
+
+		# Tell the solarchargers what the battery current is for tail
+		# detection.
+		self._distribute_battery_current()
+
+		# Distribute the temperature, but this can be done less frequently,
+		# every TEMPERATURE_INTERVAL ticks (9 seconds total).
 		if self.tick == 0:
 			self._dbusservice['/Control/SolarChargerTemperatureSense'] = \
 				int(self._settings['tsense'] and self._settings['bol']) and \
@@ -209,18 +216,22 @@ class BatterySense(SystemCalcDelegate):
 		return voltagesense_written
 
 	def _distribute_battery_current(self):
-		# The voltage service is either auto-selected, with a battery service being preferred, or it is explicity
-		# selected by the user. If this service is a battery service, then we can use the system battery current
-		# as an absolute value and copy it to the solar chargers.
+		# The voltage service is either auto-selected, with a battery service
+		# being preferred, or it is explicity selected by the user. If this
+		# service is a battery service, then we can use the system battery
+		# current as an absolute value and copy it to the solar chargers.
 		sense_voltage_service = self._dbusservice['/Dc/Battery/VoltageService']
 		if sense_voltage_service is None:
 			return
 		battery_current = self._dbusservice['/Dc/Battery/Current'] if (sense_voltage_service.split('.')[2] == 'battery') else None
+		if battery_current is None:
+			return
+
 		for service in self._dbusmonitor.get_service_list('com.victronenergy.solarcharger'):
 			# Skip for old firmware versions to save some dbus traffic
-			if battery_current is not None and (
-					(self._dbusmonitor.get_value(service, '/FirmwareVersion') or 0) & 0x0FFF >= 0x0141):
-				self._dbusmonitor.set_value_async(service, '/Link/BatteryCurrent', battery_current)
+			if not self._dbusmonitor.seen(service, '/Link/BatteryCurrent'):
+				continue # No such feature on this charger
+			self._dbusmonitor.set_value_async(service, '/Link/BatteryCurrent', battery_current)
 
 	def _distribute_sense_temperature(self):
 		sense_temp = self._dbusservice['/Dc/Battery/Temperature']
