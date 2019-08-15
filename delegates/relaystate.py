@@ -23,8 +23,8 @@ class RelayState(SystemCalcDelegate):
 
 	def get_settings(self):
 		return [
-			('/Relay/0/InitialState', '/Settings/Relay/0/InitialState', 0, 0, 1),
-			('/Relay/1/InitialState', '/Settings/Relay/1/InitialState', 0, 0, 1)
+			('/Relay/0/State', '/Settings/Relay/0/InitialState', 0, 0, 1),
+			('/Relay/1/State', '/Settings/Relay/1/InitialState', 0, 0, 1)
 		]
 
 	@property
@@ -40,7 +40,7 @@ class RelayState(SystemCalcDelegate):
 			logging.info('No relays found')
 			return
 
-		self._relays.update({'/Relay/{}/InitialState'.format(i): os.path.join(r, 'value') \
+		self._relays.update({'/Relay/{}/State'.format(i): os.path.join(r, 'value') \
 			for i, r in enumerate(relays) })
 
 		gobject.idle_add(exit_on_error, self._init_relay_state)
@@ -55,7 +55,7 @@ class RelayState(SystemCalcDelegate):
 			return True # Try again on the next idle event
 
 		for dbus_path, path in self._relays.iteritems():
-			if self.relay_function != 2 and dbus_path == '/Relay/0/InitialState':
+			if self.relay_function != 2 and dbus_path == '/Relay/0/State':
 				continue # Skip primary relay if function is not manual
 			state = self._settings[dbus_path]
 			self._dbusservice[dbus_path] = state

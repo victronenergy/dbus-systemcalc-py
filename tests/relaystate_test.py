@@ -63,32 +63,32 @@ class RelayStateTest(TestSystemCalcBase):
 		rs.set_sources(self._monitor, self._system_calc._settings, self._service)
 
 		self._update_values(6000)
-		self.assertEqual(self._service['/Relay/0/InitialState'], 1)
+		self.assertEqual(self._service['/Relay/0/State'], 1)
 
-		self._service.set_value('/Relay/0/InitialState', 0)
+		self._service.set_value('/Relay/0/State', 0)
 		self.assertEqual(file(self.gpio1_state, 'rt').read(), '0')
-		self.assertEqual(self._service['/Relay/0/InitialState'], 0)
+		self.assertEqual(self._service['/Relay/0/State'], 0)
 
-		self._service.set_value('/Relay/0/InitialState', 1)
+		self._service.set_value('/Relay/0/State', 1)
 		self.assertEqual(file(self.gpio1_state, 'rt').read(), '1')
-		self.assertEqual(self._service['/Relay/0/InitialState'], 1)
+		self.assertEqual(self._service['/Relay/0/State'], 1)
 
 
 	def test_stored_state(self):
 		rs = RelayState()
 		rs.set_sources(self._monitor, self._system_calc._settings, self._service)
 
-		self._service.set_value('/Relay/0/InitialState', 0)
-		self._service.set_value('/Relay/1/InitialState', 1)
+		self._service.set_value('/Relay/0/State', 0)
+		self._service.set_value('/Relay/1/State', 1)
 		self._check_settings({
-			'/Relay/0/InitialState': 0,
-			'/Relay/1/InitialState': 1})
+			'/Relay/0/State': 0,
+			'/Relay/1/State': 1})
 
-		self._service.set_value('/Relay/0/InitialState', 1)
-		self._service.set_value('/Relay/1/InitialState', 0)
+		self._service.set_value('/Relay/0/State', 1)
+		self._service.set_value('/Relay/1/State', 0)
 		self._check_settings({
-			'/Relay/0/InitialState': 1,
-			'/Relay/1/InitialState': 0})
+			'/Relay/0/State': 1,
+			'/Relay/1/State': 0})
 
 	def test_relay_function(self):
 		rs = RelayState()
@@ -106,8 +106,8 @@ class RelayStateTest(TestSystemCalcBase):
 		self._set_setting('/Settings/Relay/1/InitialState', 1)
 
 		self._update_values(5000)
-		self.assertEqual(self._service['/Relay/0/InitialState'], 0)
-		self.assertEqual(self._service['/Relay/1/InitialState'], 1)
+		self.assertEqual(self._service['/Relay/0/State'], 0)
+		self.assertEqual(self._service['/Relay/1/State'], 1)
 		self.assertEqual(file(self.gpio1_state, 'rt').read(), '0')
 		self.assertEqual(file(self.gpio2_state, 'rt').read(), '1')
 
@@ -120,5 +120,5 @@ class RelayStateTest(TestSystemCalcBase):
 
 		self._set_setting('/Settings/Relay/0/InitialState', 0)
 		self._update_values(5000)
-		self.assertEqual(self._service['/Relay/0/InitialState'], 1) # Unaffected
+		self.assertEqual(self._service['/Relay/0/State'], 1) # Unaffected
 		self.assertEqual(file(self.gpio1_state, 'rt').read(), '1') # Unaffected
