@@ -8,12 +8,6 @@ class HubTypeSelect(SystemCalcDelegate):
 	def get_output(self):
 		return [('/Hub', {'gettext': '%s'}), ('/SystemType', {'gettext': '%s'})]
 
-	def device_added(self, service, instance, do_service_change=True):
-		pass
-
-	def device_removed(self, service, instance):
-		pass
-
 	def update_values(self, newvalues):
 		# The code below should be executed after PV inverter data has been updated, because we need the
 		# PV inverter total power to update the consumption.

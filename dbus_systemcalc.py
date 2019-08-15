@@ -23,14 +23,12 @@ from sc_utils import safeadd as _safeadd, safemax as _safemax
 softwareVersion = '2.12'
 
 class SystemCalc:
+	STATE_IDLE = 0
+	STATE_CHARGING = 1
+	STATE_DISCHARGING = 2
+	BATSERVICE_DEFAULT = 'default'
+	BATSERVICE_NOBATTERY = 'nobattery'
 	def __init__(self):
-		self.STATE_IDLE = 0
-		self.STATE_CHARGING = 1
-		self.STATE_DISCHARGING = 2
-
-		self.BATSERVICE_DEFAULT = 'default'
-		self.BATSERVICE_NOBATTERY = 'nobattery'
-
 		# Why this dummy? Because DbusMonitor expects these values to be there, even though we don't
 		# need them. So just add some dummy data. This can go away when DbusMonitor is more generic.
 		dummy = {'code': None, 'whenToLog': 'configChange', 'accessLevel': None}
