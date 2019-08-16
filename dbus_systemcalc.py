@@ -62,6 +62,7 @@ class SystemCalc:
 				'/Dc/0/Power': dummy,
 				'/Dc/0/Temperature': dummy,
 				'/Soc': dummy,
+				'/Sense/Current': dummy,
 				'/TimeToGo': dummy,
 				'/ConsumedAmphours': dummy,
 				'/ProductId': dummy,
@@ -149,6 +150,7 @@ class SystemCalc:
 			delegates.ScheduledCharging(),
 			delegates.SourceTimers(),
 			delegates.GridAlarm(),
+			delegates.BydCurrentSense(self),
 			delegates.BatteryData()]
 
 		for m in self._modules:
