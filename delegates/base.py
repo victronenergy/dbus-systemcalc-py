@@ -13,7 +13,7 @@ class TrackInstance(type):
 
 class SystemCalcDelegate(object):
 	__metaclass__ = TrackInstance
-	def __new__(klass):
+	def __new__(klass, *args, **kwargs):
 		klass._instance = super(SystemCalcDelegate, klass).__new__(klass)
 		return klass._instance
 
