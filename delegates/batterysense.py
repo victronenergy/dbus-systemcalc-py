@@ -175,8 +175,8 @@ class BatterySense(SystemCalcDelegate):
 	def _on_timer(self):
 		# Distribute the voltage if svs and dvcc is on
 		self._dbusservice['/Control/SolarChargerVoltageSense'] = \
-			int(self._settings['vsense'] and self._settings['bol']) and \
-			self._distribute_sense_voltage()
+			self._distribute_sense_voltage(
+				self._settings['vsense'] and self._settings['bol'])
 
 		# Tell the solarchargers what the battery current is for tail
 		# detection.
@@ -195,13 +195,33 @@ class BatterySense(SystemCalcDelegate):
 		self.tick = (self.tick - 1) % TEMPERATURE_INTERVAL
 		return True
 
-	def _distribute_sense_voltage(self):
+	def _distribute_sense_voltage(self, has_vsense):
 		sense_voltage = self._dbusservice['/Dc/Battery/Voltage']
 		sense_voltage_service = self._dbusservice['/Dc/Battery/VoltageService']
 		if sense_voltage is None or sense_voltage_service is None:
 			return 0
 
 		voltagesense_written = 0
+
+		# Sync the Multi's voltage first
+		vebus_path = self._dbusservice['/VebusService']
+		if has_vsense and vebus_path is not None and \
+			vebus_path != sense_voltage_service and \
+			self._dbusmonitor.get_value(vebus_path, '/FirmwareFeatures/BolUBatAndTBatSense') == 1:
+			self._dbusmonitor.set_value_async(vebus_path, '/BatterySense/Voltage',
+				sense_voltage)
+			voltagesense_written = 1
+
+		# If this is an ESS system, switch to using the multi as a voltage
+		# reference.
+		if vebus_path is not None and Dvcc.instance.has_ess_assistant:
+			sense_voltage = self._dbusmonitor.get_value(vebus_path, '/Dc/0/Voltage')
+			sense_voltage_service = vebus_path
+			if sense_voltage is None or sense_voltage_service is None:
+				return voltagesense_written
+		elif not has_vsense:
+			return voltagesense_written
+
 		for service in self._dbusmonitor.get_service_list('com.victronenergy.solarcharger'):
 			if service == sense_voltage_service:
 				continue
@@ -218,14 +238,6 @@ class BatterySense(SystemCalcDelegate):
 				for _ in vecan.iterkeys():
 					self._dbusmonitor.set_value_async(_, '/Link/VoltageSense', sense_voltage)
 				voltagesense_written = 1
-
-		vebus_path = self._dbusservice['/VebusService']
-		if vebus_path is not None and \
-			vebus_path != sense_voltage_service and \
-			self._dbusmonitor.get_value(vebus_path, '/FirmwareFeatures/BolUBatAndTBatSense') == 1:
-			self._dbusmonitor.set_value_async(vebus_path, '/BatterySense/Voltage',
-				sense_voltage)
-			voltagesense_written = 1
 
 		return voltagesense_written
 

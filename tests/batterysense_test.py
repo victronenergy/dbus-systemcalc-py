@@ -547,3 +547,84 @@ class VoltageSenseTest(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO1': {
 				'/Link/BatteryCurrent': None}})
+
+	def test_ess_uses_multi_voltage(self):
+		# DVCC is on
+		self._set_setting('/Settings/Services/Bol', 1)
+
+		# A battery
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.15,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2})
+
+		# Solar charger
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Link/VoltageSense': None,
+			'/Link/TemperatureSense': None,
+			'/Dc/0/Voltage': 12.2,
+			'/Dc/0/Current': 9.7},
+			connection='VE.Direct')
+		self._update_values(5000)
+
+		# Solar charger and multi both sync with the battery
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatterySense/Voltage': 12.15},
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/VoltageSense': 12.15}})
+
+		# ESS assistant installed
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub4/AssistantId', 5)
+		self._update_values(5000)
+
+		# Now the multi should be synced with the battery, but the solar
+		# chargers should be synced with the Multi
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatterySense/Voltage': 12.15},
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/VoltageSense': 12.25}})
+
+	def test_ess_uses_multi_voltage_no_svs(self):
+		# DVCC is on
+		self._set_setting('/Settings/Services/Bol', 1)
+		self._set_setting('/Settings/SystemSetup/SharedVoltageSense', 0)
+
+		# ESS assistant installed
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub4/AssistantId', 5)
+
+		# A battery
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.15,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2})
+
+		# Solar charger
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Link/VoltageSense': None,
+			'/Link/TemperatureSense': None,
+			'/Dc/0/Voltage': 12.2,
+			'/Dc/0/Current': 9.7},
+			connection='VE.Direct')
+		self._update_values(5000)
+
+		# The solar chargers should be synced with the Multi. Multi
+		# is not synced since SVS is off.
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatterySense/Voltage': None},
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/VoltageSense': 12.25}})
