@@ -2,6 +2,7 @@ from collections import namedtuple
 import gobject
 from dbus.exceptions import DBusException
 from delegates.base import SystemCalcDelegate
+from delegates.dvcc import Dvcc
 
 # Victron packages
 from ve_utils import exit_on_error
@@ -26,6 +27,13 @@ class TemperatureSensor(namedtuple('TemperatureSensor', ('service', 'path', 'ins
 class BatterySense(SystemCalcDelegate):
 	TEMPSERVICE_DEFAULT = 'default'
 	TEMPSERVICE_NOSENSOR = 'nosensor'
+
+	ISENSE_USER_DISABLED = 0
+	ISENSE_ESS = 1
+	ISENSE_NO_CHARGERS = 2
+	ISENSE_NO_MONITOR = 3
+	ISENSE_ENABLED = 4
+
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)
 		self._timer = None
@@ -56,6 +64,7 @@ class BatterySense(SystemCalcDelegate):
 		return [
 			('vsense', "/Settings/SystemSetup/SharedVoltageSense", 1, 0, 0),
 			('tsense', "/Settings/SystemSetup/SharedTemperatureSense", 1, 0, 0),
+			('isense', "/Settings/SystemSetup/BatteryCurrentSense", 1, 0, 0),
 			('bol', '/Settings/Services/Bol', 0, 0, 1),
 			('temperatureservice', '/Settings/SystemSetup/TemperatureService', "default", 0, 0)
 		]
@@ -63,6 +72,7 @@ class BatterySense(SystemCalcDelegate):
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 		self._dbusservice.add_path('/Control/SolarChargerVoltageSense', value=0)
+		self._dbusservice.add_path('/Control/BatteryCurrentSense', value=0)
 		self._dbusservice.add_path('/Control/SolarChargerTemperatureSense', value=0)
 		self._dbusservice.add_path('/AvailableTemperatureServices', value=None)
 		self._dbusservice.add_path('/AutoSelectedTemperatureService', value=None)
@@ -170,7 +180,11 @@ class BatterySense(SystemCalcDelegate):
 
 		# Tell the solarchargers what the battery current is for tail
 		# detection.
-		self._distribute_battery_current()
+		if self._settings['isense'] and self._settings['bol']:
+			self._dbusservice['/Control/BatteryCurrentSense'] = \
+				self._distribute_battery_current()
+		else:
+			self._dbusservice['/Control/BatteryCurrentSense'] = BatterySense.ISENSE_USER_DISABLED
 
 		# Distribute the temperature, but this can be done less frequently,
 		# every TEMPERATURE_INTERVAL ticks (9 seconds total).
@@ -216,22 +230,29 @@ class BatterySense(SystemCalcDelegate):
 		return voltagesense_written
 
 	def _distribute_battery_current(self):
+		# No point if we're running ESS, then the Multi decides.
+		if Dvcc.instance.has_ess_assistant:
+			return BatterySense.ISENSE_ESS
+
 		# The voltage service is either auto-selected, with a battery service
 		# being preferred, or it is explicity selected by the user. If this
 		# service is a battery service, then we can use the system battery
 		# current as an absolute value and copy it to the solar chargers.
 		sense_voltage_service = self._dbusservice['/Dc/Battery/VoltageService']
 		if sense_voltage_service is None:
-			return
+			return BatterySense.ISENSE_NO_MONITOR
 		battery_current = self._dbusservice['/Dc/Battery/Current'] if (sense_voltage_service.split('.')[2] == 'battery') else None
 		if battery_current is None:
-			return
+			return BatterySense.ISENSE_NO_MONITOR
 
+		sent = BatterySense.ISENSE_NO_CHARGERS
 		for service in self._dbusmonitor.get_service_list('com.victronenergy.solarcharger'):
 			# Skip for old firmware versions to save some dbus traffic
 			if not self._dbusmonitor.seen(service, '/Link/BatteryCurrent'):
 				continue # No such feature on this charger
 			self._dbusmonitor.set_value_async(service, '/Link/BatteryCurrent', battery_current)
+			sent = BatterySense.ISENSE_ENABLED
+		return sent
 
 	def _distribute_sense_temperature(self):
 		sense_temp = self._dbusservice['/Dc/Battery/Temperature']

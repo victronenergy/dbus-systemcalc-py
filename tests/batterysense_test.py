@@ -39,7 +39,8 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/BatterySense/Voltage': None,
 				'/BatterySense/Temperature': None,
 				'/FirmwareFeatures/BolFrame': 1,
-				'/FirmwareFeatures/BolUBatAndTBatSense': 1
+				'/FirmwareFeatures/BolUBatAndTBatSense': 1,
+				'/Hub4/AssistantId': None
 			})
 		self._add_device('com.victronenergy.settings',
 			values={
@@ -471,14 +472,63 @@ class VoltageSenseTest(TestSystemCalcBase):
 			'/Dc/0/Current': 9.7,
 			'/Dc/0/Temperature': None},
 			connection='VE.Direct')
+
+
+		# DVCC is off
+		self._set_setting('/Settings/Services/Bol', 0)
 		self._update_values(3000)
+		self._check_values({
+			'/Control/BatteryCurrentSense': 0 # disabled
+		})
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/BatteryCurrent': None}})
+
+		# DVCC is on but BatteryCurrentSense is off
+		self._set_setting('/Settings/Services/Bol', 1)
+		self._set_setting('/Settings/SystemSetup/BatteryCurrentSense', 0)
+		self._update_values(3000)
+		self._check_values({
+			'/Control/BatteryCurrentSense': 0 # disabled
+		})
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/BatteryCurrent': None}})
+
+		# BatteryCurrentSense is on
+		self._set_setting('/Settings/SystemSetup/BatteryCurrentSense', 1)
+		self._update_values(3000)
+		self._check_values({
+			'/Control/BatteryCurrentSense': 4 # enabled
+		})
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO1': {
 				'/Link/BatteryCurrent': 5.3}})
 
+		# ESS assistant installed
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub4/AssistantId', 5)
+		self._monitor.set_value('com.victronenergy.solarcharger.ttyO1', '/Link/BatteryCurrent', None)
+		self._update_values(3000)
+		self._check_values({
+			'/Control/BatteryCurrentSense': 1 # disabled on account of ESS
+		})
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/BatteryCurrent': None}})
+
+		# Remove solar charger, ESS
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub4/AssistantId', None)
+		self._remove_device('com.victronenergy.solarcharger.ttyO1')
+		self._update_values(3000)
+		self._check_values({
+			'/Control/BatteryCurrentSense': 2 # no chargers
+		})
+
 	def test_distribute_current_not_vebus(self):
 		# Explicitly select Multi as battery service
 		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.vebus/0')
+		self._set_setting('/Settings/Services/Bol', 1)
+		self._set_setting('/Settings/SystemSetup/BatteryCurrentSense', 1)
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
 			'/FirmwareVersion': 0x0142,
@@ -491,6 +541,9 @@ class VoltageSenseTest(TestSystemCalcBase):
 			'/Dc/0/Temperature': None},
 			connection='VE.Direct')
 		self._update_values(3000)
+		self._check_values({
+			'/Control/BatteryCurrentSense': 3 # No suitable monitor
+		})
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO1': {
 				'/Link/BatteryCurrent': None}})
