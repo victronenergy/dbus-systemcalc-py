@@ -153,7 +153,7 @@ class ScheduledCharging(SystemCalcDelegate):
 
 	@forcecharge.setter
 	def forcecharge(self, v):
-		return self._dbusmonitor.set_value(HUB4_SERVICE,
+		return self._dbusmonitor.set_value_async(HUB4_SERVICE,
 			'/Overrides/ForceCharge', 1 if v else 0)
 
 	@property
@@ -162,7 +162,7 @@ class ScheduledCharging(SystemCalcDelegate):
 
 	@maxdischargepower.setter
 	def maxdischargepower(self, v):
-		return self._dbusmonitor.set_value(HUB4_SERVICE, '/Overrides/MaxDischargePower', v)
+		return self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', v)
 
 	def _on_timer(self):
 		if self.soc is None:

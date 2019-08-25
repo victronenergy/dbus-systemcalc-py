@@ -845,7 +845,7 @@ class Dvcc(SystemCalcDelegate):
 					# has not been written for more than 60 (?) seconds.  In
 					# case there is no path at all, the set_value below will
 					# raise an DBusException which we will ignore cheerfully.
-					self._dbusmonitor.set_value(service, '/Link/ChargeVoltage', charge_voltage)
+					self._dbusmonitor.set_value_async(service, '/Link/ChargeVoltage', charge_voltage)
 					voltage_written = 1
 				except DBusException:
 					pass
@@ -915,7 +915,7 @@ class Dvcc(SystemCalcDelegate):
 					# for example if the D-Bus path has not been written for more than 60 (?) seconds.
 					# In case there is no path at all, the set_value below will raise an DBusException
 					# which we will ignore cheerfully.
-					self._dbusmonitor.set_value(service, '/Link/ChargeVoltage', charge_voltage)
+					self._dbusmonitor.set_value_async(service, '/Link/ChargeVoltage', charge_voltage)
 					voltage_written = 1
 				except DBusException:
 					pass

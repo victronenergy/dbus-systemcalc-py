@@ -69,15 +69,17 @@ class TestSchedule(TestSystemCalcBase):
 				'/Overrides/ForceCharge': 1,
 		}})
 
-		# SystemState should indicate what happened
+		# SystemState should indicate what happened. state only updates
+		# when something changes, and our async update fools the unit tests,
+		# so fake a change by moving the SoC.
+		self._monitor.set_value(self.vebus, '/Soc', 70)
+		timer_manager.run(1000)
 		self._check_values({
 			'/SystemState/State': 0x103,
 			'/Control/ScheduledCharge': 1})
 
-		# Another minute or so, increase Soc as well, it should pop out again
-		timer_manager.run(33000)
-		self._monitor.set_value(self.vebus, '/Soc', 70)
-		timer_manager.run(33000)
+		# Another minute and scheduled charging will end.
+		timer_manager.run(65000)
 		self._check_external_values({
 				'com.victronenergy.hub4': {
 				'/Overrides/ForceCharge': 0,

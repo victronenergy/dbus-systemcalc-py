@@ -59,7 +59,7 @@ class VebusSocWriter(SystemCalcDelegate):
 			try:
 				charge_current = self._dbusmonitor.get_value(vebus_service, '/ExtraBatteryCurrent')
 				if charge_current is not None:
-					self._dbusmonitor.set_value(vebus_service, '/ExtraBatteryCurrent', total_charge_current)
+					self._dbusmonitor.set_value_async(vebus_service, '/ExtraBatteryCurrent', total_charge_current)
 					current_written = 1
 			except DBusException:
 				pass
@@ -75,7 +75,7 @@ class VebusSocWriter(SystemCalcDelegate):
 					logging.debug("writing this soc to vebus: %d", soc)
 					try:
 						# Vebus service may go offline while we write this SoC
-						self._dbusmonitor.set_value(vebus_service, '/Soc', soc)
+						self._dbusmonitor.set_value_async(vebus_service, '/Soc', soc)
 						soc_written = 1
 					except DBusException:
 						pass
