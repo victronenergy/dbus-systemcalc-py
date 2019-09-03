@@ -1,3 +1,5 @@
+import unittest
+
 # This adapts sys.path to include all relevant packages
 import context
 
@@ -40,6 +42,7 @@ class BydBatteryCurrentBackTest(TestSystemCalcBase):
 			'/FirmwareVersion': 0x129},
 			connection='VE.Direct')
 
+	@unittest.skip("Disabled for now")
 	def test_sense_current(self):
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',
@@ -59,6 +62,7 @@ class BydBatteryCurrentBackTest(TestSystemCalcBase):
 			}
 		})
 
+	@unittest.skip("Disabled for now")
 	def test_sense_current_only_byd(self):
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',
@@ -78,6 +82,7 @@ class BydBatteryCurrentBackTest(TestSystemCalcBase):
 			}
 		})
 
+	@unittest.skip("Disabled for now")
 	def test_sense_current_only_if_monitor(self):
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',

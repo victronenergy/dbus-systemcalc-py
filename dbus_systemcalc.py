@@ -150,7 +150,7 @@ class SystemCalc:
 			delegates.ScheduledCharging(),
 			delegates.SourceTimers(),
 			delegates.GridAlarm(),
-			delegates.BydCurrentSense(self),
+			#delegates.BydCurrentSense(self),
 			delegates.BatteryData()]
 
 		for m in self._modules:
