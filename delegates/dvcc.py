@@ -698,7 +698,7 @@ class Dvcc(SystemCalcDelegate):
 		max_charge_current = None
 		charge_voltage = None
 		if bms_service is not None:
-			charge_voltage, max_charge_current = self._calculate_battery_operational_limits(bms_service)
+			charge_voltage, max_charge_current = self._adjust_battery_operational_limits(bms_service)
 
 		# Take the lesser of the BMS and user limits, wherever they exist
 		maximae = filter(lambda x: x is not None,
@@ -759,26 +759,27 @@ class Dvcc(SystemCalcDelegate):
 
 		return True
 
-	def _calculate_battery_operational_limits(self, bms_service):
-		""" This function obtains and calculates the charge voltage and
-		    charge current specified by the BMS. """
-		cv = safeadd(bms_service.chargevoltage, self.invertervoltageoffset)
-		mcc = safeadd(bms_service.maxchargecurrent, self.currentoffset)
-		return self._adjust_battery_operational_limits(bms_service, cv, mcc)
-
-	def _adjust_battery_operational_limits(self, bms_service, cv, mcc):
+	def _adjust_battery_operational_limits(self, bms_service):
 		""" Take the charge voltage and maximum charge current from the BMS
 		    and adjust it as necessary. For now we only implement quirks
 		    for batteries known to have them.
 		"""
+		cv = bms_service.chargevoltage
+		mcc = bms_service.maxchargecurrent
+
 		quirk = QUIRKS.get(bms_service.product_id)
 		if quirk is not None:
 			# If any quirks are registered for this battery, use that
 			# instead. For safety, let's cap the voltage to what the BMS
 			# requests: A quirk can only lower the voltage.
-			voltage, current = quirk(self, cv, mcc)
-			return min(voltage, cv), current
+			voltage, mcc = quirk(self, cv, mcc)
+			cv = min(voltage, cv)
 
+		# Add debug offsets
+		if cv is not None:
+			cv = safeadd(cv, self.invertervoltageoffset)
+		if mcc is not None:
+			mcc = safeadd(mcc, self.currentoffset)
 		return cv, mcc
 
 	def _update_battery_operational_limits(self, bms_service, cv, mcc):
