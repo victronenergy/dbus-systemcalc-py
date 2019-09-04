@@ -100,6 +100,7 @@ class ScheduledCharging(SystemCalcDelegate):
 		self.soc = None
 		self.pvpower = 0
 		self.active = False
+		self.hysteresis = True
 		self._timer = gobject.timeout_add(5000, exit_on_error, self._on_timer)
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
@@ -110,6 +111,12 @@ class ScheduledCharging(SystemCalcDelegate):
 		return [
 			(HUB4_SERVICE, ['/Overrides/ForceCharge', '/Overrides/MaxDischargePower'])
 		]
+
+	def settings_changed(self, setting, oldvalue, newvalue):
+		if setting.startswith("schedule_soc_"):
+			# target SOC was modified. Disable the hysteresis on the next
+			# run.
+			self.hysteresis = False
 
 	def get_settings(self):
 		settings = []
@@ -182,7 +189,7 @@ class ScheduledCharging(SystemCalcDelegate):
 			if now in w:
 				if w.soc_reached(self.soc):
 					self.forcecharge = False
-				elif w.soc_reached(self.soc + 5):
+				elif self.hysteresis and w.soc_reached(self.soc + 5):
 					# If we are within 5%, keep it the same, but write it to
 					# avoid a timeout.
 					self.forcecharge = self.forcecharge
@@ -212,6 +219,7 @@ class ScheduledCharging(SystemCalcDelegate):
 			self.active = False
 
 		self._dbusservice['/Control/ScheduledCharge'] = int(self.active)
+		self.hysteresis = True
 		return True
 
 	def update_values(self, newvalues):
