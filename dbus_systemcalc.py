@@ -285,6 +285,10 @@ class SystemCalc:
 		self._determinebatteryservice()
 		self._changed = True
 
+		# Give our delegates a chance to react on a settings change
+		for m in self._modules:
+			m.settings_changed(setting, oldvalue, newvalue)
+
 	def _find_device_instance(self, serviceclass, instance):
 		""" Gets a mapping of services vs DeviceInstance using
 		    get_service_list.  Then searches for the specified DeviceInstance

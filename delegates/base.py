@@ -59,6 +59,11 @@ class SystemCalcDelegate(object):
 		"""
 		return []
 
+	def settings_changed(self, setting, oldvalue, newvalue):
+		""" A delegate can monitor a particular setting by implementing
+		    settings_changed. """
+		pass
+
 	def update_values(self, newvalues):
 		pass
 
