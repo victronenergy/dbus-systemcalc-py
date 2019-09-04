@@ -114,7 +114,7 @@ class ScheduledCharging(SystemCalcDelegate):
 	def get_settings(self):
 		settings = []
 
-		# Paths for scheduled charging. We'll allow 4 for now.
+		# Paths for scheduled charging. We'll allow 5 for now.
 		for i in range(NUM_SCHEDULES):
 			settings.append(("schedule_day_{}".format(i),
 				BLPATH + "/Schedule/Charge/{}/Day".format(i), -7, -9, 9))
