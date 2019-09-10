@@ -469,7 +469,7 @@ class Multi(object):
 	""" Encapsulates the multi. Makes access to dbus paths a bit neater by
 	    exposing them as attributes. """
 	# Used for low-pass filter
-	OMEGA = (2 * pi)/30
+	OMEGA = 0.7
 
 	def __init__(self, monitor, service):
 		self.monitor = monitor
@@ -538,9 +538,14 @@ class Multi(object):
 		return self.monitor.get_value(self.service,
 			'/Hub4/L1/DoNotFeedInOvervoltage') == 0
 
-	def update_values(self):
+	def update_values(self, limit):
 		c = self.monitor.get_value(self.service, '/Dc/0/Current', 0)
 		if c is not None:
+			# Cap the filter at a limit. If we don't do this, dc currents
+			# in excess of our capacity causes a kind of wind-up that delays
+			# backing-off when the load drops suddenly.
+			if limit is not None:
+				c = max(c, -limit)
 			self._dc_current += (c - self._dc_current) * self.OMEGA
 
 class Dvcc(SystemCalcDelegate):
@@ -681,7 +686,7 @@ class Dvcc(SystemCalcDelegate):
 
 		# Update subsystems
 		self._solarsystem.update_values()
-		self._multi.update_values()
+		self._multi.update_values(self._solarsystem.capacity)
 
 		# Below are things we only do every ADJUST seconds
 		if self._tickcount > 0: return True
