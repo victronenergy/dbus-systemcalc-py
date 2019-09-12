@@ -380,11 +380,6 @@ class Battery(object):
 		""" Returns the DeviceInstance of this device. """
 		return self.monitor.get_value(self.service, '/DeviceInstance')
 
-	@reify
-	def instance_service_name(self):
-		""" Returns a string in a format compatible with activebatteryservice. """
-		return '%s/%s' % ('.'.join(self.service.split('.')[:3]), self.device_instance)
-
 	@property
 	def maxchargecurrent(self):
 		""" Returns maxumum charge current published by the BMS. """
@@ -550,8 +545,9 @@ class Multi(object):
 
 class Dvcc(SystemCalcDelegate):
 	""" This is the main DVCC delegate object. """
-	def __init__(self):
-		SystemCalcDelegate.__init__(self)
+	def __init__(self, sc):
+		super(Dvcc, self).__init__()
+		self.systemcalc = sc
 		self._solarsystem = None
 		self._vecan_services = []
 		self._timer = None
@@ -649,7 +645,6 @@ class Dvcc(SystemCalcDelegate):
 	solarvoltageoffset = property(partial(_property, '/Debug/BatteryOperationalLimits/SolarVoltageOffset'))
 	invertervoltageoffset = property(partial(_property, '/Debug/BatteryOperationalLimits/VebusVoltageOffset'))
 	currentoffset = property(partial(_property, '/Debug/BatteryOperationalLimits/CurrentOffset'))
-	activebatteryservice = property(lambda s: s._dbusservice['/ActiveBatteryService'])
 
 	@property
 	def has_ess_assistant(self):
@@ -658,7 +653,7 @@ class Dvcc(SystemCalcDelegate):
 	@property
 	def bms(self):
 		bmses = sorted(self._batterysystem.bmses,
-			key=lambda b: (b.instance_service_name != self.activebatteryservice, b.device_instance))
+			key=lambda b: (b.service != self.systemcalc._batteryservice, b.device_instance))
 		try:
 			return bmses[0]
 		except IndexError:

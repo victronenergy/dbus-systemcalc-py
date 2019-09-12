@@ -1261,7 +1261,6 @@ class TestHubSystem(TestSystemCalcBase):
 
 		batteries = list(Dvcc.instance._batterysystem)
 		self.assertEqual(batteries[0].device_instance, 2)
-		self.assertEqual(batteries[0].instance_service_name, 'com.victronenergy.battery/2')
 		self.assertTrue(batteries[0].is_bms)
 
 	def test_bms_selection(self):
@@ -1270,7 +1269,7 @@ class TestHubSystem(TestSystemCalcBase):
 		from delegates.dvcc import Dvcc
 
 		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.battery/1')
-		self.assertEqual(Dvcc.instance.activebatteryservice, None)
+		self._check_values({'/ActiveBatteryService': None})
 
 		self._add_device('com.victronenergy.battery.ttyO1',
 			product_name='battery',
@@ -1298,7 +1297,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Info/MaxChargeVoltage': 53.2,
 				'/Info/MaxDischargeCurrent': 25,
 				'/ProductId': 0xB009})
-		self.assertEqual(Dvcc.instance.activebatteryservice, 'com.victronenergy.battery/1')
+		self._check_values({'/ActiveBatteryService': 'com.victronenergy.battery/1'})
 		self.assertEqual(len(Dvcc.instance._batterysystem.bmses), 2)
 
 		# Check that the selected battery is chosen, as both here have BMSes
@@ -1326,7 +1325,7 @@ class TestHubSystem(TestSystemCalcBase):
 					'/Info/MaxChargeVoltage': 53.2,
 					'/Info/MaxDischargeCurrent': 25,
 					'/ProductId': 0xB009})
-		self.assertEqual(Dvcc.instance.activebatteryservice, None)
+		self._check_values({'/ActiveBatteryService': None})
 		self.assertEqual(len(Dvcc.instance._batterysystem.bmses), 3)
 
 		# Check that the lowest deviceinstante is chosen, as all here have BMSes
