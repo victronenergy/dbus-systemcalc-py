@@ -24,32 +24,32 @@ ADJUST = 3
 # This is a place to account for some BMS quirks where we may have to ignore
 # the BMS value and substitute our own.
 
-def _byd_quirk(dvcc, charge_voltage, charge_current):
+def _byd_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
 	""" Quirk for the BYD batteries. When the battery sends CCL=0, float it at
 	   55V. """
 	if charge_current == 0:
-		return (55, 40)
-	return (charge_voltage, charge_current)
+		return (55, 40, feedback_allowed)
+	return (charge_voltage, charge_current, feedback_allowed)
 
-def _sony_quirk(dvcc, charge_voltage, charge_current):
+def _sony_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
 	""" Quirk for Sony batteries. These batteries drop the charge limit to
 		2A per module whenever you go into discharge in an attempt to
 		facilitate a cleaner ramp-up afterwards. This messes up the feeding of
 		loads. """
 	# This is safe even if charge_current is None
 	if charge_current > 0:
-		return (charge_voltage, max(1000, charge_current))
-	return (charge_voltage, charge_current)
+		return (charge_voltage, max(1000, charge_current), feedback_allowed)
+	return (charge_voltage, charge_current, feedback_allowed)
 
-def _lg_quirk(dvcc, charge_voltage, charge_current):
+def _lg_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
 	""" Quirk for LG batteries. The hard limit is 58V. Above that you risk
 	    tripping on high voltage. The batteries publish a charge voltage of 57.7V
 	    but we need to make room for an 0.4V overvoltage when feed-in is enabled.
 	"""
 	# Make room for a potential 0.4V at the top
-	return (min(charge_voltage, 57.3), charge_current)
+	return (min(charge_voltage, 57.3), charge_current, feedback_allowed)
 
-def _pylontech_quirk(dvcc, charge_voltage, charge_current):
+def _pylontech_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
 	""" Quirk for Pylontech. When feed-in is enabled, make a bit of room at the
 	    top. Pylontech says that at 51.8V the battery is 95% full, and that
 	    balancing starts at 90%. 53.2V is normally considered 100% full, and
@@ -58,7 +58,7 @@ def _pylontech_quirk(dvcc, charge_voltage, charge_current):
 	    high voltage alarms.
 	"""
 	# Hold at 52V.
-	return (min(charge_voltage, 52), charge_current)
+	return (min(charge_voltage, 52), charge_current, feedback_allowed)
 
 # Quirk = namedtuple('Quirk', ['product_id', 'floatvoltage', 'floatcurrent'])
 QUIRKS = {
@@ -697,8 +697,10 @@ class Dvcc(SystemCalcDelegate):
 		bms_service = self.bms
 		max_charge_current = None
 		charge_voltage = None
+		feedback_allowed = self.feedback_allowed
 		if bms_service is not None:
-			charge_voltage, max_charge_current = self._adjust_battery_operational_limits(bms_service)
+			charge_voltage, max_charge_current, feedback_allowed = \
+				self._adjust_battery_operational_limits(bms_service, feedback_allowed)
 
 		# Take the lesser of the BMS and user limits, wherever they exist
 		maximae = filter(lambda x: x is not None,
@@ -723,7 +725,7 @@ class Dvcc(SystemCalcDelegate):
 
 		# Try to push the solar chargers to the vebus-compensated value
 		voltage_written, current_written = self._update_solarchargers(
-			bms_service is not None, charge_voltage, _max_charge_current)
+			bms_service is not None, charge_voltage, _max_charge_current, feedback_allowed)
 		self._dbusservice['/Control/SolarChargeVoltage'] = voltage_written
 		self._dbusservice['/Control/SolarChargeCurrent'] = current_written
 
@@ -759,7 +761,7 @@ class Dvcc(SystemCalcDelegate):
 
 		return True
 
-	def _adjust_battery_operational_limits(self, bms_service):
+	def _adjust_battery_operational_limits(self, bms_service, feedback_allowed):
 		""" Take the charge voltage and maximum charge current from the BMS
 		    and adjust it as necessary. For now we only implement quirks
 		    for batteries known to have them.
@@ -772,7 +774,7 @@ class Dvcc(SystemCalcDelegate):
 			# If any quirks are registered for this battery, use that
 			# instead. For safety, let's cap the voltage to what the BMS
 			# requests: A quirk can only lower the voltage.
-			voltage, mcc = quirk(self, cv, mcc)
+			voltage, mcc, feedback_allowed = quirk(self, bms_service, cv, mcc, feedback_allowed)
 			cv = min(voltage, cv)
 
 		# Add debug offsets
@@ -780,7 +782,7 @@ class Dvcc(SystemCalcDelegate):
 			cv = safeadd(cv, self.invertervoltageoffset)
 		if mcc is not None:
 			mcc = safeadd(mcc, self.currentoffset)
-		return cv, mcc
+		return cv, mcc, feedback_allowed
 
 	def _update_battery_operational_limits(self, bms_service, cv, mcc):
 		""" This function writes the bms parameters across to the Multi
@@ -805,15 +807,17 @@ class Dvcc(SystemCalcDelegate):
 
 		return 0
 
-	def _update_solarchargers(self, has_bms, bms_charge_voltage, max_charge_current):
-		""" This function updates the solar chargers only. Parameters
-		    related to the Multi are handled elsewhere. """
-
+	@property
+	def feedback_allowed(self):
 		# Feedback allowed is defined as 'ESS present and FeedInOvervoltage is
 		# enabled'. This ignores other setups which allow feedback: hub-1.
-		feedback_allowed = self.has_ess_assistant and self._multi.ac_connected and \
+		return self.has_ess_assistant and self._multi.ac_connected and \
 			self._dbusmonitor.get_value('com.victronenergy.settings',
 				'/Settings/CGwacs/OvervoltageFeedIn') == 1
+
+	def _update_solarchargers(self, has_bms, bms_charge_voltage, max_charge_current, feedback_allowed):
+		""" This function updates the solar chargers only. Parameters
+		    related to the Multi are handled elsewhere. """
 
 		# If the vebus service does not provide a charge voltage setpoint (so
 		# no ESS/Hub-1/Hub-4), we use the max charge voltage provided by the

@@ -96,6 +96,22 @@ class BatterySense(SystemCalcDelegate):
 	def temperature_service(self):
 		return self._settings['temperatureservice']
 
+	@property
+	def has_dvcc(self):
+		return bool(self._settings['bol'])
+
+	@property
+	def has_vsense(self):
+		return bool(self._settings['vsense'])
+
+	@property
+	def has_tsense(self):
+		return bool(self._settings['tsense'])
+
+	@property
+	def has_isense(self):
+		return bool(self._settings['isense'])
+
 	def nice_name(self, service):
 		name = self._dbusmonitor.get_value(service, '/ProductName')
 		connection = self._dbusmonitor.get_value(service, '/Mgmt/Connection')
@@ -181,11 +197,11 @@ class BatterySense(SystemCalcDelegate):
 		self._dbusservice['/Control/BatteryVoltageSense'], \
 		self._dbusservice['/Control/SolarChargerVoltageSense'] = \
 			self._distribute_sense_voltage(
-				self._settings['vsense'] and self._settings['bol'])
+				self.has_vsense and self.has_dvcc)
 
 		# Tell the solarchargers what the battery current is for tail
 		# detection.
-		if self._settings['isense'] and self._settings['bol']:
+		if self.has_isense and self.has_dvcc:
 			self._dbusservice['/Control/BatteryCurrentSense'] = \
 				self._distribute_battery_current()
 		else:
@@ -195,7 +211,7 @@ class BatterySense(SystemCalcDelegate):
 		# every TEMPERATURE_INTERVAL ticks (9 seconds total).
 		if self.tick == 0:
 			self._dbusservice['/Control/SolarChargerTemperatureSense'] = \
-				int(self._settings['tsense'] and self._settings['bol']) and \
+				int(self.has_tsense and self.has_dvcc) and \
 				self._distribute_sense_temperature()
 		self.tick = (self.tick - 1) % TEMPERATURE_INTERVAL
 		return True
