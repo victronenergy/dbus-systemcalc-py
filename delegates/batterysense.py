@@ -34,8 +34,9 @@ class BatterySense(SystemCalcDelegate):
 	ISENSE_NO_MONITOR = 3
 	ISENSE_ENABLED = 4
 
-	def __init__(self):
-		SystemCalcDelegate.__init__(self)
+	def __init__(self, sc):
+		super(BatterySense, self).__init__()
+		self.systemcalc = sc
 		self._timer = None
 		self.temperaturesensors = {}
 		self.tick = TEMPERATURE_INTERVAL
@@ -114,8 +115,6 @@ class BatterySense(SystemCalcDelegate):
 		# 2. If selected service == default, use the existing mechanism
 		#    - the battery service if it has temperature.
 
-		battery_service = self._dbusservice['/ActiveBatteryService']
-
 		# Explicitly disabled
 		temperature_service = self.temperature_service
 		if temperature_service == self.TEMPSERVICE_NOSENSOR:
@@ -136,17 +135,11 @@ class BatterySense(SystemCalcDelegate):
 					return None, None
 
 		# Default: Use battery service
-		if battery_service is not None:
-			try:
-				serviceclass, instance = battery_service.split('/', 1)
-				instance = int(instance)
-			except ValueError:
-				return None, None
-			else:
-				s = self._find_device_instance(serviceclass, instance)
-				t = self._dbusmonitor.get_value(s, '/Dc/0/Temperature')
-				if t is not None:
-					return t, s
+		if self.systemcalc._batteryservice is not None:
+			t = self._dbusmonitor.get_value(self.systemcalc._batteryservice,
+				'/Dc/0/Temperature')
+			if t is not None:
+				return t, self.systemcalc._batteryservice
 
 		return None, None
 

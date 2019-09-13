@@ -144,7 +144,7 @@ class SystemCalc:
 			delegates.BuzzerControl(),
 			delegates.LgCircuitBreakerDetect(),
 			delegates.Dvcc(self),
-			delegates.BatterySense(),
+			delegates.BatterySense(self),
 			delegates.SystemState(),
 			delegates.BatteryLife(),
 			delegates.ScheduledCharging(),
