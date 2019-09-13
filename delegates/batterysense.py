@@ -48,7 +48,8 @@ class BatterySense(SystemCalcDelegate):
 				'/Link/NetworkMode',
 				'/Link/VoltageSense',
 				'/Link/BatteryCurrent',
-				'/Link/TemperatureSense']),
+				'/Link/TemperatureSense',
+				'/Dc/0/Temperature']),
 			('com.victronenergy.vecan', [
 				'/Link/VoltageSense',
 				'/Link/TemperatureSense']),
@@ -56,10 +57,16 @@ class BatterySense(SystemCalcDelegate):
 				'/Dc/0/Voltage',
 				'/BatterySense/Voltage',
 				'/BatterySense/Temperature',
-				'/FirmwareFeatures/BolUBatAndTBatSense']),
+				'/FirmwareFeatures/BolUBatAndTBatSense',
+				'/Dc/0/Temperature']),
 			('com.victronenergy.settings', [
 				'/Settings/SystemSetup/SharedVoltageSense',
-				'/Settings/Services/Bol'])]
+				'/Settings/Services/Bol']),
+			('com.victronenergy.battery', [
+				'/Dc/0/Temperature']),
+			('com.victronenergy.temperature', [
+				'/Temperature', '/TemperatureType'])
+		]
 
 	def get_settings(self):
 		return [

@@ -39,7 +39,6 @@ class SystemCalc:
 				'/Mgmt/Connection': dummy,
 				'/Dc/0/Voltage': dummy,
 				'/Dc/0/Current': dummy,
-				'/Dc/0/Temperature': dummy,
 				'/Load/I': dummy,
 				'/FirmwareVersion': dummy},
 			'com.victronenergy.pvinverter': {
@@ -60,7 +59,6 @@ class SystemCalc:
 				'/Dc/1/Voltage': dummy,
 				'/Dc/0/Current': dummy,
 				'/Dc/0/Power': dummy,
-				'/Dc/0/Temperature': dummy,
 				'/Soc': dummy,
 				'/Sense/Current': dummy,
 				'/TimeToGo': dummy,
@@ -84,7 +82,6 @@ class SystemCalc:
 				'/Dc/0/Voltage': dummy,
 				'/Dc/0/Current': dummy,
 				'/Dc/0/Power': dummy,
-				'/Dc/0/Temperature': dummy,
 				'/Soc': dummy},
 			'com.victronenergy.charger': {
 				'/Connected': dummy,
@@ -122,9 +119,7 @@ class SystemCalc:
 			'com.victronenergy.temperature': {
 				'/Connected': dummy,
 				'/ProductName': dummy,
-				'/Mgmt/Connection': dummy,
-				'/Temperature': dummy,
-				'/TemperatureType': dummy},
+				'/Mgmt/Connection': dummy},
 			'com.victronenergy.inverter': {
 				'/Connected': dummy,
 				'/ProductName': dummy,
