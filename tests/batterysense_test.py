@@ -459,6 +459,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/Dc/0/Power': 65,
 				'/Dc/0/Temperature': 8,
 				'/Soc': 15.3,
+				'/Info/MaxChargeVoltage': 14.5,
 				'/DeviceInstance': 2})
 
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
@@ -495,9 +496,17 @@ class VoltageSenseTest(TestSystemCalcBase):
 			'com.victronenergy.solarcharger.ttyO1': {
 				'/Link/BatteryCurrent': None}})
 
-		# BatteryCurrentSense is on
+		# BatteryCurrentSense is on, but the battery is in control
 		self._set_setting('/Settings/SystemSetup/BatteryCurrentSense', 1)
 		self._update_values(3000)
+		self._check_values({
+			'/Control/BatteryCurrentSense': 1 # disabled, Ext. control
+		})
+
+		# Battery is dumb
+		self._monitor.set_value('com.victronenergy.battery.ttyO2',
+			'/Info/MaxChargeVoltage', None)
+		self._update_values(6000) # Order of execution causes this to take a bit longer.
 		self._check_values({
 			'/Control/BatteryCurrentSense': 4 # enabled
 		})

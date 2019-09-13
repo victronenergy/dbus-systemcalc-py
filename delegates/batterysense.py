@@ -29,7 +29,7 @@ class BatterySense(SystemCalcDelegate):
 	TEMPSERVICE_NOSENSOR = 'nosensor'
 
 	ISENSE_USER_DISABLED = 0
-	ISENSE_ESS = 1
+	ISENSE_EXT_CONTROL = 1
 	ISENSE_NO_CHARGERS = 2
 	ISENSE_NO_MONITOR = 3
 	ISENSE_ENABLED = 4
@@ -244,7 +244,10 @@ class BatterySense(SystemCalcDelegate):
 	def _distribute_battery_current(self):
 		# No point if we're running ESS, then the Multi decides.
 		if Dvcc.instance.has_ess_assistant:
-			return BatterySense.ISENSE_ESS
+			return BatterySense.ISENSE_EXT_CONTROL
+
+		if self._dbusservice['/Control/SolarChargeVoltage']:
+			return BatterySense.ISENSE_EXT_CONTROL
 
 		# The voltage service is either auto-selected, with a battery service
 		# being preferred, or it is explicity selected by the user. If this
