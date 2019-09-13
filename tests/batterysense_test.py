@@ -166,7 +166,8 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/DeviceInstance': 2})
 		self._update_values(5000)
 		self._check_values({
-			'/Control/SolarChargerVoltageSense': 1,
+			'/Control/SolarChargerVoltageSense': 0, # No solarchargers
+			'/Control/BatteryVoltageSense': 1,
 			'/Dc/Battery/Voltage': 12.15,
 			'/Dc/Battery/VoltageService': 'com.victronenergy.battery.ttyO2'
 		})
@@ -202,6 +203,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 		# Check that voltagesense is indicated as inactive
 		self._check_values({
 			'/Control/SolarChargerVoltageSense': 0,
+			'/Control/BatteryVoltageSense': 0
 		})
 		# Check that other devices were left alone
 		self._check_external_values({
@@ -280,6 +282,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 		# Check that voltagesense is indicated as inactive
 		self._check_values({
 			'/Control/SolarChargerVoltageSense': 0,
+			'/Control/BatteryVoltageSense': 0
 		})
 		# Check that other devices were left alone
 		self._check_external_values({

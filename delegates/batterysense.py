@@ -28,6 +28,9 @@ class BatterySense(SystemCalcDelegate):
 	TEMPSERVICE_DEFAULT = 'default'
 	TEMPSERVICE_NOSENSOR = 'nosensor'
 
+	VSENSE_OFF = 0
+	VSENSE_ON = 1
+
 	ISENSE_USER_DISABLED = 0
 	ISENSE_EXT_CONTROL = 1
 	ISENSE_NO_CHARGERS = 2
@@ -80,6 +83,7 @@ class BatterySense(SystemCalcDelegate):
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 		self._dbusservice.add_path('/Control/SolarChargerVoltageSense', value=0)
+		self._dbusservice.add_path('/Control/BatteryVoltageSense', value=0)
 		self._dbusservice.add_path('/Control/BatteryCurrentSense', value=0)
 		self._dbusservice.add_path('/Control/SolarChargerTemperatureSense', value=0)
 		self._dbusservice.add_path('/AvailableTemperatureServices', value=None)
@@ -174,6 +178,7 @@ class BatterySense(SystemCalcDelegate):
 
 	def _on_timer(self):
 		# Distribute the voltage if svs and dvcc is on
+		self._dbusservice['/Control/BatteryVoltageSense'], \
 		self._dbusservice['/Control/SolarChargerVoltageSense'] = \
 			self._distribute_sense_voltage(
 				self._settings['vsense'] and self._settings['bol'])
@@ -199,9 +204,10 @@ class BatterySense(SystemCalcDelegate):
 		sense_voltage = self._dbusservice['/Dc/Battery/Voltage']
 		sense_voltage_service = self._dbusservice['/Dc/Battery/VoltageService']
 		if sense_voltage is None or sense_voltage_service is None:
-			return 0
+			return self.VSENSE_OFF, self.VSENSE_OFF
 
-		voltagesense_written = 0
+		multi_written = self.VSENSE_OFF
+		charger_written = self.VSENSE_OFF
 
 		# Sync the Multi's voltage first
 		vebus_path = self._dbusservice['/VebusService']
@@ -210,7 +216,7 @@ class BatterySense(SystemCalcDelegate):
 			self._dbusmonitor.get_value(vebus_path, '/FirmwareFeatures/BolUBatAndTBatSense') == 1:
 			self._dbusmonitor.set_value_async(vebus_path, '/BatterySense/Voltage',
 				sense_voltage)
-			voltagesense_written = 1
+			multi_written = self.VSENSE_ON
 
 		# If this is an ESS system, switch to using the multi as a voltage
 		# reference.
@@ -218,9 +224,9 @@ class BatterySense(SystemCalcDelegate):
 			sense_voltage = self._dbusmonitor.get_value(vebus_path, '/Dc/0/Voltage')
 			sense_voltage_service = vebus_path
 			if sense_voltage is None or sense_voltage_service is None:
-				return voltagesense_written
+				return multi_written, charger_written
 		elif not has_vsense:
-			return voltagesense_written
+			return multi_written, charger_written
 
 		for service in self._dbusmonitor.get_service_list('com.victronenergy.solarcharger'):
 			if service == sense_voltage_service:
@@ -228,7 +234,7 @@ class BatterySense(SystemCalcDelegate):
 			if not self._dbusmonitor.seen(service, '/Link/VoltageSense'):
 				continue
 			self._dbusmonitor.set_value_async(service, '/Link/VoltageSense', sense_voltage)
-			voltagesense_written = 1
+			charger_written = self.VSENSE_ON
 
 		# Only forward to the VE.Can if the voltage is not comming from it.
 		vecan = self._dbusmonitor.get_service_list('com.victronenergy.vecan')
@@ -237,9 +243,9 @@ class BatterySense(SystemCalcDelegate):
 			if sense_origin and sense_origin != 'VE.Can':
 				for _ in vecan.iterkeys():
 					self._dbusmonitor.set_value_async(_, '/Link/VoltageSense', sense_voltage)
-				voltagesense_written = 1
+				charger_written = self.VSENSE_ON
 
-		return voltagesense_written
+		return multi_written, charger_written
 
 	def _distribute_battery_current(self):
 		# No point if we're running ESS, then the Multi decides.
