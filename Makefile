@@ -24,6 +24,7 @@ DELEGATES = \
 	$(SOURCEDIR)/delegates/sourcetimers.py \
 	$(SOURCEDIR)/delegates/gridalarm.py \
 	$(SOURCEDIR)/delegates/bydbattery.py \
+	$(SOURCEDIR)/delegates/batterysettings.py \
 	$(SOURCEDIR)/delegates/batterydata.py
 
 VEDLIB_FILES = \

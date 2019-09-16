@@ -591,7 +591,7 @@ class Dvcc(SystemCalcDelegate):
 	def get_settings(self):
 		return [
 			('maxchargecurrent', '/Settings/SystemSetup/MaxChargeCurrent', -1, -1, 10000),
-			('bol', '/Settings/Services/Bol', 0, 0, 1)
+			('bol', '/Settings/Services/Bol', 0, 0, 7)
 		]
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
@@ -651,6 +651,19 @@ class Dvcc(SystemCalcDelegate):
 		return self._multi.active and self._multi.has_ess_assistant
 
 	@property
+	def has_dvcc(self):
+		# First two bits are for force on/off
+		# third bit is for user setting. Ignored if forced.
+		# 0b00x  = x
+		# 0b01x  = x
+		# 0b10x  = Forced off
+		# 0b11x  = Forced on
+		v = self._settings['bol']
+		if v & 4:
+			v >>= 1
+		return bool(v & 1)
+
+	@property
 	def bms(self):
 		bmses = sorted(self._batterysystem.bmses,
 			key=lambda b: (b.service != self.systemcalc._batteryservice, b.device_instance))
@@ -661,7 +674,7 @@ class Dvcc(SystemCalcDelegate):
 		return None
 
 	def _on_timer(self):
-		bol_support = self._settings['bol'] == 1
+		bol_support = self.has_dvcc
 
 		self._tickcount -= 1; self._tickcount %= ADJUST
 

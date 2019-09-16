@@ -76,7 +76,6 @@ class BatterySense(SystemCalcDelegate):
 			('vsense', "/Settings/SystemSetup/SharedVoltageSense", 1, 0, 0),
 			('tsense', "/Settings/SystemSetup/SharedTemperatureSense", 1, 0, 0),
 			('isense', "/Settings/SystemSetup/BatteryCurrentSense", 1, 0, 0),
-			('bol', '/Settings/Services/Bol', 0, 0, 1),
 			('temperatureservice', '/Settings/SystemSetup/TemperatureService', "default", 0, 0)
 		]
 
@@ -97,16 +96,25 @@ class BatterySense(SystemCalcDelegate):
 		return self._settings['temperatureservice']
 
 	@property
-	def has_dvcc(self):
-		return bool(self._settings['bol'])
-
-	@property
 	def has_vsense(self):
-		return bool(self._settings['vsense'])
+		# First two bits are for force on/off
+		# third bit is for user setting. Ignored if forced.
+		# 0b00x  = x
+		# 0b01x  = x
+		# 0b10x  = Forced off
+		# 0b11x  = Forced on
+		v = self._settings['vsense']
+		if v & 4:
+			v >>= 1
+		return bool(v & 1)
 
 	@property
 	def has_tsense(self):
-		return bool(self._settings['tsense'])
+		# Same schema as has_vsense above
+		v = self._settings['tsense']
+		if v & 4:
+			v >>= 1
+		return bool(v & 1)
 
 	@property
 	def has_isense(self):
@@ -197,11 +205,11 @@ class BatterySense(SystemCalcDelegate):
 		self._dbusservice['/Control/BatteryVoltageSense'], \
 		self._dbusservice['/Control/SolarChargerVoltageSense'] = \
 			self._distribute_sense_voltage(
-				self.has_vsense and self.has_dvcc)
+				self.has_vsense and Dvcc.instance.has_dvcc)
 
 		# Tell the solarchargers what the battery current is for tail
 		# detection.
-		if self.has_isense and self.has_dvcc:
+		if self.has_isense and Dvcc.instance.has_dvcc:
 			self._dbusservice['/Control/BatteryCurrentSense'] = \
 				self._distribute_battery_current()
 		else:
@@ -211,7 +219,7 @@ class BatterySense(SystemCalcDelegate):
 		# every TEMPERATURE_INTERVAL ticks (9 seconds total).
 		if self.tick == 0:
 			self._dbusservice['/Control/SolarChargerTemperatureSense'] = \
-				int(self.has_tsense and self.has_dvcc) and \
+				int(self.has_tsense and Dvcc.instance.has_dvcc) and \
 				self._distribute_sense_temperature()
 		self.tick = (self.tick - 1) % TEMPERATURE_INTERVAL
 		return True

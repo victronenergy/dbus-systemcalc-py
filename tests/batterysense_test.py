@@ -6,6 +6,7 @@ import context
 
 # our own packages
 from base import TestSystemCalcBase
+from delegates import BatterySense, Dvcc
 
 # Monkey patching for unit tests
 import patches
@@ -640,3 +641,40 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/BatterySense/Voltage': None},
 			'com.victronenergy.solarcharger.ttyO1': {
 				'/Link/VoltageSense': 12.25}})
+
+	def test_forced_settings(self):
+		self._set_setting('/Settings/Services/Bol', 0)
+		self._set_setting('/Settings/SystemSetup/SharedVoltageSense', 1)
+
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.15,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 50,
+				'/DeviceInstance': 0,
+				'/ProductId': 0xB00A})
+		self._update_values()
+		self._check_settings({
+			'vsense': 5 # Forced OFF
+		})
+		self.assertFalse(BatterySense.instance.has_vsense)
+		self.assertTrue(Dvcc.instance.has_dvcc)
+
+		self._remove_device('com.victronenergy.battery.ttyO2')
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.15,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 50,
+				'/DeviceInstance': 0,
+				'/ProductId': 0xB009})
+
+		self._update_values()
+		self._check_settings({
+			'vsense': 1 # Back to original user setting
+		})
+		self.assertTrue(BatterySense.instance.has_vsense)
