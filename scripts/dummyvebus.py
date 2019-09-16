@@ -51,6 +51,8 @@ s = DbusDummyService(servicename=args.name, deviceinstance=args.instance, paths=
 		'/Dc/0/MaxChargeCurrent': {'initial': None},
 		'/Dc/0/Temperature': {'initial': None},
 		'/Devices/0/Assistants': {'initial': [0]*56},
+		'/Devices/0/ExtendStatus/GridRelayReport/Code': {'initial': None},
+		'/Devices/0/ExtendStatus/GridRelayReport/Count': {'initial': None},
 		'/ExtraBatteryCurrent': {'initial': 0},
 		'/FirmwareFeatures/BolFrame': {'initial': None},
 		'/FirmwareFeatures/BolUBatAndTBatSense': {'initial': None},
