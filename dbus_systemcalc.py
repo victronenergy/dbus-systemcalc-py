@@ -343,6 +343,10 @@ class SystemCalc:
 			self._dbusservice['/ActiveBatteryService'] = battery_service
 			logger.info("Battery service, setting == %s, changed from %s to %s (%s)" %
 				(self._settings['batteryservice'], self._batteryservice, newbatteryservice, instance))
+
+			# Battery service has changed. Notify delegates.
+			for m in self._modules:
+				m.battery_service_changed(self._batteryservice, newbatteryservice)
 			self._batteryservice = newbatteryservice
 
 	def _autoselect_battery_service(self):

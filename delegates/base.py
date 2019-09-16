@@ -64,6 +64,11 @@ class SystemCalcDelegate(object):
 		    settings_changed. """
 		pass
 
+	def battery_service_changed(self, oldservice, newservice):
+		""" If the battery monitor changes, delegates can hook into
+		    that event by implementing battery_monitor_changed. """
+		pass
+
 	def update_values(self, newvalues):
 		pass
 
