@@ -464,7 +464,7 @@ class Multi(object):
 	""" Encapsulates the multi. Makes access to dbus paths a bit neater by
 	    exposing them as attributes. """
 	# Used for low-pass filter
-	OMEGA = 0.7
+	OMEGA = (2 * pi)/30
 
 	def __init__(self, monitor, service):
 		self.monitor = monitor
