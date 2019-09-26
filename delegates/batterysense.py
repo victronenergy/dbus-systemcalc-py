@@ -99,21 +99,17 @@ class BatterySense(SystemCalcDelegate):
 	def has_vsense(self):
 		# First two bits are for force on/off
 		# third bit is for user setting. Ignored if forced.
-		# 0b00x  = x
-		# 0b01x  = x
-		# 0b10x  = Forced off
-		# 0b11x  = Forced on
+		# 0b00  = Off
+		# 0b01  = On
+		# 0b10  = Forced off
+		# 0b11  = Forced on
 		v = self._settings['vsense']
-		if v & 4:
-			v >>= 1
 		return bool(v & 1)
 
 	@property
 	def has_tsense(self):
 		# Same schema as has_vsense above
 		v = self._settings['tsense']
-		if v & 4:
-			v >>= 1
 		return bool(v & 1)
 
 	@property

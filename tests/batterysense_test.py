@@ -657,7 +657,8 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/ProductId': 0xB00A})
 		self._update_values()
 		self._check_settings({
-			'vsense': 5 # Forced OFF
+			'vsense': 2, # Forced OFF
+			'bol': 3 # Forced ON
 		})
 		self.assertFalse(BatterySense.instance.has_vsense)
 		self.assertTrue(Dvcc.instance.has_dvcc)
@@ -675,6 +676,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 
 		self._update_values()
 		self._check_settings({
-			'vsense': 1 # Back to original user setting
+			'vsense': 0, # Remains off, no longer forced
+			'bol': 1 # Remains on, no longer forced
 		})
-		self.assertTrue(BatterySense.instance.has_vsense)
+		self.assertFalse(BatterySense.instance.has_vsense)
