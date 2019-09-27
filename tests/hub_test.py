@@ -277,6 +277,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_values({
 			'/Control/SolarChargeCurrent': 1,
 			'/Control/SolarChargeVoltage': 1,
+			'/Control/EffectiveChargeVoltage': 55.2,
 			'/Control/BmsParameters': 1})
 
 	def test_vedirect_solarcharger_bms_battery_max_charge_current_setting(self):
@@ -321,6 +322,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_values({
 			'/Control/SolarChargeCurrent': 1,
 			'/Control/SolarChargeVoltage': 1,
+			'/Control/EffectiveChargeVoltage': 55.2, # ESS
 			'/Control/BmsParameters': 1})
 
 	def test_control_vedirect_solarcharger_bms_battery_no_charge_voltage(self):
@@ -439,6 +441,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_values({
 			'/Control/SolarChargeCurrent': 1,
 			'/Control/SolarChargeVoltage': 1,
+			'/Control/EffectiveChargeVoltage': 58.2,
 			'/Control/BmsParameters': 1})
 
 	def test_control_vedirect_solarcharger_bms_ess_feedback(self):
@@ -486,6 +489,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/SystemType': 'ESS',
 			'/Control/SolarChargeCurrent': 1,
 			'/Control/SolarChargeVoltage': 1,
+			'/Control/EffectiveChargeVoltage': 58.3,
 			'/Control/BmsParameters': 1})
 
 	def test_control_vedirect_solarcharger_bms_ess_feedback_no_ac_in(self):
@@ -535,6 +539,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/SystemType': 'ESS',
 			'/Control/SolarChargeCurrent': 1,
 			'/Control/SolarChargeVoltage': 1,
+			'/Control/EffectiveChargeVoltage': 58.3,
 			'/Control/BmsParameters': 1})
 
 	def test_hub1_control_vedirect_solarcharger_bms_battery_no_solarcharger(self):
@@ -561,6 +566,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_values({
 			'/Control/SolarChargeCurrent': 0,
 			'/Control/SolarChargeVoltage': 0,
+			'/Control/EffectiveChargeVoltage': 58.2,
 			'/Control/BmsParameters': 1})
 
 	def test_system_mapping(self):
@@ -1078,7 +1084,10 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Link/ChargeCurrent': 35,
 				'/Link/NetworkMode': 13,
 			}})
-		self._check_values({'/Control/Dvcc': 0})
+		self._check_values({
+			'/Control/EffectiveChargeVoltage': None,
+			'/Control/Dvcc': 0
+		})
 
 		# Switch to DVCC
 		self._set_setting('/Settings/Services/Bol', 1)
@@ -1091,7 +1100,10 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Link/ChargeCurrent': 18, # 10 + 8 for the Multi
 				'/Link/NetworkMode': 13,
 			}})
-		self._check_values({'/Control/Dvcc': 1})
+		self._check_values({
+			'/Control/Dvcc': 1,
+			'/Control/EffectiveChargeVoltage': 12.6,
+		})
 
 	def test_byd_quirks(self):
 		""" BYD batteries should float at 55V when they send CCL=0. """
@@ -1123,6 +1135,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeVoltage': 55
 			}
 		})
+		self._check_values({ '/Control/EffectiveChargeVoltage': 55 })
 
 	def test_sony_quirks(self):
 		""" Sony batteries drop their CCL even while under discharge, affecting
@@ -1158,6 +1171,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeVoltage': 57.2
 			}
 		})
+		self._check_values({ '/Control/EffectiveChargeVoltage': 57.2 })
 
 	def test_lg_quirks(self):
 		""" LG Batteries run at 57.7V, when we add an 0.4V offset we sometimes
@@ -1183,6 +1197,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeCurrent': 94
 			}
 		})
+		self._check_values({ '/Control/EffectiveChargeVoltage': 57.3 })
 
 	def test_pylontech_quirks(self):
 		""" Pylontech Batteries run at 53.2V and raise an alarm at 54V.
@@ -1207,6 +1222,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeCurrent': 25
 			}
 		})
+		self._check_values({ '/Control/EffectiveChargeVoltage': 52 })
 
 	def test_no_bms_max_charge_current_setting(self):
 		# Test that with no BMS but a user limit, /Dc/0/MaxChargeCurrent is correctly set.

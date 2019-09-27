@@ -602,6 +602,7 @@ class Dvcc(SystemCalcDelegate):
 
 		self._dbusservice.add_path('/Control/SolarChargeVoltage', value=0)
 		self._dbusservice.add_path('/Control/SolarChargeCurrent', value=0)
+		self._dbusservice.add_path('/Control/EffectiveChargeVoltage', value=None)
 		self._dbusservice.add_path('/Control/BmsParameters', value=0)
 		self._dbusservice.add_path('/Control/MaxChargeCurrent', value=0)
 		self._dbusservice.add_path('/Control/Dvcc', value=1)
@@ -680,6 +681,7 @@ class Dvcc(SystemCalcDelegate):
 			voltage_written, current_written = self._legacy_update_solarchargers()
 			self._dbusservice['/Control/SolarChargeVoltage'] = voltage_written
 			self._dbusservice['/Control/SolarChargeCurrent'] = current_written
+			self._dbusservice['/Control/EffectiveChargeVoltage'] = None # Not tracking for non-DVCC cases
 			self._dbusservice['/Control/BmsParameters'] = 0
 			self._dbusservice['/Control/MaxChargeCurrent'] = 0
 			self._dbusservice['/Control/Dvcc'] = 0
@@ -733,10 +735,12 @@ class Dvcc(SystemCalcDelegate):
 			_max_charge_current = ceil(_max_charge_current - vebus_dc_current)
 
 		# Try to push the solar chargers to the vebus-compensated value
-		voltage_written, current_written = self._update_solarchargers(
-			bms_service is not None, charge_voltage, _max_charge_current, feedback_allowed)
+		voltage_written, current_written, effective_charge_voltage = \
+			self._update_solarchargers(bms_service is not None, charge_voltage,
+			_max_charge_current, feedback_allowed)
 		self._dbusservice['/Control/SolarChargeVoltage'] = voltage_written
 		self._dbusservice['/Control/SolarChargeCurrent'] = current_written
+		self._dbusservice['/Control/EffectiveChargeVoltage'] = effective_charge_voltage
 
 		# The Multi gets the remainder after subtracting what the solar chargers made
 		if max_charge_current is not None:
@@ -844,7 +848,7 @@ class Dvcc(SystemCalcDelegate):
 				pass
 
 		if charge_voltage is None and max_charge_current is None:
-			return 0, 0
+			return 0, 0, None
 
 		voltage_written, current_written = self._solarsystem.set_networked(
 			has_bms, charge_voltage, max_charge_current, feedback_allowed)
@@ -864,7 +868,7 @@ class Dvcc(SystemCalcDelegate):
 				except DBusException:
 					pass
 
-		return voltage_written, current_written
+		return voltage_written, current_written, charge_voltage
 
 	def _legacy_update_solarchargers(self):
 		""" This is the old implementation we used before DVCC. It is kept
