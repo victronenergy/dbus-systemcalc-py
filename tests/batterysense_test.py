@@ -680,3 +680,4 @@ class VoltageSenseTest(TestSystemCalcBase):
 			'bol': 1 # Remains on, no longer forced
 		})
 		self.assertFalse(BatterySense.instance.has_vsense)
+		self.assertTrue(Dvcc.instance.has_dvcc)

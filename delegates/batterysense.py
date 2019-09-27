@@ -97,8 +97,6 @@ class BatterySense(SystemCalcDelegate):
 
 	@property
 	def has_vsense(self):
-		# First two bits are for force on/off
-		# third bit is for user setting. Ignored if forced.
 		# 0b00  = Off
 		# 0b01  = On
 		# 0b10  = Forced off
