@@ -18,11 +18,10 @@ class BatterySettings(SystemCalcDelegate):
 			self.apply_battery_settings(service)
 
 	def battery_service_changed(self, oldservice, newservice):
-		if newservice is not None and newservice.startswith('com.victronenergy.battery.'):
-			self.apply_battery_settings(newservice)
+		self.apply_battery_settings(newservice)
 
 	def apply_battery_settings(self, service):
-		pid = self._dbusmonitor.get_value(service, '/ProductId')
+		pid = None if service is None else self._dbusmonitor.get_value(service, '/ProductId')
 
 		# Set good settings for known batteries. Force SVS off and DVCC on
 		# for some batteries.
