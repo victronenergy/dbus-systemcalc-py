@@ -39,6 +39,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatterySense/Voltage': None,
 				'/FirmwareFeatures/BolFrame': 1,
 				'/FirmwareFeatures/BolUBatAndTBatSense': 1,
+				'/FirmwareVersion': 0x456,
 				'/Hub4/L1/DoNotFeedInOvervoltage': 1
 			})
 		self._add_device('com.victronenergy.settings',
@@ -747,6 +748,8 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeVoltage': 27,
 				'/BatteryOperationalLimits/MaxChargeCurrent': 55,
 			}})
+
+		self.assertEqual(multi.firmwareversion, 0x456)
 
 	def test_multi_nobol(self):
 		from dbus.exceptions import DBusException

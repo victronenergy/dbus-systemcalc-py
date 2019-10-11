@@ -126,10 +126,6 @@ class SolarCharger(object):
 			self.monitor.set_value_async(self.service, path, v)
 
 	@property
-	def firmwareversion(self):
-		return self._get_path('/FirmwareVersion')
-
-	@property
 	def connection(self):
 		return self._get_path('/Mgmt/Connection')
 
@@ -529,6 +525,10 @@ class Multi(object):
 		return self.monitor.get_value(self.service,
 			'/Hub4/L1/DoNotFeedInOvervoltage') == 0
 
+	@property
+	def firmwareversion(self):
+		return self.monitor.get_value(self.service, '/FirmwareVersion')
+
 	def update_values(self, limit):
 		c = self.monitor.get_value(self.service, '/Dc/0/Current', 0)
 		if c is not None:
@@ -567,7 +567,8 @@ class Dvcc(SystemCalcDelegate):
 				'/BatteryOperationalLimits/MaxChargeVoltage',
 				'/BatteryOperationalLimits/MaxDischargeCurrent',
 				'/FirmwareFeatures/BolFrame',
-				'/Hub4/L1/DoNotFeedInOvervoltage']),
+				'/Hub4/L1/DoNotFeedInOvervoltage',
+				'/FirmwareVersion']),
 			('com.victronenergy.solarcharger', [
 				'/Dc/0/Current',
 				'/Link/NetworkMode',
