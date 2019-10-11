@@ -252,15 +252,11 @@ class SolarChargerSubsystem(object):
 		# bit 2: Remote Hub-1 control (MPPT will accept charge voltage and max charge current)
 		# bit 3: Remote BMS control (MPPT enter BMS mode)
 		network_mode = 1 | (0 if charge_voltage is None and max_charge_current is None else 4) | (8 if has_bms else 0)
-		vedirect_chargers = []
 		network_mode_written = False
 		for charger in self._solarchargers.values():
 			# We use /Link/NetworkMode to detect Hub support in the
 			# solarcharger. Existence of this item implies existence of the
-			# other /Link/* fields. We also skip chargers with old firmware.
-			#if charger.networkmode is not None and \
-			#		(charger.firmwareversion or 0) & 0x0FFF >= 0x0129:
-			vedirect_chargers.append(charger)
+			# other /Link/* fields.
 			charger.networkmode = network_mode
 			network_mode_written = True
 
@@ -274,8 +270,8 @@ class SolarChargerSubsystem(object):
 		# Distribute the voltage setpoint. Simply write it to all of them.
 		voltage_written = 0
 		if charge_voltage is not None:
-			voltage_written = int(len(vedirect_chargers)>0)
-			for charger in vedirect_chargers:
+			voltage_written = int(len(self._solarchargers)>0)
+			for charger in self._solarchargers.values():
 				charger.chargevoltage = charge_voltage
 
 		# Do not limit max charge current when feedback is allowed. The
@@ -287,7 +283,7 @@ class SolarChargerSubsystem(object):
 		# current.
 		#
 		# Additionally, don't bother with chargers that are disconnected.
-		chargers = filter(lambda x: x.state !=0, vedirect_chargers)
+		chargers = filter(lambda x: x.state !=0, self._solarchargers.values())
 		if len(chargers) > 0:
 			if feedback_allowed:
 				self.maximize_charge_current()
