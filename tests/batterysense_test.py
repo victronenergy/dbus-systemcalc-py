@@ -478,6 +478,12 @@ class VoltageSenseTest(TestSystemCalcBase):
 			'/Dc/0/Temperature': None},
 			connection='VE.Direct')
 
+		self._add_device('com.victronenergy.vecan.can0', {
+			'/Link/ChargeVoltage': None,
+			'/Link/NetworkMode': None,
+			'/Link/TemperatureSense': None,
+			'/Link/VoltageSense': None,
+			'/Link/BatteryCurrent': None})
 
 		# DVCC is off
 		self._set_setting('/Settings/Services/Bol', 0)
@@ -516,6 +522,8 @@ class VoltageSenseTest(TestSystemCalcBase):
 		})
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/BatteryCurrent': 5.3},
+			'com.victronenergy.vecan.can0': {
 				'/Link/BatteryCurrent': 5.3}})
 
 		# ESS assistant installed
@@ -532,6 +540,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 		# Remove solar charger, ESS
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Hub4/AssistantId', None)
 		self._remove_device('com.victronenergy.solarcharger.ttyO1')
+		self._remove_device('com.victronenergy.vecan.can0')
 		self._update_values(3000)
 		self._check_values({
 			'/Control/BatteryCurrentSense': 2 # no chargers

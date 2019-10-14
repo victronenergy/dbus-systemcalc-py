@@ -55,7 +55,8 @@ class BatterySense(SystemCalcDelegate):
 				'/Dc/0/Temperature']),
 			('com.victronenergy.vecan', [
 				'/Link/VoltageSense',
-				'/Link/TemperatureSense']),
+				'/Link/TemperatureSense',
+				'/Link/BatteryCurrent']),
 			('com.victronenergy.vebus', [
 				'/Dc/0/Voltage',
 				'/BatterySense/Voltage',
@@ -285,7 +286,9 @@ class BatterySense(SystemCalcDelegate):
 			return BatterySense.ISENSE_NO_MONITOR
 
 		sent = BatterySense.ISENSE_NO_CHARGERS
-		for service in self._dbusmonitor.get_service_list('com.victronenergy.solarcharger'):
+		for service in self._dbusmonitor.get_service_list(
+			'com.victronenergy.solarcharger').keys() + self._dbusmonitor.get_service_list(
+			'com.victronenergy.vecan').keys():
 			# Skip for old firmware versions to save some dbus traffic
 			if not self._dbusmonitor.seen(service, '/Link/BatteryCurrent'):
 				continue # No such feature on this charger
