@@ -21,6 +21,10 @@ from delegates.base import SystemCalcDelegate
 # above.
 ADJUST = 3
 
+VEBUS_FIRMWARE_REQUIRED = 0x422
+VEDIRECT_FIRMWARE_REQUIRED = 0x129
+VECAN_FIRMWARE_REQUIRED = 0x10200 # 1.02, 24-bit version
+
 # This is a place to account for some BMS quirks where we may have to ignore
 # the BMS value and substitute our own.
 
@@ -126,6 +130,24 @@ class SolarCharger(object):
 			self.monitor.set_value_async(self.service, path, v)
 
 	@property
+	def firmwareversion(self):
+		return self.monitor.get_value(self.service, '/FirmwareVersion')
+
+	@property
+	def has_externalcontrol_support(self):
+		v = self.firmwareversion
+		# New VE.Can controllers have 24-bit version strings. One would
+		# hope that any future VE.Direct controllers with 24-bit firmware
+		# versions will 1) have a version larger than 1.02 and 2) support
+		# external control.
+		if v is None:
+			return True # Assume support until we know
+
+		if v & 0xFF0000:
+			return v >= VECAN_FIRMWARE_REQUIRED
+		return v >= VEDIRECT_FIRMWARE_REQUIRED
+
+	@property
 	def connection(self):
 		return self._get_path('/Mgmt/Connection')
 
@@ -212,6 +234,10 @@ class SolarChargerSubsystem(object):
 		return k in self._solarchargers
 
 	@property
+	def has_externalcontrol_support(self):
+		return all(s.has_externalcontrol_support for s in self._solarchargers.values())
+
+	@property
 	def has_vecan_chargers(self):
 		""" Returns true if we have any VE.Can chargers in the system. This is
 		    used elsewhere to enable broadcasting charge voltages on the relevant
@@ -250,9 +276,6 @@ class SolarChargerSubsystem(object):
 		network_mode = 1 | (0 if charge_voltage is None and max_charge_current is None else 4) | (8 if has_bms else 0)
 		network_mode_written = False
 		for charger in self._solarchargers.values():
-			# We use /Link/NetworkMode to detect Hub support in the
-			# solarcharger. Existence of this item implies existence of the
-			# other /Link/* fields.
 			charger.networkmode = network_mode
 			network_mode_written = True
 
@@ -606,6 +629,8 @@ class Dvcc(SystemCalcDelegate):
 		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/SolarVoltageOffset', value=0, writeable=True)
 		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/VebusVoltageOffset', value=0, writeable=True)
 		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/CurrentOffset', value=0, writeable=True)
+		self._dbusservice.add_path('/Dvcc/Alarms/FirmwareInsufficient', value=0)
+		self._dbusservice.add_path('/Dvcc/Alarms/MultipleBatteries', value=0)
 
 	def device_added(self, service, instance, do_service_change=True):
 		service_type = service.split('.')[2]
@@ -682,10 +707,17 @@ class Dvcc(SystemCalcDelegate):
 			self._dbusservice['/Control/BmsParameters'] = 0
 			self._dbusservice['/Control/MaxChargeCurrent'] = 0
 			self._dbusservice['/Control/Dvcc'] = 0
+			self._dbusservice['/Dvcc/Alarms/FirmwareInsufficient'] = 0
+			self._dbusservice['/Dvcc/Alarms/MultipleBatteries'] = 0
 			return True
 
 
 		# BOL/DVCC support below
+		self._dbusservice['/Dvcc/Alarms/FirmwareInsufficient'] = int(
+			not self._solarsystem.has_externalcontrol_support or (
+			self._multi.firmwareversion is not None and self._multi.firmwareversion < VEBUS_FIRMWARE_REQUIRED))
+		self._dbusservice['/Dvcc/Alarms/MultipleBatteries'] = int(
+			len(self._batterysystem) > 1)
 
 		# Update subsystems
 		self._solarsystem.update_values()

@@ -784,11 +784,13 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/ChargeCurrent': None,
 			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
-			'/Dc/0/Current': 9.3
+			'/Dc/0/Current': 9.3,
+			'/FirmwareVersion': 0x129,
 		}, connection='VE.Direct')
 		self._add_device('com.victronenergy.solarcharger.socketcan_can0_di0_uc30688', {
 			'/Dc/0/Voltage': 12.6,
-			'/Dc/0/Current': 9.3
+			'/Dc/0/Current': 9.3,
+			'/FirmwareVersion': 0x102ff,
 		}, connection='VE.Can')
 
 		system = SolarChargerSubsystem(self._system_calc._dbusmonitor)
@@ -812,6 +814,9 @@ class TestHubSystem(TestSystemCalcBase):
 		self.assertFalse(system.has_vecan_chargers)
 		system.add_charger('com.victronenergy.solarcharger.socketcan_can0_di0_uc30688')
 		self.assertTrue(system.has_vecan_chargers)
+
+		# Check parallel support
+		self.assertTrue(system.has_externalcontrol_support)
 
 	def test_solar_subsys_distribution(self):
 		from delegates.dvcc import SolarChargerSubsystem
@@ -1363,3 +1368,62 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Soc': 95,
 				'/DeviceInstance': 0})
 		self.assertEqual(Dvcc.instance.bms, None)
+
+	def test_firmware_warning(self):
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 0,
+			'/Dc/0/Voltage': 12.4,
+			'/Dc/0/Current': 9.7,
+			'/FirmwareVersion': 0x129},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 0,
+			'/Dc/0/Voltage': 12.4,
+			'/Dc/0/Current': 9.7,
+			'/FirmwareVersion': 0x117},
+			connection='VE.Direct')
+		self._update_values(3000)
+		self._check_values({'/Dvcc/Alarms/FirmwareInsufficient': 1})
+
+		# Upgrade ttyO2
+		self._monitor.add_value('com.victronenergy.solarcharger.ttyO2', '/FirmwareVersion', 0x129)
+		self._update_values(3000)
+		self._check_values({'/Dvcc/Alarms/FirmwareInsufficient': 0})
+
+		# Give it a 24-bit version that is too old
+		self._monitor.add_value('com.victronenergy.solarcharger.ttyO2', '/FirmwareVersion', 0x101ff)
+		self._update_values(3000)
+		self._check_values({'/Dvcc/Alarms/FirmwareInsufficient': 1})
+
+		# Give it a 24-bit version that is new
+		self._monitor.add_value('com.victronenergy.solarcharger.ttyO2', '/FirmwareVersion', 0x102ff)
+		self._update_values(3000)
+		self._check_values({'/Dvcc/Alarms/FirmwareInsufficient': 0})
+
+		# Downgrade the Multi
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/FirmwareVersion', 0x418)
+		self._update_values(3000)
+		self._check_values({'/Dvcc/Alarms/FirmwareInsufficient': 1})
+
+	def test_multiple_battery_warning(self):
+		self._check_values({'/Dvcc/Alarms/MultipleBatteries': 0})
+		self._add_device('com.victronenergy.battery.ttyO1',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 58.1,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2})
+		self._update_values(3000)
+		self._check_values({'/Dvcc/Alarms/MultipleBatteries': 0})
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 58.1,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 3})
+		self._update_values(3000)
+		self._check_values({'/Dvcc/Alarms/MultipleBatteries': 1})
