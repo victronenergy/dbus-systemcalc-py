@@ -1414,7 +1414,8 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Dc/0/Current': 5.3,
 				'/Dc/0/Power': 65,
 				'/Soc': 15.3,
-				'/DeviceInstance': 2})
+				'/DeviceInstance': 2,
+				'/Info/MaxChargeVoltage': 55})
 		self._update_values(3000)
 		self._check_values({'/Dvcc/Alarms/MultipleBatteries': 0})
 		self._add_device('com.victronenergy.battery.ttyO2',
@@ -1425,5 +1426,17 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Dc/0/Power': 65,
 				'/Soc': 15.3,
 				'/DeviceInstance': 3})
+		self._update_values(3000)
+		self._check_values({'/Dvcc/Alarms/MultipleBatteries': 0})
+
+		self._add_device('com.victronenergy.battery.ttyO3',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 58.1,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 4,
+				'/Info/MaxChargeVoltage': 54})
 		self._update_values(3000)
 		self._check_values({'/Dvcc/Alarms/MultipleBatteries': 1})

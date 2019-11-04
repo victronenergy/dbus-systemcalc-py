@@ -717,7 +717,7 @@ class Dvcc(SystemCalcDelegate):
 			not self._solarsystem.has_externalcontrol_support or (
 			self._multi.firmwareversion is not None and self._multi.firmwareversion < VEBUS_FIRMWARE_REQUIRED))
 		self._dbusservice['/Dvcc/Alarms/MultipleBatteries'] = int(
-			len(self._batterysystem) > 1)
+			len(self._batterysystem.bmses) > 1)
 
 		# Update subsystems
 		self._solarsystem.update_values()
