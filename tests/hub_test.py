@@ -1113,8 +1113,8 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Control/EffectiveChargeVoltage': 12.6,
 		})
 
-	def test_byd_quirks(self):
-		""" BYD batteries should float at 55V when they send CCL=0. """
+	def test_byd_bbox_p_quirks(self):
+		""" BYD B-Box-Pro batteries should float at 55V when they send CCL=0. """
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',
 			values={
@@ -1131,7 +1131,41 @@ class TestHubSystem(TestSystemCalcBase):
 		self._update_values(interval=10000)
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
-				'/BatteryOperationalLimits/MaxChargeCurrent': 100
+				'/BatteryOperationalLimits/MaxChargeCurrent': 100,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 56.5
+			}
+		})
+
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeCurrent', 0)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeCurrent': 40,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 55
+			}
+		})
+		self._check_values({ '/Control/EffectiveChargeVoltage': 55 })
+
+	def test_byd_bbox_l_quirks(self):
+		""" BYD B-Box-L batteries should float at 55V when they send CCL=0. """
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 55.1,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 165.3,
+				'/Soc': 100,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 100,
+				'/Info/MaxChargeVoltage': 56.5,
+				'/Info/MaxDischargeCurrent': 100,
+				'/ProductId': 0xB015})
+		self._update_values(interval=10000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeCurrent': 100,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 56.5
 			}
 		})
 
