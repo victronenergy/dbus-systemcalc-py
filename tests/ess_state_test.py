@@ -193,3 +193,18 @@ class TestEssStates(TestSystemCalcBase):
             '/SystemState/SlowCharge': 0,
             '/SystemState/UserChargeLimited': 0,
             '/SystemState/UserDischargeLimited': 0})
+
+    def test_vedirect_inverter(self):
+        """ Check that a VE.Direct inverter's state is also returned. """
+        self._add_device('com.victronenergy.inverter.ttyO2',
+            product_name='inverter', values={
+                '/Ac/Out/L1/I': 0.7,
+                '/Ac/Out/L1/V': 230,
+                '/Dc/0/Voltage': 12.4,
+                '/State': 9 }) # Inverting
+        self._update_values()
+        self._check_values({ '/SystemState/State': 3 }) # The VE.Bus inverter takes precedence
+
+        self._remove_device(self.vebus)
+        self._update_values()
+        self._check_values({ '/SystemState/State': 9 }) # State from VE.Direct inverter

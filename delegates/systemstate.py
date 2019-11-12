@@ -51,7 +51,9 @@ class SystemState(SystemCalcDelegate):
 				'/State',
 				'/VebusMainState',
 				'/Bms/AllowToDischarge',
-				'/Bms/AllowToCharge'])]
+				'/Bms/AllowToCharge']),
+			('com.victronenergy.inverter', [
+				'/State',])]
 
 	def get_output(self):
 		return [
@@ -90,7 +92,12 @@ class SystemState(SystemCalcDelegate):
 		'DischargeDisabled', 'ChargeDisabled', 'SlowCharge', 'UserChargeLimited', 'UserDischargeLimited'], 0))
 
 		if vebus is None:
-			# This could be because a VEBUS BMS turned the inverter off.
+			# Look for a VE.Direct inverter
+			inverters = self._dbusmonitor.get_service_list('com.victronenergy.inverter').keys()
+			if inverters:
+				return (self._dbusmonitor.get_value(inverters[0], '/State'), flags)
+
+			# This could also be because a VEBUS BMS turned the inverter off.
 			# Unfortunately we will never know. Just admit we don't know.
 			return (SystemState.UNKNOWN, flags)
 
