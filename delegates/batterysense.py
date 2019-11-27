@@ -57,6 +57,9 @@ class BatterySense(SystemCalcDelegate):
 				'/Link/VoltageSense',
 				'/Link/TemperatureSense',
 				'/Link/BatteryCurrent']),
+			('com.victronenergy.charger', [
+				'/Link/VoltageSense',
+				'/Link/TemperatureSense']),
 			('com.victronenergy.vebus', [
 				'/Dc/0/Voltage',
 				'/BatterySense/Voltage',
@@ -255,6 +258,14 @@ class BatterySense(SystemCalcDelegate):
 			self._dbusmonitor.set_value_async(service, '/Link/VoltageSense', sense_voltage)
 			charger_written = self.VSENSE_ON
 
+		for service in self._dbusmonitor.get_service_list('com.victronenergy.charger'):
+			if service == sense_voltage_service:
+				continue
+			if not self._dbusmonitor.seen(service, '/Link/VoltageSense'):
+				continue
+			self._dbusmonitor.set_value_async(service, '/Link/VoltageSense', sense_voltage)
+			charger_written = self.VSENSE_ON
+
 		# Only forward to the VE.Can if the voltage is not comming from it.
 		vecan = self._dbusmonitor.get_service_list('com.victronenergy.vecan')
 		if len(vecan):
@@ -313,6 +324,17 @@ class BatterySense(SystemCalcDelegate):
 			# We use /Link/NetworkMode to detect Hub support in the
 			# solarcharger.
 			if self._dbusmonitor.get_value(charger, '/Link/NetworkMode') is None:
+				continue
+
+			# VE.Can chargers don't have this path, so only set it when it has been seen
+			if self._dbusmonitor.seen(charger, '/Link/TemperatureSense'):
+				self._dbusmonitor.set_value_async(charger, '/Link/TemperatureSense', sense_temp)
+			written = 1
+
+		# Write the temperature to all ac chargers.
+		for charger in self._dbusmonitor.get_service_list('com.victronenergy.charger'):
+			# Don't write the temperature back to its source
+			if charger == sense_temp_service:
 				continue
 
 			# VE.Can chargers don't have this path, so only set it when it has been seen
