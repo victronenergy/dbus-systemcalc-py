@@ -57,14 +57,16 @@ def _pylontech_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed
 	""" Quirk for Pylontech. Make a bit of room at the top. Pylontech says that
 	    at 51.8V the battery is 95% full, and that balancing starts at 90%.
 	    53.2V is normally considered 100% full, and 54V raises an alarm. By
-	    running the battery at 52V it should be close to 100% full, balancing
-	    should be active, and we should avoid high voltage alarms.
+		running the battery at 52.4V it will be 99%-100% full, balancing should
+		be active, and we should avoid high voltage alarms.
 
 	    Identify 24-V batteries by the lower charge voltage, and do the same
-	    thing with an 8-to-15 cell ratio, +-3.45V per cell.
+	    thing with an 8-to-15 cell ratio, +-3.48V per cell.
 	"""
-	# Use 3.45V per cell, 52V for 48V batteries and 27.6V for 24V batteries.
-	target = 52.0 if charge_voltage > 30 else 27.6
+	# Use 3.48V per cell plus a little, 52.4V for 48V batteries and 27.9V for
+	# 24V batteries. That leaves 1.6V margin for 48V batteries and 0.9V for 24V.
+	# See https://github.com/victronenergy/venus/issues/536
+	target = 52.4 if charge_voltage > 30 else 27.9
 
 	# Hold at target, but allow the battery to call for a lower voltage.
 	# This also handles the case where charge_voltage == None, since None
