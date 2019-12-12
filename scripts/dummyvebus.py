@@ -53,6 +53,7 @@ s = DbusDummyService(servicename=args.name, deviceinstance=args.instance, paths=
 		'/Devices/0/Assistants': {'initial': [0]*56},
 		'/Devices/0/ExtendStatus/GridRelayReport/Code': {'initial': None},
 		'/Devices/0/ExtendStatus/GridRelayReport/Count': {'initial': None},
+		'/Devices/0/ExtendStatus/WaitingForRelayTest': {'initial': 0},
 		'/ExtraBatteryCurrent': {'initial': 0},
 		'/FirmwareFeatures/BolFrame': {'initial': None},
 		'/FirmwareFeatures/BolUBatAndTBatSense': {'initial': None},
