@@ -5,6 +5,7 @@ from delegates.dvcc import Dvcc
 BATTERY_BYD = 0xB00A
 BATTERY_LYNX_ION = 0x0142
 BATTERY_DISCOVER_AES = 0xB016
+BATTERY_FREEDOMWON = 0xB014
 
 class BatterySettings(SystemCalcDelegate):
 	""" Manages battery settings for known batteries. At present
@@ -28,6 +29,10 @@ class BatterySettings(SystemCalcDelegate):
 		# for some batteries.
 		if pid in (BATTERY_BYD, BATTERY_LYNX_ION, BATTERY_DISCOVER_AES):
 			self._settings['vsense'] = 2 # Forced Off
+			self._settings['tsense'] = 2 # Forced Off
+			self._settings['bol'] = 3 # Forced on
+		elif pid in (BATTERY_FREEDOMWON,):
+			self._settings['vsense'] = 3 # Forced On
 			self._settings['tsense'] = 2 # Forced Off
 			self._settings['bol'] = 3 # Forced on
 		else:
