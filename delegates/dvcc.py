@@ -849,12 +849,13 @@ class Dvcc(SystemCalcDelegate):
 				self._multi.bol.maxchargecurrent = mcc
 
 			# Copy the rest unmodified
-			copy_dbus_value(self._dbusmonitor,
-				bms_service.service, '/Info/BatteryLowVoltage',
-				self._multi.service, '/BatteryOperationalLimits/BatteryLowVoltage')
-			copy_dbus_value(self._dbusmonitor,
-				bms_service.service, '/Info/MaxDischargeCurrent',
-				self._multi.service, '/BatteryOperationalLimits/MaxDischargeCurrent')
+			if self._dbusmonitor.seen(self._multi.service, '/BatteryOperationalLimits/MaxDischargeCurrent'):
+				copy_dbus_value(self._dbusmonitor,
+					bms_service.service, '/Info/BatteryLowVoltage',
+					self._multi.service, '/BatteryOperationalLimits/BatteryLowVoltage')
+				copy_dbus_value(self._dbusmonitor,
+					bms_service.service, '/Info/MaxDischargeCurrent',
+					self._multi.service, '/BatteryOperationalLimits/MaxDischargeCurrent')
 			return 1
 
 		return 0
