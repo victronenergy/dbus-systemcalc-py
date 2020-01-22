@@ -1256,6 +1256,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Info/MaxChargeCurrent': 25,
 				'/Info/MaxChargeVoltage': 53.2,
 				'/Info/MaxDischargeCurrent': 25,
+				'/InstalledCapacity': None,
 				'/ProductId': 0xB009})
 		self._update_values(interval=3000)
 		self._check_external_values({
@@ -1268,13 +1269,33 @@ class TestHubSystem(TestSystemCalcBase):
 
 		# 24V battery is scaled accordingly
 		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeVoltage', 28.4)
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeCurrent', 55)
 		self._update_values(interval=3000)
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
-				'/BatteryOperationalLimits/MaxChargeVoltage': 27.9
+				'/BatteryOperationalLimits/MaxChargeVoltage': 27.8,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 55
 			}
 		})
-		self._check_values({ '/Control/EffectiveChargeVoltage': 27.9 })
+		self._check_values({ '/Control/EffectiveChargeVoltage': 27.8 })
+
+		# 24V battery has a CCL=0 quirk, replace with 0.25C charge rate. If charge rate is unknown
+		# assume a single module at 55Ah.
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeCurrent', 0)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeCurrent': 14
+			}
+		})
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/InstalledCapacity', 222)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeCurrent': 56
+			}
+		})
+
 
 	def test_no_bms_max_charge_current_setting(self):
 		# Test that with no BMS but a user limit, /Dc/0/MaxChargeCurrent is correctly set.

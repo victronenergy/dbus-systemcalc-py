@@ -63,15 +63,19 @@ def _pylontech_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed
 	    Identify 24-V batteries by the lower charge voltage, and do the same
 	    thing with an 8-to-15 cell ratio, +-3.48V per cell.
 	"""
-	# Use 3.48V per cell plus a little, 52.4V for 48V batteries and 27.9V for
-	# 24V batteries. That leaves 1.6V margin for 48V batteries and 0.9V for 24V.
+	# Use 3.48V per cell plus a little, 52.4V for 48V batteries.
+	# Use 3.46V per cell plus a little, 27.8V for 24V batteries testing shows that's 100% SOC.
+	# That leaves 1.6V margin for 48V batteries and 1.0V for 24V.
 	# See https://github.com/victronenergy/venus/issues/536
-	target = 52.4 if charge_voltage > 30 else 27.9
-
-	# Hold at target, but allow the battery to call for a lower voltage.
-	# This also handles the case where charge_voltage == None, since None
-	# is always smaller than anything else.
-	return (min(charge_voltage, target), charge_current, feedback_allowed)
+	if charge_voltage > 30:
+		# 48V battery (15 cells)
+		return (min(charge_voltage, 52.4), charge_current, feedback_allowed)
+	else:
+		# 24V battery (8 cells). 24V batteries send CCL=0 when they are full. Simulate
+		# the 48V behaviour where we charge at half the normal rate. The normal rate is
+		# C/2, so charge at no less than C/4.
+		capacity = bms.capacity or 55
+		return (min(charge_voltage, 27.8), max(charge_current, round(capacity/4.0)), feedback_allowed)
 
 # Quirk = namedtuple('Quirk', ['product_id', 'floatvoltage', 'floatcurrent'])
 QUIRKS = {
@@ -425,6 +429,11 @@ class Battery(object):
 		""" Returns Product ID of battery. """
 		return self.monitor.get_value(self.service, '/ProductId')
 
+	@property
+	def capacity(self):
+		""" Capacity of battery, if defined. """
+		return self.monitor.get_value(self.service, '/InstalledCapacity')
+
 
 class BatterySubsystem(object):
 	""" Encapsulates multiple battery services. We may have both a BMV and a
@@ -588,7 +597,8 @@ class Dvcc(SystemCalcDelegate):
 				'/Info/BatteryLowVoltage',
 				'/Info/MaxChargeCurrent',
 				'/Info/MaxChargeVoltage',
-				'/Info/MaxDischargeCurrent']),
+				'/Info/MaxDischargeCurrent',
+				'/InstalledCapacity']),
 			('com.victronenergy.vebus', [
 				'/Ac/ActiveIn/Connected',
 				'/Hub/ChargeVoltage',
