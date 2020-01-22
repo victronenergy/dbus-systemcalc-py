@@ -110,7 +110,8 @@ class SystemCalc:
 				'/DeviceType' : dummy,
 				'/Ac/L1/Power': dummy,
 				'/Ac/L2/Power': dummy,
-				'/Ac/L3/Power': dummy},
+				'/Ac/L3/Power': dummy,
+				'/StarterVoltage': dummy},
 			'com.victronenergy.settings' : {
 				'/Settings/SystemSetup/AcInput1' : dummy,
 				'/Settings/SystemSetup/AcInput2' : dummy,

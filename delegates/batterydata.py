@@ -145,6 +145,23 @@ class SecondaryBatteryTracker(BatteryTracker):
 			'name': self.name
 		}
 
+class FischerPandaTracker(BatteryTracker):
+	_paths = ('/StarterVoltage', )
+
+	@property
+	def valid(self):
+		# It is valid if it has at least a voltage
+		return self.monitor.get_value(self.service, '/StarterVoltage') is not None
+
+	def _data(self):
+		voltage = self._tracked['/StarterVoltage']
+		return {
+			'id': self.service,
+			'instance': self.instance,
+			'voltage': voltage,
+			'name': self.name
+		}
+
 class MultiTracker(BatteryTracker):
 	_paths = (
 		'/Dc/0/Voltage',
@@ -189,6 +206,8 @@ class BatteryData(SystemCalcDelegate):
 		elif service.startswith('com.victronenergy.vebus.'):
 			self.add_trackers(service,
 				MultiTracker(service, instance, self._dbusservice, self._dbusmonitor))
+		elif service.startswith('com.victronenergy.genset.'):
+			self.add_trackers(service, FischerPandaTracker(service, instance, self._dbusmonitor))
 		elif service == 'com.victronenergy.settings':
 			for cb in self.configured_batteries.itervalues():
 				cb.bind_settings()
