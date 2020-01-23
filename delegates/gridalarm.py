@@ -2,7 +2,7 @@ import gobject
 from delegates.base import SystemCalcDelegate
 
 class GridAlarm(SystemCalcDelegate):
-	ALARM_TIMEOUT = 5000
+	ALARM_TIMEOUT = 10000
 	def __init__(self):
 		super(GridAlarm, self).__init__()
 		# We arm the alarm only once grid power was detected.
@@ -30,6 +30,7 @@ class GridAlarm(SystemCalcDelegate):
 	def cancel_alarm(self, v=0):
 		if self._timer is not None:
 			gobject.source_remove(self._timer)
+			self._timer = None
 		self._dbusservice['/Ac/Alarms/GridLost'] = v
 
 	def update_values(self, newvalues):
@@ -39,11 +40,11 @@ class GridAlarm(SystemCalcDelegate):
 				# No active input, or generator input is active. Raise the
 				# alarm. An active generator will be treated as lost grid.
 				self.raise_alarm()
-			else:
+			elif source in (0, 1, 3):
 				# Source can be:
-				# None: Multi is gone, eg during reset or startup
+				# None: Multi is gone, eg during reset or startup. Do nothing.
 				# 0: Not available - active input has no type configured. Assume it is grid.
-				# 1: Grid - arm the alarm
+				# 1: Grid - cancel the alarm.
 				# 3: Shore - same as grid
 				self.cancel_alarm()
 		else:

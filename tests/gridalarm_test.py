@@ -41,7 +41,7 @@ class TestGridAlarm(TestSystemCalcBase):
     def test_grid_alarm_disabled(self):
         self._set_setting('/Settings/Alarm/System/GridLost', 0)
         self._monitor.set_value(self.vebus, '/Ac/ActiveIn/ActiveInput', 0xF0)
-        self._update_values(interval=6000)
+        self._update_values(interval=11000)
         self._check_values({'/Ac/Alarms/GridLost': None})
 
     def test_grid_alarm_enabled(self):
@@ -53,11 +53,11 @@ class TestGridAlarm(TestSystemCalcBase):
         self._monitor.set_value(self.vebus, '/Ac/ActiveIn/ActiveInput', 0xF0)
 
         # Alarm doesn't activate immediately
-        self._update_values(interval=3000)
+        self._update_values(interval=6000)
         self._check_values({'/Ac/Alarms/GridLost': 0})
 
         # Alarm activates after timeout
-        self._update_values(interval=3000)
+        self._update_values(interval=6000)
         self._check_values({'/Ac/Alarms/GridLost': 2})
 
         # Alarm resets if the grid come back
@@ -72,12 +72,12 @@ class TestGridAlarm(TestSystemCalcBase):
 
         # Fail, no alarm
         self._monitor.set_value(self.vebus, '/Ac/ActiveIn/ActiveInput', 0xF0)
-        self._update_values(interval=3000)
+        self._update_values(interval=6000)
         self._check_values({'/Ac/Alarms/GridLost': 0})
 
         # AC Return before the timeout
         self._monitor.set_value(self.vebus, '/Ac/ActiveIn/ActiveInput', 1)
-        self._update_values(interval=3000)
+        self._update_values(interval=6000)
         self._check_values({'/Ac/Alarms/GridLost': 0})
 
     def test_grid_alarm_on_genertor(self):
@@ -89,11 +89,11 @@ class TestGridAlarm(TestSystemCalcBase):
         self._monitor.set_value(self.vebus, '/Ac/ActiveIn/ActiveInput', 0)
 
         # Alarm doesn't activate immediately
-        self._update_values(interval=3000)
+        self._update_values(interval=6000)
         self._check_values({'/Ac/Alarms/GridLost': 0})
 
         # Alarm activates after timeout
-        self._update_values(interval=3000)
+        self._update_values(interval=6000)
         self._check_values({'/Ac/Alarms/GridLost': 2})
 
 		# Grid returns
