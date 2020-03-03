@@ -2,11 +2,9 @@ import gobject
 from delegates.base import SystemCalcDelegate
 
 class GridAlarm(SystemCalcDelegate):
-	ALARM_TIMEOUT = 10000
+	ALARM_TIMEOUT = 15000
 	def __init__(self):
 		super(GridAlarm, self).__init__()
-		# We arm the alarm only once grid power was detected.
-		self.armed = False
 		self._timer = None
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
@@ -39,7 +37,13 @@ class GridAlarm(SystemCalcDelegate):
 			if source in (0xF0, 2):
 				# No active input, or generator input is active. Raise the
 				# alarm. An active generator will be treated as lost grid.
-				self.raise_alarm()
+				# First we need to be sure we're not dealing with a Multi
+				# Compact that shows Disconnected when it is off.
+				vebus_path = newvalues.get('/VebusService')
+				if self._dbusmonitor.get_value(vebus_path, '/Mode') == 3:
+					self.raise_alarm()
+				else:
+					self.cancel_alarm()
 			elif source in (0, 1, 3):
 				# Source can be:
 				# None: Multi is gone, eg during reset or startup. Do nothing.
