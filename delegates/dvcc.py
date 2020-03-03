@@ -834,10 +834,8 @@ class Dvcc(SystemCalcDelegate):
 		quirk = QUIRKS.get(bms_service.product_id)
 		if quirk is not None:
 			# If any quirks are registered for this battery, use that
-			# instead. For safety, let's cap the voltage to what the BMS
-			# requests: A quirk can only lower the voltage.
-			voltage, mcc, feedback_allowed = quirk(self, bms_service, cv, mcc, feedback_allowed)
-			cv = min(voltage, cv)
+			# instead.
+			cv, mcc, feedback_allowed = quirk(self, bms_service, cv, mcc, feedback_allowed)
 
 		# Add debug offsets
 		if cv is not None:
