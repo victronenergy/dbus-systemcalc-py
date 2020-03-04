@@ -20,7 +20,7 @@ from logger import setup_logging
 import delegates
 from sc_utils import safeadd as _safeadd, safemax as _safemax
 
-softwareVersion = '2.36'
+softwareVersion = '2.37'
 
 class SystemCalc:
 	STATE_IDLE = 0
