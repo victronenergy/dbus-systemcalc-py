@@ -1179,42 +1179,6 @@ class TestHubSystem(TestSystemCalcBase):
 		})
 		self._check_values({ '/Control/EffectiveChargeVoltage': 55 })
 
-	def test_sony_quirks(self):
-		""" Sony batteries drop their CCL even while under discharge, affecting
-		    feeding of loads. We artificially work around it. """
-		self._add_device('com.victronenergy.battery.ttyO2',
-			product_name='battery',
-			values={
-				'/Dc/0/Voltage': 55.1,
-				'/Dc/0/Current': 3,
-				'/Dc/0/Power': 165.3,
-				'/Soc': 100,
-				'/DeviceInstance': 2,
-				'/Info/BatteryLowVoltage': 47,
-				'/Info/MaxChargeCurrent': 12,
-				'/Info/MaxChargeVoltage': 57.2,
-				'/Info/MaxDischargeCurrent': 100,
-				'/ProductId': 0xB008})
-		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Dc/0/Current', 25)
-		self._update_values(interval=10000)
-		self._check_external_values({
-			'com.victronenergy.vebus.ttyO1': {
-				'/BatteryOperationalLimits/MaxChargeVoltage': 57.2,
-				'/BatteryOperationalLimits/MaxChargeCurrent': 1000
-			}
-		})
-
-		# If we are asked to stop we still do it.
-		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeCurrent', 0)
-		self._update_values(interval=3000)
-		self._check_external_values({
-			'com.victronenergy.vebus.ttyO1': {
-				'/BatteryOperationalLimits/MaxChargeCurrent': 0,
-				'/BatteryOperationalLimits/MaxChargeVoltage': 57.2
-			}
-		})
-		self._check_values({ '/Control/EffectiveChargeVoltage': 57.2 })
-
 	def test_lg_quirks(self):
 		""" LG Batteries run at 57.7V, when we add an 0.4V offset we sometimes
 		    trip the overvoltage protection at 58.1V. So we attempt to avoid that

@@ -35,16 +35,6 @@ def _byd_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
 		return (55, 40, feedback_allowed)
 	return (charge_voltage, charge_current, feedback_allowed)
 
-def _sony_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
-	""" Quirk for Sony batteries. These batteries drop the charge limit to
-		2A per module whenever you go into discharge in an attempt to
-		facilitate a cleaner ramp-up afterwards. This messes up the feeding of
-		loads. """
-	# This is safe even if charge_current is None
-	if charge_current > 0:
-		return (charge_voltage, max(1000, charge_current), feedback_allowed)
-	return (charge_voltage, charge_current, feedback_allowed)
-
 def _lg_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
 	""" Quirk for LG batteries. The hard limit is 58V. Above that you risk
 	    tripping on high voltage. The batteries publish a charge voltage of 57.7V
@@ -80,7 +70,6 @@ def _pylontech_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed
 # Quirk = namedtuple('Quirk', ['product_id', 'floatvoltage', 'floatcurrent'])
 QUIRKS = {
 	0xB004: _lg_quirk,
-	0xB008: _sony_quirk,
 	0xB009: _pylontech_quirk,
 	0xB00A: _byd_quirk,
 	0xB015: _byd_quirk,
