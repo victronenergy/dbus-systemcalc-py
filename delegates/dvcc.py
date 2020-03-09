@@ -73,6 +73,7 @@ QUIRKS = {
 	0xB009: _pylontech_quirk,
 	0xB00A: _byd_quirk,
 	0xB015: _byd_quirk,
+	0xB019: _byd_quirk,
 }
 
 def distribute(current_values, max_values, increment):
