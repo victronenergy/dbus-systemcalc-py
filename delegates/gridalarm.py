@@ -11,6 +11,12 @@ class GridAlarm(SystemCalcDelegate):
 		super(GridAlarm, self).set_sources(dbusmonitor, settings, dbusservice)
 		self._dbusservice.add_path('/Ac/Alarms/GridLost', value=None)
 
+	def get_input(self):
+		return [
+			('com.victronenergy.vebus', [
+				'/Devices/0/ExtendStatus/SwitchoverInfo/Connecting'])
+		]
+
 	def get_settings(self):
 		return [
 			('grid_alarm_enabled', '/Settings/Alarm/System/GridLost', 0, 0, 1),
@@ -34,14 +40,22 @@ class GridAlarm(SystemCalcDelegate):
 	def update_values(self, newvalues):
 		if self._settings['grid_alarm_enabled']:
 			source = newvalues.get('/Ac/ActiveIn/Source')
-			if source in (0xF0, 2):
-				# No active input, or generator input is active. Raise the
-				# alarm. An active generator will be treated as lost grid.
-				# First we need to be sure we're not dealing with a Multi
-				# Compact that shows Disconnected when it is off.
+			if source == 2:
+				# Active input is a generator. This is treated as lost
+				# grid.
+				self.raise_alarm()
+			elif source  == 0xF0:
+				# No active input.  First we need to be sure we're not dealing
+				# with a Multi Compact that shows Disconnected when it is off.
 				vebus_path = newvalues.get('/VebusService')
 				if self._dbusmonitor.get_value(vebus_path, '/Mode') == 3:
-					self.raise_alarm()
+					# If the Multi has recent firmware, we can see whether
+					# it is about to connect to the grid soon.
+					if self._dbusmonitor.get_value(vebus_path,
+						'/Devices/0/ExtendStatus/SwitchoverInfo/Connecting') == 1:
+						self.cancel_alarm()
+					else:
+						self.raise_alarm()
 				else:
 					self.cancel_alarm()
 			elif source in (0, 1, 3):
