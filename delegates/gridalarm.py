@@ -2,7 +2,7 @@ import gobject
 from delegates.base import SystemCalcDelegate
 
 class GridAlarm(SystemCalcDelegate):
-	ALARM_TIMEOUT = 15000
+	ALARM_TIMEOUT = 30000
 	def __init__(self):
 		super(GridAlarm, self).__init__()
 		self._timer = None
