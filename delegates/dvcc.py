@@ -201,9 +201,10 @@ class SolarCharger(object):
 	def maximize_charge_current(self):
 		""" Max out the charge current of this solar charger by setting
 		    ChargeCurrent to the configured limit in settings. """
-		copy_dbus_value(self.monitor,
-			self.service, '/Settings/ChargeCurrentLimit',
-			self.service, '/Link/ChargeCurrent')
+		if self.monitor.seen(self.service, '/Link/ChargeCurrent'):
+			copy_dbus_value(self.monitor,
+				self.service, '/Settings/ChargeCurrentLimit',
+				self.service, '/Link/ChargeCurrent')
 
 	def update_values(self):
 		# This is called periodically from a timer to maintain
@@ -262,7 +263,6 @@ class SolarChargerSubsystem(object):
 	def maximize_charge_current(self):
 		""" Max out all chargers. """
 		for charger in self._solarchargers.values():
-			if charger.connection == 'VE.Can': continue
 			charger.maximize_charge_current()
 
 	def set_networked(self, has_bms, charge_voltage, max_charge_current, feedback_allowed):
