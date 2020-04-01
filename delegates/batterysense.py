@@ -249,6 +249,12 @@ class BatterySense(SystemCalcDelegate):
 		self.tick = (self.tick - 1) % TEMPERATURE_INTERVAL
 		return True
 
+	def _service_is_battery(self, service):
+		return service.split('.')[2] == 'battery'
+
+	def _service_on_vecan(self, service):
+		return self._dbusmonitor.get_value(service, '/Mgmt/Connection') == 'VE.Can'
+
 	def _distribute_sense_voltage(self, has_vsense):
 		sense_voltage = self._dbusservice['/Dc/Battery/Voltage']
 		sense_voltage_service = self._dbusservice['/Dc/Battery/VoltageService']
@@ -287,14 +293,13 @@ class BatterySense(SystemCalcDelegate):
 			self._dbusmonitor.set_value_async(service, '/Link/VoltageSense', sense_voltage)
 			charger_written = self.VSENSE_ON
 
-		# Only forward to the VE.Can if the voltage is not comming from it.
+		# Only forward to the VE.Can if the voltage is not coming from it, or
+		# if it is a battery that is known not to response to these vregs.
 		vecan = self._dbusmonitor.get_service_list('com.victronenergy.vecan')
-		if len(vecan):
-			sense_origin = self._dbusmonitor.get_value(sense_voltage_service, '/Mgmt/Connection')
-			if sense_origin and sense_origin != 'VE.Can':
-				for _ in vecan.keys():
-					self._dbusmonitor.set_value_async(_, '/Link/VoltageSense', sense_voltage)
-				charger_written = self.VSENSE_ON
+		if len(vecan) and (self._service_is_battery(sense_voltage_service) or not self._service_on_vecan(sense_voltage_service)):
+			for _ in vecan.keys():
+				self._dbusmonitor.set_value_async(_, '/Link/VoltageSense', sense_voltage)
+			charger_written = self.VSENSE_ON
 
 		return multi_written, charger_written
 
@@ -313,7 +318,7 @@ class BatterySense(SystemCalcDelegate):
 		sense_voltage_service = self._dbusservice['/Dc/Battery/VoltageService']
 		if sense_voltage_service is None:
 			return BatterySense.ISENSE_NO_MONITOR
-		battery_current = self._dbusservice['/Dc/Battery/Current'] if (sense_voltage_service.split('.')[2] == 'battery') else None
+		battery_current = self._dbusservice['/Dc/Battery/Current'] if self._service_is_battery(sense_voltage_service) else None
 		if battery_current is None:
 			return BatterySense.ISENSE_NO_MONITOR
 
@@ -381,12 +386,10 @@ class BatterySense(SystemCalcDelegate):
 
 		# Update vecan only if there is one..
 		vecan = self._dbusmonitor.get_service_list('com.victronenergy.vecan')
-		if len(vecan):
-			sense_origin = self._dbusmonitor.get_value(sense_temp_service, '/Mgmt/Connection')
-			if sense_origin and sense_origin != 'VE.Can':
-				for _ in vecan.keys():
-					self._dbusmonitor.set_value_async(_, '/Link/TemperatureSense', sense_temp)
-				written = 1
+		if len(vecan) and (self._service_is_battery(sense_temp_service) or not self._service_on_vecan(sense_temp_service)):
+			for _ in vecan.keys():
+				self._dbusmonitor.set_value_async(_, '/Link/TemperatureSense', sense_temp)
+			written = 1
 
 		return written
 
