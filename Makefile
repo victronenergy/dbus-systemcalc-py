@@ -22,7 +22,6 @@ DELEGATES = \
 	$(SOURCEDIR)/delegates/batterylife.py \
 	$(SOURCEDIR)/delegates/schedule.py \
 	$(SOURCEDIR)/delegates/sourcetimers.py \
-	$(SOURCEDIR)/delegates/gridalarm.py \
 	$(SOURCEDIR)/delegates/bydbattery.py \
 	$(SOURCEDIR)/delegates/batterysettings.py \
 	$(SOURCEDIR)/delegates/batterydata.py
