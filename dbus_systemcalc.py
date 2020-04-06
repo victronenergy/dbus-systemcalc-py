@@ -146,7 +146,6 @@ class SystemCalc:
 			delegates.BatteryLife(),
 			delegates.ScheduledCharging(),
 			delegates.SourceTimers(),
-			delegates.GridAlarm(),
 			#delegates.BydCurrentSense(self),
 			delegates.BatteryData()]
 
