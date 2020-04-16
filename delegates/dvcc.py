@@ -3,7 +3,14 @@ from gobjectwrapper import gobject
 import logging
 from math import pi, floor, ceil
 import traceback
-from itertools import izip, count
+from itertools import count
+import six
+
+try:
+	from itertools import izip as zip
+except ImportError:
+	pass
+
 from functools import partial, wraps
 
 # Victron packages
@@ -101,7 +108,7 @@ def distribute(current_values, max_values, increment):
 	n = cn = len(current_values)
 	new_values = [-1] * n
 	for j in range(0, n):
-		for i, mv, av in izip(count(), max_values, current_values):
+		for i, mv, av in zip(count(), max_values, current_values):
 			assert mv >= 0
 			if new_values[i] == mv or new_values[i] == 0:
 				continue
@@ -150,7 +157,7 @@ class SolarCharger(object):
 
 	@property
 	def product_id(self):
-		return self.monitor.get_value(self.service, '/ProductId')
+		return self.monitor.get_value(self.service, '/ProductId') or 0
 
 	@property
 	def n2k_device_instance(self):
@@ -325,7 +332,7 @@ class InverterSubsystem(object):
 		del self._inverters[service]
 
 	def __iter__(self):
-		return self._inverters.itervalues()
+		return six.itervalues(self._inverters)
 
 	def __len__(self):
 		return len(self._inverters)
@@ -360,7 +367,7 @@ class SolarChargerSubsystem(object):
 		del self._solarchargers[service]
 
 	def __iter__(self):
-		return self._solarchargers.itervalues()
+		return six.itervalues(self._solarchargers)
 
 	def __len__(self):
 		return len(self._solarchargers)
@@ -421,7 +428,7 @@ class SolarChargerSubsystem(object):
 		# Update vecan only if there is one..
 		vecan = self.monitor.get_service_list('com.victronenergy.vecan')
 		if len(vecan):
-			for _ in vecan.iterkeys():
+			for _ in six.iterkeys(vecan):
 				self.monitor.set_value_async(_, '/Link/NetworkMode', network_mode)
 			network_mode_written = True
 
@@ -441,8 +448,7 @@ class SolarChargerSubsystem(object):
 		# current.
 		#
 		# Additionally, don't bother with chargers that are disconnected.
-		chargers = filter(lambda x: x.state !=0 and x.n2k_device_instance in (0, None),
-			self._solarchargers.values())
+		chargers = [x for x in self._solarchargers.values() if x.state !=0 and x.n2k_device_instance in (0, None)]
 		if len(chargers) > 0:
 			if stop_on_mcc0 and max_charge_current == 0:
 				self.shutdown_chargers()
@@ -503,15 +509,15 @@ class SolarChargerSubsystem(object):
 			#
 			# We also round the figure a little for discrete distribution and
 			# stability.
-			margins = [max(0, l - a) for a, l in izip(actual, limits)]
+			margins = [max(0, l - a) for a, l in zip(actual, limits)]
 			avgmargin = sum(margins)/len(margins)
 			deltas = [round(avgmargin - x, 1) for x in margins]
-			for i, a, d in izip(count(), actual, deltas):
+			for i, a, d in zip(count(), actual, deltas):
 				limits[i] += d
 
 		# Finally set the limits. Do this every time, otherwise the chargers
 		# go back to their default algorithm.
-		for charger, limit in izip(chargers, limits):
+		for charger, limit in zip(chargers, limits):
 			charger.maxchargecurrent = limit
 
 	def update_values(self):
@@ -581,7 +587,7 @@ class BatterySubsystem(object):
 		self._battery_services = {}
 
 	def __iter__(self):
-		return self._battery_services.itervalues()
+		return six.itervalues(self._battery_services)
 
 	def __len__(self):
 		return len(self._battery_services)
@@ -938,8 +944,7 @@ class Dvcc(SystemCalcDelegate):
 				self._adjust_battery_operational_limits(bms_service, feedback_allowed)
 
 		# Take the lesser of the BMS and user current limits, wherever they exist
-		maximae = filter(lambda x: x is not None,
-			(user_max_charge_current, max_charge_current))
+		maximae = [x for x in (user_max_charge_current, max_charge_current) if x is not None]
 		max_charge_current = min(maximae) if maximae else None
 
 		# Override the battery charge voltage by taking the lesser of the

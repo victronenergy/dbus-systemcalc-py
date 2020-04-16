@@ -25,7 +25,7 @@ class SourceTimers(SystemCalcDelegate):
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(SourceTimers, self).set_sources(dbusmonitor, settings, dbusservice)
-		for p in set(self._paths.itervalues()):
+		for p in set(self._paths.values()):
 			self._dbusservice.add_path(p, value=0)
 		self._dbusservice.add_path('/Timers/TimeOff', value=0)
 		self._on_timer()

@@ -1,7 +1,11 @@
 from dbus.exceptions import DBusException
 from gobjectwrapper import gobject
-import itertools
 import logging
+from itertools import islice
+try:
+	from itertools import izip as zip
+except ImportError:
+	pass
 
 # Victron packages
 from ve_utils import exit_on_error
@@ -98,9 +102,9 @@ class VebusSocWriter(SystemCalcDelegate):
 			# List of assistants is not yet available, so we don't know which assistants are present. Return
 			# False just in case a hub-2 assistant is in use.
 			return False
-		ids = set(i[0] | i[1] * 256 for i in itertools.izip(
-			itertools.islice(value, 0, None, 2),
-			itertools.islice(value, 1, None, 2)))
+		ids = set(i[0] | i[1] * 256 for i in zip(
+			islice(value, 0, None, 2),
+			islice(value, 1, None, 2)))
 		if len(set(ids).intersection(VebusSocWriter._hub2_assistant_ids)) > 0:
 			return False
 		return True

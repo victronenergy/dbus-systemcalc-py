@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from itertools import chain
 from collections import Counter
+from six.moves import range as xrange
 
 # This adapts sys.path to include all relevant packages
 import context

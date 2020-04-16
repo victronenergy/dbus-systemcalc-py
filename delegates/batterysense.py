@@ -2,6 +2,7 @@ from collections import namedtuple
 from itertools import chain
 from gobjectwrapper import gobject
 from dbus.exceptions import DBusException
+import six
 from delegates.base import SystemCalcDelegate
 from delegates.dvcc import Dvcc
 
@@ -144,7 +145,7 @@ class BatterySense(SystemCalcDelegate):
 			self.TEMPSERVICE_DEFAULT: 'Automatic',
 			self.TEMPSERVICE_NOSENSOR: 'No sensor'}
 
-		for sensor in self.temperaturesensors.itervalues():
+		for sensor in six.itervalues(self.temperaturesensors):
 			if sensor.valid:
 				name = self._dbusmonitor.get_value(sensor.service, '/ProductName')
 				services[sensor.instance_service_name+sensor.path] = self.nice_name(sensor.service)
@@ -281,7 +282,7 @@ class BatterySense(SystemCalcDelegate):
 		if len(vecan):
 			sense_origin = self._dbusmonitor.get_value(sense_voltage_service, '/Mgmt/Connection')
 			if sense_origin and sense_origin != 'VE.Can':
-				for _ in vecan.iterkeys():
+				for _ in six.iterkeys(vecan):
 					self._dbusmonitor.set_value_async(_, '/Link/VoltageSense', sense_voltage)
 				charger_written = self.VSENSE_ON
 
@@ -307,10 +308,11 @@ class BatterySense(SystemCalcDelegate):
 			return BatterySense.ISENSE_NO_MONITOR
 
 		sent = BatterySense.ISENSE_NO_CHARGERS
-		for service in self._dbusmonitor.get_service_list(
-			'com.victronenergy.solarcharger').keys() + self._dbusmonitor.get_service_list(
-			'com.victronenergy.vecan').keys() + self._dbusmonitor.get_service_list(
-			'com.victronenergy.inverter').keys():
+		for service in chain(self._dbusmonitor.get_service_list(
+			'com.victronenergy.solarcharger').keys(), self._dbusmonitor.get_service_list(
+			'com.victronenergy.vecan').keys(), self._dbusmonitor.get_service_list(
+			'com.victronenergy.inverter').keys()):
+			# Skip for old firmware versions to save some dbus traffic
 			if not self._dbusmonitor.seen(service, '/Link/BatteryCurrent'):
 				continue # No such feature on this charger
 			self._dbusmonitor.set_value_async(service, '/Link/BatteryCurrent', battery_current)
@@ -363,7 +365,7 @@ class BatterySense(SystemCalcDelegate):
 		if len(vecan):
 			sense_origin = self._dbusmonitor.get_value(sense_temp_service, '/Mgmt/Connection')
 			if sense_origin and sense_origin != 'VE.Can':
-				for _ in vecan.iterkeys():
+				for _ in six.iterkeys(vecan):
 					self._dbusmonitor.set_value_async(_, '/Link/TemperatureSense', sense_temp)
 				written = 1
 

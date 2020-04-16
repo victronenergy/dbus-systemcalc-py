@@ -8,6 +8,7 @@ import sys
 import os
 import json
 from itertools import chain
+import six
 
 # Victron packages
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), 'ext', 'velib_python'))
@@ -264,7 +265,7 @@ class SystemCalc:
 		for m in self._modules:
 			self._summeditems.update(m.get_output())
 
-		for path in self._summeditems.keys():
+		for path in six.iterkeys(self._summeditems):
 			self._dbusservice.add_path(path, value=None, gettextcallback=self._gettext)
 
 		self._batteryservice = None
@@ -306,13 +307,10 @@ class SystemCalc:
 		    and returns the service name. """
 		services = self._dbusmonitor.get_service_list(classfilter=serviceclass)
 
-		# According to https://www.python.org/dev/peps/pep-3106/, dict.keys()
-		# and dict.values() always have the same order. This is also much
-		# faster than you would expect.
-		try:
-			return services.keys()[services.values().index(instance)]
-		except ValueError: # If instance not in values
-			return None
+		for k, v in six.iteritems(services):
+			if v == instance:
+				return k
+		return None
 
 	def _determinebatteryservice(self):
 		auto_battery_service = self._autoselect_battery_service()
@@ -574,7 +572,7 @@ class SystemCalc:
 						newvalues['/Dc/Battery/Power'] = vebus_power
 				else:
 					battery_power = _safeadd(solarchargers_charge_power, vebus_power)
-					newvalues['/Dc/Battery/Current'] = battery_power / vebus_voltage if vebus_voltage > 0 else None
+					newvalues['/Dc/Battery/Current'] = battery_power / vebus_voltage if vebus_voltage is not None and vebus_voltage > 0 else None
 					newvalues['/Dc/Battery/Power'] = battery_power
 
 
@@ -850,7 +848,7 @@ class SystemCalc:
 		# Workaround: because com.victronenergy.vebus is available even when there is no vebus product
 		# connected. Remove any that is not connected. For this, we use /State since mandatory path
 		# /Connected is not implemented in mk2dbus.
-		for servicename in services.keys():
+		for servicename in list(services.keys()):
 			if ((servicename.split('.')[2] == 'vebus' and self._dbusmonitor.get_value(servicename, '/State') is None)
 				or self._dbusmonitor.get_value(servicename, '/Connected') != 1
 				or self._dbusmonitor.get_value(servicename, '/ProductName') is None
@@ -893,7 +891,7 @@ class SystemCalc:
 		item = self._summeditems.get(path)
 		if item is not None:
 			return item['gettext'] % value
-		return unicode(value).encode('utf-8')
+		return str(value)
 
 	def _compute_number_of_phases(self, path, newvalues):
 		number_of_phases = None
@@ -913,7 +911,7 @@ class SystemCalc:
 		services = self._get_connected_service_list(classfilter=classfilter)
 		if len(services) == 0:
 			return None
-		return services.items()[0][0]
+		return six.next(six.iteritems(services), [None])[0]
 
 	# returns a tuple (servicename, instance)
 	def _get_service_having_lowest_instance(self, classfilter=None):

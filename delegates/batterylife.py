@@ -1,6 +1,7 @@
 import logging
 from gobjectwrapper import gobject
 from datetime import datetime, timedelta
+import six
 
 # Victron packages
 from ve_utils import exit_on_error
@@ -272,7 +273,7 @@ class BatteryLife(SystemCalcDelegate):
 
 	def update_values(self, newvalues):
 		# Update tracked attributes
-		for k, v in self._tracked_attrs.iteritems():
+		for k, v in six.iteritems(self._tracked_attrs):
 			self._tracked_values[k] = newvalues.get(v)
 
 		# Cannot start without a multi or an soc

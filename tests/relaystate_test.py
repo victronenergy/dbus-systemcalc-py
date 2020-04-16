@@ -46,9 +46,9 @@ class RelayStateTest(TestSystemCalcBase):
 		RelayState.RELAY_GLOB = os.path.join(self.gpio_dir, 'relay_*')
 
 		# Relay 1 is on, relay 2 is off
-		with file(self.gpio1_state, 'wt') as f:
+		with open(self.gpio1_state, 'wt') as f:
 			f.write('1')
-		with file(self.gpio2_state, 'wt') as f:
+		with open(self.gpio2_state, 'wt') as f:
 			f.write('0')
 
 	def tearDown(self):
@@ -66,11 +66,11 @@ class RelayStateTest(TestSystemCalcBase):
 		self.assertEqual(self._service['/Relay/0/State'], 1)
 
 		self._service.set_value('/Relay/0/State', 0)
-		self.assertEqual(file(self.gpio1_state, 'rt').read(), '0')
+		self.assertEqual(open(self.gpio1_state, 'rt').read(), '0')
 		self.assertEqual(self._service['/Relay/0/State'], 0)
 
 		self._service.set_value('/Relay/0/State', 1)
-		self.assertEqual(file(self.gpio1_state, 'rt').read(), '1')
+		self.assertEqual(open(self.gpio1_state, 'rt').read(), '1')
 		self.assertEqual(self._service['/Relay/0/State'], 1)
 
 
@@ -108,8 +108,8 @@ class RelayStateTest(TestSystemCalcBase):
 		self._update_values(5000)
 		self.assertEqual(self._service['/Relay/0/State'], 0)
 		self.assertEqual(self._service['/Relay/1/State'], 1)
-		self.assertEqual(file(self.gpio1_state, 'rt').read(), '0')
-		self.assertEqual(file(self.gpio2_state, 'rt').read(), '1')
+		self.assertEqual(open(self.gpio1_state, 'rt').read(), '0')
+		self.assertEqual(open(self.gpio2_state, 'rt').read(), '1')
 
 	def test_relay_init_no_manual(self):
 		rs = RelayState()
@@ -121,4 +121,4 @@ class RelayStateTest(TestSystemCalcBase):
 		self._set_setting('/Settings/Relay/0/InitialState', 0)
 		self._update_values(5000)
 		self.assertEqual(self._service['/Relay/0/State'], 1) # Unaffected
-		self.assertEqual(file(self.gpio1_state, 'rt').read(), '1') # Unaffected
+		self.assertEqual(open(self.gpio1_state, 'rt').read(), '1') # Unaffected

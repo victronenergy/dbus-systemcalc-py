@@ -1,8 +1,11 @@
+from __future__ import division
 import logging
 from gobjectwrapper import gobject
 from datetime import datetime, timedelta, time
-from itertools import izip, imap
-from functools import partial
+try:
+	from itertools import izip as zip
+except ImportError:
+	pass
 
 # Victron packages
 from ve_utils import exit_on_error
@@ -136,9 +139,9 @@ class ScheduledCharging(SystemCalcDelegate):
 
 	@classmethod
 	def _charge_windows(klass, today, days, starttimes, durations, stopsocs):
-		starttimes = (time(x/3600, x/60 % 60, x % 60) for x in starttimes)
+		starttimes = (time(x//3600, x//60 % 60, x % 60) for x in starttimes)
 
-		for d, starttime, duration, soc in izip(days, starttimes, durations, stopsocs):
+		for d, starttime, duration, soc in zip(days, starttimes, durations, stopsocs):
 			if d >= 0:
 				d0 = prev_schedule_day(today, d)
 				d1 = next_schedule_day(today, d)
@@ -224,4 +227,4 @@ class ScheduledCharging(SystemCalcDelegate):
 
 	def update_values(self, newvalues):
 		self.soc = newvalues.get('/Dc/Battery/Soc')
-		self.pvpower = max(newvalues.get('/Dc/Pv/Power'), 0)
+		self.pvpower = newvalues.get('/Dc/Pv/Power') or 0

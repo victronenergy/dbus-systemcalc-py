@@ -3,6 +3,7 @@ import logging
 import os
 import traceback
 from glob import glob
+import six
 
 # Victron packages
 from ve_utils import exit_on_error
@@ -44,7 +45,7 @@ class RelayState(SystemCalcDelegate):
 			for i, r in enumerate(relays) })
 
 		gobject.idle_add(exit_on_error, self._init_relay_state)
-		for dbus_path in self._relays.iterkeys():
+		for dbus_path in six.iterkeys(self._relays):
 			self._dbusservice.add_path(dbus_path, value=None, writeable=True,
 				onchangecallback=self._on_relay_state_changed)
 
@@ -54,7 +55,7 @@ class RelayState(SystemCalcDelegate):
 		if self.relay_function is None:
 			return True # Try again on the next idle event
 
-		for dbus_path, path in self._relays.iteritems():
+		for dbus_path, path in six.iteritems(self._relays):
 			if self.relay_function != 2 and dbus_path == '/Relay/0/State':
 				continue # Skip primary relay if function is not manual
 			try:

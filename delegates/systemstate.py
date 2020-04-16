@@ -1,5 +1,6 @@
 # Victron packages
 
+import six
 import sc_utils
 from delegates.base import SystemCalcDelegate
 from delegates.schedule import ScheduledCharging
@@ -111,9 +112,9 @@ class SystemState(SystemCalcDelegate):
 			ss = SystemState.UNKNOWN
 
 			# Look for a VE.Direct inverter
-			inverters = self._dbusmonitor.get_service_list('com.victronenergy.inverter').keys()
-			if inverters:
-				ss = self._dbusmonitor.get_value(inverters[0], '/State')
+			inverter = six.next(iter(self._dbusmonitor.get_service_list('com.victronenergy.inverter').keys()), None)
+			if inverter is not None:
+				ss = self._dbusmonitor.get_value(inverter, '/State')
 
 			# Check if we can get the bms state from the selected batteryservice
 			if self.systemcalc.batteryservice is not None:

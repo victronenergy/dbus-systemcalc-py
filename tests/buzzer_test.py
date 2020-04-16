@@ -19,7 +19,7 @@ class TestBuzzer(TestSystemCalcBase):
 		with tempfile.NamedTemporaryFile(mode='wt') as gpio_buzzer_ref_fd:
 			gpio_dir = tempfile.mkdtemp()
 			gpio_state = os.path.join(gpio_dir, 'value')
-			with file(gpio_state, 'wt') as f:
+			with open(gpio_state, 'wt') as f:
 				f.write('0')
 			try:
 				gpio_buzzer_ref_fd.write(gpio_dir)
@@ -31,16 +31,16 @@ class TestBuzzer(TestSystemCalcBase):
 				self.assertEqual(bc._gpio_path, gpio_state)
 				self._service.set_value('/Buzzer/State', 'aa')  # Invalid value, should be ignored
 				self.assertEqual(self._service['/Buzzer/State'], 0)
-				self.assertEqual(file(gpio_state, 'rt').read(), '0')
+				self.assertEqual(open(gpio_state, 'rt').read(), '0')
 				self._service.set_value('/Buzzer/State', '1')
 				self.assertEqual(self._service['/Buzzer/State'], 1)
-				self.assertEqual(file(gpio_state, 'rt').read(), '1')
+				self.assertEqual(open(gpio_state, 'rt').read(), '1')
 				self._update_values(interval=505)
-				self.assertEqual(file(gpio_state, 'rt').read(), '0')
+				self.assertEqual(open(gpio_state, 'rt').read(), '0')
 				self._update_values(interval=505)
-				self.assertEqual(file(gpio_state, 'rt').read(), '1')
+				self.assertEqual(open(gpio_state, 'rt').read(), '1')
 				self._service.set_value('/Buzzer/State', 0)
-				self.assertEqual(file(gpio_state, 'rt').read(), '0')
+				self.assertEqual(open(gpio_state, 'rt').read(), '0')
 			finally:
 				os.remove(gpio_state)
 				os.removedirs(gpio_dir)
