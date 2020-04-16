@@ -1,4 +1,4 @@
-import gobject
+from gobjectwrapper import gobject
 import logging
 import os
 import traceback

@@ -1,5 +1,5 @@
 from time import time
-import gobject
+from gobjectwrapper import gobject
 
 # Victron packages
 from ve_utils import exit_on_error

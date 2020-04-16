@@ -1,5 +1,5 @@
 import logging
-import gobject
+from gobjectwrapper import gobject
 from dbus.exceptions import DBusException
 from delegates.base import SystemCalcDelegate
 from ve_utils import exit_on_error

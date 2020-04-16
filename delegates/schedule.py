@@ -1,5 +1,5 @@
 import logging
-import gobject
+from gobjectwrapper import gobject
 from datetime import datetime, timedelta, time
 from itertools import izip, imap
 from functools import partial

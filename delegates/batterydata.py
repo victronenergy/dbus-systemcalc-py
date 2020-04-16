@@ -1,4 +1,4 @@
-import gobject
+from gobjectwrapper import gobject
 import json
 from collections import defaultdict
 from itertools import chain

@@ -1,5 +1,5 @@
 from dbus.exceptions import DBusException
-import gobject
+from gobjectwrapper import gobject
 import logging
 from math import pi, floor, ceil
 import traceback
