@@ -61,9 +61,12 @@ def _pylontech_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed
 		# 48V battery (15 cells)
 		return (min(charge_voltage, 52.4), charge_current, feedback_allowed)
 	else:
-		# 24V battery (8 cells). 24V batteries send CCL=0 when they are full. Simulate
-		# the 48V behaviour where we charge at half the normal rate. The normal rate is
-		# C/2, so charge at no less than C/4.
+		# 24V battery (8 cells). 24V batteries send CCL=0 when they are full,
+		# whereas the 48V batteries reduce CCL by 50% when the battery is full.
+		# Do the same for 24V batteries. The normal limit is C/2, so put the
+		# limit to C/4. Note that this is just a nicety, the important part is
+		# to clip the charge voltage to 27.8 volts. That fixes the sawtooth
+		# issue.
 		capacity = bms.capacity or 55
 		return (min(charge_voltage, 27.8), max(charge_current, round(capacity/4.0)), feedback_allowed)
 
