@@ -147,7 +147,8 @@ class SystemCalc:
 			delegates.ScheduledCharging(),
 			delegates.SourceTimers(),
 			#delegates.BydCurrentSense(self),
-			delegates.BatteryData()]
+			delegates.BatteryData(),
+			delegates.Gps()]
 
 		for m in self._modules:
 			for service, paths in m.get_input():
