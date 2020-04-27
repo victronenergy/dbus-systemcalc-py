@@ -413,6 +413,16 @@ class Battery(object):
 		return self.monitor.get_value(self.service, '/Info/MaxChargeVoltage')
 
 	@property
+	def batterylowvoltage(self):
+		""" Returns battery low voltage published by the BMS. """
+		return self.monitor.get_value(self.service, '/Info/BatteryLowVoltage')
+
+	@property
+	def maxdischargecurrent(self):
+		""" Returns max discharge current published by the BMS. """
+		return self.monitor.get_value(self.service, '/Info/MaxDischargeCurrent')
+
+	@property
 	def voltage(self):
 		""" Returns current voltage of battery. """
 		return self.monitor.get_value(self.service, '/Dc/0/Voltage')
@@ -850,13 +860,8 @@ class Dvcc(SystemCalcDelegate):
 				self._multi.bol.maxchargecurrent = mcc
 
 			# Copy the rest unmodified
-			if self._dbusmonitor.seen(self._multi.service, '/BatteryOperationalLimits/MaxDischargeCurrent'):
-				copy_dbus_value(self._dbusmonitor,
-					bms_service.service, '/Info/BatteryLowVoltage',
-					self._multi.service, '/BatteryOperationalLimits/BatteryLowVoltage')
-				copy_dbus_value(self._dbusmonitor,
-					bms_service.service, '/Info/MaxDischargeCurrent',
-					self._multi.service, '/BatteryOperationalLimits/MaxDischargeCurrent')
+			self._multi.bol.maxdischargecurrent = bms_service.maxdischargecurrent
+			self._multi.bol.batterylowvoltage = bms_service.batterylowvoltage
 			return 1
 
 		return 0
