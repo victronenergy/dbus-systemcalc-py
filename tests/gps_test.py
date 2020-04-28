@@ -19,48 +19,36 @@ class GpsTest(TestSystemCalcBase):
 			product_name='ACME Gps',
 			values={
 				'/DeviceInstance': 0,
-				'/Position/Latitude': 1.234,
-				'/Position/Longitude': 2.345,
-				'/Course': 1,
-				'/Speed': 5,
-				'/Altitude': 100,
 				'/Fix': 0 })
 		self._add_device('com.victronenergy.gps.ttyX2',
 			product_name='ACME Gps',
 			values={
 				'/DeviceInstance': 1,
-				'/Position/Latitude': 3.234,
-				'/Position/Longitude': 4.345,
-				'/Course': 11,
-				'/Speed': 55,
-				'/Altitude': 200,
 				'/Fix': 0 })
 
 	def test_nofix(self):
 		self._check_values({
-			'/Gps/Position/Latitude': None,
-			'/Gps/Position/Longitude': None,
-			'/Gps/Course': None,
-			'/Gps/Speed': None,
-			'/Gps/Altitude': None,
+			'/GpsService': None
 		})
 
 	def test_use_lowest_deviceinstance(self):
 		self._monitor.set_value('com.victronenergy.gps.ttyX1', '/Fix', 1)
 		self._monitor.set_value('com.victronenergy.gps.ttyX2', '/Fix', 1)
 		self._check_values({
-			'/Gps/Position/Latitude': 1.234,
-			'/Gps/Position/Longitude': 2.345,
-			'/Gps/Course': 1,
-			'/Gps/Speed': 5,
-			'/Gps/Altitude': 100,
+			'/GpsService': 'com.victronenergy.gps.ttyX1'
 		})
 
 		self._monitor.set_value('com.victronenergy.gps.ttyX1', '/Fix', 0)
 		self._check_values({
-			'/Gps/Position/Latitude': 3.234,
-			'/Gps/Position/Longitude': 4.345,
-			'/Gps/Course': 11,
-			'/Gps/Speed': 55,
-			'/Gps/Altitude': 200,
+			'/GpsService': 'com.victronenergy.gps.ttyX2'
+		})
+
+	def test_no_fix_invalidated(self):
+		self._monitor.set_value('com.victronenergy.gps.ttyX1', '/Fix', 1)
+		self._check_values({
+			'/GpsService': 'com.victronenergy.gps.ttyX1'
+		})
+		self._monitor.set_value('com.victronenergy.gps.ttyX1', '/Fix', 0)
+		self._check_values({
+			'/GpsService': None
 		})
