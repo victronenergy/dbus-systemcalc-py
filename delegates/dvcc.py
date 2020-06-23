@@ -147,6 +147,7 @@ class SolarCharger(object):
 	@property
 	def has_externalcontrol_support(self):
 		# These products are known to have support, but may have older firmware
+		# See https://github.com/victronenergy/venus/issues/655
 		if 0xA102 <= self.product_id <= 0xA10E:
 			return True
 
