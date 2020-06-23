@@ -1433,6 +1433,19 @@ class TestHubSystem(TestSystemCalcBase):
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/FirmwareVersion', 0x418)
 		self._update_values(3000)
 		self._check_values({'/Dvcc/Alarms/FirmwareInsufficient': 1})
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/FirmwareVersion', 0x456)
+
+		# Add an RS MPPT, give it "old" firmware, ensure it does not raise
+		# the alarm. The RS MPPT has support despite the low number.
+		self._add_device('com.victronenergy.solarcharger.ttyO3', {
+			'/State': 0,
+			'/Dc/0/Voltage': 12.4,
+			'/Dc/0/Current': 9.7,
+			'/ProductId': 0xA102,
+			'/FirmwareVersion': 0x100ff},
+			connection='VE.Direct')
+		self._update_values(3000)
+		self._check_values({'/Dvcc/Alarms/FirmwareInsufficient': 0})
 
 	def test_multiple_battery_warning(self):
 		self._check_values({'/Dvcc/Alarms/MultipleBatteries': 0})

@@ -141,7 +141,15 @@ class SolarCharger(object):
 		return self.monitor.get_value(self.service, '/FirmwareVersion')
 
 	@property
+	def product_id(self):
+		return self.monitor.get_value(self.service, '/ProductId')
+
+	@property
 	def has_externalcontrol_support(self):
+		# These products are known to have support, but may have older firmware
+		if 0xA102 <= self.product_id <= 0xA10E:
+			return True
+
 		v = self.firmwareversion
 		# New VE.Can controllers have 24-bit version strings. One would
 		# hope that any future VE.Direct controllers with 24-bit firmware
@@ -616,6 +624,7 @@ class Dvcc(SystemCalcDelegate):
 				'/Hub4/L1/DoNotFeedInOvervoltage',
 				'/FirmwareVersion']),
 			('com.victronenergy.solarcharger', [
+				'/ProductId',
 				'/Dc/0/Current',
 				'/Link/NetworkMode',
 				'/Link/ChargeVoltage',
