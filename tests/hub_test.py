@@ -1482,3 +1482,41 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Info/MaxChargeVoltage': 54})
 		self._update_values(3000)
 		self._check_values({'/Dvcc/Alarms/MultipleBatteries': 1})
+
+	def test_only_forward_charge_current_to_n2k_zero(self):
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 55.2)
+		self._monitor.add_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn', 0)
+		self._set_setting('/Settings/SystemSetup/MaxChargeCurrent', 10)
+		self._add_device('com.victronenergy.solarcharger.socketcan_can0_vi0_B00B135', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Dc/0/Voltage': 58.0,
+			'/Dc/0/Current': 30,
+			'/FirmwareVersion': 0x0129,
+			'/N2kDeviceInstance': 0},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.solarcharger.socketcan_can0_vi0_B00B136', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Dc/0/Voltage': 58.0,
+			'/Dc/0/Current': 30,
+			'/FirmwareVersion': 0x0129,
+			'/N2kDeviceInstance': 1},
+			connection='VE.Direct')
+		self._update_values(60000)
+
+		# Check that charge current limit is only forwarded to N2kDeviceInstance == 0
+		self._check_external_values({
+			'com.victronenergy.solarcharger.socketcan_can0_vi0_B00B135': {
+				'/Link/ChargeCurrent': 10 + 8}, # 8A vebus dc current
+			'com.victronenergy.solarcharger.socketcan_can0_vi0_B00B136': {
+				'/Link/ChargeCurrent': None},
+			})

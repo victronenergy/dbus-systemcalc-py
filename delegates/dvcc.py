@@ -145,6 +145,10 @@ class SolarCharger(object):
 		return self.monitor.get_value(self.service, '/ProductId')
 
 	@property
+	def n2k_device_instance(self):
+		return self.monitor.get_value(self.service, '/N2kDeviceInstance')
+
+	@property
 	def has_externalcontrol_support(self):
 		# These products are known to have support, but may have older firmware
 		# See https://github.com/victronenergy/venus/issues/655
@@ -318,7 +322,8 @@ class SolarChargerSubsystem(object):
 		# current.
 		#
 		# Additionally, don't bother with chargers that are disconnected.
-		chargers = filter(lambda x: x.state !=0, self._solarchargers.values())
+		chargers = filter(lambda x: x.state !=0 and x.n2k_device_instance in (0, None),
+			self._solarchargers.values())
 		if len(chargers) > 0:
 			if feedback_allowed:
 				self.maximize_charge_current()
@@ -633,6 +638,7 @@ class Dvcc(SystemCalcDelegate):
 				'/Settings/ChargeCurrentLimit',
 				'/State',
 				'/FirmwareVersion',
+				'/N2kDeviceInstance',
 				'/Mgmt/Connection']),
 			('com.victronenergy.vecan',	[
 				'/Link/ChargeVoltage',
