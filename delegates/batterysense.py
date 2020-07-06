@@ -19,10 +19,13 @@ class TemperatureSensor(namedtuple('TemperatureSensor', ('service', 'path', 'ins
 	def service_class(self):
 		return '.'.join(self.service.split('.')[:3])
 
-
 	@property
 	def instance_service_name(self):
 		return '{}/{}'.format(self.service_class, self.instance)
+
+class DedicatedSensor(TemperatureSensor):
+	""" This represents a ADC sensor, as opposed to one attached to the battery
+	    service, solar charger or Multi. """
 
 class BatterySense(SystemCalcDelegate):
 	TEMPSERVICE_DEFAULT = 'default'
@@ -118,6 +121,16 @@ class BatterySense(SystemCalcDelegate):
 	def nice_name(self, service):
 		name = self._dbusmonitor.get_value(service, '/ProductName')
 		connection = self._dbusmonitor.get_value(service, '/Mgmt/Connection')
+		if service in self.temperaturesensors:
+			ob = self.temperaturesensors[service]
+			if isinstance(ob, DedicatedSensor) and ob.valid:
+				try:
+					n = int(connection.split()[-1])
+				except (ValueError, IndexError):
+					pass
+				else:
+					return "Battery temperature sensor ({})".format(n)
+
 		return '{} on {}'.format(name, connection)
 
 	def update_temperature_sensors(self, *args):
@@ -128,7 +141,6 @@ class BatterySense(SystemCalcDelegate):
 		for sensor in self.temperaturesensors.itervalues():
 			if sensor.valid:
 				name = self._dbusmonitor.get_value(sensor.service, '/ProductName')
-				connection = self._dbusmonitor.get_value(sensor.service, '/Mgmt/Connection')
 				services[sensor.instance_service_name+sensor.path] = self.nice_name(sensor.service)
 
 		self._dbusservice['/AvailableTemperatureServices'] = services
@@ -184,7 +196,7 @@ class BatterySense(SystemCalcDelegate):
 			self._dbusmonitor.track_value(service, '/Dc/0/Temperature', self.update_temperature_sensors)
 			self.update_temperature_sensors()
 		elif service.startswith('com.victronenergy.temperature.'):
-			self.temperaturesensors[service] = TemperatureSensor(service,
+			self.temperaturesensors[service] = DedicatedSensor(service,
 				'/Temperature', instance,
 				lambda s=service: self._dbusmonitor.get_value(s, '/TemperatureType') == 0)
 			self._dbusmonitor.track_value(service, '/TemperatureType', self.update_temperature_sensors)
