@@ -156,13 +156,17 @@ class SolarCharger(object):
 			return True
 
 		v = self.firmwareversion
+
+		# If the firmware version is not known, don't raise a false
+		# warning. Also cater for a zero firmware, which seems to be
+		# an anomaly that sometimes shows up.
+		if v is None or v == 0:
+			return True
+
 		# New VE.Can controllers have 24-bit version strings. One would
 		# hope that any future VE.Direct controllers with 24-bit firmware
 		# versions will 1) have a version larger than 1.02 and 2) support
 		# external control.
-		if v is None:
-			return True # Assume support until we know
-
 		if v & 0xFF0000:
 			return v >= VECAN_FIRMWARE_REQUIRED
 		return v >= VEDIRECT_FIRMWARE_REQUIRED
