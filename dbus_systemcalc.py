@@ -606,7 +606,16 @@ class SystemCalc:
 			if battery_power is not None:
 				dc_pv_power = newvalues.get('/Dc/Pv/Power', 0)
 				charger_power = newvalues.get('/Dc/Charger/Power', 0)
-				newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + vebuspower - battery_power
+
+				# If there is a VE.Direct inverter, remove its power from the
+				# DC estimate. This is done using the AC value since these
+				# inverters don't provide DC power values.
+				inverter_power = 0
+				if vedirect_inverter is not None:
+					inverter_power = self._dbusmonitor.get_value(
+						vedirect_inverter, '/Ac/Out/L1/V', 0) * self._dbusmonitor.get_value(
+						vedirect_inverter, '/Ac/Out/L1/I', 0)
+				newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + vebuspower - inverter_power - battery_power
 
 		elif self._settings['hasdcsystem'] == 1 and solarchargers_loadoutput_power is not None:
 			newvalues['/Dc/System/Power'] = solarchargers_loadoutput_power

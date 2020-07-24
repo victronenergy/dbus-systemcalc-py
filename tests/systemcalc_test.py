@@ -1000,6 +1000,31 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._check_values({
 			'/Dc/System/Power': 12.4 * 5 + 12.3 * 11})
 
+	def test_dc_system_estimate_with_inverter(self):
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._add_device('com.victronenergy.battery.ttyO2',
+						product_name='battery',
+						values={
+								'/Dc/0/Voltage': 12.3,
+								'/Dc/0/Current': -18.7,
+								'/Dc/0/Power': -230,
+								'/Soc': 15.3,
+								'/DeviceInstance': 2})
+		self._set_setting('/Settings/SystemSetup/HasDcSystem', 1)
+		self._update_values()
+		self._check_values({
+			'/Dc/System/Power': 230 })
+
+		self._add_device('com.victronenergy.inverter.ttyO1',
+						product_name='inverter',
+						values={
+								'/Dc/0/Voltage': 12.8,
+								'/Ac/Out/L1/V': 220,
+								'/Ac/Out/L1/I': 1.0 })
+		self._update_values()
+		self._check_values({
+			'/Dc/System/Power': 10 })
+
 	def test_battery_state(self):
 		self._check_values({
 			'/Dc/Battery/State':  None})
