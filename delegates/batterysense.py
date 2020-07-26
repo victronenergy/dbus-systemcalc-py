@@ -334,9 +334,9 @@ class BatterySense(SystemCalcDelegate):
 
 		# Also update the multi
 		vebus = self._dbusservice['/VebusService']
-		if vebus is not None and vebus != sense_temp_service and \
-				self._dbusmonitor.get_value(vebus, '/FirmwareFeatures/BolUBatAndTBatSense') == 1:
-			self._dbusmonitor.set_value_async(vebus, '/BatterySense/Temperature', sense_temp)
+		if vebus is not None and vebus != sense_temp_service and self._dbusmonitor.seen(vebus, '/BatterySense/Temperature'):
+			self._dbusmonitor.set_value_async(vebus, '/BatterySense/Temperature',
+				sense_temp)
 			written = 1
 
 		# Update vecan only if there is one..
