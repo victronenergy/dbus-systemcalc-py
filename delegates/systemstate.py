@@ -132,7 +132,7 @@ class SystemState(SystemCalcDelegate):
 			flags.UserChargeLimited = int(user_charge_limit == 0)
 
 			# ESS state
-			if ScheduledCharging.instance.active:
+			if (hubstate != SOCG.KeepCharged) and ScheduledCharging.instance.active:
 				ss = SystemState.SCHEDULEDCHARGE
 			elif hubstate in (BL.Default, BL.Absorption, BL.Float, SOCG.Default):
 				if newvalues.get('/Dc/Battery/Power') < -30:
