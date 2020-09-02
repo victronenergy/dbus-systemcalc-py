@@ -130,6 +130,7 @@ class SystemCalc:
 				'/Ac/Out/L1/V': dummy,
 				'/Ac/Out/L1/I': dummy,
 				'/Yield/Power': dummy,
+				'/Soc': dummy,
 			}
 		}
 
@@ -377,6 +378,12 @@ class SystemCalc:
 		# Also no Multi, then give up.
 		vebus_service = self._get_service_having_lowest_instance('com.victronenergy.vebus')
 		if vebus_service is None:
+			# No VE.Bus, but maybe there is an inverter with built-in SOC
+			# tracking, eg RS Smart.
+			inverter = self._get_service_having_lowest_instance('com.victronenergy.inverter')
+			if inverter and self._dbusmonitor.get_value(inverter[0], '/Soc') is not None:
+				return inverter[0]
+
 			return None
 
 		# There is a Multi, and it supports tracking external charge current
@@ -524,14 +531,14 @@ class SystemCalc:
 		# ==== BATTERY ====
 		if self._batteryservice is not None:
 			batteryservicetype = self._batteryservice.split('.')[2]
-			assert batteryservicetype in ('battery', 'vebus')
+			assert batteryservicetype in ('battery', 'vebus', 'inverter')
 
 			newvalues['/Dc/Battery/Soc'] = self._dbusmonitor.get_value(self._batteryservice,'/Soc')
 			newvalues['/Dc/Battery/TimeToGo'] = self._dbusmonitor.get_value(self._batteryservice,'/TimeToGo')
 			newvalues['/Dc/Battery/ConsumedAmphours'] = self._dbusmonitor.get_value(self._batteryservice,'/ConsumedAmphours')
 			newvalues['/Dc/Battery/ProductId'] = self._dbusmonitor.get_value(self._batteryservice, '/ProductId')
 
-			if batteryservicetype == 'battery':
+			if batteryservicetype in ('battery', 'inverter'):
 				newvalues['/Dc/Battery/Voltage'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Voltage')
 				newvalues['/Dc/Battery/VoltageService'] = self._batteryservice
 				newvalues['/Dc/Battery/Current'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
@@ -775,6 +782,8 @@ class SystemCalc:
 
 		services = self._get_connected_service_list('com.victronenergy.vebus')
 		services.update(self._get_connected_service_list('com.victronenergy.battery'))
+		services.update({k: v for k, v in self._get_connected_service_list(
+			'com.victronenergy.inverter').items() if self._dbusmonitor.get_value(k, '/Soc') is not None})
 
 		ul = {self.BATSERVICE_DEFAULT: 'Automatic', self.BATSERVICE_NOBATTERY: 'No battery monitor'}
 		for servicename, instance in services.items():
