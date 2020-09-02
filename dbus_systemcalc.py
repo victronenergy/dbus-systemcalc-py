@@ -365,22 +365,31 @@ class SystemCalc:
 		# there, assume this is a hub-2, hub-3 or hub-4 system and use VE.Bus SOC.
 		batteries = self._get_connected_service_list('com.victronenergy.battery')
 
+		# Pick the first battery service
 		if len(batteries) > 0:
-			return sorted(batteries)[0]  # Pick a random battery service
+			return sorted(batteries)[0]
 
+		# No battery services, and there is a charger in the system. Abandon
+		# hope.
 		if self._get_first_connected_service('com.victronenergy.charger') is not None:
 			return None
 
+		# Also no Multi, then give up.
 		vebus_service = self._get_service_having_lowest_instance('com.victronenergy.vebus')
 		if vebus_service is None:
 			return None
 
+		# There is a Multi, and it supports tracking external charge current
+		# from solarchargers. Then use it.
 		if self._dbusmonitor.get_value(vebus_service[0], '/ExtraBatteryCurrent') is not None and self._settings['hasdcsystem'] == 0:
 			return vebus_service[0]
 
+		# Multi does not support tracking solarcharger current, and we have
+		# solar chargers. Then we cannot use it.
 		if self._get_first_connected_service('com.victronenergy.solarcharger') is not None:
 			return None
 
+		# Only a Multi, no other chargers. Then we can use it.
 		return vebus_service[0]
 
 	# Called on a one second timer
