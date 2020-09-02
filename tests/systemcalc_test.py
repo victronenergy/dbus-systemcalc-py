@@ -387,6 +387,24 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Dc/System/Power': 12 * 5 + 12.5 * 5,
 			'/Dc/Pv/Power': 12 * (8 + 5) + 12.5 * (10 + 5)})
 
+	def test_rs_smart_pv(self):
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/Dc/0/Voltage': 12,
+			'/Dc/0/Current': 8,
+		})
+		self._add_device('com.victronenergy.inverter.ttyO1',
+						product_name='inverter',
+						values={
+								'/Dc/0/Voltage': 12.8,
+								'/Ac/Out/L1/V': 220,
+								'/Ac/Out/L1/I': 1.0,
+								'/Yield/Power': 102
+								})
+
+		self._update_values()
+		self._check_values({
+			'/Dc/Pv/Power': 102 + 12 * 8})
+
 	def test_multi_dc_power(self):
 		self._update_values()
 		self._check_values({

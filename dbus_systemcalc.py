@@ -129,6 +129,7 @@ class SystemCalc:
 				'/Ac/Out/L1/P': dummy,
 				'/Ac/Out/L1/V': dummy,
 				'/Ac/Out/L1/I': dummy,
+				'/Yield/Power': dummy,
 			}
 		}
 
@@ -504,6 +505,12 @@ class SystemCalc:
 		vedirect_inverter = self._get_service_having_lowest_instance('com.victronenergy.inverter')
 		if vedirect_inverter is not None:
 			vedirect_inverter = vedirect_inverter[0]
+
+			# For RS Smart inverter, add PV to the yield
+			pv_yield = self._dbusmonitor.get_value(vedirect_inverter, "/Yield/Power")
+			if pv_yield is not None:
+					newvalues['/Dc/Pv/Power'] = newvalues.get('/Dc/Pv/Power', 0) + pv_yield
+
 
 		# ==== BATTERY ====
 		if self._batteryservice is not None:
