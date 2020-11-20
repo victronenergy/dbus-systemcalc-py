@@ -47,6 +47,8 @@ s = DbusDummyService(servicename=args.name, deviceinstance=args.instance, paths=
 		'/Alarms/TemperatureSensor': {'initial': 0},
 		'/Alarms/VoltageSensor': {'initial': 0},
 		'/Alarms/GridLost': {'initial': 0},
+		'/Alarms/HighDcVoltage': {'initial': 0},
+		'/Alarms/HighDcCurrent': {'initial': 0},
 		'/Dc/0/Voltage': {'initial': 11},
 		'/Dc/0/Current': {'initial': 12},
 		'/Dc/0/MaxChargeCurrent': {'initial': None},

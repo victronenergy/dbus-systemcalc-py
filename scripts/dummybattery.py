@@ -39,7 +39,9 @@ s = DbusDummyService(
         '/Dc/0/Current': {'initial': 22},
         '/Dc/0/Power': {'initial': 23},
         '/Dc/0/Temperature': {'initial': None},
-        '/CustomName': {'initial': None}},
+        '/CustomName': {'initial': None},
+        '/History/DischargedEnergy': {'initial': None},
+        '/History/ChargedEnergy': {'initial': None}},
     productname='BMV-700',
     connection='VE.Direct port 1')
 

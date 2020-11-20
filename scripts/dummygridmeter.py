@@ -19,7 +19,7 @@ parser = argparse.ArgumentParser(
 
 parser.add_argument(
     "-n", "--name", help="the D-Bus service you want me to claim", type=str,
-    default="com.victronenergy.grid")
+    default="com.victronenergy.grid.ttyUSB0")
 
 parser.add_argument(
     "-p", "--position", help="position (and instance): 0=grid, 1=output, 2=genset", type=int,
@@ -41,7 +41,8 @@ pvac_output = DbusDummyService(
     paths={
         '/Ac/L1/Power': {'initial': 150},
         '/Ac/L2/Power': {'initial': 200},
-        '/Ac/L3/Power': {'initial': 250}})
+        '/Ac/L3/Power': {'initial': 250},
+        '/Ac/Power': {'initial': 600}})
 
 print 'Connected to dbus, and switching over to gobject.MainLoop() (= event based)'
 mainloop = gobject.MainLoop()
