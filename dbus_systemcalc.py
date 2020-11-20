@@ -196,6 +196,8 @@ class SystemCalc:
 		self._dbusservice.add_path(
 			'/ActiveBatteryService', value=None, gettextcallback=self._gettext)
 		self._dbusservice.add_path(
+			'/Dc/Battery/BatteryService', value=None)
+		self._dbusservice.add_path(
 			'/PvInvertersProductIds', value=None)
 		self._summeditems = {
 			'/Ac/Grid/L1/Power': {'gettext': '%.0F W'},
@@ -356,7 +358,7 @@ class SystemCalc:
 			# Battery service has changed. Notify delegates.
 			for m in self._modules:
 				m.battery_service_changed(self._batteryservice, newbatteryservice)
-			self._batteryservice = newbatteryservice
+			self._dbusservice['/Dc/Battery/BatteryService'] = self._batteryservice = newbatteryservice
 
 	def _autoselect_battery_service(self):
 		# Default setting business logic:
