@@ -158,9 +158,8 @@ class SolarCharger(object):
 		v = self.firmwareversion
 
 		# If the firmware version is not known, don't raise a false
-		# warning. Also cater for a zero firmware, which seems to be
-		# an anomaly that sometimes shows up.
-		if v is None or v == 0:
+		# warning.
+		if v is None:
 			return True
 
 		# New VE.Can controllers have 24-bit version strings. One would
