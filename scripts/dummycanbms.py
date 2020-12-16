@@ -57,6 +57,12 @@ s = DbusDummyService(
         '/Info/MaxChargeCurrent': {'initial': 600},
         '/Info/MaxChargeVoltage': {'initial': 28.4},
         '/Info/MaxDischargeCurrent': {'initial': 600},
+        '/System/MinCellVoltage': {'initial': None},
+        '/System/MaxCellVoltage': {'initial': None},
+        '/System/NrOfModulesBlockingCharge': {'initial': 0},
+        '/System/NrOfModulesBlockingDischarge': {'initial': 0},
+        '/System/NrOfModulesOffline': {'initial': 0},
+        '/System/NrOfModulesOnline': {'initial': 2},
     },
     productname='ACME BMS battery {}'.format(args.instance),
     connection='CAN-bus')
