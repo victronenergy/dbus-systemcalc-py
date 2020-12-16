@@ -653,6 +653,7 @@ class Dvcc(SystemCalcDelegate):
 	def get_settings(self):
 		return [
 			('maxchargecurrent', '/Settings/SystemSetup/MaxChargeCurrent', -1, -1, 10000),
+			('maxchargevoltage', '/Settings/SystemSetup/MaxChargeVoltage', -1, -1, 80),
 			('bol', '/Settings/Services/Bol', 0, 0, 7)
 		]
 
@@ -784,10 +785,19 @@ class Dvcc(SystemCalcDelegate):
 			charge_voltage, max_charge_current, feedback_allowed = \
 				self._adjust_battery_operational_limits(bms_service, feedback_allowed)
 
-		# Take the lesser of the BMS and user limits, wherever they exist
+		# Take the lesser of the BMS and user current limits, wherever they exist
 		maximae = filter(lambda x: x is not None,
 			(user_max_charge_current, max_charge_current))
 		max_charge_current = min(maximae) if maximae else None
+
+		# Override the battery charge voltage by taking the lesser of the
+		# voltage limits. Only override if the battery supplies one, to prevent
+		# a voltage being sent to a Multi in a system without a managed battery.
+		# Otherwise the Multi will go into passthru if the user disables this.
+		if charge_voltage is not None:
+			user_charge_voltage = self._settings['maxchargevoltage']
+			if user_charge_voltage > 0:
+				charge_voltage = min(charge_voltage, user_charge_voltage)
 
 		# @todo EV What if ESS + OvervoltageFeedIn? In that case there is no
 		# charge current control on the MPPTs, but we'll still indicate that

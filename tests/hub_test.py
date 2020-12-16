@@ -1520,3 +1520,39 @@ class TestHubSystem(TestSystemCalcBase):
 			'com.victronenergy.solarcharger.socketcan_can0_vi0_B00B136': {
 				'/Link/ChargeCurrent': None},
 			})
+
+	def test_charge_voltage_override(self):
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 55.2)
+		self._set_setting('/Settings/SystemSetup/MaxChargeVoltage', -1)
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.3,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 45,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
+		self._update_values(interval=3000)
+
+		# Following the battery
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2}})
+
+		# Following lower of the two
+		self._set_setting('/Settings/SystemSetup/MaxChargeVoltage', 59)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2}})
+
+		# Following user limit
+		self._set_setting('/Settings/SystemSetup/MaxChargeVoltage', 54.5)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeVoltage': 54.5}})
