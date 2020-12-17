@@ -1523,7 +1523,7 @@ class TestHubSystem(TestSystemCalcBase):
 
 	def test_charge_voltage_override(self):
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 55.2)
-		self._set_setting('/Settings/SystemSetup/MaxChargeVoltage', -1)
+		self._set_setting('/Settings/SystemSetup/MaxChargeVoltage', 0.0)
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',
 			values={

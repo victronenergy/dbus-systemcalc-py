@@ -653,7 +653,7 @@ class Dvcc(SystemCalcDelegate):
 	def get_settings(self):
 		return [
 			('maxchargecurrent', '/Settings/SystemSetup/MaxChargeCurrent', -1, -1, 10000),
-			('maxchargevoltage', '/Settings/SystemSetup/MaxChargeVoltage', -1, -1, 80),
+			('maxchargevoltage', '/Settings/SystemSetup/MaxChargeVoltage', 0.0, 0.0, 80.0),
 			('bol', '/Settings/Services/Bol', 0, 0, 7)
 		]
 
