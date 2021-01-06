@@ -74,8 +74,12 @@ class RelayState(SystemCalcDelegate):
 			if dbus_path == '/Relay/1/State' and self.relay1_function != self.FUNCTION_MANUAL:
 				continue # Skip secondary relay if function is not manual
 
-			state = self._settings[dbus_path]
-			self.set_relay(dbus_path, state)
+			try:
+				state = self._settings[dbus_path]
+			except KeyError:
+				pass
+			else:
+				self.set_relay(dbus_path, state)
 
 		# Sync state back to dbus
 		self._update_relay_state()
