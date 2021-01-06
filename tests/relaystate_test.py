@@ -36,6 +36,7 @@ class RelayStateTest(TestSystemCalcBase):
 
 		self._add_device('com.victronenergy.settings', values={
 			'/Settings/Relay/Function': 1, # Generator
+			'/Settings/Relay/1/Function': 2 # Manual
 		})
 
 		self.gpio_dir = tempfile.mkdtemp()
@@ -99,8 +100,10 @@ class RelayStateTest(TestSystemCalcBase):
 		rs = RelayState()
 		rs.set_sources(self._monitor, self._system_calc._settings, self._service)
 
-		return self._monitor.set_value('com.victronenergy.settings',
+		self._monitor.set_value('com.victronenergy.settings',
 			'/Settings/Relay/Function', 2) # Manual
+		self._monitor.set_value('com.victronenergy.settings',
+			'/Settings/Relay/1/Function', 2) # Manual
 
 		self._set_setting('/Settings/Relay/0/InitialState', 0)
 		self._set_setting('/Settings/Relay/1/InitialState', 1)
