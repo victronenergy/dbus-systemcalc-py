@@ -737,6 +737,16 @@ class Dvcc(SystemCalcDelegate):
 
 	def _on_timer(self):
 		bol_support = self.has_dvcc
+		bms_service = self.bms
+
+		# Toggle relays if so configured. Do this early because we want
+		# this to work even if DVCC is off.
+		if bms_service is not None:
+			from delegates import RelayState
+			RelayState.instance.set_function(
+				RelayState.FUNCTION_BMS_STOPCHARGE, int(bms_service.maxchargecurrent == 0))
+			RelayState.instance.set_function(
+				RelayState.FUNCTION_BMS_STOPDISCHARGE, int(bms_service.maxdischargecurrent == 0))
 
 		self._tickcount -= 1; self._tickcount %= ADJUST
 
@@ -777,7 +787,6 @@ class Dvcc(SystemCalcDelegate):
 		if user_max_charge_current < 0: user_max_charge_current = None
 
 		# If there is a BMS, get the charge voltage and current from it
-		bms_service = self.bms
 		max_charge_current = None
 		charge_voltage = None
 		feedback_allowed = self.feedback_allowed

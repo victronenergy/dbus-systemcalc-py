@@ -64,6 +64,13 @@ class RelayState(SystemCalcDelegate):
 		self._dbusservice[dbus_path] = state
 		self.__on_relay_state_changed(dbus_path, state)
 
+	def set_function(self, func, state):
+		""" Find a relay bound to the relevant function, and set state. """
+		for p, r in ((self.relay_function, '/Relay/0/State'),
+				(self.relay1_function, '/Relay/1/State')):
+			if p == func and self._dbusservice[r] != state:
+				self.set_relay(r, state)
+
 	def _init_relay_state(self):
 		if self.relay_function is None:
 			return True # Try again on the next idle event
