@@ -42,6 +42,7 @@ s = DbusDummyService(
         '/Link/ChargeCurrent': {'initial': None},
         '/Settings/ChargeCurrentLimit': {'initial': 70},
         '/Settings/BmsPresent': {'initial': None},
+        '/DeviceOffReason': {'initial': 0},
     },
     productname='Solarcharger',
     connection='VE.Direct port 1')
