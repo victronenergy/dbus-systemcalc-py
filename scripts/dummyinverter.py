@@ -58,6 +58,10 @@ s = DbusDummyService(
 		'/Yield/Power': {'initial': 123},
 		'/DeviceOffReason': {'initial': 0},
 		'/Soc': {'initial': 10},
+		'/Energy/InverterToAcOut': {'initial': None},
+		'/Energy/OutToInverter': {'initial': None},
+		'/Energy/SolarToBattery': {'initial': None},
+		'/Energy/SolarToAcOut': {'initial': None},
     },
     productname='Inverter RS Smart 48V/6000VA/80A',
     connection='VE.Direct port 1')
@@ -65,7 +69,3 @@ s = DbusDummyService(
 logger.info('Connected to dbus, and switching over to gobject.MainLoop() (= event based)')
 mainloop = gobject.MainLoop()
 mainloop.run()
-
-
-
-
