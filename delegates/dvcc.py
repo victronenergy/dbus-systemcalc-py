@@ -671,6 +671,7 @@ class Dvcc(SystemCalcDelegate):
 		self._dbusservice.add_path('/Control/BmsParameters', value=0)
 		self._dbusservice.add_path('/Control/MaxChargeCurrent', value=0)
 		self._dbusservice.add_path('/Control/BmsPresent', value=0)
+		self._dbusservice.add_path('/Control/BmsService', value=None)
 		self._dbusservice.add_path('/Control/Dvcc', value=1)
 		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/SolarVoltageOffset', value=0, writeable=True)
 		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/VebusVoltageOffset', value=0, writeable=True)
@@ -749,11 +750,13 @@ class Dvcc(SystemCalcDelegate):
 			self._bmscount = max(self._bmscount - 1, 0)
 			if not self._bmscount:
 				self._dbusservice['/Control/BmsPresent'] = 0
+				self._dbusservice['/Control/BmsService'] = None
 				RelayState.instance.set_function(RelayState.FUNCTION_BMS_STOPCHARGE, 1)
 				RelayState.instance.set_function(RelayState.FUNCTION_BMS_STOPDISCHARGE, 1)
 		else:
 			self._bmscount = BMS_TIMEOUT
 			self._dbusservice['/Control/BmsPresent'] = 1
+			self._dbusservice['/Control/BmsService'] = bms_service.service
 			RelayState.instance.set_function(
 				RelayState.FUNCTION_BMS_STOPCHARGE, int(bms_service.maxchargecurrent == 0))
 			RelayState.instance.set_function(
