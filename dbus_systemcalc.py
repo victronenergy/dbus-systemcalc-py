@@ -20,7 +20,7 @@ from logger import setup_logging
 import delegates
 from sc_utils import safeadd as _safeadd, safemax as _safemax
 
-softwareVersion = '2.63'
+softwareVersion = '2.58'
 
 class SystemCalc:
 	STATE_IDLE = 0
@@ -130,7 +130,16 @@ class SystemCalc:
 				'/Ac/Out/L1/V': dummy,
 				'/Ac/Out/L1/I': dummy,
 				'/Yield/Power': dummy,
-				'/Soc': dummy,
+				'/Soc': dummy},
+			'com.victronenergy.windcharger': {
+				'/Connected': dummy,
+				'/ProductName': dummy,
+				'/ProductId' : dummy,
+				'/Mgmt/Connection': dummy,
+				'/Dc/0/Voltage': dummy,
+				'/Dc/0/Current': dummy,
+				'/Dc/0/Power': dummy,
+
 			}
 		}
 
@@ -196,8 +205,6 @@ class SystemCalc:
 		self._dbusservice.add_path(
 			'/ActiveBatteryService', value=None, gettextcallback=self._gettext)
 		self._dbusservice.add_path(
-			'/Dc/Battery/BatteryService', value=None)
-		self._dbusservice.add_path(
 			'/PvInvertersProductIds', value=None)
 		self._summeditems = {
 			'/Ac/Grid/L1/Power': {'gettext': '%.0F W'},
@@ -253,7 +260,8 @@ class SystemCalc:
 			'/Dc/Vebus/Power': {'gettext': '%.0F W'},
 			'/Dc/System/Power': {'gettext': '%.0F W'},
 			'/Ac/ActiveIn/Source': {'gettext': '%s'},
-			'/VebusService': {'gettext': '%s'}
+			'/VebusService': {'gettext': '%s'},
+			'/Dc/Wind/Power' :{'gettext': '%.0F W'}
 		}
 
 		for m in self._modules:
@@ -358,7 +366,7 @@ class SystemCalc:
 			# Battery service has changed. Notify delegates.
 			for m in self._modules:
 				m.battery_service_changed(self._batteryservice, newbatteryservice)
-			self._dbusservice['/Dc/Battery/BatteryService'] = self._batteryservice = newbatteryservice
+			self._batteryservice = newbatteryservice
 
 	def _autoselect_battery_service(self):
 		# Default setting business logic:
@@ -455,6 +463,31 @@ class SystemCalc:
 
 		for path in pos.values():
 			self._compute_number_of_phases(path, newvalues)
+
+		# ==== WINDCHARGERS ====
+		windchargers = self._dbusmonitor.get_service_list('com.victronenergy.windcharger')
+		windcharger_batteryvoltage = None
+		windcharger_batteryvoltage_service = None
+		windchargers_charge_power = 0
+
+		for windcharger in windchargers:
+			v = self._dbusmonitor.get_value(windcharger, '/Dc/0/Voltage')
+			if v is None:
+				continue
+			i = self._dbusmonitor.get_value(windcharger, '/Dc/0/Current')
+			if i is None:
+				continue
+			P = self._dbusmonitor.get_value(windcharger, '/Dc/0/Power')
+			
+			windchargers_charge_power += P
+                       
+			if '/Dc/Wind/Power' not in newvalues:
+				newvalues['/Dc/Wind/Power'] = P
+			else:
+				newvalues['/Dc/Wind/Power'] += P
+				windcharger_batteryvoltage = v
+				windcharger_batteryvoltage_service = windcharger
+
 
 		# ==== SOLARCHARGERS ====
 		solarchargers = self._dbusmonitor.get_service_list('com.victronenergy.solarcharger')
@@ -597,9 +630,15 @@ class SystemCalc:
 				if solarcharger_batteryvoltage is not None:
 					newvalues['/Dc/Battery/Voltage'] = solarcharger_batteryvoltage
 					newvalues['/Dc/Battery/VoltageService'] = solarcharger_batteryvoltage_service
+
+				elif windcharger_batteryvoltage is not None:
+					newvalues['/Dc/Battery/Voltage'] = windcharger_batteryvoltage
+					newvalues['/Dc/Battery/VoltageService'] = windcharger_batteryvoltage_service
+
 				elif charger_batteryvoltage is not None:
 					newvalues['/Dc/Battery/Voltage'] = charger_batteryvoltage
 					newvalues['/Dc/Battery/VoltageService'] = charger_batteryvoltage_service
+
 				elif vedirect_inverter is not None:
 					v = self._dbusmonitor.get_value(vedirect_inverter, '/Dc/0/Voltage')
 					if v is not None:
@@ -611,7 +650,8 @@ class SystemCalc:
 				# and amps from vebus, solarchargers and chargers.
 				assert '/Dc/Battery/Power' not in newvalues
 				assert '/Dc/Battery/Current' not in newvalues
-				p = solarchargers_charge_power + newvalues.get('/Dc/Charger/Power', 0) + vebuspower
+				p = solarchargers_charge_power + newvalues.get('/Dc/Charger/Power', 0) + vebuspower + windchargers_charge_power
+
 				voltage = newvalues['/Dc/Battery/Voltage']
 				newvalues['/Dc/Battery/Current'] = p / voltage if voltage > 0 else None
 				newvalues['/Dc/Battery/Power'] = p
