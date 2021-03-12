@@ -930,7 +930,7 @@ class Dvcc(SystemCalcDelegate):
 
 		# Charge voltage cannot by written directly to the CAN-bus solar chargers, we have to use
 		# the com.victronenergy.vecan.* service instead.
-		if self._solarsystem.has_vecan_chargers:
+		if charge_voltage is not None and self._solarsystem.has_vecan_chargers:
 			for service in self._vecan_services:
 				try:
 					# Note: we don't check the value of charge_voltage_item
