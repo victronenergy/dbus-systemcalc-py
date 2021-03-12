@@ -20,7 +20,6 @@ from delegates.base import SystemCalcDelegate
 # message, so the update rate could be increased. For now, keep this at 3 and
 # above.
 ADJUST = 3
-BMS_TIMEOUT = 60
 
 VEBUS_FIRMWARE_REQUIRED = 0x422
 VEDIRECT_FIRMWARE_REQUIRED = 0x129
@@ -611,7 +610,6 @@ class Dvcc(SystemCalcDelegate):
 		self._vecan_services = []
 		self._timer = None
 		self._tickcount = ADJUST
-		self._bmscount = BMS_TIMEOUT
 
 	def get_input(self):
 		return [
@@ -670,8 +668,6 @@ class Dvcc(SystemCalcDelegate):
 		self._dbusservice.add_path('/Control/EffectiveChargeVoltage', value=None)
 		self._dbusservice.add_path('/Control/BmsParameters', value=0)
 		self._dbusservice.add_path('/Control/MaxChargeCurrent', value=0)
-		self._dbusservice.add_path('/Control/BmsPresent', value=0)
-		self._dbusservice.add_path('/Control/BmsService', value=None)
 		self._dbusservice.add_path('/Control/Dvcc', value=1)
 		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/SolarVoltageOffset', value=0, writeable=True)
 		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/VebusVoltageOffset', value=0, writeable=True)
@@ -740,27 +736,7 @@ class Dvcc(SystemCalcDelegate):
 		return None
 
 	def _on_timer(self):
-		from delegates import RelayState
 		bol_support = self.has_dvcc
-		bms_service = self.bms
-
-		# Toggle relays if so configured. Do this early because we want
-		# this to work even if DVCC is off.
-		if bms_service is None:
-			self._bmscount = max(self._bmscount - 1, 0)
-			if not self._bmscount:
-				self._dbusservice['/Control/BmsPresent'] = 0
-				self._dbusservice['/Control/BmsService'] = None
-				RelayState.instance.set_function(RelayState.FUNCTION_BMS_STOPCHARGE, 1)
-				RelayState.instance.set_function(RelayState.FUNCTION_BMS_STOPDISCHARGE, 1)
-		else:
-			self._bmscount = BMS_TIMEOUT
-			self._dbusservice['/Control/BmsPresent'] = 1
-			self._dbusservice['/Control/BmsService'] = bms_service.service
-			RelayState.instance.set_function(
-				RelayState.FUNCTION_BMS_STOPCHARGE, int(bms_service.maxchargecurrent == 0))
-			RelayState.instance.set_function(
-				RelayState.FUNCTION_BMS_STOPDISCHARGE, int(bms_service.maxdischargecurrent == 0))
 
 		self._tickcount -= 1; self._tickcount %= ADJUST
 
@@ -801,6 +777,7 @@ class Dvcc(SystemCalcDelegate):
 		if user_max_charge_current < 0: user_max_charge_current = None
 
 		# If there is a BMS, get the charge voltage and current from it
+		bms_service = self.bms
 		max_charge_current = None
 		charge_voltage = None
 		feedback_allowed = self.feedback_allowed

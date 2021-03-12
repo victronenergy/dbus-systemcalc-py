@@ -11,10 +11,6 @@ from delegates.base import SystemCalcDelegate
 
 class RelayState(SystemCalcDelegate):
 	RELAY_GLOB = '/dev/gpio/relay_*'
-	FUNCTION_ALARM = 0
-	FUNCTION_MANUAL = 2
-	FUNCTION_BMS_STOPCHARGE = 4
-	FUNCTION_BMS_STOPDISCHARGE = 5
 
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)
@@ -23,8 +19,7 @@ class RelayState(SystemCalcDelegate):
 	def get_input(self):
 		return [
 			('com.victronenergy.settings', [
-				 '/Settings/Relay/Function',
-				 '/Settings/Relay/1/Function'])] # Managed by the gui
+				 '/Settings/Relay/Function'])] # Managed by the gui
 
 	def get_settings(self):
 		return [
@@ -36,11 +31,6 @@ class RelayState(SystemCalcDelegate):
 	def relay_function(self):
 		return self._dbusmonitor.get_value('com.victronenergy.settings',
 			'/Settings/Relay/Function')
-
-	@property
-	def relay1_function(self):
-		return self._dbusmonitor.get_value('com.victronenergy.settings',
-			'/Settings/Relay/1/Function')
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
@@ -60,33 +50,20 @@ class RelayState(SystemCalcDelegate):
 
 		logging.info('Relays found: {}'.format(', '.join(self._relays.values())))
 
-	def set_relay(self, dbus_path, state):
-		self._dbusservice[dbus_path] = state
-		self.__on_relay_state_changed(dbus_path, state)
-
-	def set_function(self, func, state):
-		""" Find a relay bound to the relevant function, and set state. """
-		for p, r in ((self.relay_function, '/Relay/0/State'),
-				(self.relay1_function, '/Relay/1/State')):
-			if p == func and self._dbusservice[r] != state:
-				self.set_relay(r, state)
-
 	def _init_relay_state(self):
 		if self.relay_function is None:
 			return True # Try again on the next idle event
 
 		for dbus_path, path in self._relays.iteritems():
-			if dbus_path == '/Relay/0/State' and self.relay_function != self.FUNCTION_MANUAL:
+			if self.relay_function != 2 and dbus_path == '/Relay/0/State':
 				continue # Skip primary relay if function is not manual
-			if dbus_path == '/Relay/1/State' and self.relay1_function != self.FUNCTION_MANUAL:
-				continue # Skip secondary relay if function is not manual
-
 			try:
 				state = self._settings[dbus_path]
 			except KeyError:
 				pass
 			else:
-				self.set_relay(dbus_path, state)
+				self._dbusservice[dbus_path] = state
+				self.__on_relay_state_changed(dbus_path, state)
 
 		# Sync state back to dbus
 		self._update_relay_state()

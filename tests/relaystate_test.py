@@ -36,7 +36,6 @@ class RelayStateTest(TestSystemCalcBase):
 
 		self._add_device('com.victronenergy.settings', values={
 			'/Settings/Relay/Function': 1, # Generator
-			'/Settings/Relay/1/Function': 2 # Manual
 		})
 
 		self.gpio_dir = tempfile.mkdtemp()
@@ -102,8 +101,6 @@ class RelayStateTest(TestSystemCalcBase):
 
 		self._monitor.set_value('com.victronenergy.settings',
 			'/Settings/Relay/Function', 2) # Manual
-		self._monitor.set_value('com.victronenergy.settings',
-			'/Settings/Relay/1/Function', 2) # Manual
 
 		self._set_setting('/Settings/Relay/0/InitialState', 0)
 		self._set_setting('/Settings/Relay/1/InitialState', 1)
@@ -125,62 +122,3 @@ class RelayStateTest(TestSystemCalcBase):
 		self._update_values(5000)
 		self.assertEqual(self._service['/Relay/0/State'], 1) # Unaffected
 		self.assertEqual(file(self.gpio1_state, 'rt').read(), '1') # Unaffected
-
-	def test_relay_bms_calls(self):
-		rs = RelayState()
-		rs.set_sources(self._monitor, self._system_calc._settings, self._service)
-
-		self._monitor.set_value('com.victronenergy.settings',
-			'/Settings/Relay/Function', 4) # Stop charge
-		self._monitor.set_value('com.victronenergy.settings',
-			'/Settings/Relay/1/Function', 5) # Stop discharge
-
-		rs.set_function(rs.FUNCTION_BMS_STOPCHARGE, 0)
-		rs.set_function(rs.FUNCTION_BMS_STOPDISCHARGE, 0)
-		self.assertEqual(self._service['/Relay/0/State'], 0)
-		self.assertEqual(self._service['/Relay/1/State'], 0)
-
-		rs.set_function(rs.FUNCTION_BMS_STOPCHARGE, 1)
-		rs.set_function(rs.FUNCTION_BMS_STOPDISCHARGE, 1)
-		self.assertEqual(self._service['/Relay/0/State'], 1)
-		self.assertEqual(self._service['/Relay/1/State'], 1)
-
-	def test_relay_bms_control(self):
-		rs = RelayState()
-		rs.set_sources(self._monitor, self._system_calc._settings, self._service)
-
-		self._monitor.set_value('com.victronenergy.settings',
-			'/Settings/Relay/Function', 4) # Stop charge
-		self._monitor.set_value('com.victronenergy.settings',
-			'/Settings/Relay/1/Function', 5) # Stop discharge
-
-		self._add_device('com.victronenergy.battery.ttyO2',
-			product_name='battery',
-			values={
-				'/Dc/0/Voltage': 58.1,
-				'/Dc/0/Current': 5.3,
-				'/Dc/0/Power': 65,
-				'/Soc': 15.3,
-				'/DeviceInstance': 2,
-				'/Info/BatteryLowVoltage': 47,
-				'/Info/MaxChargeCurrent': 45,
-				'/Info/MaxChargeVoltage': 58.2,
-				'/Info/MaxDischargeCurrent': 50})
-
-		self._update_values(3000)
-		self.assertEqual(self._service['/Relay/0/State'], 0)
-		self.assertEqual(self._service['/Relay/1/State'], 0)
-
-		self._monitor.set_value('com.victronenergy.battery.ttyO2',
-			'/Info/MaxChargeCurrent', 0.0)
-		self._update_values(3000)
-		self.assertEqual(self._service['/Relay/0/State'], 1)
-		self.assertEqual(self._service['/Relay/1/State'], 0)
-
-		self._monitor.set_value('com.victronenergy.battery.ttyO2',
-			'/Info/MaxChargeCurrent', 45.0)
-		self._monitor.set_value('com.victronenergy.battery.ttyO2',
-			'/Info/MaxDischargeCurrent', 0.0)
-		self._update_values(3000)
-		self.assertEqual(self._service['/Relay/0/State'], 0)
-		self.assertEqual(self._service['/Relay/1/State'], 1)
