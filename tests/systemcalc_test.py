@@ -398,12 +398,22 @@ class TestSystemCalc(TestSystemCalcBase):
 								'/Dc/0/Voltage': 12.8,
 								'/Ac/Out/L1/V': 220,
 								'/Ac/Out/L1/I': 1.0,
-								'/Yield/Power': 102
+								'/Yield/Power': 102,
+								'/DeviceInstance': 0,
+								})
+		self._add_device('com.victronenergy.inverter.ttyO2',
+						product_name='inverter',
+						values={
+								'/Dc/0/Voltage': 12.8,
+								'/Ac/Out/L1/V': 220,
+								'/Ac/Out/L1/I': 1.0,
+								'/Yield/Power': 204,
+								'/DeviceInstance': 1,
 								})
 
 		self._update_values()
 		self._check_values({
-			'/Dc/Pv/Power': 102 + 12 * 8})
+			'/Dc/Pv/Power': 102 + 204 + 12 * 8})
 
 	def test_multi_dc_power(self):
 		self._update_values()
@@ -1068,6 +1078,28 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Dc/System/Power': 10 })
+
+	def test_dc_system_estimate_with_rs_smart(self):
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._add_device('com.victronenergy.battery.ttyO2',
+						product_name='battery',
+						values={
+								'/Dc/0/Voltage': 12.3,
+								'/Dc/0/Current': -18.7,
+								'/Dc/0/Power': -300,
+								'/Soc': 15.3,
+								'/DeviceInstance': 2})
+		self._set_setting('/Settings/SystemSetup/HasDcSystem', 1)
+		self._add_device('com.victronenergy.inverter.ttyO1',
+						product_name='inverter',
+						values={
+								'/Dc/0/Voltage': 12.8,
+								'/Dc/0/Current': 20, # RS Smart has a current sensor on the DC side
+								'/Ac/Out/L1/V': 220,
+								'/Ac/Out/L1/I': 1.0 })
+		self._update_values()
+		self._check_values({
+			'/Dc/System/Power': 44 }) # 300W minus the 12.8*20W of the inverter
 
 	def test_battery_state(self):
 		self._check_values({

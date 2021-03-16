@@ -126,6 +126,7 @@ class SystemCalc:
 				'/ProductName': dummy,
 				'/Mgmt/Connection': dummy,
 				'/Dc/0/Voltage': dummy,
+				'/Dc/0/Current': dummy,
 				'/Ac/Out/L1/P': dummy,
 				'/Ac/Out/L1/V': dummy,
 				'/Ac/Out/L1/I': dummy,
@@ -520,14 +521,17 @@ class SystemCalc:
 				newvalues['/Dc/Charger/Power'] += v * i
 
 		# ==== VE.Direct Inverters ====
-		vedirect_inverter = self._get_service_having_lowest_instance('com.victronenergy.inverter')
-		if vedirect_inverter is not None:
-			vedirect_inverter = vedirect_inverter[0]
+		_vedirect_inverters = sorted((di, s) for s, di in self._dbusmonitor.get_service_list('com.victronenergy.inverter').items())
+		vedirect_inverters = [x[1] for x in _vedirect_inverters]
+		vedirect_inverter = None
+		if vedirect_inverters:
+			vedirect_inverter = vedirect_inverters[0]
 
-			# For RS Smart inverter, add PV to the yield
-			pv_yield = self._dbusmonitor.get_value(vedirect_inverter, "/Yield/Power")
-			if pv_yield is not None:
-					newvalues['/Dc/Pv/Power'] = newvalues.get('/Dc/Pv/Power', 0) + pv_yield
+			# For RS Smart inverters, add PV to the yield
+			for i in vedirect_inverters:
+				pv_yield = self._dbusmonitor.get_value(i, "/Yield/Power")
+				if pv_yield is not None:
+						newvalues['/Dc/Pv/Power'] = newvalues.get('/Dc/Pv/Power', 0) + pv_yield
 
 
 		# ==== BATTERY ====
@@ -632,14 +636,19 @@ class SystemCalc:
 				dc_pv_power = newvalues.get('/Dc/Pv/Power', 0)
 				charger_power = newvalues.get('/Dc/Charger/Power', 0)
 
-				# If there is a VE.Direct inverter, remove its power from the
-				# DC estimate. This is done using the AC value since these
-				# inverters don't provide DC power values.
+				# If there are VE.Direct inverters, remove their power from the
+				# DC estimate. This is done using the AC value when the DC
+				# power values are not available.
 				inverter_power = 0
-				if vedirect_inverter is not None:
-					inverter_power = self._dbusmonitor.get_value(
-						vedirect_inverter, '/Ac/Out/L1/V', 0) * self._dbusmonitor.get_value(
-						vedirect_inverter, '/Ac/Out/L1/I', 0)
+				for i in vedirect_inverters:
+					inverter_current = self._dbusmonitor.get_value(i, '/Dc/0/Current')
+					if inverter_current is not None:
+						inverter_power += self._dbusmonitor.get_value(
+							i, '/Dc/0/Voltage', 0) * inverter_current
+					else:
+						inverter_power += self._dbusmonitor.get_value(
+							i, '/Ac/Out/L1/V', 0) * self._dbusmonitor.get_value(
+							i, '/Ac/Out/L1/I', 0)
 				newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + vebuspower - inverter_power - battery_power
 
 		elif self._settings['hasdcsystem'] == 1 and solarchargers_loadoutput_power is not None:
@@ -746,13 +755,13 @@ class SystemCalc:
 			if use_ac_out:
 				c = newvalues.get('/Ac/PvOnOutput/%s/Power' % phase)
 				if multi_path is None:
-					if vedirect_inverter is not None:
-						ac_out = self._dbusmonitor.get_value(vedirect_inverter, '/Ac/Out/%s/P' % phase)
+					for inv in vedirect_inverters:
+						ac_out = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/P' % phase)
 
 						# Some models don't show power, calculate it
 						if ac_out is None:
-							i = self._dbusmonitor.get_value(vedirect_inverter, '/Ac/Out/%s/I' % phase)
-							u = self._dbusmonitor.get_value(vedirect_inverter, '/Ac/Out/%s/V' % phase)
+							i = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/I' % phase)
+							u = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/V' % phase)
 							if None not in (i, u):
 								ac_out = i * u
 						c = _safeadd(c, ac_out)
