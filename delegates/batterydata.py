@@ -174,6 +174,11 @@ class MultiTracker(BatteryTracker):
 		super(MultiTracker, self).__init__(service, instance, monitor)
 		self._dbusservice = dbusservice
 
+	@property
+	def valid(self):
+		# The Multi is always a valid battery measurement
+		return True
+
 class BatteryData(SystemCalcDelegate):
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)
