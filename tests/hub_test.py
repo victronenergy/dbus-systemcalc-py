@@ -1419,22 +1419,38 @@ class TestHubSystem(TestSystemCalcBase):
 		self._update_values(3000)
 		self._check_values({'/Dvcc/Alarms/FirmwareInsufficient': 0})
 
-		# Give it a 24-bit version that is too old
-		self._monitor.add_value('com.victronenergy.solarcharger.ttyO2', '/FirmwareVersion', 0x101ff)
+	def test_firmware_warning_2(self):
+		# 24-bit version that is too old
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 0,
+			'/Dc/0/Voltage': 12.4,
+			'/Dc/0/Current': 9.7,
+			'/FirmwareVersion': 0x101ff},
+			connection='VE.Direct')
 		self._update_values(3000)
 		self._check_values({'/Dvcc/Alarms/FirmwareInsufficient': 1})
 
-		# Give it a 24-bit version that is new
+		# Upgrade to 1.02
 		self._monitor.add_value('com.victronenergy.solarcharger.ttyO2', '/FirmwareVersion', 0x102ff)
 		self._update_values(3000)
 		self._check_values({'/Dvcc/Alarms/FirmwareInsufficient': 0})
+
+	def test_firmware_warning_3(self):
+		# For DVCC to do anything you need at least a managed battery or solarcharger in the
+		# system.
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 0,
+			'/Dc/0/Voltage': 12.4,
+			'/Dc/0/Current': 9.7,
+			'/FirmwareVersion': 0x129},
+			connection='VE.Direct')
 
 		# Downgrade the Multi
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/FirmwareVersion', 0x418)
 		self._update_values(3000)
 		self._check_values({'/Dvcc/Alarms/FirmwareInsufficient': 1})
-		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/FirmwareVersion', 0x456)
 
+	def test_firmware_warning_4(self):
 		# Add an RS MPPT, give it "old" firmware, ensure it does not raise
 		# the alarm. The RS MPPT has support despite the low number.
 		self._add_device('com.victronenergy.solarcharger.ttyO3', {
@@ -1446,6 +1462,33 @@ class TestHubSystem(TestSystemCalcBase):
 			connection='VE.Direct')
 		self._update_values(3000)
 		self._check_values({'/Dvcc/Alarms/FirmwareInsufficient': 0})
+
+	def test_flapping_firmware(self):
+		# 24-bit version is new enough
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 0,
+			'/Dc/0/Voltage': 12.4,
+			'/Dc/0/Current': 9.7,
+			'/FirmwareVersion': 0x102ff},
+			connection='VE.Direct')
+		self._update_values(3000)
+		self._check_values({'/Dvcc/Alarms/FirmwareInsufficient': 0})
+
+		# Ignore what looks like a downgrade
+		self._monitor.add_value('com.victronenergy.solarcharger.ttyO2', '/FirmwareVersion', 0x0f)
+		self._update_values(3000)
+		self._check_values({'/Dvcc/Alarms/FirmwareInsufficient': 0})
+
+		# But if the device is actually downgraded (which would cause a disconnect/reconnect), raise alarm
+		self._remove_device('com.victronenergy.solarcharger.ttyO2')
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 0,
+			'/Dc/0/Voltage': 12.4,
+			'/Dc/0/Current': 9.7,
+			'/FirmwareVersion': 0x0f},
+			connection='VE.Direct')
+		self._update_values(3000)
+		self._check_values({'/Dvcc/Alarms/FirmwareInsufficient': 1})
 
 	def test_multiple_battery_warning(self):
 		self._check_values({'/Dvcc/Alarms/MultipleBatteries': 0})

@@ -128,6 +128,7 @@ class SolarCharger(object):
 		self.monitor = monitor
 		self.service = service
 		self._smoothed_current = self.chargecurrent or 0
+		self._has_externalcontrol_support = False
 
 	def _get_path(self, path):
 		return self.monitor.get_value(self.service, path)
@@ -150,9 +151,16 @@ class SolarCharger(object):
 
 	@property
 	def has_externalcontrol_support(self):
+		# If we have previously determined that there is support, re-use that.
+		# If the firmware is ever to be downgraded, the solarcharger must necessarily
+		# disconnect and reconnect, so this is completely safe.
+		if self._has_externalcontrol_support:
+			return True
+
 		# These products are known to have support, but may have older firmware
 		# See https://github.com/victronenergy/venus/issues/655
 		if 0xA102 <= self.product_id <= 0xA10E:
+			self._has_externalcontrol_support = True
 			return True
 
 		v = self.firmwareversion
@@ -167,8 +175,10 @@ class SolarCharger(object):
 		# versions will 1) have a version larger than 1.02 and 2) support
 		# external control.
 		if v & 0xFF0000:
-			return v >= VECAN_FIRMWARE_REQUIRED
-		return v >= VEDIRECT_FIRMWARE_REQUIRED
+			self._has_externalcontrol_support = (v >= VECAN_FIRMWARE_REQUIRED)
+		else:
+			self._has_externalcontrol_support = (v >= VEDIRECT_FIRMWARE_REQUIRED)
+		return self._has_externalcontrol_support
 
 	@property
 	def connection(self):
