@@ -27,14 +27,38 @@ Results are available under these D-Bus paths
     /Dc/Pv/Current and /Power
     /Dc/System/Power
 
-Select battery service
+Battery service and and measyrements
 ----------------------
 
-  /AutoSelectedBatteryMeasurement
-  /AvailableBatteryMeasurements
-  /ActiveBatteryService
-  /AutoSelectedBatteryService
-  /AvailableBatteryServices
+Systemcalc does a few things in handling the multiple possible battery services:
+
+1. Provide the data necessary for the Main battery monitor configuration menus, as well as providing the resulting main battery monitor data in one place.
+2. "Battery Measurements" configuration and making its data available. This whats configured in the System Setup -> MFD HTML5 App menu, and used by VRM Portal Dashboard as well as the HTML5 App.
+3. More thgins.
+
+
+These are the related paths:
+
+    /AvailableBatteryServices              <-- Used by Settings -> System Setup -> Battery monitor menu.
+                                               ie the menu that selects the installer what battery data to
+                                               use for the Overview, and for Shared Voltage Sense, Shared
+                                               Temperature Sense and so forth.
+    /AutoSelectedBatteryService            <-- Used by System Setup -> Auto selected menu entry. Shown when
+                                               the System Battery Monitor is set to Auto.
+
+    /ActiveBatteryService                  <-- For example `com.victronenergy.battery/0` in which 0 is the instance.
+                                               This data is used by ??????????
+
+    /AvailableBatteryMeasurements          <-- Used by Settings -> System Setup -> Marine MFD App configuration menu.
+    /AvailableBatteries                    <-- ???? Result of the configuration made by the user in the MFD App menu?
+    /AutoSelectedBatteryMeasurement        <-- ????
+    /AutoSelectedTemperatureService        <-- ????
+    /Dc/Battery/BatteryService             <-- ????
+    /Dc/Battery/VoltageService             <-- ????
+    /Dc/Battery/TemperatureService         <-- ????
+    /Batteries                             <-- ????
+
+Not yet reviewed text:
 
 Lets a user select which battery monitor he wants to use. Possible battery monitors include vebus.
     
