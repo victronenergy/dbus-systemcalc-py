@@ -27,7 +27,7 @@ Results are available under these D-Bus paths
     /Dc/Pv/Current and /Power
     /Dc/System/Power
 
-Battery service and and measyrements
+Battery service and and measurements
 ----------------------
 
 Systemcalc does a few things in handling the multiple possible battery services:
