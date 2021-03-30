@@ -655,8 +655,8 @@ class VoltageSenseTest(TestSystemCalcBase):
 		self._set_setting('/Settings/Services/Bol', 0)
 		self._set_setting('/Settings/SystemSetup/SharedVoltageSense', 1)
 
-		# BYD, FreedomWON, Discover AES, BlueNova, Lynx Smart
-		for product_id in (0xB00A, 0xB014, 0xB015, 0xB016, 0xB019, 0xB020, 0xA3E5, 0xA3E6):
+		# BYD, FreedomWON, Discover AES, BlueNova, BSL-BATT, Lynx Smart
+		for product_id in (0xB00A, 0xB014, 0xB015, 0xB016, 0xB019, 0xB020, 0xB021, 0xA3E5, 0xA3E6):
 			self._add_device('com.victronenergy.battery.ttyO2',
 				product_name='battery',
 				values={
