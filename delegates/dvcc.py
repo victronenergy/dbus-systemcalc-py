@@ -589,18 +589,15 @@ class BatterySubsystem(object):
 	def __contains__(self, k):
 		return k in self._battery_services
 
+	def __getitem__(self, k):
+		return self._battery_services[k]
+
 	def add_battery(self, service):
 		self._battery_services[service] = battery = Battery(self.monitor, service)
 		return battery
 
 	def remove_battery(self, service):
 		del self._battery_services[service]
-
-	@property
-	def bmses(self):
-		""" Returns the battery services with a BMS. """
-		return filter(lambda b: b.is_bms,
-			self._battery_services.itervalues())
 
 class BatteryOperationalLimits(object):
 	""" Only used to encapsulate this part of the Multi's functionality.
@@ -807,7 +804,6 @@ class Dvcc(SystemCalcDelegate):
 		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/VebusVoltageOffset', value=0, writeable=True)
 		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/CurrentOffset', value=0, writeable=True)
 		self._dbusservice.add_path('/Dvcc/Alarms/FirmwareInsufficient', value=0)
-		self._dbusservice.add_path('/Dvcc/Alarms/MultipleBatteries', value=0)
 
 	def device_added(self, service, instance, do_service_change=True):
 		service_type = service.split('.')[2]
@@ -883,12 +879,14 @@ class Dvcc(SystemCalcDelegate):
 
 	@property
 	def bms(self):
-		bmses = sorted(self._batterysystem.bmses,
-			key=lambda b: (b.service != self.systemcalc._batteryservice, b.device_instance))
-		try:
-			return bmses[0]
-		except IndexError:
-			pass
+		if self.systemcalc.batteryservice is not None:
+			try:
+				battery = self._batterysystem[self.systemcalc.batteryservice]
+			except KeyError:
+				pass
+			else:
+				if battery.is_bms:
+					return battery
 		return None
 
 	def _on_timer(self):
@@ -907,7 +905,6 @@ class Dvcc(SystemCalcDelegate):
 			self._dbusservice['/Control/MaxChargeCurrent'] = 0
 			self._dbusservice['/Control/Dvcc'] = 0
 			self._dbusservice['/Dvcc/Alarms/FirmwareInsufficient'] = 0
-			self._dbusservice['/Dvcc/Alarms/MultipleBatteries'] = 0
 			return True
 
 
@@ -915,8 +912,6 @@ class Dvcc(SystemCalcDelegate):
 		self._dbusservice['/Dvcc/Alarms/FirmwareInsufficient'] = int(
 			not self._solarsystem.has_externalcontrol_support or (
 			self._multi.firmwareversion is not None and self._multi.firmwareversion < VEBUS_FIRMWARE_REQUIRED))
-		self._dbusservice['/Dvcc/Alarms/MultipleBatteries'] = int(
-			len(self._batterysystem.bmses) > 1)
 
 		# Update subsystems
 		self._solarsystem.update_values()
