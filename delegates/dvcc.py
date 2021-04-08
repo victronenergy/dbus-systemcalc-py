@@ -242,6 +242,15 @@ class SolarCharger(object):
 		if v is not None:
 			self._smoothed_current += (v - self._smoothed_current) * self.OMEGA
 
+class Inverter(SolarCharger):
+	""" Encapsulates an inverter object, currently the inverter RS, which has a solar
+	    input and can charge the battery like a solar charger. """
+
+	@property
+	def has_externalcontrol_support(self):
+		# Inverter RS always had support
+		return True
+
 class SolarChargerSubsystem(object):
 	""" Encapsulates a collection of solar chargers that collectively make up
 	    a charging system (sans Multi). Properties related to the whole
@@ -254,6 +263,10 @@ class SolarChargerSubsystem(object):
 	def add_charger(self, service):
 		self._solarchargers[service] = charger = SolarCharger(self.monitor, service)
 		return charger
+
+	def add_inverter(self, service):
+		self._solarchargers[service] = inverter = Inverter(self.monitor, service)
+		return inverter
 
 	def remove_charger(self, service):
 		del self._solarchargers[service]
@@ -653,6 +666,17 @@ class Dvcc(SystemCalcDelegate):
 				'/FirmwareVersion',
 				'/N2kDeviceInstance',
 				'/Mgmt/Connection']),
+			('com.victronenergy.inverter', [
+				'/ProductId',
+				'/Dc/0/Current',
+				'/IsInverterCharger',
+				'/Link/NetworkMode',
+				'/Link/ChargeVoltage',
+				'/Link/ChargeCurrent',
+				'/Settings/ChargeCurrentLimit',
+				'/State',
+				'/N2kDeviceInstance',
+				'/Mgmt/Connection']),
 			('com.victronenergy.vecan',	[
 				'/Link/ChargeVoltage',
 				'/Link/NetworkMode']),
@@ -689,6 +713,8 @@ class Dvcc(SystemCalcDelegate):
 		service_type = service.split('.')[2]
 		if service_type == 'solarcharger':
 			self._solarsystem.add_charger(service)
+		elif service_type == 'inverter' and self._dbusmonitor.get_value(service, '/IsInverterCharger') == 1:
+			self._solarsystem.add_inverter(service)
 		elif service_type == 'vecan':
 			self._vecan_services.append(service)
 		elif service_type == 'battery':
