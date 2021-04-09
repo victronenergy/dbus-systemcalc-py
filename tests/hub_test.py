@@ -1599,3 +1599,117 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/MaxChargeVoltage': 54.5}})
+
+	def test_inverter_rs_remote_control(self):
+		# No multi in this system
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+
+		self._add_device('com.victronenergy.inverter.ttyO1', {
+			'/Ac/Out/L1/P': 60,
+			'/Ac/Out/L1/V': 234.2,
+			'/Dc/0/Voltage': 53.1,
+			'/Dc/0/Current': -1.2,
+			'/DeviceInstance': 278,
+			'/Soc': 53.2,
+			'/State': 9,
+			'/IsInverterCharger': 1,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Settings/ChargeCurrentLimit': 100},
+			product_name='Inverter RS', connection='VE.Direct')
+
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 53.2,
+				'/Dc/0/Current': -1.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 43.2,
+				'/DeviceInstance': 512,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 45,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
+		self._update_values(interval=3000)
+
+		self._check_external_values({
+			'com.victronenergy.inverter.ttyO1': {
+				'/Link/ChargeCurrent': 45,
+				'/Link/ChargeVoltage': 58.2,
+			}
+		})
+		self._check_values({
+			'/Control/SolarChargeCurrent': 1,
+			'/Control/SolarChargeVoltage': 1,
+			'/Control/EffectiveChargeVoltage': 58.2,
+			'/Control/BmsParameters': 1
+		})
+
+	def test_inverter_rs_remote_control_2(self):
+		# No multi in this system
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+
+		# Add inverter
+		self._add_device('com.victronenergy.inverter.ttyO1', {
+			'/Ac/Out/L1/P': 2000,
+			'/Ac/Out/L1/V': 234.2,
+			'/Dc/0/Voltage': 53.1,
+			'/Dc/0/Current': 40.0,
+			'/DeviceInstance': 278,
+			'/Soc': 53.2,
+			'/State': 9,
+			'/IsInverterCharger': 1,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Settings/ChargeCurrentLimit': 100},
+			product_name='Inverter RS', connection='VE.Direct')
+
+		# Battery
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 53.2,
+				'/Dc/0/Current': 80.0,
+				'/Dc/0/Power': 4000,
+				'/Soc': 43.2,
+				'/DeviceInstance': 512,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 100,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 100})
+
+		# Solar charger
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
+			'/Settings/ChargeCurrentLimit': 35,
+			'/Dc/0/Voltage': 58.0,
+			'/Dc/0/Current': 30.0,
+			'/FirmwareVersion': 0x0129},
+			connection='VE.Direct')
+
+		self._update_values(interval=3000)
+
+		# Check that inverter and solarcharger share charge current limit. Both have a 17.5A margin
+		# and the total is 100A.
+		self._check_external_values({
+			'com.victronenergy.inverter.ttyO1': {
+				'/Link/ChargeCurrent': 82.5,
+				'/Link/ChargeVoltage': 58.2,
+			},
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/ChargeVoltage': 58.2,
+				'/Link/ChargeCurrent': 17.5
+			}
+		})
+		self._check_values({
+			'/Control/SolarChargeCurrent': 1,
+			'/Control/SolarChargeVoltage': 1,
+			'/Control/EffectiveChargeVoltage': 58.2,
+			'/Control/BmsParameters': 1
+		})
