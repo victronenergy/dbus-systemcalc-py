@@ -887,7 +887,7 @@ class Dvcc(SystemCalcDelegate):
 				self._multi.maxchargecurrent = max_charge_current if max_charge_current > 1 else 0
 		else:
 			bms_parameters_written = self._update_battery_operational_limits(bms_service, charge_voltage, max_charge_current)
-		self._dbusservice['/Control/BmsParameters'] = bms_parameters_written
+		self._dbusservice['/Control/BmsParameters'] = int(bms_parameters_written or (bms_service is not None and voltage_written))
 
 		return True
 

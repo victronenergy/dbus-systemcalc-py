@@ -74,7 +74,7 @@ class TestSystemCalcNoMulti(TestSystemCalcBase):
 		self._check_values({
 			'/Control/SolarChargeCurrent': 1,
 			'/Control/SolarChargeVoltage': 1,
-			'/Control/BmsParameters': 0})
+			'/Control/BmsParameters': 1})
 
 	def test_hub1_control_bms_battery_vedirect_solarcharger_off(self):
 		self._set_setting('/Settings/Services/Bol', 1)
@@ -125,4 +125,4 @@ class TestSystemCalcNoMulti(TestSystemCalcBase):
 		self._check_values({
 			'/Control/SolarChargeCurrent': 1,
 			'/Control/SolarChargeVoltage': 1,
-			'/Control/BmsParameters': 0})
+			'/Control/BmsParameters': 1})
