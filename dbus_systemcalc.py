@@ -862,9 +862,10 @@ class SystemCalc:
 			m.update_values(newvalues)
 
 		# ==== UPDATE DBUS ITEMS ====
-		for path in self._summeditems.keys():
-			# Why the None? Because we want to invalidate things we don't have anymore.
-			self._dbusservice[path] = newvalues.get(path, None)
+		with self._dbusservice as sss:
+			for path in self._summeditems.keys():
+				# Why the None? Because we want to invalidate things we don't have anymore.
+				sss[path] = newvalues.get(path, None)
 
 	def _handleservicechange(self):
 		# Update the available battery monitor services, used to populate the dropdown in the settings.
