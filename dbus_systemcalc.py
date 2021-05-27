@@ -254,6 +254,10 @@ class SystemCalc:
 			'/Dc/Vebus/Power': {'gettext': '%.0F W'},
 			'/Dc/System/Power': {'gettext': '%.0F W'},
 			'/Ac/ActiveIn/Source': {'gettext': '%s'},
+			'/Ac/ActiveIn/L1/Power': {'gettext': '%.0F W'},
+			'/Ac/ActiveIn/L2/Power': {'gettext': '%.0F W'},
+			'/Ac/ActiveIn/L3/Power': {'gettext': '%.0F W'},
+			'/Ac/ActiveIn/NumberOfPhases': {'gettext': '%d'},
 			'/VebusService': {'gettext': '%s'}
 		}
 
@@ -692,20 +696,29 @@ class SystemCalc:
 		newvalues['/Ac/ActiveIn/Source'] = ac_in_source
 
 		# ===== GRID METERS & CONSUMPTION ====
+		grid_meter = self._get_first_connected_service('com.victronenergy.grid')
+		genset_meter = self._get_first_connected_service('com.victronenergy.genset')
+
+		# Make an educated guess as to what is being consumed from an AC source. If ac_in_source
+		# indicates grid, genset or shore, we use that. If the Multi is off, or disconnected through
+		# a relay assistant or otherwise, then assume the presence of a .grid or .genset service indicates
+		# presence of that AC source. If both are available, then give up. This decision making is here
+		# so the GUI has something to present even if the Multi is off.
+		ac_in_guess = ac_in_source
+		if ac_in_guess in (None, 0xF0):
+			if genset_meter is None and grid_meter is not None:
+				ac_in_guess = 1
+			elif grid_meter is None and genset_meter is not None:
+				ac_in_guess = 2
+
 		consumption = { "L1" : None, "L2" : None, "L3" : None }
-		for device_type in ['Grid', 'Genset']:
-			servicename = 'com.victronenergy.%s' % device_type.lower()
-			energy_meter = self._get_first_connected_service(servicename)
-			em_service = None if energy_meter is None else energy_meter[0]
-			uses_active_input = False
-			if multi_path is not None:
-				# If a grid meter is present we use values from it. If not, we look at the multi. If it has
-				# AcIn1 or AcIn2 connected to the grid, we use those values.
-				# com.victronenergy.grid.??? indicates presence of an energy meter used as grid meter.
-				# com.victronenergy.vebus.???/Ac/ActiveIn/ActiveInput: decides which whether we look at AcIn1
-				# or AcIn2 as possible grid connection.
-				if ac_in_source is not None:
-					uses_active_input = ac_in_source > 0 and (ac_in_source == 2) == (device_type == 'Genset')
+		for device_type, em_service, _types in (('Grid', grid_meter, (1, 3)), ('Genset', genset_meter, (2,))):
+			# If a grid meter is present we use values from it. If not, we look at the multi. If it has
+			# AcIn1 or AcIn2 connected to the grid, we use those values.
+			# com.victronenergy.grid.??? indicates presence of an energy meter used as grid meter.
+			# com.victronenergy.vebus.???/Ac/ActiveIn/ActiveInput: decides which whether we look at AcIn1
+			# or AcIn2 as possible grid connection.
+			uses_active_input = ac_in_source in _types
 			for phase in consumption:
 				p = None
 				pvpower = newvalues.get('/Ac/PvOn%s/%s/Power' % (device_type, phase))
@@ -733,7 +746,12 @@ class SystemCalc:
 					if pvpower != None:
 						p = _safeadd(p, -pvpower)
 				newvalues['/Ac/%s/%s/Power' % (device_type, phase)] = p
+				if ac_in_guess in _types:
+					newvalues['/Ac/ActiveIn/%s/Power' % (phase,)] = p
+
 			self._compute_number_of_phases('/Ac/%s' % device_type, newvalues)
+			self._compute_number_of_phases('/Ac/ActiveIn', newvalues)
+
 			product_id = None
 			device_type_id = None
 			if em_service is not None:
@@ -743,6 +761,7 @@ class SystemCalc:
 				product_id = self._dbusmonitor.get_value(multi_path, '/ProductId')
 			newvalues['/Ac/%s/ProductId' % device_type] = product_id
 			newvalues['/Ac/%s/DeviceType' % device_type] = device_type_id
+
 		# If we have an ESS system and RunWithoutGridMeter is set, there cannot be load on the AC-In, so it
 		# must be on AC-Out. Hence we do calculate AC-Out consumption even if 'useacout' is disabled.
 		# Similarly all load are by definition on the output if this is not an ESS system.
@@ -885,12 +904,12 @@ class SystemCalc:
 		self._remove_unconnected_services(services)
 		return services
 
-	# returns a tuple (servicename, instance)
-	def _get_first_connected_service(self, classfilter=None):
+	# returns a servicename string
+	def _get_first_connected_service(self, classfilter):
 		services = self._get_connected_service_list(classfilter=classfilter)
 		if len(services) == 0:
 			return None
-		return services.items()[0]
+		return services.items()[0][0]
 
 	# returns a tuple (servicename, instance)
 	def _get_service_having_lowest_instance(self, classfilter=None):
