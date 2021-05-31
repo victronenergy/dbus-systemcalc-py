@@ -2,6 +2,7 @@
 
 from dbus.mainloop.glib import DBusGMainLoop
 from gi.repository import GLib
+from functools import partial
 import argparse
 import logging
 import sys
@@ -28,14 +29,23 @@ logger = setup_logging(debug=True)
 # Have a mainloop, so we can send/receive asynchronous calls to and from dbus
 DBusGMainLoop(set_as_default=True)
 
+def loop(start, offset, path, value):
+    return start + 1 + (value-start) % offset
+
 s = DbusDummyService(
     servicename=args.name,
-    deviceinstance=0,
+    deviceinstance=1,
     paths={
         '/State': {'initial': 242},
-        '/Dc/0/Voltage': {'initial': 41},
-        '/Dc/0/Current': {'initial': 42},
-        '/Dc/0/Temperature': {'initial': None},
+        '/Dc/0/Voltage': {'initial': 41.0, 'update': partial(loop, 41, 20)},
+        '/Dc/0/Current': {'initial': 42.0, 'update': partial(loop, 42, 20)},
+        '/Dc/0/Temperature': {'initial': 5, 'update': partial(loop, 5, 20)},
+
+        '/Pv/I': {'initial': 0.0, 'update': partial(loop, 0, 20)},
+        '/Pv/V': {'initial': 80.0, 'update': partial(loop, 80, 20)},
+        '/Yield/Power': {'initial': 800, 'update': partial(loop, 800, 20)},
+        '/History/Daily/0/TimeInBulk': {'initial': 0, 'update': 1},
+
         '/Link/NetworkMode': {'initial': None},
         '/Link/NetworkStatus': {'initial': None},
         '/Link/ChargeVoltage': {'initial': None},
