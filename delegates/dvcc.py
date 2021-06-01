@@ -246,14 +246,86 @@ class SolarCharger(object):
 		if v is not None:
 			self._smoothed_current += (v - self._smoothed_current) * self.OMEGA
 
-class Inverter(SolarCharger):
-	""" Encapsulates an inverter object, currently the inverter RS, which has a solar
-	    input and can charge the battery like a solar charger. """
+class Inverter(object):
+	""" Encapsulates an inverter object. """
+	def __init__(self, monitor, service):
+		self.monitor = monitor
+		self.service = service
+
+	@property
+	def mode(self):
+		return self.monitor.get_value(self.service, '/Mode')
+
+	@mode.setter
+	def mode(self, m):
+		self.monitor.set_value(self.service, '/Mode', m)
+
+	def set_maxdischargecurrent(self, limit):
+		""" For plain inverters, a limit of zero turns it off, and a non-zero
+		    limit turns it back on. """
+		m = 2 if limit > 0 else 4 # 2 == invert-only, 4 == off
+		if self.mode != m:
+			self.mode = m
+
+class InverterCharger(SolarCharger, Inverter):
+	""" Encapsulates an inverter/charger object, currently the inverter RS,
+	    which has a solar input and can charge the battery like a solar
+	    charger, but is also an inverter.
+	"""
+	def __init__(self, monitor, service):
+		super(InverterCharger, self).__init__(monitor, service)
 
 	@property
 	def has_externalcontrol_support(self):
 		# Inverter RS always had support
 		return True
+
+	@property
+	def maxdischargecurrent(self):
+		""" Returns discharge current setting. This does nothing except
+		    return the previously set value. """
+		return self.monitor.get_value(self.service, '/Link/DischargeCurrent')
+
+	@maxdischargecurrent.setter
+	def maxdischargecurrent(self, limit):
+		self.monitor.set_value(self.service, '/Link/DischargeCurrent', limit)
+
+	def set_maxdischargecurrent(self, limit):
+		""" Write the maximum discharge limit across. The firmware
+		    already handles a zero by turning off. """
+		if self.maxdischargecurrent != limit:
+			self.maxdischargecurrent = limit
+
+class InverterSubsystem(object):
+	""" Encapsulate collection of inverters. """
+	def __init__(self, monitor):
+		self.monitor = monitor
+		self._inverters = {}
+
+	def _add_inverter(self, ob):
+		self._inverters[ob.service] = ob
+		return ob
+
+	def add_inverter(self, service):
+		return self._add_inverter(Inverter(self.monitor, service))
+
+	def remove_inverter(self, service):
+		del self._inverters[service]
+
+	def __iter__(self):
+		return self._inverters.itervalues()
+
+	def __len__(self):
+		return len(self._inverters)
+
+	def __contains__(self, k):
+		return k in self._inverters
+
+	def set_maxdischargecurrent(self, limit):
+		# Inverters only care about limit=0, so simply send
+		# it to all.
+		for inverter in self:
+			inverter.set_maxdischargecurrent(limit)
 
 class SolarChargerSubsystem(object):
 	""" Encapsulates a collection of solar chargers that collectively make up
@@ -268,8 +340,8 @@ class SolarChargerSubsystem(object):
 		self._solarchargers[service] = charger = SolarCharger(self.monitor, service)
 		return charger
 
-	def add_inverter(self, service):
-		self._solarchargers[service] = inverter = Inverter(self.monitor, service)
+	def add_invertercharger(self, service):
+		self._solarchargers[service] = inverter = InverterCharger(self.monitor, service)
 		return inverter
 
 	def remove_charger(self, service):
@@ -684,7 +756,9 @@ class Dvcc(SystemCalcDelegate):
 				'/Link/NetworkMode',
 				'/Link/ChargeVoltage',
 				'/Link/ChargeCurrent',
+				'/Link/DischargeCurrent',
 				'/Settings/ChargeCurrentLimit',
+				'/Mode',
 				'/State',
 				'/N2kDeviceInstance',
 				'/Mgmt/Connection']),
@@ -706,6 +780,7 @@ class Dvcc(SystemCalcDelegate):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 		self._batterysystem = BatterySubsystem(dbusmonitor)
 		self._solarsystem = SolarChargerSubsystem(dbusmonitor)
+		self._inverters = InverterSubsystem(dbusmonitor)
 		self._multi = Multi(dbusmonitor, dbusservice)
 
 		self._dbusservice.add_path('/Control/SolarChargeVoltage', value=0)
@@ -724,8 +799,15 @@ class Dvcc(SystemCalcDelegate):
 		service_type = service.split('.')[2]
 		if service_type == 'solarcharger':
 			self._solarsystem.add_charger(service)
-		elif service_type == 'inverter' and self._dbusmonitor.get_value(service, '/IsInverterCharger') == 1:
-			self._solarsystem.add_inverter(service)
+		elif service_type == 'inverter':
+			if self._dbusmonitor.get_value(service, '/IsInverterCharger') == 1:
+				# Add to both the solarcharger and inverter collections.
+				# add_invertercharger returns an object that can be directly
+				# added to the inverter collection.
+				self._inverters._add_inverter(
+					self._solarsystem.add_invertercharger(service))
+			else:
+				self._inverters.add_inverter(service)
 		elif service_type == 'vecan':
 			self._vecan_services.append(service)
 		elif service_type == 'battery':
@@ -739,10 +821,15 @@ class Dvcc(SystemCalcDelegate):
 	def device_removed(self, service, instance):
 		if service in self._solarsystem:
 			self._solarsystem.remove_charger(service)
+			# Some solar chargers are inside an inverter
+			if service in self._inverters:
+				self._inverters.remove_inverter(service)
 		elif service in self._vecan_services:
 			self._vecan_services.remove(service)
 		elif service in self._batterysystem:
 			self._batterysystem.remove_battery(service)
+		elif service in self._inverters:
+			self._inverters.remove_inverter(service)
 		if len(self._solarsystem) == 0 and len(self._vecan_services) == 0 and \
 			len(self._batterysystem) == 0 and self._timer is not None:
 			gobject.source_remove(self._timer)
@@ -930,9 +1017,8 @@ class Dvcc(SystemCalcDelegate):
 
 	def _update_battery_operational_limits(self, bms_service, cv, mcc):
 		""" This function writes the bms parameters across to the Multi
-		    if it exists. The parameters may be modified before being
-		    copied across. The modified current value is returned to be
-		    used elsewhere. """
+		    if it exists. Also communicate DCL=0 to inverters. """
+		written = 0
 		if self._multi.active:
 			if cv is not None:
 				self._multi.bol.chargevoltage = cv
@@ -943,9 +1029,14 @@ class Dvcc(SystemCalcDelegate):
 			# Copy the rest unmodified
 			self._multi.bol.maxdischargecurrent = bms_service.maxdischargecurrent
 			self._multi.bol.batterylowvoltage = bms_service.batterylowvoltage
-			return 1
+			written = 1
 
-		return 0
+		# Also control inverters if BMS stops discharge
+		if len(self._inverters):
+			self._inverters.set_maxdischargecurrent(bms_service.maxdischargecurrent)
+			written = 1
+
+		return written
 
 	@property
 	def feedback_allowed(self):

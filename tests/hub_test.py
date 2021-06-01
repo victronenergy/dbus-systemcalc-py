@@ -1616,6 +1616,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
 			'/Link/ChargeCurrent': None,
+			'/Link/DischargeCurrent': None,
 			'/Settings/ChargeCurrentLimit': 100},
 			product_name='Inverter RS', connection='VE.Direct')
 
@@ -1663,6 +1664,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/NetworkMode': 0,
 			'/Link/ChargeVoltage': None,
 			'/Link/ChargeCurrent': None,
+			'/Link/DischargeCurrent': None,
 			'/Settings/ChargeCurrentLimit': 100},
 			product_name='Inverter RS', connection='VE.Direct')
 
@@ -1792,3 +1794,85 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Link/ChargeCurrent': 0, # Shut down
 			}
 		})
+
+	def test_inverter_rs_discharge_current(self):
+		# Add inverter
+		self._add_device('com.victronenergy.inverter.ttyO1', {
+			'/Ac/Out/L1/P': 2000,
+			'/Ac/Out/L1/V': 234.2,
+			'/Dc/0/Voltage': 53.1,
+			'/Dc/0/Current': 40.0,
+			'/DeviceInstance': 278,
+			'/Soc': 53.2,
+			'/State': 9,
+			'/IsInverterCharger': 1,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Link/DischargeCurrent': None,
+			'/Settings/ChargeCurrentLimit': 100},
+			product_name='Inverter RS', connection='VE.Direct')
+
+		# Battery
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 53.2,
+				'/Dc/0/Current': 80.0,
+				'/Dc/0/Power': 4000,
+				'/Soc': 43.2,
+				'/DeviceInstance': 512,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 100,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 0})
+
+		self._update_values(interval=3000)
+
+		self._check_external_values({
+			'com.victronenergy.inverter.ttyO1': {
+				'/Link/DischargeCurrent': 0.0}})
+
+	def test_inverter_switchoff_bms(self):
+		# Add inverter
+		self._add_device('com.victronenergy.inverter.ttyO1', {
+			'/Ac/Out/L1/P': 2000,
+			'/Ac/Out/L1/V': 234.2,
+			'/Dc/0/Voltage': 53.1,
+			'/Dc/0/Current': 40.0,
+			'/DeviceInstance': 278,
+			'/Soc': 53.2,
+			'/State': 9,
+			'/Mode': 2, # InvertOnly
+			'/IsInverterCharger': 0, # Dumb inverter
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Link/DischargeCurrent': None,
+			'/Settings/ChargeCurrentLimit': 100},
+			product_name='Inverter RS', connection='VE.Direct')
+
+		# Battery
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 53.2,
+				'/Dc/0/Current': 80.0,
+				'/Dc/0/Power': 4000,
+				'/Soc': 43.2,
+				'/DeviceInstance': 512,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 100,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 0.0})
+
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.inverter.ttyO1': {
+				'/Mode': 4}}) # OFF
+
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxDischargeCurrent', 100.0)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.inverter.ttyO1': {
+				'/Mode': 2}}) # InvertOnly
