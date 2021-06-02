@@ -145,7 +145,7 @@ class SystemCalc:
 			delegates.Dvcc(self),
 			delegates.BatterySense(self),
 			delegates.BatterySettings(self),
-			delegates.SystemState(),
+			delegates.SystemState(self),
 			delegates.BatteryLife(),
 			delegates.ScheduledCharging(),
 			delegates.SourceTimers(),
@@ -405,6 +405,10 @@ class SystemCalc:
 
 		# Only a Multi, no other chargers. Then we can use it.
 		return vebus_service[0]
+
+	@property
+	def batteryservice(self):
+		return self._batteryservice
 
 	# Called on a one second timer
 	def _handletimertick(self):

@@ -33,8 +33,9 @@ class SystemState(SystemCalcDelegate):
 	RECHARGE = 0x102
 	SCHEDULEDCHARGE = 0x103
 
-	def __init__(self):
+	def __init__(self, sc):
 		super(SystemState, self).__init__()
+		self.systemcalc = sc
 
 	def get_input(self):
 		return [
@@ -70,6 +71,9 @@ class SystemState(SystemCalcDelegate):
 		]
 
 	def bms_state(self, vebus):
+		""" Get the BMS state from the Multi. First check the /Bms/ paths. That
+		    handles the case for a VE.Bus BMS or a 2-signal BMS.  then read the BOL
+		    paths where the DVCC assistant copies the BMS values. """
 		# Will return None if no vebus BMS
 		may_discharge = self._dbusmonitor.get_value(vebus,
 			'/Bms/AllowToDischarge')
@@ -88,20 +92,35 @@ class SystemState(SystemCalcDelegate):
 				'/BatteryOperationalLimits/MaxChargeCurrent') != 0
 		return (bool(may_charge), bool(may_discharge))
 
+	def bms_state_2(self, battery):
+		""" Alternative method of getting the BMS state. This is used
+		    when there is no vebus. Then it gets the state from the
+		    selected battery service. """
+		may_discharge = self._dbusmonitor.get_value(battery,
+			'/Info/MaxDischargeCurrent') != 0
+		may_charge = self._dbusmonitor.get_value(battery,
+			'/Info/MaxChargeCurrent') != 0
+		return may_charge, may_discharge
+
 	def state(self, newvalues):
 		vebus = newvalues.get('/VebusService')
 		flags = sc_utils.SmartDict(dict.fromkeys(['LowSoc', 'BatteryLife',
 		'DischargeDisabled', 'ChargeDisabled', 'SlowCharge', 'UserChargeLimited', 'UserDischargeLimited'], 0))
 
 		if vebus is None:
+			ss = SystemState.UNKNOWN
+
 			# Look for a VE.Direct inverter
 			inverters = self._dbusmonitor.get_service_list('com.victronenergy.inverter').keys()
 			if inverters:
-				return (self._dbusmonitor.get_value(inverters[0], '/State'), flags)
+				ss = self._dbusmonitor.get_value(inverters[0], '/State')
 
-			# This could also be because a VEBUS BMS turned the inverter off.
-			# Unfortunately we will never know. Just admit we don't know.
-			return (SystemState.UNKNOWN, flags)
+			# Check if we can get the bms state from the selected batteryservice
+			if self.systemcalc.batteryservice is not None:
+				flags.ChargeDisabled, flags.DischargeDisabled = map(
+					lambda x: int(not x), self.bms_state_2(self.systemcalc.batteryservice))
+
+			return (ss, flags)
 
 		# VEBUS is available
 		ss = self._dbusmonitor.get_value(vebus, '/State')
