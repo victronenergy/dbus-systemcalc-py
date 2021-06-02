@@ -50,6 +50,8 @@ class SystemState(SystemCalcDelegate):
 				'/Hub4/Sustain',
 				'/State',
 				'/VebusMainState',
+				'/BatteryOperationalLimits/MaxChargeCurrent',
+				'/BatteryOperationalLimits/MaxDischargeCurrent',
 				'/Bms/AllowToDischarge',
 				'/Bms/AllowToCharge']),
 			('com.victronenergy.inverter', [
