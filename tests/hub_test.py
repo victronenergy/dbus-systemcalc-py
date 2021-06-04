@@ -1713,3 +1713,82 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Control/EffectiveChargeVoltage': 58.2,
 			'/Control/BmsParameters': 1
 		})
+
+	def test_ccl0_balance_solarchargers(self):
+		""" Because many batteries send CCL=0 when they are full rather than
+		    to control the voltage, we don't shut down the solarchargers. """
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 55.1,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 165.3,
+				'/Soc': 100,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 10,
+				'/Info/MaxChargeVoltage': 56.5,
+				'/Info/MaxDischargeCurrent': 10,
+				'/ProductId': 0xB007}) # Generic
+
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Dc/0/Voltage': 58.0,
+			'/Dc/0/Current': 30,
+			'/FirmwareVersion': 0x0129},
+			connection='VE.Direct')
+
+		self._update_values(interval=10000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/ChargeCurrent': 10 + 8, # 8 amps from inverter plus 10 from battery
+			}
+		})
+
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeCurrent', 0)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/ChargeCurrent': 8, # 8 amps from inverter only, solar chargers set to carry load
+			}
+		})
+
+	def test_quirk_lynx_smart_bms(self):
+		""" When the Lynx Smart BMS sends CCL=0, it wants us to stop all charging. """
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 55.1,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 165.3,
+				'/Soc': 100,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 0,
+				'/Info/MaxChargeVoltage': 56.5,
+				'/Info/MaxDischargeCurrent': 10,
+				'/ProductId': 0xA3E5})
+
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Dc/0/Voltage': 58.0,
+			'/Dc/0/Current': 30,
+			'/FirmwareVersion': 0x0129},
+			connection='VE.Direct')
+
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/ChargeCurrent': 0, # Shut down
+			}
+		})

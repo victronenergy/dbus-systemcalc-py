@@ -5,7 +5,6 @@ from math import pi, floor, ceil
 import traceback
 from itertools import izip, count
 from functools import partial, wraps
-from collections import namedtuple
 
 # Victron packages
 from sc_utils import safeadd, copy_dbus_value, reify
@@ -70,13 +69,18 @@ def _pylontech_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed
 		capacity = bms.capacity or 55
 		return (min(charge_voltage, 27.8), max(charge_current, round(capacity/4.0)), feedback_allowed, False)
 
-# Quirk = namedtuple('Quirk', ['product_id', 'floatvoltage', 'floatcurrent'])
+def _lynx_smart_bms_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
+	""" When the Lynx Smart BMS sends CCL=0, it wants all chargers to stop. """
+	return (charge_voltage, charge_current, feedback_allowed, True)
+
 QUIRKS = {
 	0xB004: _lg_quirk,
 	0xB009: _pylontech_quirk,
 	0xB00A: _byd_quirk,
 	0xB015: _byd_quirk,
 	0xB019: _byd_quirk,
+	0xA3E5: _lynx_smart_bms_quirk,
+	0xA3E6: _lynx_smart_bms_quirk,
 }
 
 def distribute(current_values, max_values, increment):
