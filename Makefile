@@ -18,6 +18,7 @@ DELEGATES = \
 	$(SOURCEDIR)/delegates/servicemapper.py \
 	$(SOURCEDIR)/delegates/vebussocwriter.py \
 	$(SOURCEDIR)/delegates/systemstate.py \
+	$(SOURCEDIR)/delegates/batterysoc.py \
 	$(SOURCEDIR)/delegates/batterysense.py \
 	$(SOURCEDIR)/delegates/batterylife.py \
 	$(SOURCEDIR)/delegates/schedule.py \

@@ -178,6 +178,7 @@ class SystemCalc:
 			delegates.RelayState(),
 			delegates.BuzzerControl(),
 			delegates.LgCircuitBreakerDetect(),
+			delegates.BatterySoc(self),
 			delegates.Dvcc(self),
 			delegates.BatterySense(self),
 			delegates.BatterySettings(self),
@@ -281,7 +282,6 @@ class SystemCalc:
 			'/Dc/Battery/VoltageService': {'gettext': '%s'},
 			'/Dc/Battery/Current': {'gettext': '%.1F A'},
 			'/Dc/Battery/Power': {'gettext': '%.0F W'},
-			'/Dc/Battery/Soc': {'gettext': '%.0F %%'},
 			'/Dc/Battery/State': {'gettext': '%s'},
 			'/Dc/Battery/TimeToGo': {'gettext': '%.0F s'},
 			'/Dc/Battery/ConsumedAmphours': {'gettext': '%.1F Ah'},
@@ -617,7 +617,6 @@ class SystemCalc:
 			batteryservicetype = self._batteryservice.split('.')[2]
 			assert batteryservicetype in ('battery', 'vebus', 'inverter', 'multi')
 
-			newvalues['/Dc/Battery/Soc'] = self._dbusmonitor.get_value(self._batteryservice,'/Soc')
 			newvalues['/Dc/Battery/TimeToGo'] = self._dbusmonitor.get_value(self._batteryservice,'/TimeToGo')
 			newvalues['/Dc/Battery/ConsumedAmphours'] = self._dbusmonitor.get_value(self._batteryservice,'/ConsumedAmphours')
 			newvalues['/Dc/Battery/ProductId'] = self._dbusmonitor.get_value(self._batteryservice, '/ProductId')
