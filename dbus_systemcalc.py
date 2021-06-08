@@ -300,7 +300,7 @@ class SystemCalc:
 		for m in self._modules:
 			m.settings_changed(setting, oldvalue, newvalue)
 
-	def _find_device_instance(self, serviceclass, instance):
+	def find_device_instance(self, serviceclass, instance):
 		""" Gets a mapping of services vs DeviceInstance using
 		    get_service_list.  Then searches for the specified DeviceInstance
 		    and returns the service name. """
@@ -347,7 +347,7 @@ class SystemCalc:
 			# newbatteryservice might turn into None if a chosen battery
 			# monitor no longer exists. Don't auto change the setting (it might
 			# come back) and don't autoselect another.
-			newbatteryservice = self._find_device_instance(serviceclass, instance)
+			newbatteryservice = self.find_device_instance(serviceclass, instance)
 
 		if newbatteryservice != self._batteryservice:
 			services = self._dbusmonitor.get_service_list()

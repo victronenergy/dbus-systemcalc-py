@@ -1911,3 +1911,49 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.inverter.ttyO1': {
 				'/Mode': 4}}) # Remains OFF
+
+	def test_alternate_soc(self):
+		""" Use another battery service to monitor SOC. Used with batteries
+		    that has inaccurate current sensing, where the system uses a BMV
+		    to compensate for it. """
+		# Battery
+		self._add_device('com.victronenergy.battery.socketcan_can0',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 53.2,
+				'/Dc/0/Current': 0.0,
+				'/Dc/0/Power': 0.0,
+				'/Soc': 65.4,
+				'/DeviceInstance': 512,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 100,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 100})
+
+		self._update_values(interval=3000)
+		self._check_values({
+			'/Control/UseBmvForSoc': None }) # Only one battery
+
+		# BMV
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/ProductId': 0x204,
+				'/Dc/0/Voltage': 53.2,
+				'/Dc/0/Current': 1.2,
+				'/Dc/0/Power': 60,
+				'/Soc': 54.3,
+				'/DeviceInstance': 258})
+
+		# BMS is selected service
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.battery/512')
+		self._update_values(interval=3000)
+		self._check_values({
+			'/Control/UseBmvForSoc': 0,
+			'/Dc/Battery/Soc': 65.4, })
+
+		# BMV for SOC
+		self._set_setting('/Settings/SystemSetup/UseBmvForSoc', 1)
+		self._update_values(interval=3000)
+		self._check_values({
+			'/Dc/Battery/Soc': 54.3, })
