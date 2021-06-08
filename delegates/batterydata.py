@@ -32,7 +32,7 @@ class BatteryConfiguration(object):
 			0, 0, 1, callback=partial(self.on_setting_change, "enabled", bool))
 		self.service_item.set_value(self.service)
 		self.enabled = bool(self.enabled_item.get_value())
-		self.name = str(self.name_item.get_value())
+		self.name = unicode(self.name_item.get_value())
 
 	def on_setting_change(self, key, cast, service, path, value):
 		setattr(self, key, cast(value['Value']))

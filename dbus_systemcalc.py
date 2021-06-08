@@ -893,7 +893,7 @@ class SystemCalc:
 		item = self._summeditems.get(path)
 		if item is not None:
 			return item['gettext'] % value
-		return str(value)
+		return unicode(value).encode('utf-8')
 
 	def _compute_number_of_phases(self, path, newvalues):
 		number_of_phases = None
