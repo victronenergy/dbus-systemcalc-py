@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 from itertools import chain
 from collections import Counter
-from six.moves import range as xrange
 
 # This adapts sys.path to include all relevant packages
 import context
@@ -51,7 +50,7 @@ class TestBatteryLife(TestSystemCalcBase):
         self._monitor.set_value(self.vebus, '/Hub4/AssistantId', None)
         # For any of the 13 possible states (0-12), ensure that if ESS assistant is gone
         # we just leave matters alone.
-        for initialstate in xrange(13):
+        for initialstate in range(13):
             self._set_setting('/Settings/CGwacs/BatteryLife/State', initialstate)
             self._update_values()
             self._check_settings({
@@ -64,7 +63,7 @@ class TestBatteryLife(TestSystemCalcBase):
         self._monitor.remove_service(self.vebus)
         # There's 12 possible ESS states, crudely test that it never hops if
         # there is no vebus.
-        for initialstate in xrange(13):
+        for initialstate in range(13):
             self._set_setting('/Settings/CGwacs/BatteryLife/State', initialstate)
             self._update_values()
             self._check_settings({
@@ -254,7 +253,7 @@ class TestBatteryLife(TestSystemCalcBase):
             newstate = initialstate
             transitions = {}
             for soc in chain(
-                    (x/10.0 for x in xrange(start*10, stop*10, step)),
+                    (x/10.0 for x in range(start*10, stop*10, step)),
                     (stop,)):
                 bl._tracked_values['soc'] = soc
                 states = Counter()

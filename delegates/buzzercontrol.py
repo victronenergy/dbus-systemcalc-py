@@ -1,5 +1,5 @@
 import fcntl
-from gobjectwrapper import gobject
+from gi.repository import GLib
 import logging
 import os
 import sc_utils
@@ -54,10 +54,10 @@ class BuzzerControl(SystemCalcDelegate):
 			value = 1 if int(value) == 1 else 0
 			if value == 1:
 				if self._timer is None:
-					self._timer = gobject.timeout_add(500, exit_on_error, self._on_timer)
+					self._timer = GLib.timeout_add(500, exit_on_error, self._on_timer)
 					self._set_buzzer(True)
 			elif self._timer is not None:
-				gobject.source_remove(self._timer)
+				GLib.source_remove(self._timer)
 				self._timer = None
 				self._set_buzzer(False)
 			self._dbusservice['/Buzzer/State'] = value

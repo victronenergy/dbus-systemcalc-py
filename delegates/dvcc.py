@@ -1,16 +1,9 @@
 from dbus.exceptions import DBusException
-from gobjectwrapper import gobject
+from gi.repository import GLib
 import logging
 from math import pi, floor, ceil
 import traceback
 from itertools import count
-import six
-
-try:
-	from itertools import izip as zip
-except ImportError:
-	pass
-
 from functools import partial, wraps
 
 # Victron packages
@@ -332,7 +325,7 @@ class InverterSubsystem(object):
 		del self._inverters[service]
 
 	def __iter__(self):
-		return six.itervalues(self._inverters)
+		return iter(self._inverters.values())
 
 	def __len__(self):
 		return len(self._inverters)
@@ -367,7 +360,7 @@ class SolarChargerSubsystem(object):
 		del self._solarchargers[service]
 
 	def __iter__(self):
-		return six.itervalues(self._solarchargers)
+		return iter(self._solarchargers.values())
 
 	def __len__(self):
 		return len(self._solarchargers)
@@ -428,7 +421,7 @@ class SolarChargerSubsystem(object):
 		# Update vecan only if there is one..
 		vecan = self.monitor.get_service_list('com.victronenergy.vecan')
 		if len(vecan):
-			for _ in six.iterkeys(vecan):
+			for _ in vecan.keys():
 				self.monitor.set_value_async(_, '/Link/NetworkMode', network_mode)
 			network_mode_written = True
 
@@ -587,7 +580,7 @@ class BatterySubsystem(object):
 		self._battery_services = {}
 
 	def __iter__(self):
-		return six.itervalues(self._battery_services)
+		return iter(self._battery_services.values())
 
 	def __len__(self):
 		return len(self._battery_services)
@@ -832,7 +825,7 @@ class Dvcc(SystemCalcDelegate):
 			# Skip timer code below
 			return
 		if self._timer is None:
-			self._timer = gobject.timeout_add(1000, exit_on_error, self._on_timer)
+			self._timer = GLib.timeout_add(1000, exit_on_error, self._on_timer)
 
 	def device_removed(self, service, instance):
 		if service in self._solarsystem:
@@ -848,7 +841,7 @@ class Dvcc(SystemCalcDelegate):
 			self._inverters.remove_inverter(service)
 		if len(self._solarsystem) == 0 and len(self._vecan_services) == 0 and \
 			len(self._batterysystem) == 0 and self._timer is not None:
-			gobject.source_remove(self._timer)
+			GLib.source_remove(self._timer)
 			self._timer = None
 
 	def _property(path, self):

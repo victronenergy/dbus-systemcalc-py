@@ -1,5 +1,5 @@
 from time import time
-from gobjectwrapper import gobject
+from gi.repository import GLib
 
 # Victron packages
 from ve_utils import exit_on_error
@@ -29,7 +29,7 @@ class SourceTimers(SystemCalcDelegate):
 			self._dbusservice.add_path(p, value=0)
 		self._dbusservice.add_path('/Timers/TimeOff', value=0)
 		self._on_timer()
-		self._timer = gobject.timeout_add(10000, exit_on_error, self._on_timer)
+		self._timer = GLib.timeout_add(10000, exit_on_error, self._on_timer)
 
 	@property
 	def elapsed(self):

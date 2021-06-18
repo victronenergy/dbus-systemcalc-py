@@ -1,8 +1,7 @@
 from collections import namedtuple
 from itertools import chain
-from gobjectwrapper import gobject
+from gi.repository import GLib
 from dbus.exceptions import DBusException
-import six
 from delegates.base import SystemCalcDelegate
 from delegates.dvcc import Dvcc
 
@@ -100,7 +99,7 @@ class BatterySense(SystemCalcDelegate):
 		self._dbusservice.add_path('/AutoSelectedTemperatureService', value=None)
 		self._dbusservice.add_path('/Dc/Battery/TemperatureService', value=None)
 		self._dbusservice.add_path('/Dc/Battery/Temperature', value=None, gettextcallback=lambda p, v: '{:.1F} C'.format(v))
-		self._timer = gobject.timeout_add(3000, exit_on_error, self._on_timer)
+		self._timer = GLib.timeout_add(3000, exit_on_error, self._on_timer)
 
 	@property
 	def temperature_service(self):
@@ -145,7 +144,7 @@ class BatterySense(SystemCalcDelegate):
 			self.TEMPSERVICE_DEFAULT: 'Automatic',
 			self.TEMPSERVICE_NOSENSOR: 'No sensor'}
 
-		for sensor in six.itervalues(self.temperaturesensors):
+		for sensor in self.temperaturesensors.values():
 			if sensor.valid:
 				name = self._dbusmonitor.get_value(sensor.service, '/ProductName')
 				services[sensor.instance_service_name+sensor.path] = self.nice_name(sensor.service)
@@ -282,7 +281,7 @@ class BatterySense(SystemCalcDelegate):
 		if len(vecan):
 			sense_origin = self._dbusmonitor.get_value(sense_voltage_service, '/Mgmt/Connection')
 			if sense_origin and sense_origin != 'VE.Can':
-				for _ in six.iterkeys(vecan):
+				for _ in vecan.keys():
 					self._dbusmonitor.set_value_async(_, '/Link/VoltageSense', sense_voltage)
 				charger_written = self.VSENSE_ON
 
@@ -365,7 +364,7 @@ class BatterySense(SystemCalcDelegate):
 		if len(vecan):
 			sense_origin = self._dbusmonitor.get_value(sense_temp_service, '/Mgmt/Connection')
 			if sense_origin and sense_origin != 'VE.Can':
-				for _ in six.iterkeys(vecan):
+				for _ in vecan.keys():
 					self._dbusmonitor.set_value_async(_, '/Link/TemperatureSense', sense_temp)
 				written = 1
 

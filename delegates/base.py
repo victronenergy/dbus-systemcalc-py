@@ -1,5 +1,3 @@
-import six
-
 class TrackInstance(type):
 	def __init__(klass, *args, **kwargs):
 		if not hasattr(klass, '_instance'):
@@ -13,8 +11,7 @@ class TrackInstance(type):
 	def instance(klass):
 		return klass._instance
 
-@six.add_metaclass(TrackInstance)
-class SystemCalcDelegate(object):
+class SystemCalcDelegate(object, metaclass=TrackInstance):
 	def __new__(klass, *args, **kwargs):
 		klass._instance = super(SystemCalcDelegate, klass).__new__(klass)
 		return klass._instance

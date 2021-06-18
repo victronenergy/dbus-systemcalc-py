@@ -1,11 +1,7 @@
 from __future__ import division
 import logging
-from gobjectwrapper import gobject
+from gi.repository import GLib
 from datetime import datetime, timedelta, time
-try:
-	from itertools import izip as zip
-except ImportError:
-	pass
 
 # Victron packages
 from ve_utils import exit_on_error
@@ -104,7 +100,7 @@ class ScheduledCharging(SystemCalcDelegate):
 		self.pvpower = 0
 		self.active = False
 		self.hysteresis = True
-		self._timer = gobject.timeout_add(5000, exit_on_error, self._on_timer)
+		self._timer = GLib.timeout_add(5000, exit_on_error, self._on_timer)
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)

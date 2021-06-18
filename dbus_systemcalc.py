@@ -1,4 +1,4 @@
-#!/usr/bin/python -u
+#!/usr/bin/python3 -u
 # -*- coding: utf-8 -*-
 
 from dbus.mainloop.glib import DBusGMainLoop
@@ -8,11 +8,10 @@ import sys
 import os
 import json
 from itertools import chain
-import six
+from gi.repository import GLib
 
 # Victron packages
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), 'ext', 'velib_python'))
-from gobjectwrapper import gobject
 from vedbus import VeDbusService
 from ve_utils import get_vrm_portal_id, exit_on_error
 from dbusmonitor import DbusMonitor
@@ -265,7 +264,7 @@ class SystemCalc:
 		for m in self._modules:
 			self._summeditems.update(m.get_output())
 
-		for path in six.iterkeys(self._summeditems):
+		for path in self._summeditems.keys():
 			self._dbusservice.add_path(path, value=None, gettextcallback=self._gettext)
 
 		self._batteryservice = None
@@ -282,7 +281,7 @@ class SystemCalc:
 		self._handleservicechange()
 		self._updatevalues()
 
-		gobject.timeout_add(1000, exit_on_error, self._handletimertick)
+		GLib.timeout_add(1000, exit_on_error, self._handletimertick)
 
 	def _create_dbus_monitor(self, *args, **kwargs):
 		raise Exception("This function should be overridden")
@@ -307,7 +306,7 @@ class SystemCalc:
 		    and returns the service name. """
 		services = self._dbusmonitor.get_service_list(classfilter=serviceclass)
 
-		for k, v in six.iteritems(services):
+		for k, v in services.items():
 			if v == instance:
 				return k
 		return None
@@ -911,7 +910,7 @@ class SystemCalc:
 		services = self._get_connected_service_list(classfilter=classfilter)
 		if len(services) == 0:
 			return None
-		return six.next(six.iteritems(services), [None])[0]
+		return next(iter(services.items()), (None,))[0]
 
 	# returns a tuple (servicename, instance)
 	def _get_service_having_lowest_instance(self, classfilter=None):
@@ -969,5 +968,5 @@ if __name__ == "__main__":
 
 	# Start and run the mainloop
 	logger.info("Starting mainloop, responding only on events")
-	mainloop = gobject.MainLoop()
+	mainloop = GLib.MainLoop()
 	mainloop.run()

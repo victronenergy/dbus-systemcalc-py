@@ -32,8 +32,7 @@ VEDLIB_FILES = \
 	$(VEDLIBDIR)/ve_utils.py \
 	$(VEDLIBDIR)/vedbus.py \
 	$(VEDLIBDIR)/settingsdevice.py \
-	$(VEDLIBDIR)/dbusmonitor.py \
-	$(VEDLIBDIR)/gobjectwrapper.py
+	$(VEDLIBDIR)/dbusmonitor.py
 
 help:
 	@echo "The following make targets are available"

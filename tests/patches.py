@@ -10,4 +10,4 @@ dbus_systemcalc.logger = logging.getLogger()
 # Patch an alternative function to get the portal ID, because the original retrieves the ID by getting
 # the MAC address of 'eth0' which may not be available.
 dbus_systemcalc.get_vrm_portal_id = lambda: 'aabbccddeeff'
-mock_gobject.patch_gobject(dbus_systemcalc.gobject)
+mock_gobject.patch_gobject(dbus_systemcalc.GLib)

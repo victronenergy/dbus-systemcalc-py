@@ -1,9 +1,8 @@
-from gobjectwrapper import gobject
+from gi.repository import GLib
 import json
 from collections import defaultdict
 from itertools import chain
 from functools import partial
-import six
 from sc_utils import reify, smart_dict
 from delegates.base import SystemCalcDelegate
 
@@ -79,7 +78,7 @@ class BatteryTracker(object):
 
 	def update(self):
 		changed = False
-		for k, v in six.iteritems(self._tracked):
+		for k, v in self._tracked.items():
 			n = self.monitor.get_value(self.service, k)
 			if n != v:
 				self._tracked[k] = n
@@ -105,7 +104,7 @@ class BatteryTracker(object):
 		}
 
 	def data(self):
-		return { k: v for k, v in six.iteritems(self._data()) if v is not None }
+		return { k: v for k, v in self._data().items() if v is not None }
 
 class SecondaryBatteryTracker(BatteryTracker):
 	""" Used to track the starter battery where available. """
@@ -195,7 +194,7 @@ class BatteryData(SystemCalcDelegate):
 		# Publish the battery configuration
 		self._dbusservice.add_path('/Batteries', value=None)
 		self._dbusservice.add_path('/AvailableBatteries', value=None)
-		self._timer = gobject.timeout_add(5000, exit_on_error, self._on_timer)
+		self._timer = GLib.timeout_add(5000, exit_on_error, self._on_timer)
 
 	def device_added(self, service, instance, do_service_change=True):
 		self.deviceschanged = True
@@ -215,7 +214,7 @@ class BatteryData(SystemCalcDelegate):
 		elif service.startswith('com.victronenergy.genset.'):
 			self.add_trackers(service, FischerPandaTracker(service, instance, self._dbusmonitor))
 		elif service == 'com.victronenergy.settings':
-			for cb in six.itervalues(self.configured_batteries):
+			for cb in self.configured_batteries.values():
 				cb.bind_settings()
 
 	def device_removed(self, service, instance):
@@ -242,7 +241,7 @@ class BatteryData(SystemCalcDelegate):
 
 	def update_values(self, newvalues=None):
 		self.changed = any([tracker.update() for tracker in chain.from_iterable(
-			six.itervalues(self.batteries))]) or self.changed
+			self.batteries.values())]) or self.changed
 
 	def add_configured_battery(self, service):
 		self.configured_batteries[service] = BatteryConfiguration(
@@ -258,7 +257,7 @@ class BatteryData(SystemCalcDelegate):
 
 			self._dbusservice['/Batteries'] = [
 				dict(tracked.data(), **kwargs(tracked)) \
-					for tracked in chain.from_iterable(six.itervalues(self.batteries)) \
+					for tracked in chain.from_iterable(self.batteries.values()) \
 					if (tracked.valid and self.is_enabled(tracked)) or is_active(tracked)
 			]
 
@@ -270,7 +269,7 @@ class BatteryData(SystemCalcDelegate):
 					'name': b.name,
 					'channel': b.channel,
 					'type': b.service_type
-				} for b in chain.from_iterable(six.itervalues(self.batteries)) if b.valid })
+				} for b in chain.from_iterable(self.batteries.values()) if b.valid })
 			self.deviceschanged = False
 
 			self.changed = False

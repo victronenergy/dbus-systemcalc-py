@@ -1,11 +1,7 @@
 from dbus.exceptions import DBusException
-from gobjectwrapper import gobject
+from gi.repository import GLib
 import logging
 from itertools import islice
-try:
-	from itertools import izip as zip
-except ImportError:
-	pass
 
 # Victron packages
 from ve_utils import exit_on_error
@@ -26,8 +22,8 @@ class VebusSocWriter(SystemCalcDelegate):
 
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)
-		gobject.idle_add(exit_on_error, lambda: not self._write_vebus_soc())
-		gobject.timeout_add(10000, exit_on_error, self._write_vebus_soc)
+		GLib.idle_add(exit_on_error, lambda: not self._write_vebus_soc())
+		GLib.timeout_add(10000, exit_on_error, self._write_vebus_soc)
 
 	def get_input(self):
 		return [('com.victronenergy.vebus', [

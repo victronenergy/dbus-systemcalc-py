@@ -1,9 +1,8 @@
-from gobjectwrapper import gobject
+from gi.repository import GLib
 import logging
 import os
 import traceback
 from glob import glob
-import six
 
 # Victron packages
 from ve_utils import exit_on_error
@@ -44,8 +43,8 @@ class RelayState(SystemCalcDelegate):
 		self._relays.update({'/Relay/{}/State'.format(i): os.path.join(r, 'value') \
 			for i, r in enumerate(relays) })
 
-		gobject.idle_add(exit_on_error, self._init_relay_state)
-		for dbus_path in six.iterkeys(self._relays):
+		GLib.idle_add(exit_on_error, self._init_relay_state)
+		for dbus_path in self._relays.keys():
 			self._dbusservice.add_path(dbus_path, value=None, writeable=True,
 				onchangecallback=self._on_relay_state_changed)
 
@@ -55,7 +54,7 @@ class RelayState(SystemCalcDelegate):
 		if self.relay_function is None:
 			return True # Try again on the next idle event
 
-		for dbus_path, path in six.iteritems(self._relays):
+		for dbus_path, path in self._relays.items():
 			if self.relay_function != 2 and dbus_path == '/Relay/0/State':
 				continue # Skip primary relay if function is not manual
 			try:
@@ -70,7 +69,7 @@ class RelayState(SystemCalcDelegate):
 		self._update_relay_state()
 
 		# Watch changes and update dbus. Do we still need this?
-		gobject.timeout_add(5000, exit_on_error, self._update_relay_state)
+		GLib.timeout_add(5000, exit_on_error, self._update_relay_state)
 		return False
 
 	def _update_relay_state(self):

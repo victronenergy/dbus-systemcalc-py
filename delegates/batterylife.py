@@ -1,7 +1,6 @@
 import logging
-from gobjectwrapper import gobject
+from gi.repository import GLib
 from datetime import datetime, timedelta
-import six
 
 # Victron packages
 from ve_utils import exit_on_error
@@ -63,7 +62,7 @@ class BatteryLife(SystemCalcDelegate):
 	def __init__(self):
 		super(BatteryLife, self).__init__()
 		self._tracked_values = {}
-		self._timer = gobject.timeout_add(900000, exit_on_error, self._on_timer)
+		self._timer = GLib.timeout_add(900000, exit_on_error, self._on_timer)
 
 	def get_input(self):
 		# We need to check the assistantid to know if we should even be active.
@@ -273,7 +272,7 @@ class BatteryLife(SystemCalcDelegate):
 
 	def update_values(self, newvalues):
 		# Update tracked attributes
-		for k, v in six.iteritems(self._tracked_attrs):
+		for k, v in self._tracked_attrs.items():
 			self._tracked_values[k] = newvalues.get(v)
 
 		# Cannot start without a multi or an soc

@@ -1,5 +1,5 @@
 import logging
-from gobjectwrapper import gobject
+from gi.repository import GLib
 from dbus.exceptions import DBusException
 from delegates.base import SystemCalcDelegate
 from ve_utils import exit_on_error
@@ -14,7 +14,7 @@ class BydCurrentSense(SystemCalcDelegate):
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(BydCurrentSense, self).set_sources(dbusmonitor, settings, dbusservice)
-		self._timer = gobject.timeout_add(3000, exit_on_error, self._on_timer)
+		self._timer = GLib.timeout_add(3000, exit_on_error, self._on_timer)
 
 	def device_added(self, service, instance, do_service_change=True):
 		if service.startswith('com.victronenergy.battery.') and \
