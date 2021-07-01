@@ -1,5 +1,5 @@
 
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # This adapts sys.path to include all relevant packages
 import context

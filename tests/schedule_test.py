@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 from datetime import datetime, date, time, timedelta
 
 # This adapts sys.path to include all relevant packages
