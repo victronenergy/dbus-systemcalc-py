@@ -65,7 +65,7 @@ clean: ;
 install: install_velib_python install_app install_delegates
 
 test:
-	nosetests -v -w tests
+	python3 /usr/bin/nosetests -v -w tests
 
 testinstall:
 	$(eval TMP := $(shell mktemp -d))
