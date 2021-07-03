@@ -44,6 +44,6 @@ pvac_output = DbusDummyService(
         '/Ac/L3/Power': {'initial': 250},
         '/Ac/Power': {'initial': 600}})
 
-print 'Connected to dbus, and switching over to gobject.MainLoop() (= event based)'
+print('Connected to dbus, and switching over to gobject.MainLoop() (= event based)')
 mainloop = gobject.MainLoop()
 mainloop.run()
