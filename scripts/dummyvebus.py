@@ -1,7 +1,7 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 from dbus.mainloop.glib import DBusGMainLoop
-import gobject
+from gi.repository import GLib
 import argparse
 import logging
 import sys
@@ -80,6 +80,6 @@ s = DbusDummyService(servicename=args.name, deviceinstance=args.instance, paths=
 	productname='Multi 12/3000',
 	connection='CCGX-VE.Bus port')
 
-logging.info('Connected to dbus, and switching over to gobject.MainLoop() (= event based)')
-mainloop = gobject.MainLoop()
+logging.info('Connected to dbus, and switching over to GLib.MainLoop() (= event based)')
+mainloop = GLib.MainLoop()
 mainloop.run()

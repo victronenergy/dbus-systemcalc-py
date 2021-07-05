@@ -1,8 +1,8 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # takes data from the dbus, does calculations with it, and puts it back on
 from dbus.mainloop.glib import DBusGMainLoop
-import gobject
+from gi.repository import GLib
 import argparse
 import logging
 import sys
@@ -45,5 +45,5 @@ pvac_output = DbusDummyService(
         '/Ac/Power': {'initial': 600}})
 
 print('Connected to dbus, and switching over to gobject.MainLoop() (= event based)')
-mainloop = gobject.MainLoop()
+mainloop = GLib.MainLoop()
 mainloop.run()
