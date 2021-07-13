@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """ This script contains a huge amount of hackery. Its purpose is to proxy
     a lesser battery monitor, replicate the power-related paths, but
@@ -12,7 +12,7 @@ import os
 from functools import partial
 from dbus.mainloop.glib import DBusGMainLoop
 import dbus
-import gobject
+from gi.repository import GLib
 
 # our own packages
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), '../ext/velib_python'))
@@ -116,8 +116,8 @@ def main():
     track(conn, args.parent, '/Soc',
         partial(_set_value, s, '/Soc'))
 
-    logger.info('Switching over to gobject.MainLoop() (= event based)')
-    mainloop = gobject.MainLoop()
+    logger.info('Switching over to GLib.MainLoop() (= event based)')
+    mainloop = GLib.MainLoop()
     mainloop.run()
 
 if __name__ == "__main__":
