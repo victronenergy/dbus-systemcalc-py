@@ -314,6 +314,7 @@ class SystemCalc:
 	def _determinebatteryservice(self):
 		auto_battery_service = self._autoselect_battery_service()
 		auto_battery_measurement = None
+		auto_selected = False
 		if auto_battery_service is not None:
 			services = self._dbusmonitor.get_service_list()
 			if auto_battery_service in services:
@@ -323,6 +324,7 @@ class SystemCalc:
 		self._dbusservice['/AutoSelectedBatteryMeasurement'] = auto_battery_measurement
 
 		if self._settings['batteryservice'] == self.BATSERVICE_DEFAULT:
+			auto_selected = True
 			newbatteryservice = auto_battery_service
 			self._dbusservice['/AutoSelectedBatteryService'] = (
 				'No battery monitor found' if newbatteryservice is None else
@@ -359,7 +361,7 @@ class SystemCalc:
 
 			# Battery service has changed. Notify delegates.
 			for m in self._modules:
-				m.battery_service_changed(self._batteryservice, newbatteryservice)
+				m.battery_service_changed(auto_selected, self._batteryservice, newbatteryservice)
 			self._dbusservice['/Dc/Battery/BatteryService'] = self._batteryservice = newbatteryservice
 
 	def _autoselect_battery_service(self):

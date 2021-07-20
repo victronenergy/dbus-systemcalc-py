@@ -25,7 +25,7 @@ class BatterySettings(SystemCalcDelegate):
 				self.systemcalc._batteryservice == service:
 			self.apply_battery_settings(service)
 
-	def battery_service_changed(self, oldservice, newservice):
+	def battery_service_changed(self, auto, oldservice, newservice):
 		self.apply_battery_settings(newservice)
 
 	def apply_battery_settings(self, service):

@@ -63,7 +63,7 @@ class SystemCalcDelegate(object, metaclass=TrackInstance):
 		    settings_changed. """
 		pass
 
-	def battery_service_changed(self, oldservice, newservice):
+	def battery_service_changed(self, auto, oldservice, newservice):
 		""" If the battery monitor changes, delegates can hook into
 		    that event by implementing battery_monitor_changed. """
 		pass
