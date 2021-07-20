@@ -1911,3 +1911,62 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.inverter.ttyO1': {
 				'/Mode': 4}}) # Remains OFF
+
+	def test_ess_bms_lost(self):
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub4/AssistantId', 5)
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 58.3)
+
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 1,
+			'/Settings/ChargeCurrentLimit': 70,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 35,
+			'/FirmwareVersion': 0x0129},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 58.0,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 45,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
+		self._update_values(interval=10000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/NetworkMode': 13,
+				'/Link/ChargeCurrent': 45 + 8,
+				'/Link/ChargeVoltage': 58.3},
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 10,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
+				'/Dc/0/MaxChargeCurrent': 999}})
+
+		# Lose the BMS, make sure voltage from multi is not copied.
+		self._remove_device('com.victronenergy.battery.ttyO2')
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 55.0)
+		self._update_values(interval=10000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/NetworkMode': 13,
+				'/Link/ChargeCurrent': 45 + 8,
+				'/Link/ChargeVoltage': 58.3}})
+
+		# Explicitly select another battery service, check that voltage is
+		# copied again.
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'vebus/0')
+		self._update_values(interval=10000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/NetworkMode': 5,
+				'/Link/ChargeVoltage': 55.0}})

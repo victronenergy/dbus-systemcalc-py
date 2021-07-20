@@ -724,6 +724,7 @@ class Dvcc(SystemCalcDelegate):
 		self._vecan_services = []
 		self._timer = None
 		self._tickcount = ADJUST
+		self._bms_seen = False
 
 	def get_input(self):
 		return [
@@ -844,6 +845,13 @@ class Dvcc(SystemCalcDelegate):
 			GLib.source_remove(self._timer)
 			self._timer = None
 
+	def battery_service_changed(self, auto, oldservice, newservice):
+		# If the user changes the battery monitor, clear the bms_seen
+		# condition. We only want to react to BMS losses where the
+		# BMS is explicitly selected or set to Auto.
+		if not auto:
+			self._bms_seen = False
+
 	def _property(path, self):
 		# Due to the use of partial, path and self is reversed.
 		try:
@@ -889,6 +897,11 @@ class Dvcc(SystemCalcDelegate):
 		return None
 
 	def _on_timer(self):
+		def update_solarcharger_control_flags(voltage_written, current_written, chargevoltage):
+			self._dbusservice['/Control/SolarChargeVoltage'] = voltage_written
+			self._dbusservice['/Control/SolarChargeCurrent'] = current_written
+			self._dbusservice['/Control/EffectiveChargeVoltage'] = chargevoltage
+
 		bol_support = self.has_dvcc
 
 		self._tickcount -= 1; self._tickcount %= ADJUST
@@ -897,9 +910,7 @@ class Dvcc(SystemCalcDelegate):
 			if self._tickcount > 0: return True
 
 			voltage_written, current_written = self._legacy_update_solarchargers()
-			self._dbusservice['/Control/SolarChargeVoltage'] = voltage_written
-			self._dbusservice['/Control/SolarChargeCurrent'] = current_written
-			self._dbusservice['/Control/EffectiveChargeVoltage'] = None # Not tracking for non-DVCC cases
+			update_solarcharger_control_flags(voltage_written, current_written, None) # Not tracking for non-DVCC case
 			self._dbusservice['/Control/BmsParameters'] = 0
 			self._dbusservice['/Control/MaxChargeCurrent'] = 0
 			self._dbusservice['/Control/Dvcc'] = 0
@@ -922,12 +933,21 @@ class Dvcc(SystemCalcDelegate):
 		# Signal Dvcc support to other processes
 		self._dbusservice['/Control/Dvcc'] = 1
 
+		# Check that we have not lost the BMS, if we ever had one.  If the BMS
+		# is lost, stop passing information to the solar chargers so that they
+		# might time out.
+		bms_service = self.bms
+		if self._bms_seen and bms_service is None:
+			# BMS is lost
+			update_solarcharger_control_flags(0, 0, None)
+			return True
+		self._bms_seen = self._bms_seen or (bms_service is not None)
+
 		# Get the user current limit, if set
 		user_max_charge_current = self._settings['maxchargecurrent']
 		if user_max_charge_current < 0: user_max_charge_current = None
 
 		# If there is a BMS, get the charge voltage and current from it
-		bms_service = self.bms
 		max_charge_current = None
 		charge_voltage = None
 		feedback_allowed = self.feedback_allowed
@@ -972,9 +992,7 @@ class Dvcc(SystemCalcDelegate):
 		voltage_written, current_written, effective_charge_voltage = \
 			self._update_solarchargers(bms_service is not None, charge_voltage,
 			_max_charge_current, feedback_allowed, stop_on_mcc0)
-		self._dbusservice['/Control/SolarChargeVoltage'] = voltage_written
-		self._dbusservice['/Control/SolarChargeCurrent'] = current_written
-		self._dbusservice['/Control/EffectiveChargeVoltage'] = effective_charge_voltage
+		update_solarcharger_control_flags(voltage_written, current_written, effective_charge_voltage)
 
 		# The Multi gets the remainder after subtracting what the solar chargers made
 		if max_charge_current is not None:
