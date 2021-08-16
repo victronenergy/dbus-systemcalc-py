@@ -7,7 +7,7 @@ import argparse
 import sys
 import os
 import json
-from itertools import chain
+import time
 from gi.repository import GLib
 
 # Victron packages
@@ -437,6 +437,7 @@ class SystemCalc:
 			tz = self._dbusmonitor.get_value('com.victronenergy.settings', '/Settings/System/TimeZone')
 			if tz is not None:
 				os.environ['TZ'] = tz
+				time.tzset()
 
 		# Determine values used in logic below
 		vebusses = self._dbusmonitor.get_service_list('com.victronenergy.vebus')
