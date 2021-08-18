@@ -597,6 +597,11 @@ class TestSystemCalc(TestSystemCalcBase):
 		# Check if 's' is a hex string, if not an exception should be raised, causing the test to fail.
 		self.assertIsNotNone(int(s, 16))
 
+	def test_venusversion(self):
+		self._update_values()
+		self.assertEqual(self._service['/FirmwareVersion'], 6513507)
+		self.assertEqual(self._service['/FirmwareBuild'], '201510211629')
+
 	def test_dc_current_from_power(self):
 		self._update_values()
 		self._set_setting('/Settings/SystemSetup/BatteryService', 'nobattery')

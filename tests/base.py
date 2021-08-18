@@ -14,7 +14,10 @@ class MockSystemCalc(dbus_systemcalc.SystemCalc):
 		return MockSettingsDevice(*args, **kwargs)
 
 	def _create_dbus_service(self):
-		return MockDbusService('com.victronenergy.system')
+		s = MockDbusService('com.victronenergy.system')
+		s.add_path('/FirmwareVersion', 6513507)
+		s.add_path('/FirmwareBuild', value='201510211629')
+		return s
 
 
 class TestSystemCalcBase(unittest.TestCase):

@@ -8,6 +8,7 @@ import sys
 import os
 import json
 import time
+import re
 from gi.repository import GLib
 
 # Victron packages
@@ -931,6 +932,8 @@ class DbusSystemCalc(SystemCalc):
 		return SettingsDevice(bus, *args, timeout=10, **kwargs)
 
 	def _create_dbus_service(self):
+		venusversion, venusbuildtime = self._get_venus_versioninfo()
+
 		dbusservice = VeDbusService('com.victronenergy.system')
 		dbusservice.add_mandatory_paths(
 			processname=__file__,
@@ -939,11 +942,21 @@ class DbusSystemCalc(SystemCalc):
 			deviceinstance=0,
 			productid=None,
 			productname=None,
-			firmwareversion=None,
+			firmwareversion=venusversion,
 			hardwareversion=None,
 			connected=1)
+		dbusservice.add_path('/FirmwareBuild', value=venusbuildtime)
 		return dbusservice
 
+	def _get_venus_versioninfo(self):
+		try:
+			with open("/opt/victronenergy/version", "r") as fp:
+				version, software, buildtime = fp.read().split('\n')[:3]
+			major, minor, _, rev = re.compile('v([0-9]*)\.([0-9]*)(~([0-9]*))?').match(version).groups()
+			return (int(major, 16)<<16)+(int(minor, 16)<<8)+(0 if rev is None else int(rev, 16)), buildtime
+		except Exception:
+			pass
+		return 0, '0'
 
 if __name__ == "__main__":
 	# Argument parsing
