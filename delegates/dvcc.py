@@ -24,9 +24,6 @@ VEBUS_FIRMWARE_REQUIRED = 0x422
 VEDIRECT_FIRMWARE_REQUIRED = 0x129
 VECAN_FIRMWARE_REQUIRED = 0x10200 # 1.02, 24-bit version
 
-class Flags(object):
-	InverterSwitchedOff = 1 # inverter was switched off when discharge was disabled
-
 # This is a place to account for some BMS quirks where we may have to ignore
 # the BMS value and substitute our own.
 
@@ -249,42 +246,13 @@ class SolarCharger(object):
 		if v is not None:
 			self._smoothed_current += (v - self._smoothed_current) * self.OMEGA
 
-class Inverter(object):
-	""" Encapsulates an inverter object. """
-	def __init__(self, dvcc, monitor, service):
-		self.dvcc = dvcc
-		self.monitor = monitor
-		self.service = service
-
-	@property
-	def mode(self):
-		return self.monitor.get_value(self.service, '/Mode')
-
-	@mode.setter
-	def mode(self, m):
-		self.monitor.set_value(self.service, '/Mode', m)
-
-	def set_maxdischargecurrent(self, limit):
-		""" For plain inverters, a limit of zero turns it off, and a non-zero
-		    limit turns it back on. """
-		if limit == 0 and self.mode != 4:
-			self.dvcc.flags |= Flags.InverterSwitchedOff
-			self.mode = 4 # off
-		elif limit > 0 and self.mode != 2:
-			# If the inverter was turned off by us, switch it back on
-			# This avoids turning the inverter on if it was previously
-			# soft-switched off by something other than DVCC.
-			if self.dvcc.flags & Flags.InverterSwitchedOff:
-				self.dvcc.flags &= ~Flags.InverterSwitchedOff
-				self.mode = 2 # inverter only
-
-class InverterCharger(SolarCharger, Inverter):
+class InverterCharger(SolarCharger):
 	""" Encapsulates an inverter/charger object, currently the inverter RS,
 	    which has a solar input and can charge the battery like a solar
 	    charger, but is also an inverter.
 	"""
 	def __init__(self, monitor, service):
-		SolarCharger.__init__(self, monitor, service)
+		super(InverterCharger, self).__init__(monitor, service)
 
 	@property
 	def has_externalcontrol_support(self):
@@ -309,17 +277,13 @@ class InverterCharger(SolarCharger, Inverter):
 
 class InverterSubsystem(object):
 	""" Encapsulate collection of inverters. """
-	def __init__(self, dvcc, monitor):
-		self.dvcc = dvcc
+	def __init__(self, monitor):
 		self.monitor = monitor
 		self._inverters = {}
 
 	def _add_inverter(self, ob):
 		self._inverters[ob.service] = ob
 		return ob
-
-	def add_inverter(self, service):
-		return self._add_inverter(Inverter(self.dvcc, self.monitor, service))
 
 	def remove_inverter(self, service):
 		del self._inverters[service]
@@ -767,7 +731,6 @@ class Dvcc(SystemCalcDelegate):
 				'/Link/ChargeCurrent',
 				'/Link/DischargeCurrent',
 				'/Settings/ChargeCurrentLimit',
-				'/Mode',
 				'/State',
 				'/N2kDeviceInstance',
 				'/Mgmt/Connection']),
@@ -776,14 +739,12 @@ class Dvcc(SystemCalcDelegate):
 				'/Link/NetworkMode']),
 			('com.victronenergy.settings', [
 				 '/Settings/CGwacs/OvervoltageFeedIn',
-				 '/Settings/Dvcc/Flags',
 				 '/Settings/Services/Bol'])]
 
 	def get_settings(self):
 		return [
 			('maxchargecurrent', '/Settings/SystemSetup/MaxChargeCurrent', -1, -1, 10000),
 			('maxchargevoltage', '/Settings/SystemSetup/MaxChargeVoltage', 0.0, 0.0, 80.0),
-			('dvcc_flags', '/Settings/Dvcc/Flags', 0, 0, 0),
 			('bol', '/Settings/Services/Bol', 0, 0, 7)
 		]
 
@@ -791,7 +752,7 @@ class Dvcc(SystemCalcDelegate):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 		self._batterysystem = BatterySubsystem(dbusmonitor)
 		self._solarsystem = SolarChargerSubsystem(dbusmonitor)
-		self._inverters = InverterSubsystem(self, dbusmonitor)
+		self._inverters = InverterSubsystem(dbusmonitor)
 		self._multi = Multi(dbusmonitor, dbusservice)
 
 		self._dbusservice.add_path('/Control/SolarChargeVoltage', value=0)
@@ -816,8 +777,6 @@ class Dvcc(SystemCalcDelegate):
 				# added to the inverter collection.
 				self._inverters._add_inverter(
 					self._solarsystem.add_invertercharger(service))
-			else:
-				self._inverters.add_inverter(service)
 		elif service_type == 'vecan':
 			self._vecan_services.append(service)
 		elif service_type == 'battery':
@@ -875,14 +834,6 @@ class Dvcc(SystemCalcDelegate):
 		# 0b11  = Forced on
 		v = self._settings['bol']
 		return bool(v & 1)
-
-	@property
-	def flags(self):
-		return self._settings['dvcc_flags']
-
-	@flags.setter
-	def flags(self, v):
-		self._settings['dvcc_flags'] = int(v)
 
 	@property
 	def bms(self):
