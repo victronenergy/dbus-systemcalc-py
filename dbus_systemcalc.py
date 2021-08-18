@@ -84,6 +84,12 @@ class SystemCalc:
 				'/Dc/0/Current': dummy,
 				'/Dc/0/Power': dummy,
 				'/Soc': dummy},
+			'com.victronenergy.fuelcell': {
+				'/Connected': dummy,
+				'/ProductName': dummy,
+				'/Mgmt/Connection': dummy,
+				'/Dc/0/Voltage': dummy,
+				'/Dc/0/Current': dummy},
 			'com.victronenergy.charger': {
 				'/Connected': dummy,
 				'/ProductName': dummy,
@@ -247,6 +253,7 @@ class SystemCalc:
 			'/Dc/Battery/ConsumedAmphours': {'gettext': '%.1F Ah'},
 			'/Dc/Battery/ProductId': {'gettext': '0x%x'},
 			'/Dc/Charger/Power': {'gettext': '%.0F %%'},
+			'/Dc/FuelCell/Power': {'gettext': '%.0F %%'},
 			'/Dc/Vebus/Current': {'gettext': '%.1F A'},
 			'/Dc/Vebus/Power': {'gettext': '%.0F W'},
 			'/Dc/System/Power': {'gettext': '%.0F W'},
@@ -503,6 +510,28 @@ class SystemCalc:
 				newvalues['/Dc/Pv/Power'] += v * _safeadd(i, l)
 				newvalues['/Dc/Pv/Current'] += _safeadd(i, l)
 
+		# ==== FUELCELLS ====
+		fuelcells = self._dbusmonitor.get_service_list('com.victronenergy.fuelcell')
+		fuelcell_batteryvoltage = None
+		fuelcell_batteryvoltage_service = None
+		for fuelcell in fuelcells:
+			# Assume the battery connected to output 0 is the main battery
+			v = self._dbusmonitor.get_value(fuelcell, '/Dc/0/Voltage')
+			if v is None:
+				continue
+
+			fuelcell_batteryvoltage = v
+			fuelcell_batteryvoltage_service = fuelcell
+
+			i = self._dbusmonitor.get_value(fuelcell, '/Dc/0/Current')
+			if i is None:
+				continue
+
+			if '/Dc/FuelCell/Power' not in newvalues:
+				newvalues['/Dc/FuelCell/Power'] = v * i
+			else:
+				newvalues['/Dc/FuelCell/Power'] += v * i
+
 		# ==== CHARGERS ====
 		chargers = self._dbusmonitor.get_service_list('com.victronenergy.charger')
 		charger_batteryvoltage = None
@@ -609,6 +638,9 @@ class SystemCalc:
 				elif charger_batteryvoltage is not None:
 					newvalues['/Dc/Battery/Voltage'] = charger_batteryvoltage
 					newvalues['/Dc/Battery/VoltageService'] = charger_batteryvoltage_service
+				elif fuelcell_batteryvoltage is not None:
+					newvalues['/Dc/Battery/Voltage'] = fuelcell_batteryvoltage
+					newvalues['/Dc/Battery/VoltageService'] = fuelcell_batteryvoltage_service
 				elif vedirect_inverter is not None:
 					v = self._dbusmonitor.get_value(vedirect_inverter, '/Dc/0/Voltage')
 					if v is not None:
@@ -640,6 +672,7 @@ class SystemCalc:
 			if battery_power is not None:
 				dc_pv_power = newvalues.get('/Dc/Pv/Power', 0)
 				charger_power = newvalues.get('/Dc/Charger/Power', 0)
+				fuelcell_power = newvalues.get('/Dc/FuelCell/Power', 0)
 
 				# If there are VE.Direct inverters, remove their power from the
 				# DC estimate. This is done using the AC value when the DC
@@ -654,7 +687,7 @@ class SystemCalc:
 						inverter_power += self._dbusmonitor.get_value(
 							i, '/Ac/Out/L1/V', 0) * self._dbusmonitor.get_value(
 							i, '/Ac/Out/L1/I', 0)
-				newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + vebuspower - inverter_power - battery_power
+				newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + fuelcell_power + vebuspower - inverter_power - battery_power
 
 		elif self._settings['hasdcsystem'] == 1 and solarchargers_loadoutput_power is not None:
 			newvalues['/Dc/System/Power'] = solarchargers_loadoutput_power
