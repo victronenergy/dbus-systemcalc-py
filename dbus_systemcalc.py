@@ -179,10 +179,6 @@ class SystemCalc:
 		for m in self._modules:
 			m.set_sources(self._dbusmonitor, self._settings, self._dbusservice)
 
-		# This path does nothing except respond with a PropertiesChanged so
-		# that round-trip time can be measured.
-		self._dbusservice.add_path('/Ping', value=None, writeable=True)
-
 		# At this moment, VRM portal ID is the MAC address of the CCGX. Anyhow, it should be string uniquely
 		# identifying the CCGX.
 		self._dbusservice.add_path('/Serial', value=get_vrm_portal_id())
