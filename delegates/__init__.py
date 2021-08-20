@@ -20,4 +20,5 @@ from delegates.sourcetimers import SourceTimers
 from delegates.bydbattery import BydCurrentSense
 from delegates.batterysettings import BatterySettings
 from delegates.gps import Gps
+from delegates.acinput import AcInputs
 from delegates.multi import Multi

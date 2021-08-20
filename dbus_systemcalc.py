@@ -159,7 +159,8 @@ class SystemCalc:
 			delegates.SourceTimers(),
 			#delegates.BydCurrentSense(self),
 			delegates.BatteryData(),
-			delegates.Gps()]
+			delegates.Gps(),
+			delegates.AcInputs()]
 
 		for m in self._modules:
 			for service, paths in m.get_input():
@@ -726,8 +727,8 @@ class SystemCalc:
 		newvalues['/Ac/ActiveIn/Source'] = ac_in_source
 
 		# ===== GRID METERS & CONSUMPTION ====
-		grid_meter = self._get_first_connected_service('com.victronenergy.grid')
-		genset_meter = self._get_first_connected_service('com.victronenergy.genset')
+		grid_meter = delegates.AcInputs.instance.gridmeter
+		genset_meter = delegates.AcInputs.instance.gensetmeter
 
 		# Make an educated guess as to what is being consumed from an AC source. If ac_in_source
 		# indicates grid, genset or shore, we use that. If the Multi is off, or disconnected through
@@ -742,7 +743,7 @@ class SystemCalc:
 				ac_in_guess = 2
 
 		consumption = { "L1" : None, "L2" : None, "L3" : None }
-		for device_type, em_service, _types in (('Grid', grid_meter, (1, 3)), ('Genset', genset_meter, (2,))):
+		for device_type, em, _types in (('Grid', grid_meter, (1, 3)), ('Genset', genset_meter, (2,))):
 			# If a grid meter is present we use values from it. If not, we look at the multi. If it has
 			# AcIn1 or AcIn2 connected to the grid, we use those values.
 			# com.victronenergy.grid.??? indicates presence of an energy meter used as grid meter.
@@ -752,8 +753,8 @@ class SystemCalc:
 			for phase in consumption:
 				p = None
 				pvpower = newvalues.get('/Ac/PvOn%s/%s/Power' % (device_type, phase))
-				if em_service is not None:
-					p = self._dbusmonitor.get_value(em_service, '/Ac/%s/Power' % phase)
+				if em is not None:
+					p = self._dbusmonitor.get_value(em.service, '/Ac/%s/Power' % phase)
 					# Compute consumption between energy meter and multi (meter power - multi AC in) and
 					# add an optional PV inverter on input to the mix.
 					c = None
@@ -784,9 +785,9 @@ class SystemCalc:
 
 			product_id = None
 			device_type_id = None
-			if em_service is not None:
-				product_id = self._dbusmonitor.get_value(em_service, '/ProductId')
-				device_type_id = self._dbusmonitor.get_value(em_service, '/DeviceType')
+			if em is not None:
+				product_id = em.product_id
+				device_type_id = em.device_type
 			if product_id is None and uses_active_input:
 				product_id = self._dbusmonitor.get_value(multi_path, '/ProductId')
 			newvalues['/Ac/%s/ProductId' % device_type] = product_id
