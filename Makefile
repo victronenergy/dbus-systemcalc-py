@@ -25,7 +25,8 @@ DELEGATES = \
 	$(SOURCEDIR)/delegates/bydbattery.py \
 	$(SOURCEDIR)/delegates/batterysettings.py \
 	$(SOURCEDIR)/delegates/batterydata.py \
-	$(SOURCEDIR)/delegates/gps.py
+	$(SOURCEDIR)/delegates/gps.py \
+	$(SOURCEDIR)/delegates/multi.py
 
 VEDLIB_FILES = \
 	$(VEDLIBDIR)/logger.py \

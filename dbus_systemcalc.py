@@ -143,6 +143,7 @@ class SystemCalc:
 		}
 
 		self._modules = [
+			delegates.Multi(),
 			delegates.HubTypeSelect(),
 			delegates.VebusSocWriter(),
 			delegates.ServiceMapper(),
@@ -262,7 +263,6 @@ class SystemCalc:
 			'/Ac/ActiveIn/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/ActiveIn/L3/Power': {'gettext': '%.0F W'},
 			'/Ac/ActiveIn/NumberOfPhases': {'gettext': '%d'},
-			'/VebusService': {'gettext': '%s'}
 		}
 
 		for m in self._modules:
@@ -693,10 +693,8 @@ class SystemCalc:
 			newvalues['/Dc/System/Power'] = solarchargers_loadoutput_power
 
 		# ==== Vebus ====
-		multi = self._get_service_having_lowest_instance('com.victronenergy.vebus')
-		multi_path = None
-		if multi is not None:
-			multi_path = multi[0]
+		multi_path = getattr(delegates.Multi.instance.multi, 'service', None)
+		if multi_path is not None:
 			dc_current = self._dbusmonitor.get_value(multi_path, '/Dc/0/Current')
 			newvalues['/Dc/Vebus/Current'] = dc_current
 			dc_power = self._dbusmonitor.get_value(multi_path, '/Dc/0/Power')
@@ -709,8 +707,6 @@ class SystemCalc:
 			# However, this value cannot be combined with /Dc/Multi/Current, because it does not make sense
 			# to add the Dc currents of all multis if they do not share the same DC voltage.
 			newvalues['/Dc/Vebus/Power'] = dc_power
-
-		newvalues['/VebusService'] = multi_path
 
 		# ===== AC IN SOURCE =====
 		ac_in_source = None
