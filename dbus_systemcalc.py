@@ -878,11 +878,11 @@ class SystemCalc:
 
 	def _remove_unconnected_services(self, services):
 		# Workaround: because com.victronenergy.vebus is available even when there is no vebus product
-		# connected. Remove any that is not connected. For this, we use /State since mandatory path
-		# /Connected is not implemented in mk2dbus.
+		# connected, remove any service that is not connected. Previously we used
+		# /State since mandatory path /Connected is not implemented in mk2dbus,
+		# but this has since been resolved.
 		for servicename in list(services.keys()):
-			if ((servicename.split('.')[2] == 'vebus' and self._dbusmonitor.get_value(servicename, '/State') is None)
-				or self._dbusmonitor.get_value(servicename, '/Connected') != 1
+			if (self._dbusmonitor.get_value(servicename, '/Connected') != 1
 				or self._dbusmonitor.get_value(servicename, '/ProductName') is None
 				or self._dbusmonitor.get_value(servicename, '/Mgmt/Connection') is None):
 				del services[servicename]
