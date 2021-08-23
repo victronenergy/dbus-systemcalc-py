@@ -36,6 +36,7 @@ s = DbusDummyService(servicename=args.name, deviceinstance=args.instance, paths=
 		'/Ac/Out/P': {'initial': 0},
 		'/Ac/Out/L1/P': {'initial': 0},
 		'/Ac/NumberOfPhases': {'initial': 1},
+		'/Ac/NumberOfAcInputs': {'initial': 2},
 		'/Ac/State/IgnoreAcIn1': {'initial': 0},
 		'/Ac/State/IgnoreAcIn2': {'initial': 0},
 		'/Alarms/HighTemperature': {'initial': 0},
