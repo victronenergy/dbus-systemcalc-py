@@ -267,7 +267,7 @@ class InverterCharger(SolarCharger):
 
 	@maxdischargecurrent.setter
 	def maxdischargecurrent(self, limit):
-		self.monitor.set_value(self.service, '/Link/DischargeCurrent', limit)
+		self.monitor.set_value_async(self.service, '/Link/DischargeCurrent', limit)
 
 	def set_maxdischargecurrent(self, limit):
 		""" Write the maximum discharge limit across. The firmware
