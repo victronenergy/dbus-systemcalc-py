@@ -405,7 +405,7 @@ class SolarChargerSubsystem(object):
 		# current.
 		#
 		# Additionally, don't bother with chargers that are disconnected.
-		chargers = [x for x in self._solarchargers.values() if x.state !=0 and x.n2k_device_instance in (0, None)]
+		chargers = [x for x in self._solarchargers.values() if x.state !=0 and x.maxchargecurrent is not None and x.n2k_device_instance in (0, None)]
 		if len(chargers) > 0:
 			if stop_on_mcc0 and max_charge_current == 0:
 				self.shutdown_chargers()
