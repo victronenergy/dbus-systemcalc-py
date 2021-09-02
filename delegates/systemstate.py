@@ -41,7 +41,8 @@ class SystemState(SystemCalcDelegate):
 		return [
 			('com.victronenergy.battery', [
 				'/Info/MaxDischargeCurrent',
-				'/Info/MaxChargeCurrent']),
+				'/Info/MaxChargeCurrent',
+				'/Info/ChargeRequest']),
 			('com.victronenergy.settings', [
 				'/Settings/CGwacs/BatteryLife/State',
 				'/Settings/SystemSetup/MaxChargeCurrent',
@@ -101,6 +102,12 @@ class SystemState(SystemCalcDelegate):
 		may_charge = self._dbusmonitor.get_value(battery,
 			'/Info/MaxChargeCurrent') != 0
 		return may_charge, may_discharge
+
+	def bms_forcecharge(self, battery):
+		""" Check if the battery is requesting a charge. Used to indicate
+		    on the GUI that we're Recharging. """
+		return self._dbusmonitor.get_value(battery,
+			'/Info/ChargeRequest') == 1
 
 	def state(self, newvalues):
 		vebus = newvalues.get('/VebusService')
@@ -166,8 +173,13 @@ class SystemState(SystemCalcDelegate):
 				if hubstate == BL.ForceCharge:
 					flags.SlowCharge = 1
 
-			# Sustain flag
-			if self._dbusmonitor.get_value(vebus, '/Hub4/Sustain'):
+			if self._dbusmonitor.get_value(self.systemcalc.batteryservice,
+					'/Info/ChargeRequest') == 1:
+				# Battery requested a recharge. Sustain may also be active
+				# but this one is more important
+				ss = SystemState.RECHARGE
+			elif self._dbusmonitor.get_value(vebus, '/Hub4/Sustain'):
+				# Sustain flag
 				ss = SystemState.SUSTAIN
 
 		return (ss, flags)

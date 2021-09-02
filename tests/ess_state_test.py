@@ -44,7 +44,8 @@ class TestEssStates(TestSystemCalcBase):
                 '/Dc/0/Voltage': 12.4,
                 '/Dc/0/Current': 5.6,
                 '/Dc/0/Power': 69.4,
-                '/Soc': 53.2})
+                '/Soc': 53.2,
+                '/Info/ChargeRequest': 0})
 
         # Self-Consumption, BatteryLife
         self._add_device(self.settings, values={
@@ -208,3 +209,14 @@ class TestEssStates(TestSystemCalcBase):
         self._remove_device(self.vebus)
         self._update_values()
         self._check_values({ '/SystemState/State': 9 }) # State from VE.Direct inverter
+
+    def test_recharge(self):
+        self._monitor.set_value(self.settings,
+            '/Settings/CGwacs/BatteryLife/State', 8)
+        self._update_values()
+        self._check_values({ '/SystemState/State': 0x102 })
+
+    def test_battery_chargerequest(self):
+        self._monitor.set_value(self.battery, '/Info/ChargeRequest', 1)
+        self._update_values()
+        self._check_values({ '/SystemState/State': 0x102 })
