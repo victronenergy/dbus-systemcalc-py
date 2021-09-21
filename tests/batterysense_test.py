@@ -655,8 +655,8 @@ class VoltageSenseTest(TestSystemCalcBase):
 		self._set_setting('/Settings/Services/Bol', 0)
 		self._set_setting('/Settings/SystemSetup/SharedVoltageSense', 1)
 
-		# Pylontech, BYD, FreedomWON, Discover AES, BlueNova, BSL-BATT, Lynx Smart, BMZ
-		for product_id in (0xB009, 0xB00A, 0xB014, 0xB015, 0xB016, 0xB019, 0xB020, 0xB021, 0xA3E5, 0xA3E6, 0xB005):
+		# Pylontech, BYD, FreedomWON, Discover AES, BlueNova, BSL-BATT, BMZ
+		for product_id in (0xB009, 0xB00A, 0xB014, 0xB015, 0xB016, 0xB019, 0xB020, 0xB021, 0xB005):
 			self._add_device('com.victronenergy.battery.ttyO2',
 				product_name='battery',
 				values={
@@ -677,6 +677,28 @@ class VoltageSenseTest(TestSystemCalcBase):
 			self._remove_device('com.victronenergy.battery.ttyO2')
 
 
+		# Lynx Smart wants SVS on
+		for product_id in (0xA3E5, 0xA3E6):
+			self._add_device('com.victronenergy.battery.ttyO2',
+				product_name='battery',
+				values={
+					'/Dc/0/Voltage': 12.15,
+					'/Dc/0/Current': 5.3,
+					'/Dc/0/Power': 65,
+					'/Soc': 50,
+					'/DeviceInstance': 0,
+					'/ProductId': product_id})
+
+			self._update_values()
+			self._check_settings({
+				'vsense': 3, # ON
+				'tsense': 2, # OFF
+				'bol': 3 # ON
+			})
+			self.assertTrue(BatterySense.instance.has_vsense)
+			self.assertTrue(Dvcc.instance.has_dvcc)
+			self._remove_device('com.victronenergy.battery.ttyO2')
+
 		# Battery with no forced settings (Generic used here)
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',
@@ -690,11 +712,9 @@ class VoltageSenseTest(TestSystemCalcBase):
 
 		self._update_values()
 		self._check_settings({
-			'vsense': 0, # Remains off, no longer forced
+			'vsense': 1, # Remains on, no longer forced
 			'bol': 1 # Remains on, no longer forced
 		})
-		self.assertFalse(BatterySense.instance.has_vsense)
-		self.assertTrue(Dvcc.instance.has_dvcc)
 
 	def test_voltage_sense_inverter_and_battery_monitor(self):
 		self._remove_device('com.victronenergy.vebus.ttyO1')

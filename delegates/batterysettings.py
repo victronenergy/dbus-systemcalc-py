@@ -36,9 +36,12 @@ class BatterySettings(SystemCalcDelegate):
 		# for some batteries.
 		if pid in (BATTERY_PYLONTECH, BATTERY_BYD, BATTERY_BYD_L, BATTERY_BYD_PREMIUM,
 				BATTERY_DISCOVER_AES, BATTERY_FREEDOMWON, BATTERY_BLUENOVA,
-				BATTERY_LYNX_SMART_BMS_500, BATTERY_LYNX_SMART_BMS_1000, BATTERY_BSLBATT,
-				BATTERY_BMZ):
+				BATTERY_BSLBATT, BATTERY_BMZ):
 			self._settings['vsense'] = 2 # Forced Off
+			self._settings['tsense'] = 2 # Forced Off
+			self._settings['bol'] = 3 # Forced on
+		elif pid in (BATTERY_LYNX_SMART_BMS_500, BATTERY_LYNX_SMART_BMS_1000):
+			self._settings['vsense'] = 3 # Forced on
 			self._settings['tsense'] = 2 # Forced Off
 			self._settings['bol'] = 3 # Forced on
 		else:
