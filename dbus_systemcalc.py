@@ -138,7 +138,9 @@ class SystemCalc:
 				'/Ac/Out/L1/V': dummy,
 				'/Ac/Out/L1/I': dummy,
 				'/Yield/Power': dummy,
-				'/Soc': dummy,
+				'/Soc': dummy},
+			'com.victronenergy.dcsystem': {
+				'/Dc/0/Power': dummy
 			}
 		}
 
@@ -259,6 +261,7 @@ class SystemCalc:
 			'/Dc/Vebus/Current': {'gettext': '%.1F A'},
 			'/Dc/Vebus/Power': {'gettext': '%.0F W'},
 			'/Dc/System/Power': {'gettext': '%.0F W'},
+			'/Dc/System/MeasurementType': {'gettext': '%d'},
 			'/Ac/ActiveIn/Source': {'gettext': '%s'},
 			'/Ac/ActiveIn/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/ActiveIn/L2/Power': {'gettext': '%.0F W'},
@@ -660,7 +663,16 @@ class SystemCalc:
 
 
 		# ==== SYSTEM POWER ====
-		if self._settings['hasdcsystem'] == 1 and batteryservicetype == 'battery':
+		# Look for dcsytem devices, add them together. Otherwise, if enabled,
+		# calculate it
+		dcsystems = self._dbusmonitor.get_service_list('com.victronenergy.dcsystem')
+		if dcsystems:
+			newvalues['/Dc/System/MeasurementType'] = 1 # measured
+			newvalues['/Dc/System/Power'] = 0
+			for meter in dcsystems:
+				newvalues['/Dc/System/Power'] = _safeadd(newvalues['/Dc/System/Power'],
+					self._dbusmonitor.get_value(meter, '/Dc/0/Power'))
+		elif self._settings['hasdcsystem'] == 1 and batteryservicetype == 'battery':
 			# Calculate power being generated/consumed by not measured devices in the network.
 			# For MPPTs, take all the power, including power going out of the load output.
 			# /Dc/System: positive: consuming power
@@ -688,9 +700,11 @@ class SystemCalc:
 						inverter_power += self._dbusmonitor.get_value(
 							i, '/Ac/Out/L1/V', 0) * self._dbusmonitor.get_value(
 							i, '/Ac/Out/L1/I', 0)
+				newvalues['/Dc/System/MeasurementType'] = 0 # estimated
 				newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + fuelcell_power + vebuspower - inverter_power - battery_power
 
 		elif self._settings['hasdcsystem'] == 1 and solarchargers_loadoutput_power is not None:
+			newvalues['/Dc/System/MeasurementType'] = 0 # estimated
 			newvalues['/Dc/System/Power'] = solarchargers_loadoutput_power
 
 		# ==== Vebus ====

@@ -1225,6 +1225,43 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self.assertEqual([0xB0FE], self._service['/PvInvertersProductIds'])
 
+	def test_dcsystem_service(self):
+		self._set_setting('/Settings/SystemSetup/HasDcSystem', 1)
+		self._add_device('com.victronenergy.battery.ttyO2',
+						product_name='battery',
+						values={
+								'/Dc/0/Voltage': 12.3,
+								'/Dc/0/Current': 5.3,
+								'/Dc/0/Power': 65,
+								'/Soc': 15.3,
+								'/DeviceInstance': 2})
+		self._update_values()
+		self._check_values({
+			'/Dc/System/MeasurementType': 0 }) # Estimated/Calculated
+
+		# This works even if HasDcSystem is off
+		self._set_setting('/Settings/SystemSetup/HasDcSystem', 0)
+		self._update_values()
+
+		self._check_values({
+			'/Dc/System/Power': None })
+
+		self._add_device('com.victronenergy.dcsystem.ttyO2', {
+			'/Dc/0/Power': 500.0
+		})
+		self._update_values()
+		self._check_values({
+			'/Dc/System/Power': 500.0,
+			'/Dc/System/MeasurementType': 1})
+
+		# Multiple meters are added together
+		self._add_device('com.victronenergy.dcsystem.ttyO4', {
+			'/Dc/0/Power': 300.0
+		})
+		self._update_values()
+		self._check_values({
+			'/Dc/System/Power': 800.0 })
+
 
 if __name__ == '__main__':
 	unittest.main()
