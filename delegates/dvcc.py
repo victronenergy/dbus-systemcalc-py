@@ -121,17 +121,28 @@ def distribute(current_values, max_values, increment):
 		continue
 	return new_values
 
+class LowPassFilter(object):
+	""" Low pass filter, with a cap. """
+	def __init__(self, omega, value):
+		self.omega = omega
+		self._value = value
+
+	def update(self, newvalue):
+		self._value += (newvalue - self._value) * self.omega
+		return self._value
+
+	@property
+	def value(self):
+		return self._value
+
 class SolarCharger(object):
 	""" Encapsulates a solar charger on dbus. Exposes dbus paths as convenient
 	    attributes. """
 
-	# Used for the low-pass filter that determines smoothed_current below.
-	OMEGA = (2 * pi)/20
-
 	def __init__(self, monitor, service):
 		self.monitor = monitor
 		self.service = service
-		self._smoothed_current = self.chargecurrent or 0
+		self._smoothed_current = LowPassFilter((2 * pi)/20, self.chargecurrent or 0)
 		self._has_externalcontrol_support = False
 
 	def _get_path(self, path):
@@ -229,7 +240,7 @@ class SolarCharger(object):
 	@property
 	def smoothed_current(self):
 		""" Returns the internal low-pass filtered current value. """
-		return self._smoothed_current
+		return self._smoothed_current.value
 
 	def maximize_charge_current(self):
 		""" Max out the charge current of this solar charger by setting
@@ -244,7 +255,7 @@ class SolarCharger(object):
 		# a smooth current value.
 		v = self.monitor.get_value(self.service, '/Dc/0/Current')
 		if v is not None:
-			self._smoothed_current += (v - self._smoothed_current) * self.OMEGA
+			self._smoothed_current.update(v)
 
 class InverterCharger(SolarCharger):
 	""" Encapsulates an inverter/charger object, currently the inverter RS,
@@ -595,14 +606,11 @@ class BatteryOperationalLimits(object):
 class Multi(object):
 	""" Encapsulates the multi. Makes access to dbus paths a bit neater by
 	    exposing them as attributes. """
-	# Used for low-pass filter
-	OMEGA = (2 * pi)/30
-
 	def __init__(self, monitor, service):
 		self.monitor = monitor
 		self._service = service
 		self.bol = BatteryOperationalLimits(self)
-		self._dc_current = 0
+		self._dc_current = LowPassFilter((2 * pi)/30, 0)
 
 	@property
 	def service(self):
@@ -638,7 +646,7 @@ class Multi(object):
 	@property
 	def dc_current(self):
 		""" Return a low-pass smoothed current. """
-		return self._dc_current
+		return self._dc_current.value
 
 	@property
 	def hub_voltage(self):
@@ -677,7 +685,7 @@ class Multi(object):
 			# backing-off when the load drops suddenly.
 			if limit is not None:
 				c = max(c, -limit)
-			self._dc_current += (c - self._dc_current) * self.OMEGA
+			self._dc_current.update(c)
 
 class Dvcc(SystemCalcDelegate):
 	""" This is the main DVCC delegate object. """
