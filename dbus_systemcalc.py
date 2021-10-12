@@ -140,6 +140,7 @@ class SystemCalc:
 				'/Yield/Power': dummy,
 				'/Soc': dummy},
 			'com.victronenergy.dcsystem': {
+				'/Dc/0/Voltage': dummy,
 				'/Dc/0/Power': dummy
 			}
 		}
@@ -400,9 +401,12 @@ class SystemCalc:
 
 			return None
 
-		# There is a Multi, and it supports tracking external charge current
-		# from solarchargers. Then use it.
-		if self._dbusmonitor.get_value(vebus_service[0], '/ExtraBatteryCurrent') is not None and self._settings['hasdcsystem'] == 0:
+		# There is a Multi, it supports tracking external charge current from
+		# solarchargers, and there are no DC loads. Then use it.
+		if self._dbusmonitor.get_value(
+				vebus_service[0], '/ExtraBatteryCurrent') is not None \
+				and self._get_first_connected_service('com.victronenergy.dcsystem') is None \
+				and self._settings['hasdcsystem'] == 0:
 			return vebus_service[0]
 
 		# Multi does not support tracking solarcharger current, and we have
@@ -572,6 +576,9 @@ class SystemCalc:
 						newvalues['/Dc/Pv/Power'] = newvalues.get('/Dc/Pv/Power', 0) + pv_yield
 
 
+		# Used lower down, possibly needed for battery values as well
+		dcsystems = self._dbusmonitor.get_service_list('com.victronenergy.dcsystem')
+
 		# ==== BATTERY ====
 		if self._batteryservice is not None:
 			batteryservicetype = self._batteryservice.split('.')[2]
@@ -594,7 +601,7 @@ class SystemCalc:
 				vebus_power = None if vebus_voltage is None or vebus_current is None else vebus_current * vebus_voltage
 				newvalues['/Dc/Battery/Voltage'] = vebus_voltage
 				newvalues['/Dc/Battery/VoltageService'] = self._batteryservice
-				if self._settings['hasdcsystem'] == 1:
+				if self._settings['hasdcsystem'] == 1 or dcsystems:
 					# hasdcsystem will normally disqualify the multi from being
 					# auto-selected as battery monitor, so the only way we're
 					# here is if the user explicitly selected the multi as the
@@ -623,8 +630,8 @@ class SystemCalc:
 			# or one that was automatically selected for SOC tracking.  We may
 			# however still have a VE.Bus, just not one that can accurately
 			# track SOC. If we have one, use it as voltage source.  Otherwise
-			# try a solar charger, a charger, or a vedirect inverter as
-			# fallbacks.
+			# try a solar charger, a charger, a vedirect inverter or a dcsource
+			# as fallbacks.
 			batteryservicetype = None
 			vebusses = self._dbusmonitor.get_service_list('com.victronenergy.vebus')
 			for vebus in vebusses:
@@ -650,22 +657,33 @@ class SystemCalc:
 					if v is not None:
 						newvalues['/Dc/Battery/Voltage'] = v
 						newvalues['/Dc/Battery/VoltageService'] = vedirect_inverter
+				elif dcsystems:
+					# Get voltage from first dcsystem
+					s = next(iter(dcsystems.keys()))
+					v = self._dbusmonitor.get_value(s, '/Dc/0/Voltage')
+					if v is not None:
+						newvalues['/Dc/Battery/Voltage'] = v
+						newvalues['/Dc/Battery/VoltageService'] = s
 
-			if self._settings['hasdcsystem'] == 0 and '/Dc/Battery/Voltage' in newvalues:
-				# No unmonitored DC loads or chargers, and also no battery monitor: derive battery watts
-				# and amps from vebus, solarchargers and chargers.
-				assert '/Dc/Battery/Power' not in newvalues
-				assert '/Dc/Battery/Current' not in newvalues
-				p = solarchargers_charge_power + newvalues.get('/Dc/Charger/Power', 0) + vebuspower
-				voltage = newvalues['/Dc/Battery/Voltage']
-				newvalues['/Dc/Battery/Current'] = p / voltage if voltage > 0 else None
-				newvalues['/Dc/Battery/Power'] = p
-
+			# We have no suitable battery monitor, so power and current data
+			# is not available. We can however calculate it from other values,
+			# if we have at least a battery voltage.
+			if '/Dc/Battery/Voltage' in newvalues:
+				dcsystempower = _safeadd(0, *(self._dbusmonitor.get_value(s,
+					'/Dc/0/Power', 0) for s in dcsystems))
+				if dcsystems or self._settings['hasdcsystem'] == 0:
+					# Either DC loads are monitored, or there are no
+					# unmonitored DC loads or chargers: derive battery watts
+					# and amps from vebus, solarchargers, chargers and measured
+					# loads.
+					p = solarchargers_charge_power + newvalues.get('/Dc/Charger/Power', 0) + vebuspower - dcsystempower
+					voltage = newvalues['/Dc/Battery/Voltage']
+					newvalues['/Dc/Battery/Current'] = p / voltage if voltage > 0 else None
+					newvalues['/Dc/Battery/Power'] = p
 
 		# ==== SYSTEM POWER ====
 		# Look for dcsytem devices, add them together. Otherwise, if enabled,
 		# calculate it
-		dcsystems = self._dbusmonitor.get_service_list('com.victronenergy.dcsystem')
 		if dcsystems:
 			newvalues['/Dc/System/MeasurementType'] = 1 # measured
 			newvalues['/Dc/System/Power'] = 0

@@ -817,3 +817,17 @@ class VoltageSenseTest(TestSystemCalcBase):
 			'com.victronenergy.solarcharger.ttyO2': {
 				'/Link/VoltageSense': 53.1,
 				'/Link/TemperatureSense': 24.5}})
+
+	def test_dcsystem_as_voltage_source(self):
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._add_device('com.victronenergy.dcsystem.ttyO2', {
+			'/Dc/0/Voltage': 12.5,
+			'/Dc/0/Power': 125
+		}, product_name='SmartShunt', connection='VE.Direct')
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Voltage': 12.5,
+			'/Dc/Battery/VoltageService': 'com.victronenergy.dcsystem.ttyO2',
+			'/Dc/Battery/Current': -10,
+			'/Dc/Battery/Power': -125,
+		})
