@@ -1817,3 +1817,29 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.inverter.ttyO1': {
 				'/Link/DischargeCurrent': 0.0}})
+
+	def test_compensate_for_dcsystem(self):
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 55.2)
+		self._monitor.add_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn', 0)
+		self._set_setting('/Settings/SystemSetup/MaxChargeCurrent', 40)
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Dc/0/Voltage': 58.0,
+			'/Dc/0/Current': 30,
+			'/FirmwareVersion': 0x0129},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.dcsystem.ttyO4', {
+			'/Dc/0/Power': 125.0 # 10A extra
+		})
+		self._update_values(interval=30000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/ChargeCurrent': 40 + 8 + 10}, # 40A limit, 8A VEBus, 10A DC loads
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeCurrent': None,
+				'/Dc/0/MaxChargeCurrent': 20}}) # 10A remainder plus 10A for DC loads

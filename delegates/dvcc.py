@@ -697,6 +697,7 @@ class Dvcc(SystemCalcDelegate):
 		self._timer = None
 		self._tickcount = ADJUST
 		self._bms_seen = False
+		self._dcsyscurrent = LowPassFilter((2 * pi)/20, 0.0)
 
 	def get_input(self):
 		return [
@@ -831,6 +832,20 @@ class Dvcc(SystemCalcDelegate):
 	currentoffset = property(partial(_property, '/Debug/BatteryOperationalLimits/CurrentOffset'))
 
 	@property
+	def dcsyscurrent(self):
+		""" Return non-zero DC system current, if it is based on
+		    a real measurement. If an estimate/calculation, we cannot use it.
+		"""
+		if self._dbusservice['/Dc/System/MeasurementType'] == 1:
+			try:
+				v = self._dbusservice['/Dc/Battery/Voltage']
+				return self._dcsyscurrent.update(
+					float(self._dbusservice['/Dc/System/Power'])/v)
+			except (TypeError, ZeroDivisionError):
+				pass
+		return 0.0
+
+	@property
 	def has_ess_assistant(self):
 		return self._multi.active and self._multi.has_ess_assistant
 
@@ -933,6 +948,11 @@ class Dvcc(SystemCalcDelegate):
 		# the control is active here. Should we?
 		self._dbusservice['/Control/MaxChargeCurrent'] = \
 			not self._multi.active or self._multi.has_bolframe
+
+		# If there is a measured DC system, the Multi and solarchargers
+		# should add extra current for that. Round this to nearest 100mA.
+		if max_charge_current is not None and max_charge_current > 0 and not stop_on_mcc0:
+			max_charge_current = round(max_charge_current + self.dcsyscurrent, 1)
 
 		# We need to keep a copy of the original value for later. We will be
 		# modifying one of them to compensate for vebus current.
