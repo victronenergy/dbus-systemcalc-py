@@ -18,6 +18,10 @@ class Service(object):
 	def number_of_inputs(self):
 		return self.monitor.get_value(self.service, '/Ac/NumberOfAcInputs')
 
+	@property
+	def dc_current(self):
+		return self.monitor.get_value(self.service, '/Dc/0/Current')
+
 class Multi(SystemCalcDelegate):
 	def __init__(self):
 		super(Multi, self).__init__()

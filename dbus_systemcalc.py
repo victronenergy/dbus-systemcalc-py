@@ -164,7 +164,8 @@ class SystemCalc:
 			delegates.BatteryData(),
 			delegates.Gps(),
 			delegates.AcInputs(),
-			delegates.GensetStartStop()]
+			delegates.GensetStartStop(),
+			delegates.SocSync(self)]
 
 		for m in self._modules:
 			for service, paths in m.get_input():

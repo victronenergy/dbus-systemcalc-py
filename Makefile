@@ -28,7 +28,8 @@ DELEGATES = \
 	$(SOURCEDIR)/delegates/gps.py \
 	$(SOURCEDIR)/delegates/multi.py \
 	$(SOURCEDIR)/delegates/acinput.py \
-	$(SOURCEDIR)/delegates/genset.py
+	$(SOURCEDIR)/delegates/genset.py \
+	$(SOURCEDIR)/delegates/socsync.py
 
 VEDLIB_FILES = \
 	$(VEDLIBDIR)/logger.py \
