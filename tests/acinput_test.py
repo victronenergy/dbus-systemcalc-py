@@ -276,3 +276,41 @@ class TestAcInputDelegate(TestSystemCalcBase):
 			'/Ac/In/1/DeviceInstance': None,
 			'/Ac/In/1/Connected': None,
 		})
+
+	def test_vrm_di_zero_on_ccgx(self):
+		self._update_values()
+		self._check_values({
+			'/Ac/In/0/ServiceType': 'vebus',
+			'/Ac/In/0/ServiceName': 'com.victronenergy.vebus.ttyO1',
+			'/Ac/In/0/DeviceInstance': 247,
+			'/Ac/In/0/VrmDeviceInstance': 0,
+			'/Ac/In/0/Connected': 1,
+		})
+
+		# Put the Multi on a different port, eg Venus-GX has it on ttyO5
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._add_device('com.victronenergy.vebus.ttyO5',
+			product_name='Multi',
+			values={
+				'/Ac/ActiveIn/L1/P': 123,
+				'/Ac/ActiveIn/ActiveInput': 0,
+				'/Ac/ActiveIn/Connected': 1,
+				'/Ac/Out/L1/P': 100,
+				'/Ac/NumberOfAcInputs': 2,
+				'/Dc/0/Voltage': 12.25,
+				'/Dc/0/Current': -8,
+				'/Dc/0/Temperature': 24,
+				'/DeviceInstance': 261,
+				'/Dc/0/MaxChargeCurrent': 999,
+				'/Soc': 53.2,
+				'/State': 3,
+			})
+
+		self._update_values()
+		self._check_values({
+			'/Ac/In/0/ServiceType': 'vebus',
+			'/Ac/In/0/ServiceName': 'com.victronenergy.vebus.ttyO5',
+			'/Ac/In/0/DeviceInstance': 261,
+			'/Ac/In/0/VrmDeviceInstance': 261,
+			'/Ac/In/0/Connected': 1,
+		})

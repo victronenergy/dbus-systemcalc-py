@@ -31,11 +31,13 @@ class AcInputs(SystemCalcDelegate):
 		return [('/Ac/In/0/ServiceName', {'gettext': '%s'}),
 				('/Ac/In/0/ServiceType', {'gettext': '%s'}),
 				('/Ac/In/0/DeviceInstance', {'gettext': '%d'}),
+				('/Ac/In/0/VrmDeviceInstance', {'gettext': '%d'}),
 				('/Ac/In/0/Source', {'gettext': '%d'}),
 				('/Ac/In/0/Connected', {'gettext': '%d'}),
 				('/Ac/In/1/ServiceName', {'gettext': '%s'}),
 				('/Ac/In/1/ServiceType', {'gettext': '%s'}),
 				('/Ac/In/1/DeviceInstance', {'gettext': '%d'}),
+				('/Ac/In/1/VrmDeviceInstance', {'gettext': '%d'}),
 				('/Ac/In/1/Source', {'gettext': '%d'}),
 				('/Ac/In/1/Connected', {'gettext': '%d'}),
 				('/Ac/In/NumberOfAcInputs', {'gettext': '%d'}),
@@ -70,11 +72,16 @@ class AcInputs(SystemCalcDelegate):
 		self.gensetmeter = self._get_meter(self.gensetmeters)
 
 	def input_tree(self, inp, service, instance, typ, active):
+		# Historical hackery requires the device instance of vebus
+		# on ttyO1 (ie a CCGX) to be zero. Reflect that here even
+		# though ideally such hackery must die.
+		vrminstance = 0 if service.endswith('.vebus.ttyO1') else instance
 		return {
 			'/Ac/In/{}/ServiceName'.format(inp): service,
 			'/Ac/In/{}/ServiceType'.format(inp):
 				service.split('.')[2] if service is not None else None,
 			'/Ac/In/{}/DeviceInstance'.format(inp): instance,
+			'/Ac/In/{}/VrmDeviceInstance'.format(inp): vrminstance,
 			'/Ac/In/{}/Source'.format(inp): typ,
 			'/Ac/In/{}/Connected'.format(inp): active
 		}
