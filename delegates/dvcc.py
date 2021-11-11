@@ -309,6 +309,15 @@ class Alternator(BaseCharger, Networkable):
 		# external control support
 		return self.monitor.seen(self.service, '/Link/ChargeCurrent')
 
+class AcCharger(SolarCharger):
+	@property
+	def has_externalcontrol_support(self):
+		""" The Phoenix Smart IP43 Charger 230V is not supported at all.
+		    The Phoenix Smart IP43 Charger 120-240V has DVCC support since v3.52.
+		    Link items are not present on DBus for above unsupported cases,
+		    so no need to check versions and products here. """
+		return self.monitor.seen(self.service, '/Link/ChargeCurrent')
+
 class InverterCharger(SolarCharger):
 	""" Encapsulates an inverter/charger object, currently the inverter RS,
 	    which has a solar input and can charge the battery like a solar
@@ -382,6 +391,10 @@ class ChargerSubsystem(object):
 
 	def add_alternator(self, service):
 		self._otherchargers[service] = charger = Alternator(self.monitor, service)
+		return charger
+
+	def add_accharger(self, service):
+		self._otherchargers[service] = charger = AcCharger(self.monitor, service)
 		return charger
 
 	def add_invertercharger(self, service):
@@ -803,6 +816,19 @@ class Dvcc(SystemCalcDelegate):
 				'/N2kDeviceInstance',
 				'/Mgmt/Connection',
 				'/Settings/BmsPresent']),
+            ('com.victronenergy.charger', [
+                '/ProductId',
+                '/Dc/0/Voltage',
+                '/Dc/0/Current',
+                '/Link/NetworkMode',
+                '/Link/ChargeVoltage',
+                '/Link/ChargeCurrent',
+                '/Settings/ChargeCurrentLimit',
+                '/State',
+                '/FirmwareVersion',
+                '/N2kDeviceInstance',
+                '/Mgmt/Connection',
+                '/Settings/BmsPresent']),
 			('com.victronenergy.inverter', [
 				'/ProductId',
 				'/Dc/0/Current',
@@ -874,6 +900,8 @@ class Dvcc(SystemCalcDelegate):
 			self._vecan_services.append(service)
 		elif service_type in ('dcdc', 'alternator'):
 			self._chargesystem.add_alternator(service)
+		elif service_type in ('charger'):
+			self._chargesystem.add_accharger(service)
 		elif service_type == 'battery':
 			pass # install timer below
 		else:
