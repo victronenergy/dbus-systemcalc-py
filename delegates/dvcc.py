@@ -257,6 +257,26 @@ class SolarCharger(object):
 		if v is not None:
 			self._smoothed_current.update(v)
 
+class AcCharger(SolarCharger):
+	def __init__(self, monitor, service):
+		super(AcCharger, self).__init__(monitor, service)
+
+	@property
+	def has_externalcontrol_support(self):
+		""" The Phoenix Smart IP43 Charger 230V is not supported at all.
+		    The Phoenix Smart IP43 Charger 120-240V has DVCC support since v3.52.
+		    Link items are not present on DBus for above unsupported cases,
+		    so no need to check versions and products here. """
+		return True
+
+	@property
+	def state(self):
+		state = self._get_path('/State')
+		# Force external control to prevent being excluded if charger reports off
+		if state == 0:
+			state = 252
+		return state
+
 class InverterCharger(SolarCharger):
 	""" Encapsulates an inverter/charger object, currently the inverter RS,
 	    which has a solar input and can charge the battery like a solar
@@ -325,6 +345,10 @@ class SolarChargerSubsystem(object):
 
 	def add_charger(self, service):
 		self._solarchargers[service] = charger = SolarCharger(self.monitor, service)
+		return charger
+
+	def add_accharger(self, service):
+		self._solarchargers[service] = charger = AcCharger(self.monitor, service)
 		return charger
 
 	def add_invertercharger(self, service):
@@ -731,6 +755,16 @@ class Dvcc(SystemCalcDelegate):
 				'/FirmwareVersion',
 				'/N2kDeviceInstance',
 				'/Mgmt/Connection']),
+			('com.victronenergy.charger', [
+				'/ProductId',
+				'/Dc/0/Current',
+				'/Link/NetworkMode',
+				'/Link/ChargeVoltage',
+				'/Link/ChargeCurrent',
+				'/Settings/ChargeCurrentLimit',
+				'/State',
+				'/FirmwareVersion',
+				'/Mgmt/Connection']),
 			('com.victronenergy.inverter', [
 				'/ProductId',
 				'/Dc/0/Current',
@@ -779,6 +813,8 @@ class Dvcc(SystemCalcDelegate):
 		service_type = service.split('.')[2]
 		if service_type == 'solarcharger':
 			self._solarsystem.add_charger(service)
+		elif service_type == 'charger':
+			self._solarsystem.add_accharger(service)
 		elif service_type == 'inverter':
 			if self._dbusmonitor.get_value(service, '/IsInverterCharger') == 1:
 				# Add to both the solarcharger and inverter collections.
