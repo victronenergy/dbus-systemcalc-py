@@ -163,7 +163,8 @@ class SystemCalc:
 			#delegates.BydCurrentSense(self),
 			delegates.BatteryData(),
 			delegates.Gps(),
-			delegates.AcInputs()]
+			delegates.AcInputs(),
+			delegates.GensetStartStop()]
 
 		for m in self._modules:
 			for service, paths in m.get_input():
