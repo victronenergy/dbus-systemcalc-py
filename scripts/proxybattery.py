@@ -46,11 +46,18 @@ def track(conn, service, path, callback):
     callback(value)
 
     # And track it
-    conn.add_signal_receiver(partial(set_state, callback),
+    cb = partial(set_state, callback)
+    conn.add_signal_receiver(cb,
             dbus_interface='com.victronenergy.BusItem',
             signal_name='PropertiesChanged',
             path=path,
             bus_name=service)
+
+    conn.add_signal_receiver(lambda x: cb(x[path]) if path in x else None,
+        dbus_interface='com.victronenergy.BusItem',
+        signal_name='ItemsChanged',
+        path='/',
+        bus_name=service)
 
 def _set_value(service, path, v):
     service._dbusservice[path] = round(v, 2)
