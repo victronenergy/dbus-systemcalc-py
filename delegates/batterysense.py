@@ -11,6 +11,13 @@ from ve_utils import exit_on_error
 # Write temperature this often (in 3-second units)
 TEMPERATURE_INTERVAL = 3
 
+def safe_float(v):
+	""" Return a floating point value for v, unless it is None/invalid. """
+	try:
+		return float(v)
+	except (TypeError, ValueError):
+		return None
+
 class TemperatureSensor(namedtuple('TemperatureSensor', ('service', 'path', 'instance', 'isvalid'))):
 	@property
 	def valid(self):
@@ -178,14 +185,15 @@ class BatterySense(SystemCalcDelegate):
 			else:
 				s = self._find_device_instance(serviceclass, instance)
 				if s is not None and self.temperaturesensors[s].valid:
-					return self._dbusmonitor.get_value(s, '/'+path), s
+					return safe_float(self._dbusmonitor.get_value(s, '/'+path)), s
 				else:
 					return None, None
 
 		# Default: Use battery service
 		if self.systemcalc._batteryservice is not None:
-			t = self._dbusmonitor.get_value(self.systemcalc._batteryservice,
-				'/Dc/0/Temperature')
+			t = safe_float(self._dbusmonitor.get_value(
+				self.systemcalc._batteryservice,
+				'/Dc/0/Temperature'))
 			if t is not None:
 				return t, self.systemcalc._batteryservice
 
