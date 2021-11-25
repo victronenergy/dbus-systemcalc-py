@@ -54,4 +54,10 @@ class Multi(SystemCalcDelegate):
 			self.multi = None
 
 	def update_values(self, newvalues):
+		# If there are multis connected, but for some reason none is selected
+		# or the current selected one is no longer connected, try to set
+		# a new one.
+		if self.multis and (self.multi is None or not self.multi.connected):
+			self._set_multi()
+
 		newvalues['/VebusService'] = getattr(self.multi, 'service', None)
