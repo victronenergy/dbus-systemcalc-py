@@ -49,7 +49,7 @@ def copy_dbus_value(monitor, src_service, src_path, dest_service, dest_path, cop
 	value = monitor.get_value(src_service, src_path)
 	if copy_invalid or value is not None:
 		if offset is not None: value += offset
-		monitor.set_value(dest_service, dest_path, value)
+		monitor.set_value_async(dest_service, dest_path, value)
 
 
 class SmartDict(dict):
