@@ -831,3 +831,33 @@ class VoltageSenseTest(TestSystemCalcBase):
 			'/Dc/Battery/Current': -10,
 			'/Dc/Battery/Power': -125,
 		})
+
+	def test_no_vecan_loop(self):
+		self._set_setting('/Settings/Services/Bol', 1)
+		self._set_setting('/Settings/SystemSetup/SharedVoltageSense', 1)
+		self._set_setting('/Settings/SystemSetup/BatteryCurrentSense', 1)
+
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.15,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Dc/0/Temperature': 26,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2}, connection='VE.Can')
+		self._add_device('com.victronenergy.vecan.can0', {
+			'/Link/ChargeVoltage': None,
+			'/Link/NetworkMode': None,
+			'/Link/TemperatureSense': None,
+			'/Link/VoltageSense': None,
+			'/Link/BatteryCurrent': None})
+
+		self._update_values(6000)
+		self._check_values({
+			'/Control/BatteryCurrentSense': 2 # No chargers
+		})
+		self._check_external_values({
+			'com.victronenergy.vecan.can0': {
+				'/Link/VoltageSense': None,
+				'/Link/BatteryCurrent': None}})

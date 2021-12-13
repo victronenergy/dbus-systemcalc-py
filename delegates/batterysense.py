@@ -317,13 +317,22 @@ class BatterySense(SystemCalcDelegate):
 		sent = BatterySense.ISENSE_NO_CHARGERS
 		for service in chain(self._dbusmonitor.get_service_list(
 			'com.victronenergy.solarcharger').keys(), self._dbusmonitor.get_service_list(
-			'com.victronenergy.vecan').keys(), self._dbusmonitor.get_service_list(
 			'com.victronenergy.inverter').keys()):
 			# Skip for old firmware versions to save some dbus traffic
 			if not self._dbusmonitor.seen(service, '/Link/BatteryCurrent'):
 				continue # No such feature on this charger
 			self._dbusmonitor.set_value_async(service, '/Link/BatteryCurrent', battery_current)
 			sent = BatterySense.ISENSE_ENABLED
+
+		# Forward isense to VE.Can only if it doesn't come from there
+		vecan = self._dbusmonitor.get_service_list('com.victronenergy.vecan')
+		if vecan:
+			sense_origin = self._dbusmonitor.get_value(sense_voltage_service, '/Mgmt/Connection')
+			if sense_origin and sense_origin != 'VE.Can':
+				for service in vecan.keys():
+					self._dbusmonitor.set_value_async(service, '/Link/BatteryCurrent', battery_current)
+					sent = BatterySense.ISENSE_ENABLED
+
 		return sent
 
 	def _distribute_sense_temperature(self):
