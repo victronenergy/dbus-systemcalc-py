@@ -32,10 +32,14 @@ DBusGMainLoop(set_as_default=True)
 def loop(start, offset, path, value):
     return start + 1 + (value-start) % offset
 
+def upwards(path, value):
+    return value + 0.1
+
 s = DbusDummyService(
     servicename=args.name,
     deviceinstance=1,
     paths={
+        '/CustomName': {'initial': 'North roof'},
         '/State': {'initial': 242},
         '/Dc/0/Voltage': {'initial': 41.0, 'update': partial(loop, 41, 20)},
         '/Dc/0/Current': {'initial': 42.0, 'update': partial(loop, 42, 20)},
@@ -44,6 +48,7 @@ s = DbusDummyService(
         '/Pv/I': {'initial': 0.0, 'update': partial(loop, 0, 20)},
         '/Pv/V': {'initial': 80.0, 'update': partial(loop, 80, 20)},
         '/Yield/Power': {'initial': 800, 'update': partial(loop, 800, 20)},
+        '/Yield/User': {'initial': 0.1, 'update': upwards},
         '/History/Daily/0/TimeInBulk': {'initial': 0, 'update': 1},
 
         '/Link/NetworkMode': {'initial': None},
