@@ -861,3 +861,25 @@ class VoltageSenseTest(TestSystemCalcBase):
 			'com.victronenergy.vecan.can0': {
 				'/Link/VoltageSense': None,
 				'/Link/BatteryCurrent': None}})
+
+	def test_multi_rs_tsense(self):
+		self._set_setting('/Settings/Services/Bol', 1)
+		self._set_setting('/Settings/SystemSetup/SharedTemperatureSense', 1)
+		self._set_setting('/Settings/SystemSetup/TemperatureService', 'com.victronenergy.multi/0/Dc/0/Temperature')
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Link/VoltageSense': None,
+			'/Link/TemperatureSense': None,
+			'/Dc/0/Voltage': 49.2,
+			'/Dc/0/Current': 9.7},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.multi.socketcan_can0_001', {
+			#'/Dc/0/Voltage': 49.2,
+			#'/Dc/0/Current': 0.7,
+			'/Dc/0/Temperature': '22.7'},
+			connection='VE.Can')
+		self._update_values(12000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/TemperatureSense': 22.7}})

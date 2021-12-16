@@ -79,6 +79,8 @@ class BatterySense(SystemCalcDelegate):
 				'/BatterySense/Temperature',
 				'/FirmwareFeatures/BolUBatAndTBatSense',
 				'/Dc/0/Temperature']),
+			('com.victronenergy.multi', [
+				'/Dc/0/Temperature']),
 			('com.victronenergy.settings', [
 				'/Settings/SystemSetup/SharedVoltageSense',
 				'/Settings/Services/Bol']),
@@ -204,7 +206,8 @@ class BatterySense(SystemCalcDelegate):
 		if service.startswith('com.victronenergy.battery.') or \
 				service.startswith('com.victronenergy.vebus.') or \
 				service.startswith('com.victronenergy.solarcharger.') or \
-				service.startswith('com.victronenergy.inverter.'):
+				service.startswith('com.victronenergy.inverter.') or \
+				service.startswith('com.victronenergy.multi.'):
 			self.temperaturesensors[service] = TemperatureSensor(service,
 				'/Dc/0/Temperature', instance,
 				lambda s=service: self._dbusmonitor.get_value(s, '/Dc/0/Temperature') is not None)
