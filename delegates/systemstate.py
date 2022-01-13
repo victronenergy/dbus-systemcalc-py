@@ -1,5 +1,6 @@
-# Victron packages
+from itertools import chain
 
+# Victron packages
 import sc_utils
 from delegates.base import SystemCalcDelegate
 from delegates.schedule import ScheduledCharging
@@ -120,8 +121,10 @@ class SystemState(SystemCalcDelegate):
 		if vebus is None:
 			ss = SystemState.UNKNOWN
 
-			# Look for a VE.Direct inverter
-			inverter = next(iter(self._dbusmonitor.get_service_list('com.victronenergy.inverter').keys()), None)
+			# Look for Multi RS, Inverter RS, or a VE.Direct inverter
+			inverter = next(chain(
+				self._dbusmonitor.get_service_list('com.victronenergy.multi').keys(),
+				self._dbusmonitor.get_service_list('com.victronenergy.inverter').keys()), None)
 			if inverter is not None:
 				ss = self._dbusmonitor.get_value(inverter, '/State')
 
