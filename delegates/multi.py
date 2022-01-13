@@ -22,6 +22,11 @@ class Service(object):
 	def dc_current(self):
 		return self.monitor.get_value(self.service, '/Dc/0/Current')
 
+	@property
+	def input_types(self):
+		return [(i, self.monitor.get_value('com.victronenergy.settings',
+			'/Settings/SystemSetup/AcInput{}'.format(i + 1))) for i in range(self.number_of_inputs or 0)]
+
 class Multi(SystemCalcDelegate):
 	def __init__(self):
 		super(Multi, self).__init__()

@@ -16,16 +16,37 @@ class AcSource(object):
 	def device_type(self):
 		return self.monitor.get_value(self.service, '/DeviceType')
 
+class InverterCharger(AcSource):
+	@property
+	def active_input(self):
+		return self.monitor.get_value(self.service, '/Ac/ActiveIn/ActiveInput')
+
+	@property
+	def number_of_inputs(self):
+		return self.monitor.get_value(self.service, '/Ac/NumberOfAcInputs')
+
+	@property
+	def input_types(self):
+		return [(i, self.monitor.get_value(self.service,
+			'/Ac/In/{}/Type'.format(i+1))) for i in range(self.number_of_inputs or 0)]
+
 class AcInputs(SystemCalcDelegate):
 	def __init__(self):
 		super(AcInputs, self).__init__()
 		self.gridmeters = {}
 		self.gensetmeters = {}
+		self.inverterchargers = {}
 		self.gridmeter = None
 		self.gensetmeter = None
+		self.invertercharger = None
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
+
+	def get_input(self):
+		return [('com.victronenergy.multi', [
+				'/Ac/ActiveIn/ActiveInput',
+				'/Ac/NumberOfAcInputs'])]
 
 	def get_output(self):
 		return [('/Ac/In/0/ServiceName', {'gettext': '%s'}),
@@ -51,6 +72,9 @@ class AcInputs(SystemCalcDelegate):
 		elif service.startswith('com.victronenergy.genset.'):
 			self.gensetmeters[service] = AcSource(self._dbusmonitor, service, instance)
 			self._set_gensetmeter()
+		elif service.startswith('com.victronenergy.multi.'):
+			self.inverterchargers[service] = InverterCharger(self._dbusmonitor, service, instance)
+			self._set_invertercharger()
 
 	def device_removed(self, service, instance):
 		if service in self.gridmeters:
@@ -59,6 +83,9 @@ class AcInputs(SystemCalcDelegate):
 		if service in self.gensetmeters:
 			del self.gensetmeters[service]
 			self._set_gensetmeter()
+		if service in self.inverterchargers:
+			del self.inverterchargers[service]
+			self._set_invertercharger()
 
 	def _get_meter(self, meters):
 		if meters:
@@ -70,6 +97,9 @@ class AcInputs(SystemCalcDelegate):
 
 	def _set_gensetmeter(self):
 		self.gensetmeter = self._get_meter(self.gensetmeters)
+
+	def _set_invertercharger(self):
+		self.invertercharger = self._get_meter(self.inverterchargers)
 
 	def input_tree(self, inp, service, instance, typ, active):
 		# Historical hackery requires the device instance of vebus
@@ -87,12 +117,10 @@ class AcInputs(SystemCalcDelegate):
 		}
 
 	def update_values(self, newvalues):
-		multi = Multi.instance.multi
+		multi = Multi.instance.multi or self.invertercharger
 		number_of_inputs = getattr(multi, 'number_of_inputs', None) or 0
-		inputs = [(i, self._dbusmonitor.get_value('com.victronenergy.settings',
-			'/Settings/SystemSetup/AcInput{}'.format(i + 1))) for i in range(number_of_inputs)]
 		source_count = 0
-		for i, t in inputs:
+		for i, t in getattr(multi, 'input_types', ()):
 			if t is None or (not 0 < t < 4): # Input is marked "Not available", or invalid
 				continue
 
