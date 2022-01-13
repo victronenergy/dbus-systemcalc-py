@@ -139,6 +139,17 @@ class SystemCalc:
 				'/Ac/Out/L1/I': dummy,
 				'/Yield/Power': dummy,
 				'/Soc': dummy},
+			'com.victronenergy.multi': {
+				'/Connected': dummy,
+				'/ProductName': dummy,
+				'/Mgmt/Connection': dummy,
+				'/Dc/0/Voltage': dummy,
+				'/Dc/0/Current': dummy,
+				'/Ac/Out/L1/P': dummy,
+				'/Ac/Out/L1/V': dummy,
+				'/Ac/Out/L1/I': dummy,
+				'/Yield/Power': dummy,
+				'/Soc': dummy},
 			'com.victronenergy.dcsystem': {
 				'/Dc/0/Voltage': dummy,
 				'/Dc/0/Power': dummy
@@ -396,7 +407,11 @@ class SystemCalc:
 		vebus_service = self._get_service_having_lowest_instance('com.victronenergy.vebus')
 		if vebus_service is None:
 			# No VE.Bus, but maybe there is an inverter with built-in SOC
-			# tracking, eg RS Smart.
+			# tracking, eg RS Smart or Multi RS.
+			inverter = self._get_service_having_lowest_instance('com.victronenergy.multi')
+			if inverter and self._dbusmonitor.get_value(inverter[0], '/Soc') is not None:
+				return inverter[0]
+
 			inverter = self._get_service_having_lowest_instance('com.victronenergy.inverter')
 			if inverter and self._dbusmonitor.get_value(inverter[0], '/Soc') is not None:
 				return inverter[0]
@@ -564,19 +579,18 @@ class SystemCalc:
 			else:
 				newvalues['/Dc/Charger/Power'] += v * i
 
-		# ==== VE.Direct Inverters ====
-		_vedirect_inverters = sorted((di, s) for s, di in self._dbusmonitor.get_service_list('com.victronenergy.inverter').items())
-		vedirect_inverters = [x[1] for x in _vedirect_inverters]
-		vedirect_inverter = None
-		if vedirect_inverters:
-			vedirect_inverter = vedirect_inverters[0]
+		# ==== Other Inverters and Inverter/Chargers ====
+		_other_inverters = sorted((di, s) for s, di in self._dbusmonitor.get_service_list('com.victronenergy.multi').items()) + \
+			sorted((di, s) for s, di in self._dbusmonitor.get_service_list('com.victronenergy.inverter').items())
+		non_vebus_inverters = [x[1] for x in _other_inverters]
+		non_vebus_inverter = None
+		if non_vebus_inverters:
+			non_vebus_inverter = non_vebus_inverters[0]
 
-			# For RS Smart inverters, add PV to the yield
-			for i in vedirect_inverters:
-				pv_yield = self._dbusmonitor.get_value(i, "/Yield/Power")
-				if pv_yield is not None:
-						newvalues['/Dc/Pv/Power'] = newvalues.get('/Dc/Pv/Power', 0) + pv_yield
-
+			# For RS Smart and Multi RS, add PV to the yield
+			for i in non_vebus_inverters:
+				if (pv_yield := self._dbusmonitor.get_value(i, "/Yield/Power")) is not None:
+					newvalues['/Dc/Pv/Power'] = newvalues.get('/Dc/Pv/Power', 0) + pv_yield
 
 		# Used lower down, possibly needed for battery values as well
 		dcsystems = self._dbusmonitor.get_service_list('com.victronenergy.dcsystem')
@@ -584,14 +598,14 @@ class SystemCalc:
 		# ==== BATTERY ====
 		if self._batteryservice is not None:
 			batteryservicetype = self._batteryservice.split('.')[2]
-			assert batteryservicetype in ('battery', 'vebus', 'inverter')
+			assert batteryservicetype in ('battery', 'vebus', 'inverter', 'multi')
 
 			newvalues['/Dc/Battery/Soc'] = self._dbusmonitor.get_value(self._batteryservice,'/Soc')
 			newvalues['/Dc/Battery/TimeToGo'] = self._dbusmonitor.get_value(self._batteryservice,'/TimeToGo')
 			newvalues['/Dc/Battery/ConsumedAmphours'] = self._dbusmonitor.get_value(self._batteryservice,'/ConsumedAmphours')
 			newvalues['/Dc/Battery/ProductId'] = self._dbusmonitor.get_value(self._batteryservice, '/ProductId')
 
-			if batteryservicetype in ('battery', 'inverter'):
+			if batteryservicetype in ('battery', 'inverter', 'multi'):
 				newvalues['/Dc/Battery/Voltage'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Voltage')
 				newvalues['/Dc/Battery/VoltageService'] = self._batteryservice
 				newvalues['/Dc/Battery/Current'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
@@ -645,7 +659,10 @@ class SystemCalc:
 					break # Skip the else below
 			else:
 				# No suitable vebus voltage, try other devices
-				if solarcharger_batteryvoltage is not None:
+				if non_vebus_inverter is not None and (v := self._dbusmonitor.get_value(non_vebus_inverter, '/Dc/0/Voltage')) is not None:
+					newvalues['/Dc/Battery/Voltage'] = v
+					newvalues['/Dc/Battery/VoltageService'] = non_vebus_inverter
+				elif solarcharger_batteryvoltage is not None:
 					newvalues['/Dc/Battery/Voltage'] = solarcharger_batteryvoltage
 					newvalues['/Dc/Battery/VoltageService'] = solarcharger_batteryvoltage_service
 				elif charger_batteryvoltage is not None:
@@ -654,11 +671,6 @@ class SystemCalc:
 				elif fuelcell_batteryvoltage is not None:
 					newvalues['/Dc/Battery/Voltage'] = fuelcell_batteryvoltage
 					newvalues['/Dc/Battery/VoltageService'] = fuelcell_batteryvoltage_service
-				elif vedirect_inverter is not None:
-					v = self._dbusmonitor.get_value(vedirect_inverter, '/Dc/0/Voltage')
-					if v is not None:
-						newvalues['/Dc/Battery/Voltage'] = v
-						newvalues['/Dc/Battery/VoltageService'] = vedirect_inverter
 				elif dcsystems:
 					# Get voltage from first dcsystem
 					s = next(iter(dcsystems.keys()))
@@ -711,7 +723,7 @@ class SystemCalc:
 				# DC estimate. This is done using the AC value when the DC
 				# power values are not available.
 				inverter_power = 0
-				for i in vedirect_inverters:
+				for i in non_vebus_inverters:
 					inverter_current = self._dbusmonitor.get_value(i, '/Dc/0/Current')
 					if inverter_current is not None:
 						inverter_power += self._dbusmonitor.get_value(
@@ -748,7 +760,7 @@ class SystemCalc:
 		if multi_path is None:
 			# Check if we have an non-VE.Bus inverter. If yes, then ActiveInput
 			# is disconnected.
-			if vedirect_inverter is not None:
+			if non_vebus_inverter is not None: # FIXME... if it is a Multi RS!
 				ac_in_source = 240
 		else:
 			active_input = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/ActiveInput')
@@ -839,7 +851,7 @@ class SystemCalc:
 			if use_ac_out:
 				c = newvalues.get('/Ac/PvOnOutput/%s/Power' % phase)
 				if multi_path is None:
-					for inv in vedirect_inverters:
+					for inv in non_vebus_inverters:
 						ac_out = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/P' % phase)
 
 						# Some models don't show power, calculate it
@@ -878,6 +890,8 @@ class SystemCalc:
 
 		services = self._get_connected_service_list('com.victronenergy.vebus')
 		services.update(self._get_connected_service_list('com.victronenergy.battery'))
+		services.update({k: v for k, v in self._get_connected_service_list(
+			'com.victronenergy.multi').items() if self._dbusmonitor.get_value(k, '/Soc') is not None})
 		services.update({k: v for k, v in self._get_connected_service_list(
 			'com.victronenergy.inverter').items() if self._dbusmonitor.get_value(k, '/Soc') is not None})
 

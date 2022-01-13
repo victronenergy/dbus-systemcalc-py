@@ -743,6 +743,15 @@ class Dvcc(SystemCalcDelegate):
 				'/State',
 				'/N2kDeviceInstance',
 				'/Mgmt/Connection']),
+			('com.victronenergy.multi', [
+				'/ProductId',
+				'/Dc/0/Current',
+				'/IsInverterCharger',
+				'/Link/ChargeCurrent',
+				'/Settings/ChargeCurrentLimit',
+				'/State',
+				'/N2kDeviceInstance',
+				'/Mgmt/Connection']),
 			('com.victronenergy.vecan',	[
 				'/Link/ChargeVoltage',
 				'/Link/NetworkMode']),

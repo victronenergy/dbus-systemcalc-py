@@ -883,3 +883,46 @@ class VoltageSenseTest(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO1': {
 				'/Link/TemperatureSense': 22.7}})
+
+	def test_multi_rs_is_tsense_and_vsense(self):
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._set_setting('/Settings/Services/Bol', 1)
+		self._set_setting('/Settings/SystemSetup/SharedTemperatureSense', 1)
+		self._set_setting('/Settings/SystemSetup/TemperatureService', 'com.victronenergy.multi/1/Dc/0/Temperature')
+
+		self._add_device('com.victronenergy.multi.ttyO1', {
+			'/Ac/Out/L1/P': -60,
+			'/Ac/Out/L1/V': 234.2,
+			'/Dc/0/Voltage': 53.1,
+			'/Dc/0/Current': -1.2,
+			'/Dc/0/Temperature': 24.5,
+			'/DeviceInstance': 1,
+			'/Soc': 53.2,
+			'/State': 9,
+			'/IsInverterCharger': 1,
+			'/Link/ChargeCurrent': None,
+			'/Settings/ChargeCurrentLimit': 100},
+			product_name='Inverter RS', connection='VE.Direct')
+
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 0,
+			'/Link/NetworkMode': 0,
+			'/Link/VoltageSense': None,
+			'/Link/TemperatureSense': None,
+			'/Dc/0/Voltage': 53.2,
+			'/Dc/0/Current': 9.7},
+			connection='VE.Direct')
+
+		self._update_values(12000)
+
+		self._check_values({
+			'/Dc/Battery/TemperatureService': 'com.victronenergy.multi.ttyO1',
+			'/Dc/Battery/Voltage': 53.1,
+			'/Dc/Battery/VoltageService': 'com.victronenergy.multi.ttyO1',
+			'/Dc/Battery/Temperature': 24.5,
+			'/Dc/Battery/TemperatureService': 'com.victronenergy.multi.ttyO1',
+		})
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/VoltageSense': 53.1,
+				'/Link/TemperatureSense': 24.5}})

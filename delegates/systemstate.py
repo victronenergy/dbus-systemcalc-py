@@ -56,6 +56,9 @@ class SystemState(SystemCalcDelegate):
 				'/BatteryOperationalLimits/MaxDischargeCurrent',
 				'/Bms/AllowToDischarge',
 				'/Bms/AllowToCharge']),
+			('com.victronenergy.multi', [
+				'/State'
+			]),
 			('com.victronenergy.inverter', [
 				'/State',])]
 
