@@ -148,6 +148,8 @@ class SystemCalc:
 				'/Ac/ActiveIn/ActiveInput': dummy,
 				'/Ac/In/1/Type': dummy,
 				'/Ac/In/2/Type': dummy,
+				'/Ac/In/1/L1/P': dummy,
+				'/Ac/In/2/L1/P': dummy,
 				'/Ac/Out/L1/P': dummy,
 				'/Ac/Out/L1/V': dummy,
 				'/Ac/Out/L1/I': dummy,
@@ -760,6 +762,7 @@ class SystemCalc:
 
 		# ===== AC IN SOURCE =====
 		ac_in_source = None
+		active_input = None
 		if multi_path is None:
 			# Check if we have an non-VE.Bus inverter.
 			if non_vebus_inverter is not None:
@@ -812,9 +815,13 @@ class SystemCalc:
 					# add an optional PV inverter on input to the mix.
 					c = None
 					if uses_active_input:
-						ac_in = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/P' % phase)
-						if ac_in is not None:
+						if multi_path is not None and (ac_in := self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/P' % phase)) is not None:
 							c = _safeadd(c, -ac_in)
+						elif non_vebus_inverter is not None and active_input in (0, 1):
+							ac_in = self._dbusmonitor.get_value(non_vebus_inverter, '/Ac/In/%d/%s/P' % (active_input+1, phase))
+							if ac_in is not None:
+								c = _safeadd(c, -ac_in)
+
 					# If there's any power coming from a PV inverter in the inactive AC in (which is unlikely),
 					# it will still be used, because there may also be a load in the same ACIn consuming
 					# power, or the power could be fed back to the net.
@@ -822,9 +829,14 @@ class SystemCalc:
 					consumption[phase] = _safeadd(consumption[phase], _safemax(0, c))
 				else:
 					if uses_active_input:
-						p = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/P' % phase)
-						if p is not None:
+						if multi_path is not None  and (
+								p := self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/P' % phase)) is not None:
 							consumption[phase] = _safeadd(0, consumption[phase])
+						elif non_vebus_inverter is not None and active_input in (0, 1):
+							p = self._dbusmonitor.get_value(non_vebus_inverter, '/Ac/In/%d/%s/P' % (active_input + 1, phase))
+							if p is not None:
+								consumption[phase] = _safeadd(0, consumption[phase])
+
 					# No relevant energy meter present. Assume there is no load between the grid and the multi.
 					# There may be a PV inverter present though (Hub-3 setup).
 					if pvpower != None:
@@ -842,7 +854,10 @@ class SystemCalc:
 				product_id = em.product_id
 				device_type_id = em.device_type
 			if product_id is None and uses_active_input:
-				product_id = self._dbusmonitor.get_value(multi_path, '/ProductId')
+				if multi_path is not None:
+					product_id = self._dbusmonitor.get_value(multi_path, '/ProductId')
+				elif non_vebus_inverter is not None:
+					product_id = self._dbusmonitor.get_value(non_vebus_inverter, '/ProductId')
 			newvalues['/Ac/%s/ProductId' % device_type] = product_id
 			newvalues['/Ac/%s/DeviceType' % device_type] = device_type_id
 
