@@ -145,6 +145,9 @@ class SystemCalc:
 				'/Mgmt/Connection': dummy,
 				'/Dc/0/Voltage': dummy,
 				'/Dc/0/Current': dummy,
+				'/Ac/ActiveIn/ActiveInput': dummy,
+				'/Ac/In/1/Type': dummy,
+				'/Ac/In/2/Type': dummy,
 				'/Ac/Out/L1/P': dummy,
 				'/Ac/Out/L1/V': dummy,
 				'/Ac/Out/L1/I': dummy,
@@ -758,10 +761,14 @@ class SystemCalc:
 		# ===== AC IN SOURCE =====
 		ac_in_source = None
 		if multi_path is None:
-			# Check if we have an non-VE.Bus inverter. If yes, then ActiveInput
-			# is disconnected.
-			if non_vebus_inverter is not None: # FIXME... if it is a Multi RS!
-				ac_in_source = 240
+			# Check if we have an non-VE.Bus inverter.
+			if non_vebus_inverter is not None:
+				if (active_input := self._dbusmonitor.get_value(non_vebus_inverter, '/Ac/ActiveIn/ActiveInput')) is not None and \
+						active_input in (0, 1) and \
+						(active_type := self._dbusmonitor.get_value(non_vebus_inverter, '/Ac/In/{}/Type'.format(active_input + 1))) is not None:
+					ac_in_source = active_type
+				else:
+					ac_in_source = 240
 		else:
 			active_input = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/ActiveInput')
 			if active_input == 0xF0:

@@ -1262,6 +1262,56 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._check_values({
 			'/Dc/System/Power': 800.0 })
 
+	def test_multi_rs_active_ac(self):
+		self._monitor.remove_service('com.victronenergy.vebus.ttyO1')
+
+		self._add_device('com.victronenergy.multi.ttyO1',
+						product_name='inverter',
+						values={
+								'/Dc/0/Voltage': 12.8,
+								'/Ac/Out/L1/V': 220,
+								'/Ac/Out/L1/I': 1.0,
+								'/Yield/Power': 0,
+								'/DeviceInstance': 0,
+								'/Ac/ActiveIn/ActiveInput': 0,
+								'/Ac/In/1/Type': 1,
+								'/Ac/In/2/Type': 2 # Quattro RS, in future perhaps
+								})
+
+		self._update_values()
+		self._check_values({
+			'/Ac/ActiveIn/Source': 1,
+		})
+
+		self._monitor.set_value('com.victronenergy.multi.ttyO1', '/Ac/ActiveIn/ActiveInput', 1)
+		self._update_values()
+		self._check_values({
+			'/Ac/ActiveIn/Source': 2,
+		})
+
+	def test_rs_smart_acin_is_always_disconnected(self):
+		self._monitor.remove_service('com.victronenergy.vebus.ttyO1')
+		self._add_device('com.victronenergy.inverter.ttyO1',
+						product_name='inverter',
+						values={
+								'/Dc/0/Voltage': 12.8,
+								'/Ac/Out/L1/V': 220,
+								'/Ac/Out/L1/I': 1.0,
+								'/Yield/Power': 102,
+								'/DeviceInstance': 0,
+								})
+
+		self._update_values()
+		self._check_values({
+			'/Ac/ActiveIn/Source': 0xF0,
+		})
+
+		self._monitor.remove_service('com.victronenergy.inverter.ttyO1')
+		self._update_values()
+		self._check_values({
+			'/Ac/ActiveIn/Source': None, # Invalid, no sources at all
+		})
+
 
 if __name__ == '__main__':
 	unittest.main()
