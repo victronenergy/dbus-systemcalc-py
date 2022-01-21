@@ -393,13 +393,6 @@ class SolarChargerSubsystem(object):
 			charger.networkmode = network_mode
 			network_mode_written = True
 
-		# Update vecan only if there is one..
-		vecan = self.monitor.get_service_list('com.victronenergy.vecan')
-		if len(vecan):
-			for _ in vecan.keys():
-				self.monitor.set_value_async(_, '/Link/NetworkMode', network_mode)
-			network_mode_written = True
-
 		# Distribute the voltage setpoint. Simply write it to all of them.
 		voltage_written = 0
 		if charge_voltage is not None:
@@ -439,7 +432,7 @@ class SolarChargerSubsystem(object):
 					self._distribute_current(chargers, max_charge_current)
 
 		# Return flags of what we did
-		return voltage_written, int(network_mode_written and max_charge_current is not None)
+		return voltage_written, int(network_mode_written and max_charge_current is not None), network_mode
 
 	def _distribute_current(self, chargers, max_charge_current):
 		""" This is called if there are two or more solar chargers. It
@@ -1090,7 +1083,7 @@ class Dvcc(SystemCalcDelegate):
 		if charge_voltage is None and max_charge_current is None:
 			return 0, 0, None
 
-		voltage_written, current_written = self._solarsystem.set_networked(
+		voltage_written, current_written, network_mode = self._solarsystem.set_networked(
 			has_bms, charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0)
 
 		# Charge voltage cannot by written directly to the CAN-bus solar chargers, we have to use
@@ -1098,11 +1091,11 @@ class Dvcc(SystemCalcDelegate):
 		if charge_voltage is not None and self._solarsystem.has_vecan_chargers:
 			for service in self._vecan_services:
 				try:
-					# Note: we don't check the value of charge_voltage_item
-					# because it may be invalid, for example if the D-Bus path
-					# has not been written for more than 60 (?) seconds.  In
-					# case there is no path at all, the set_value below will
-					# raise an DBusException which we will ignore cheerfully.
+					# In case there is no path at all, the set_value below will
+					# raise an DBusException which we will ignore cheerfully. If we
+					# cannot set the NetworkMode there is no point in setting the
+					# ChargeVoltage.
+					self._dbusmonitor.set_value_async(service, '/Link/NetworkMode', network_mode)
 					self._dbusmonitor.set_value_async(service, '/Link/ChargeVoltage', charge_voltage)
 					voltage_written = 1
 				except DBusException:
