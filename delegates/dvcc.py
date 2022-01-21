@@ -748,6 +748,7 @@ class Dvcc(SystemCalcDelegate):
 				'/Dc/0/Current',
 				'/IsInverterCharger',
 				'/Link/ChargeCurrent',
+				'/Link/DischargeCurrent',
 				'/Settings/ChargeCurrentLimit',
 				'/State',
 				'/N2kDeviceInstance',
@@ -788,7 +789,7 @@ class Dvcc(SystemCalcDelegate):
 		service_type = service.split('.')[2]
 		if service_type == 'solarcharger':
 			self._solarsystem.add_charger(service)
-		elif service_type == 'inverter':
+		elif service_type in ('inverter', 'multi'):
 			if self._dbusmonitor.get_value(service, '/IsInverterCharger') == 1:
 				# Add to both the solarcharger and inverter collections.
 				# add_invertercharger returns an object that can be directly
