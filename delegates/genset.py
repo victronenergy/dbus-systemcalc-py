@@ -4,7 +4,6 @@ from time import time
 
 ts_to_str = lambda x: datetime.fromtimestamp(x).strftime('%Y-%m-%d %H:%M:%S')
 
-SERVICE = 'com.victronenergy.generator.startstop0'
 PREFIX = '/Ac/Genset'
 
 
@@ -14,12 +13,9 @@ class GensetStartStop(SystemCalcDelegate):
 
 	def get_input(self):
 		return [('com.victronenergy.generator', [
-				'/Generator0/RunningByConditionCode',
-				'/FischerPanda0/RunningByConditionCode',
-				'/Generator0/Runtime',
-				'/FischerPanda0/Runtime',
-				'/Generator0/LastStartTime',
-				'/FischerPanda0/LastStartTime'])]
+				'/RunningByConditionCode',
+				'/Runtime',
+				'/LastStartTime'])]
 
 	def get_output(self):
 		return [('{}/Runtime'.format(PREFIX), {'gettext': '%d'}),
@@ -43,8 +39,8 @@ class GensetStartStop(SystemCalcDelegate):
 		self._dbusservice['{}/LastStartTime'.format(PREFIX)] = v
 
 	def update_values(self, newvalues):
-		for typ in ('Generator0', 'FischerPanda0'):
-			rbc = self._dbusmonitor.get_value(SERVICE, '/{}/RunningByConditionCode'.format(typ))
+		for service in sorted(self._dbusmonitor.get_service_list('com.victronenergy.generator')):
+			rbc = self._dbusmonitor.get_value(service, '/RunningByConditionCode')
 			if rbc is not None:
 				if self._dbusservice[PREFIX + '/RunningByConditionCode'] == 0 and rbc > 0:
 					# Generator was started, update LastStartTime
@@ -53,6 +49,6 @@ class GensetStartStop(SystemCalcDelegate):
 				newvalues[PREFIX + '/RunningByConditionCode'] = rbc
 
 				# Update runtime in 10 second increments, we don't need more than that
-				rt = self._dbusmonitor.get_value(SERVICE, '/{}/Runtime'.format(typ))
+				rt = self._dbusmonitor.get_value(service, '/Runtime')
 				newvalues[PREFIX + '/Runtime'] = None if rt is None else 10 * (rt // 10)
 				break
