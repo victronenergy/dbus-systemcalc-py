@@ -32,6 +32,7 @@ s = DbusDummyService(
     servicename=args.name,
     deviceinstance=0,
     paths={
+		'/Start': {'initial': None},
 		'/AutoStart': {'initial': 1},
 		'/CustomName': {'initial': None},
 		'/StatusCode': {'initial': 0},
@@ -58,7 +59,7 @@ s = DbusDummyService(
     },
     productname='Generic Genset',
     connection='CAN-bus')
-s._dbusservice['/ProductId'] = 0xB040
+s._dbusservice['/ProductId'] = 0xB040 # Fischer Panda
 
 logger.info('Connected to dbus, and switching over to GLib.MainLoop() (= event based)')
 mainloop = GLib.MainLoop()
