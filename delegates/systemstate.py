@@ -169,7 +169,7 @@ class SystemState(SystemCalcDelegate):
 			if (hubstate != SOCG.KeepCharged) and ScheduledCharging.instance.active:
 				ss = SystemState.SCHEDULEDCHARGE
 			elif hubstate in (BL.Default, BL.Absorption, BL.Float, SOCG.Default):
-				if newvalues.get('/Dc/Battery/Power') < -30:
+				if newvalues.get('/Dc/Battery/Power', 0) < -30:
 					ss = SystemState.DISCHARGING
 			elif hubstate in (BL.Discharged, SOCG.Discharged):
 				flags.LowSoc = 1
