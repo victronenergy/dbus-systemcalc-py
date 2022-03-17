@@ -24,6 +24,7 @@ class TestSystemCalc(TestSystemCalcBase):
 				'/Ac/ActiveIn/ActiveInput': 0,
 				'/Ac/ActiveIn/Connected': 1,
 				'/Ac/Out/L1/P': 100,
+				'/Ac/Out/L1/I': 0.4,
 				'/Dc/0/Voltage': 12.25,
 				'/Dc/0/Current': -8,
 				'/DeviceInstance': 0,
@@ -260,9 +261,11 @@ class TestSystemCalc(TestSystemCalcBase):
 	def test_pv_on_output(self):
 		self._add_device('com.victronenergy.pvinverter.fronius_122_2312', {
 			'/Ac/L1/Power': 500,
+			'/Ac/L1/Current': 2.1,
 			'/Position': 1
 		})
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/Out/L1/P', -100)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/Out/L1/I', -0.4)
 
 		self._update_values()
 		self._check_values({
@@ -272,7 +275,9 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Ac/Consumption/L1/Power': 500 - 100,
 			'/Ac/ConsumptionOnInput/L1/Power': 0,
 			'/Ac/ConsumptionOnOutput/L1/Power': 500 - 100,
-			'/Ac/PvOnOutput/L1/Power': 500
+			'/Ac/ConsumptionOnOutput/L1/Current': 2.1 - 0.4,
+			'/Ac/PvOnOutput/L1/Power': 500,
+			'/Ac/PvOnOutput/L1/Current': 2.1
 		})
 
 	def test_multiple_pv(self):

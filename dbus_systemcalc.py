@@ -49,6 +49,9 @@ class SystemCalc:
 				'/Ac/L1/Power': dummy,
 				'/Ac/L2/Power': dummy,
 				'/Ac/L3/Power': dummy,
+				'/Ac/L1/Current': dummy,
+				'/Ac/L2/Current': dummy,
+				'/Ac/L3/Current': dummy,
 				'/Position': dummy,
 				'/ProductId': dummy},
 			'com.victronenergy.battery': {
@@ -74,6 +77,9 @@ class SystemCalc:
 				'/Ac/Out/L1/P': dummy,
 				'/Ac/Out/L2/P': dummy,
 				'/Ac/Out/L3/P': dummy,
+				'/Ac/Out/L1/I': dummy,
+				'/Ac/Out/L2/I': dummy,
+				'/Ac/Out/L3/I': dummy,
 				'/Connected': dummy,
 				'/ProductId': dummy,
 				'/ProductName': dummy,
@@ -243,6 +249,9 @@ class SystemCalc:
 			'/Ac/ConsumptionOnOutput/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/ConsumptionOnOutput/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/ConsumptionOnOutput/L3/Power': {'gettext': '%.0F W'},
+			'/Ac/ConsumptionOnOutput/L1/Current': {'gettext': '%.1F A'},
+			'/Ac/ConsumptionOnOutput/L2/Current': {'gettext': '%.1F A'},
+			'/Ac/ConsumptionOnOutput/L3/Current': {'gettext': '%.1F A'},
 			'/Ac/ConsumptionOnInput/NumberOfPhases': {'gettext': '%.0F W'},
 			'/Ac/ConsumptionOnInput/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/ConsumptionOnInput/L2/Power': {'gettext': '%.0F W'},
@@ -255,14 +264,23 @@ class SystemCalc:
 			'/Ac/PvOnOutput/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/PvOnOutput/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/PvOnOutput/L3/Power': {'gettext': '%.0F W'},
+			'/Ac/PvOnOutput/L1/Current': {'gettext': '%.1F A'},
+			'/Ac/PvOnOutput/L2/Current': {'gettext': '%.1F A'},
+			'/Ac/PvOnOutput/L3/Current': {'gettext': '%.1F A'},
 			'/Ac/PvOnOutput/NumberOfPhases': {'gettext': '%.0F W'},
 			'/Ac/PvOnGrid/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/PvOnGrid/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/PvOnGrid/L3/Power': {'gettext': '%.0F W'},
+			'/Ac/PvOnGrid/L1/Current': {'gettext': '%.1F A'},
+			'/Ac/PvOnGrid/L2/Current': {'gettext': '%.1F A'},
+			'/Ac/PvOnGrid/L3/Current': {'gettext': '%.1F A'},
 			'/Ac/PvOnGrid/NumberOfPhases': {'gettext': '%.0F W'},
 			'/Ac/PvOnGenset/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/PvOnGenset/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/PvOnGenset/L3/Power': {'gettext': '%.0F W'},
+			'/Ac/PvOnGenset/L1/Current': {'gettext': '%.1F A'},
+			'/Ac/PvOnGenset/L2/Current': {'gettext': '%.1F A'},
+			'/Ac/PvOnGenset/L3/Current': {'gettext': '%.1F A'},
 			'/Ac/PvOnGenset/NumberOfPhases': {'gettext': '%d'},
 			'/Dc/Pv/Power': {'gettext': '%.0F W'},
 			'/Dc/Pv/Current': {'gettext': '%.1F A'},
@@ -495,6 +513,11 @@ class SystemCalc:
 					if power is not None:
 						path = '%s/L%s/Power' % (position, phase)
 						newvalues[path] = _safeadd(newvalues.get(path), power)
+
+					current = self._dbusmonitor.get_value(pvinverter, '/Ac/L%s/Current' % phase)
+					if current is not None:
+						path = '%s/L%s/Current' % (position, phase)
+						newvalues[path] = _safeadd(newvalues.get(path), current)
 
 		for path in pos.values():
 			self._compute_number_of_phases(path, newvalues)
@@ -870,24 +893,31 @@ class SystemCalc:
 			self._dbusmonitor.get_value('com.victronenergy.settings', '/Settings/CGwacs/RunWithoutGridMeter') == 1
 		for phase in consumption:
 			c = None
+			a = None
 			if use_ac_out:
 				c = newvalues.get('/Ac/PvOnOutput/%s/Power' % phase)
+				a = newvalues.get('/Ac/PvOnOutput/%s/Current' % phase)
 				if multi_path is None:
 					for inv in non_vebus_inverters:
 						ac_out = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/P' % phase)
+						i = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/I' % phase)
 
 						# Some models don't show power, calculate it
 						if ac_out is None:
-							i = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/I' % phase)
 							u = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/V' % phase)
 							if None not in (i, u):
 								ac_out = i * u
 						c = _safeadd(c, ac_out)
+						a = _safeadd(a, i)
 				else:
 					ac_out = self._dbusmonitor.get_value(multi_path, '/Ac/Out/%s/P' % phase)
 					c = _safeadd(c, ac_out)
+					i_out = self._dbusmonitor.get_value(multi_path, '/Ac/Out/%s/I' % phase)
+					a = _safeadd(a, i_out)
 				c = _safemax(0, c)
+				a = _safemax(0, a)
 			newvalues['/Ac/ConsumptionOnOutput/%s/Power' % phase] = c
+			newvalues['/Ac/ConsumptionOnOutput/%s/Current' % phase] = a
 			newvalues['/Ac/ConsumptionOnInput/%s/Power' % phase] = consumption[phase]
 			newvalues['/Ac/Consumption/%s/Power' % phase] = _safeadd(consumption[phase], c)
 		self._compute_number_of_phases('/Ac/Consumption', newvalues)
