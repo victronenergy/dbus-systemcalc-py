@@ -81,6 +81,7 @@ QUIRKS = {
 	0xB019: _byd_quirk,
 	0xA3E5: _lynx_smart_bms_quirk,
 	0xA3E6: _lynx_smart_bms_quirk,
+	0xB025: _pylontech_quirk, # Dyness is similar to Pylontech
 }
 
 def distribute(current_values, max_values, increment):
