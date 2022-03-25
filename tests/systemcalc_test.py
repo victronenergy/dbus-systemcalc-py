@@ -1317,6 +1317,55 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Ac/ActiveIn/Source': None, # Invalid, no sources at all
 		})
 
+	def test_inverter_power_estimate(self):
+		# Smaller inverters may not publish AC power. Check that
+		# a pecking order is applied: Real power, apparent power, calculate
+		# by multiplying V and I.
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._add_device('com.victronenergy.inverter.ttyO1',
+						product_name='inverter',
+						values={
+								'/Dc/0/Voltage': 12.8,
+								'/Ac/Out/L1/V': 220,
+								'/Ac/Out/L1/I': 1.0,
+								'/DeviceInstance': 0,
+								})
+		self._update_values()
+		self._check_values({
+			'/Ac/ConsumptionOnOutput/L1/Power': 220
+		})
+
+		self._remove_device('com.victronenergy.inverter.ttyO1')
+		self._add_device('com.victronenergy.inverter.ttyO2',
+						product_name='inverter',
+						values={
+								'/Dc/0/Voltage': 12.8,
+								'/Ac/Out/L1/V': 220,
+								'/Ac/Out/L1/I': 1.0,
+								'/Ac/Out/L1/S': 242,
+								'/DeviceInstance': 0,
+								})
+		self._update_values()
+		self._check_values({
+			'/Ac/ConsumptionOnOutput/L1/Power': 242
+		})
+
+		self._remove_device('com.victronenergy.inverter.ttyO2')
+		self._add_device('com.victronenergy.inverter.ttyO3',
+						product_name='inverter',
+						values={
+								'/Dc/0/Voltage': 12.8,
+								'/Ac/Out/L1/V': 220,
+								'/Ac/Out/L1/I': 1.0,
+								'/Ac/Out/L1/S': 242,
+								'/Ac/Out/L1/P': 230,
+								'/DeviceInstance': 0,
+								})
+		self._update_values()
+		self._check_values({
+			'/Ac/ConsumptionOnOutput/L1/Power': 230
+		})
+
 
 if __name__ == '__main__':
 	unittest.main()

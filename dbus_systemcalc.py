@@ -141,6 +141,7 @@ class SystemCalc:
 				'/Dc/0/Voltage': dummy,
 				'/Dc/0/Current': dummy,
 				'/Ac/Out/L1/P': dummy,
+				'/Ac/Out/L1/S': dummy,
 				'/Ac/Out/L1/V': dummy,
 				'/Ac/Out/L1/I': dummy,
 				'/Yield/Power': dummy,
@@ -902,11 +903,14 @@ class SystemCalc:
 						ac_out = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/P' % phase)
 						i = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/I' % phase)
 
-						# Some models don't show power, calculate it
+						# Some models don't show power, try apparent power,
+						# else calculate it
 						if ac_out is None:
-							u = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/V' % phase)
-							if None not in (i, u):
-								ac_out = i * u
+							ac_out = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/S' % phase)
+							if ac_out is None:
+								u = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/V' % phase)
+								if None not in (i, u):
+									ac_out = i * u
 						c = _safeadd(c, ac_out)
 						a = _safeadd(a, i)
 				else:
