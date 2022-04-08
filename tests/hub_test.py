@@ -28,6 +28,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Dc/0/Temperature': 24,
 				'/DeviceInstance': 0,
 				'/Devices/0/Assistants': [0x55, 0x1] + (26 * [0]),  # Hub-4 assistant
+				'/Devices/Bms/Version': None,
 				'/Dc/0/MaxChargeCurrent': 999,
 				'/ExtraBatteryCurrent': 0,
 				'/Soc': 53.2,
@@ -37,6 +38,9 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxDischargeCurrent': None,
 				'/BatteryOperationalLimits/BatteryLowVoltage': None,
 				'/BatterySense/Voltage': None,
+				'/Bms/AllowToCharge': 1,
+				'/Bms/AllowToDischarge': 1,
+				'/Bms/BmsType': 0,
 				'/FirmwareFeatures/BolFrame': 1,
 				'/FirmwareFeatures/BolUBatAndTBatSense': 1,
 				'/FirmwareVersion': 0x456,
@@ -1858,3 +1862,43 @@ class TestHubSystem(TestSystemCalcBase):
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/MaxChargeCurrent': None,
 				'/Dc/0/MaxChargeCurrent': 20}}) # 10A remainder plus 10A for DC loads
+
+	def test_vebus_stop_charge(self):
+		""" This is for VE.Bus BMS v2. If it disallows charging, we must
+		    communicate that to the solar chargers. """
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
+			'/Dc/0/Voltage': 12.4,
+			'/Dc/0/Current': 9.7,
+			'/FirmwareVersion': 0x129,
+			'/Settings/ChargeCurrentLimit': 100},
+			connection='VE.Direct')
+
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Bms/AllowToCharge', 0)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Bms/BmsType', 2)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Devices/Bms/Version', 1145100)
+		self._update_values(3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/NetworkMode': 5,
+				'/Link/ChargeCurrent': 0 }})
+
+		# With VE.Bus BMS we also set the BMS bit
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Devices/Bms/Version', 1146100)
+		self._update_values(3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/NetworkMode': 13,
+				'/Link/ChargeCurrent': 0 }})
+
+		# Re-enable charge
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Bms/AllowToCharge', 1)
+		self._update_values(3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/NetworkMode': 13,
+				'/Link/ChargeCurrent': 100 }})

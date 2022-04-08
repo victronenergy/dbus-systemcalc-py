@@ -674,6 +674,20 @@ class Multi(object):
 	def firmwareversion(self):
 		return self.monitor.get_value(self.service, '/FirmwareVersion')
 
+	@property
+	def allow_to_charge(self):
+		return self.monitor.get_value(self.service, '/Bms/AllowToCharge') != 0
+
+	@property
+	def has_vebus_bms(self):
+		""" This checks that we have a VE.Bus BMS. """
+		return self.monitor.get_value(self.service, '/Bms/BmsType') == 2
+
+	@property
+	def has_vebus_bmsv2(self):
+		""" Checks that we have v2 of the VE.Bus BMS. """
+		return (self.monitor.get_value(self.service, '/Devices/Bms/Version')  or 0) >= 1146100
+
 	def update_values(self, limit):
 		c = self.monitor.get_value(self.service, '/Dc/0/Current', 0)
 		if c is not None:
@@ -714,6 +728,9 @@ class Dvcc(SystemCalcDelegate):
 				'/BatteryOperationalLimits/MaxChargeCurrent',
 				'/BatteryOperationalLimits/MaxChargeVoltage',
 				'/BatteryOperationalLimits/MaxDischargeCurrent',
+				'/Bms/AllowToCharge',
+				'/Bms/BmsType',
+				'/Devices/Bms/Version',
 				'/FirmwareFeatures/BolFrame',
 				'/Hub4/L1/DoNotFeedInOvervoltage',
 				'/FirmwareVersion']),
@@ -935,9 +952,20 @@ class Dvcc(SystemCalcDelegate):
 		charge_voltage = None
 		feedback_allowed = self.feedback_allowed
 		stop_on_mcc0 = False
-		if bms_service is not None:
+		has_bms = bms_service is not None
+		if has_bms:
 			charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0 = \
 				self._adjust_battery_operational_limits(bms_service, feedback_allowed)
+
+		# Check /Bms/AllowToCharge on the VE.Bus service, and set
+		# max_charge_current to zero if charging is not allowed.  Skip this if
+		# ESS is involved, then the Multi controls this through the charge
+		# voltage. If it is BMS v2, then also set BMS bit so that solarchargers
+		# go into #67 if we lose it.
+		if self._multi.has_vebus_bms:
+			stop_on_mcc0 = True
+			has_bms = has_bms or self._multi.has_vebus_bmsv2
+			max_charge_current = 10000 if self._multi.allow_to_charge else 0
 
 		# Take the lesser of the BMS and user current limits, wherever they exist
 		maximae = [x for x in (user_max_charge_current, max_charge_current) if x is not None]
@@ -978,7 +1006,7 @@ class Dvcc(SystemCalcDelegate):
 
 		# Try to push the solar chargers to the vebus-compensated value
 		voltage_written, current_written, effective_charge_voltage = \
-			self._update_solarchargers(bms_service is not None, charge_voltage,
+			self._update_solarchargers(has_bms, charge_voltage,
 			_max_charge_current, feedback_allowed, stop_on_mcc0)
 		update_solarcharger_control_flags(voltage_written, current_written, effective_charge_voltage)
 
