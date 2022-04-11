@@ -44,7 +44,8 @@ class TestHubSystem(TestSystemCalcBase):
 				'/FirmwareFeatures/BolFrame': 1,
 				'/FirmwareFeatures/BolUBatAndTBatSense': 1,
 				'/FirmwareVersion': 0x456,
-				'/Hub4/L1/DoNotFeedInOvervoltage': 1
+				'/Hub4/L1/DoNotFeedInOvervoltage': 1,
+				'/Interfaces/Mk2/ProductName': 'MK2'
 			})
 		self._add_device('com.victronenergy.settings',
 			values={
@@ -1887,8 +1888,15 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Link/NetworkMode': 5,
 				'/Link/ChargeCurrent': 0 }})
 
-		# With VE.Bus BMS we also set the BMS bit
+		# With VE.Bus BMS v2 we also set the BMS bit, but only with an mk3 chip
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Devices/Bms/Version', 1146100)
+		self._update_values(3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/NetworkMode': 5,
+				'/Link/ChargeCurrent': 0 }})
+
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Interfaces/Mk2/ProductName', 'MK3')
 		self._update_values(3000)
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO1': {

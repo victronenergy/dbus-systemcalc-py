@@ -688,6 +688,10 @@ class Multi(object):
 		""" Checks that we have v2 of the VE.Bus BMS. """
 		return (self.monitor.get_value(self.service, '/Devices/Bms/Version')  or 0) >= 1146100
 
+	@property
+	def has_mk3(self):
+		return self.monitor.get_value(self.service, '/Interfaces/Mk2/ProductName') == 'MK3'
+
 	def update_values(self, limit):
 		c = self.monitor.get_value(self.service, '/Dc/0/Current', 0)
 		if c is not None:
@@ -733,7 +737,8 @@ class Dvcc(SystemCalcDelegate):
 				'/Devices/Bms/Version',
 				'/FirmwareFeatures/BolFrame',
 				'/Hub4/L1/DoNotFeedInOvervoltage',
-				'/FirmwareVersion']),
+				'/FirmwareVersion',
+				'/Interfaces/Mk2/ProductName']),
 			('com.victronenergy.solarcharger', [
 				'/ProductId',
 				'/Dc/0/Current',
@@ -964,7 +969,7 @@ class Dvcc(SystemCalcDelegate):
 		# go into #67 if we lose it.
 		if self._multi.has_vebus_bms:
 			stop_on_mcc0 = True
-			has_bms = has_bms or self._multi.has_vebus_bmsv2
+			has_bms = has_bms or (self._multi.has_vebus_bmsv2 and self._multi.has_mk3)
 			max_charge_current = 10000 if self._multi.allow_to_charge else 0
 
 		# Take the lesser of the BMS and user current limits, wherever they exist
