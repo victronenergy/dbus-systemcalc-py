@@ -239,6 +239,13 @@ class SolarCharger(object):
 		return self._get_path('/State')
 
 	@property
+	def want_bms(self):
+		""" Indicates whether this solar charger was previously
+		    controlled by a BMS and therefore expects one to
+		    be present. """
+		return self._get_path('/Settings/BmsPresent') == 1
+
+	@property
 	def smoothed_current(self):
 		""" Returns the internal low-pass filtered current value. """
 		return self._smoothed_current.value
@@ -354,6 +361,12 @@ class SolarChargerSubsystem(object):
 		    used elsewhere to enable broadcasting charge voltages on the relevant
 		    can device. """
 		return any((s.connection == 'VE.Can' for s in self._solarchargers.values()))
+
+	@property
+	def want_bms(self):
+		""" Return true if any of our solar chargers expect a BMS to
+		    be present. """
+		return any((s.want_bms for s in self._solarchargers.values()))
 
 	@property
 	def capacity(self):
@@ -711,7 +724,6 @@ class Dvcc(SystemCalcDelegate):
 		self._vecan_services = []
 		self._timer = None
 		self._tickcount = ADJUST
-		self._bms_seen = False
 		self._dcsyscurrent = LowPassFilter((2 * pi)/20, 0.0)
 
 	def get_input(self):
@@ -749,7 +761,8 @@ class Dvcc(SystemCalcDelegate):
 				'/State',
 				'/FirmwareVersion',
 				'/N2kDeviceInstance',
-				'/Mgmt/Connection']),
+				'/Mgmt/Connection',
+				'/Settings/BmsPresent']),
 			('com.victronenergy.inverter', [
 				'/ProductId',
 				'/Dc/0/Current',
@@ -761,7 +774,8 @@ class Dvcc(SystemCalcDelegate):
 				'/Settings/ChargeCurrentLimit',
 				'/State',
 				'/N2kDeviceInstance',
-				'/Mgmt/Connection']),
+				'/Mgmt/Connection',
+				'/Settings/BmsPresent']),
 			('com.victronenergy.multi', [
 				'/ProductId',
 				'/Dc/0/Current',
@@ -771,7 +785,8 @@ class Dvcc(SystemCalcDelegate):
 				'/Settings/ChargeCurrentLimit',
 				'/State',
 				'/N2kDeviceInstance',
-				'/Mgmt/Connection']),
+				'/Mgmt/Connection',
+				'/Settings/BmsPresent']),
 			('com.victronenergy.vecan',	[
 				'/Link/ChargeVoltage',
 				'/Link/NetworkMode']),
@@ -843,13 +858,6 @@ class Dvcc(SystemCalcDelegate):
 			GLib.source_remove(self._timer)
 			self._timer = None
 
-	def battery_service_changed(self, auto, oldservice, newservice):
-		# If the user changes the battery monitor, clear the bms_seen
-		# condition. We only want to react to BMS losses where the
-		# BMS is explicitly selected or set to Auto.
-		if not auto:
-			self._bms_seen = False
-
 	def _property(path, self):
 		# Due to the use of partial, path and self is reversed.
 		try:
@@ -898,6 +906,10 @@ class Dvcc(SystemCalcDelegate):
 			pass
 		return None
 
+	@property
+	def bms_seen(self):
+		return self._solarsystem.want_bms
+
 	def _on_timer(self):
 		def update_solarcharger_control_flags(voltage_written, current_written, chargevoltage):
 			self._dbusservice['/Control/SolarChargeVoltage'] = voltage_written
@@ -942,11 +954,11 @@ class Dvcc(SystemCalcDelegate):
 		# is lost, stop passing information to the solar chargers so that they
 		# might time out.
 		bms_service = self.bms
-		if self._bms_seen and bms_service is None:
+		if self.bms_seen and bms_service is None and not (
+				self._multi.has_vebus_bmsv2 and self._multi.has_mk3):
 			# BMS is lost
 			update_solarcharger_control_flags(0, 0, None)
 			return True
-		self._bms_seen = self._bms_seen or (bms_service is not None)
 
 		# Get the user current limit, if set
 		user_max_charge_current = self._settings['maxchargecurrent']

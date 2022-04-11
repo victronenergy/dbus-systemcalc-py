@@ -780,7 +780,8 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/ChargeCurrent': None,
 			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
-			'/Dc/0/Current': 9.3
+			'/Dc/0/Current': 9.3,
+			'/Settings/BmsPresent': 0
 		}, connection='VE.Direct')
 		self._add_device('com.victronenergy.solarcharger.ttyO2', {
 			'/State': 0,
@@ -790,6 +791,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/VoltageSense': None,
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 9.3,
+			'/Settings/BmsPresent': 0,
 			'/FirmwareVersion': 0x129,
 		}, connection='VE.Direct')
 		self._add_device('com.victronenergy.solarcharger.socketcan_can0_di0_uc30688', {
@@ -822,6 +824,11 @@ class TestHubSystem(TestSystemCalcBase):
 
 		# Check parallel support
 		self.assertTrue(system.has_externalcontrol_support)
+
+		# BMS needs to be present or not?
+		self.assertFalse(system.want_bms)
+		self._monitor.set_value('com.victronenergy.solarcharger.ttyO1', '/Settings/BmsPresent', 1)
+		self.assertTrue(system.want_bms)
 
 	def test_solar_subsys_distribution(self):
 		from delegates.dvcc import SolarChargerSubsystem
@@ -1879,8 +1886,11 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Dc/0/MaxChargeCurrent': 999}})
 
 		# Lose the BMS, make sure voltage from multi is not copied.
+		# Also set BmsPresent on the solarcharger, which on a real solarcharger
+		# will happen automatically.
 		self._remove_device('com.victronenergy.battery.ttyO2')
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 55.0)
+		self._monitor.add_value('com.victronenergy.solarcharger.ttyO2', '/Settings/BmsPresent', 1)
 		self._update_values(interval=10000)
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO2': {
@@ -1888,9 +1898,9 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Link/ChargeCurrent': 45 + 8,
 				'/Link/ChargeVoltage': 58.3}})
 
-		# Explicitly select another battery service, check that voltage is
-		# copied again.
-		self._set_setting('/Settings/SystemSetup/BatteryService', 'vebus/0')
+		# Reset the BMS-bit on the solarcharger, check that voltage is copied
+		# again.
+		self._monitor.add_value('com.victronenergy.solarcharger.ttyO2', '/Settings/BmsPresent', 0)
 		self._update_values(interval=10000)
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyO2': {
