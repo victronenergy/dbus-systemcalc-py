@@ -448,14 +448,14 @@ class SolarChargerSubsystem(object):
 		# Return flags of what we did
 		return voltage_written, int(network_mode_written and max_charge_current is not None), network_mode
 
-	def _distribute_current(self, chargers, max_charge_current):
+	@staticmethod
+	def _distribute_current(chargers, max_charge_current):
 		""" This is called if there are two or more solar chargers. It
 		    distributes the charge current over all of them. """
 
 		# Take the difference between the values and spread it over all
 		# the chargers. The maxchargecurrents of the chargers should ideally
 		# always add up to the whole.
-		actual = [c.smoothed_current for c in chargers]
 		limits = [c.maxchargecurrent for c in chargers]
 		ceilings = [c.currentlimit for c in chargers]
 
@@ -484,10 +484,12 @@ class SolarChargerSubsystem(object):
 			#
 			# We also round the figure a little for discrete distribution and
 			# stability.
+			actual = [min(c.smoothed_current, c.currentlimit) for c in chargers]
 			margins = [max(0, l - a) for a, l in zip(actual, limits)]
 			avgmargin = sum(margins)/len(margins)
 			deltas = [round(avgmargin - x, 1) for x in margins]
-			for i, a, d in zip(count(), actual, deltas):
+
+			for i, d in zip(count(), deltas):
 				limits[i] += d
 
 		# Finally set the limits. Do this every time, otherwise the chargers
