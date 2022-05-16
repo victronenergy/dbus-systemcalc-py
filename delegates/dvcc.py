@@ -73,6 +73,24 @@ def _lynx_smart_bms_quirk(dvcc, bms, charge_voltage, charge_current, feedback_al
 	""" When the Lynx Smart BMS sends CCL=0, it wants all chargers to stop. """
 	return (charge_voltage, charge_current, feedback_allowed, True)
 
+def _dyness_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
+	""" Quirk for Dyness. Some Dyness batteries incorrectly identify as
+	    Pylontech. To keep treating them the same, we have to do the same
+	    as we do for Pylontech. However, they also have 16 cell batteries
+	    with a higher charge voltage, and we don't want to impact those.
+	    There is no way to identify the different models, all of them
+	    identify as DYNESS-L. Therefore we assume an advertised charge
+	    voltage of 54V or less means 15-cell, and higher means 16-cell.
+	    For 16-cell we pass the voltage through, as there has been no
+	    complaints about that.
+	"""
+	if charge_voltage > 54:
+		# 16 cells
+		return (charge_voltage, charge_current, feedback_allowed, False)
+	else:
+		# 15 cells
+		return (min(charge_voltage, 52.4), charge_current, feedback_allowed, False)
+
 QUIRKS = {
 	0xB004: _lg_quirk,
 	0xB009: _pylontech_quirk,
@@ -81,7 +99,7 @@ QUIRKS = {
 	0xB019: _byd_quirk,
 	0xA3E5: _lynx_smart_bms_quirk,
 	0xA3E6: _lynx_smart_bms_quirk,
-	0xB025: _pylontech_quirk, # Dyness is similar to Pylontech
+	0xB025: _dyness_quirk,
 }
 
 def distribute(current_values, max_values, increment):
