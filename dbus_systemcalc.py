@@ -165,6 +165,11 @@ class SystemCalc:
 			'com.victronenergy.dcsystem': {
 				'/Dc/0/Voltage': dummy,
 				'/Dc/0/Power': dummy
+			},
+			'com.victronenergy.alternator': {
+				'/Dc/0/Voltage': dummy,
+				'/Dc/0/Current': dummy,
+				'/Dc/0/Power': dummy
 			}
 		}
 
@@ -296,6 +301,7 @@ class SystemCalc:
 			'/Dc/Battery/ProductId': {'gettext': '0x%x'},
 			'/Dc/Charger/Power': {'gettext': '%.0F %%'},
 			'/Dc/FuelCell/Power': {'gettext': '%.0F %%'},
+			'/Dc/Alternator/Power': {'gettext': '%.0F %%'},
 			'/Dc/Vebus/Current': {'gettext': '%.1F A'},
 			'/Dc/Vebus/Power': {'gettext': '%.0F W'},
 			'/Dc/System/Power': {'gettext': '%.0F W'},
@@ -586,6 +592,22 @@ class SystemCalc:
 			else:
 				newvalues['/Dc/FuelCell/Power'] += v * i
 
+		# ==== ALTERNATOR ====
+		alternators = self._dbusmonitor.get_service_list('com.victronenergy.alternator')
+		alternator_batteryvoltage = None
+		alternator_batteryvoltage_service = None
+		for alternator in alternators:
+			# Assume the battery connected to output 0 is the main battery
+
+			p = self._dbusmonitor.get_value(alternator, '/Dc/0/Power')
+			if p is None:
+				continue
+
+			if '/Dc/Alternator/Power' not in newvalues:
+				newvalues['/Dc/Alternator/Power'] = p
+			else:
+				newvalues['/Dc/Alternator/Power'] += p
+
 		# ==== CHARGERS ====
 		chargers = self._dbusmonitor.get_service_list('com.victronenergy.charger')
 		charger_batteryvoltage = None
@@ -747,7 +769,8 @@ class SystemCalc:
 				dc_pv_power = newvalues.get('/Dc/Pv/Power', 0)
 				charger_power = newvalues.get('/Dc/Charger/Power', 0)
 				fuelcell_power = newvalues.get('/Dc/FuelCell/Power', 0)
-
+				alternator_power = newvalues.get('/Dc/Alternator/Power', 0)
+				
 				# If there are VE.Direct inverters, remove their power from the
 				# DC estimate. This is done using the AC value when the DC
 				# power values are not available.
@@ -762,7 +785,7 @@ class SystemCalc:
 							i, '/Ac/Out/L1/V', 0) * self._dbusmonitor.get_value(
 							i, '/Ac/Out/L1/I', 0)
 				newvalues['/Dc/System/MeasurementType'] = 0 # estimated
-				newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + fuelcell_power + vebuspower - inverter_power - battery_power
+				newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + fuelcell_power + vebuspower - inverter_power - battery_power - alternator_power
 
 		elif self._settings['hasdcsystem'] == 1 and solarchargers_loadoutput_power is not None:
 			newvalues['/Dc/System/MeasurementType'] = 0 # estimated
