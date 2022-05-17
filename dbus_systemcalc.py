@@ -248,12 +248,18 @@ class SystemCalc:
 			'/Ac/Grid/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/Grid/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/Grid/L3/Power': {'gettext': '%.0F W'},
+			'/Ac/Grid/L1/Current': {'gettext': '%.1F A'},
+			'/Ac/Grid/L2/Current': {'gettext': '%.1F A'},
+			'/Ac/Grid/L3/Current': {'gettext': '%.1F A'},
 			'/Ac/Grid/NumberOfPhases': {'gettext': '%.0F W'},
 			'/Ac/Grid/ProductId': {'gettext': '%s'},
 			'/Ac/Grid/DeviceType': {'gettext': '%s'},
 			'/Ac/Genset/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/Genset/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/Genset/L3/Power': {'gettext': '%.0F W'},
+			'/Ac/Genset/L1/Current': {'gettext': '%.1F A'},
+			'/Ac/Genset/L2/Current': {'gettext': '%.1F A'},
+			'/Ac/Genset/L3/Current': {'gettext': '%.1F A'},
 			'/Ac/Genset/NumberOfPhases': {'gettext': '%.0F W'},
 			'/Ac/Genset/ProductId': {'gettext': '%s'},
 			'/Ac/Genset/DeviceType': {'gettext': '%s'},
@@ -321,6 +327,9 @@ class SystemCalc:
 			'/Ac/ActiveIn/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/ActiveIn/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/ActiveIn/L3/Power': {'gettext': '%.0F W'},
+			'/Ac/ActiveIn/L1/Current': {'gettext': '%.1F A'},
+			'/Ac/ActiveIn/L2/Current': {'gettext': '%.1F A'},
+			'/Ac/ActiveIn/L3/Current': {'gettext': '%.1F A'},
 			'/Ac/ActiveIn/NumberOfPhases': {'gettext': '%d'},
 		}
 
@@ -887,8 +896,10 @@ class SystemCalc:
 								p := self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/P' % phase)) is not None:
 							consumption[phase] = _safeadd(0, consumption[phase])
 							currentconsumption[phase] = _safeadd(0, currentconsumption[phase])
+							mc = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/I' % phase)
 						elif non_vebus_inverter is not None and active_input in (0, 1):
 							p = self._dbusmonitor.get_value(non_vebus_inverter, '/Ac/In/%d/%s/P' % (active_input + 1, phase))
+							mc = self._dbusmonitor.get_value(non_vebus_inverter, '/Ac/In/%d/%s/I' % (active_input + 1, phase))
 							if p is not None:
 								consumption[phase] = _safeadd(0, consumption[phase])
 								currentconsumption[phase] = _safeadd(0, currentconsumption[phase])
@@ -902,8 +913,10 @@ class SystemCalc:
 						pass
 
 				newvalues['/Ac/%s/%s/Power' % (device_type, phase)] = p
+				newvalues['/Ac/%s/%s/Current' % (device_type, phase)] = mc
 				if ac_in_guess in _types:
 					newvalues['/Ac/ActiveIn/%s/Power' % (phase,)] = p
+					newvalues['/Ac/ActiveIn/%s/Current' % (phase,)] = mc
 
 			self._compute_number_of_phases('/Ac/%s' % device_type, newvalues)
 			self._compute_number_of_phases('/Ac/ActiveIn', newvalues)

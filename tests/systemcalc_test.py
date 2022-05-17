@@ -51,6 +51,9 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Ac/Grid/L1/Power': 123,
 			'/Ac/Grid/L2/Power': None,
 			'/Ac/Grid/L3/Power': None,
+			'/Ac/Grid/L1/Current': 0.6,
+			'/Ac/Grid/L2/Current': None,
+			'/Ac/Grid/L3/Current': None,
 			'/Ac/Genset/NumberOfPhases': None,
 			'/Ac/Consumption/L1/Power': 100,
 			'/Ac/Consumption/L2/Power': None,
@@ -70,6 +73,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._check_values({
 			'/Ac/ActiveIn/Source': 2,
 			'/Ac/Genset/L1/Power': 123,
+			'/Ac/Genset/L1/Current': 0.6,
 			'/Ac/Grid/L1/Power': None
 		})
 
