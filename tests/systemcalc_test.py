@@ -21,6 +21,7 @@ class TestSystemCalc(TestSystemCalcBase):
 			product_name='Multi',
 			values={
 				'/Ac/ActiveIn/L1/P': 123,
+				'/Ac/ActiveIn/L1/I': 0.6,
 				'/Ac/ActiveIn/ActiveInput': 0,
 				'/Ac/ActiveIn/Connected': 1,
 				'/Ac/Out/L1/P': 100,
@@ -121,9 +122,10 @@ class TestSystemCalc(TestSystemCalcBase):
 		})
 
 	def test_ac_gridmeter(self):
-		self._add_device('com.victronenergy.grid.ttyUSB1', {'/Ac/L1/Power': 1230})
+		self._add_device('com.victronenergy.grid.ttyUSB1', {'/Ac/L1/Power': 1230, '/Ac/L1/Current': 5.1})
 		self._add_device('com.victronenergy.pvinverter.fronius_122_2312', {
 			'/Ac/L1/Power': 500,
+			'/Ac/L1/Current': 2.1,
 			'/Position': 0
 		})
 
@@ -132,8 +134,11 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Ac/Grid/L1/Power': 1230,
 			'/Ac/Grid/NumberOfPhases': 1,
 			'/Ac/Consumption/L1/Power': 1230 - 123 + 100 + 500,
+			'/Ac/Consumption/L1/Current': 5.1 - 0.6 + 0.4 + 2.1,
 			'/Ac/ConsumptionOnOutput/L1/Power': 100,
-			'/Ac/ConsumptionOnInput/L1/Power': 1230 - 123 + 500
+			'/Ac/ConsumptionOnOutput/L1/Current': 0.4,
+			'/Ac/ConsumptionOnInput/L1/Power': 1230 - 123 + 500,
+			'/Ac/ConsumptionOnInput/L1/Current': 5.1 - 0.6 + 2.1
 		})
 
 	def test_ac_gridmeter_3p(self):

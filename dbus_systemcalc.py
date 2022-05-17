@@ -74,6 +74,9 @@ class SystemCalc:
 				'/Ac/ActiveIn/L1/P': dummy,
 				'/Ac/ActiveIn/L2/P': dummy,
 				'/Ac/ActiveIn/L3/P': dummy,
+				'/Ac/ActiveIn/L1/I': dummy,
+				'/Ac/ActiveIn/L2/I': dummy,
+				'/Ac/ActiveIn/L3/I': dummy,
 				'/Ac/Out/L1/P': dummy,
 				'/Ac/Out/L2/P': dummy,
 				'/Ac/Out/L3/P': dummy,
@@ -114,7 +117,10 @@ class SystemCalc:
 				'/DeviceType' : dummy,
 				'/Ac/L1/Power': dummy,
 				'/Ac/L2/Power': dummy,
-				'/Ac/L3/Power': dummy},
+				'/Ac/L3/Power': dummy,
+				'/Ac/L1/Current': dummy,
+				'/Ac/L2/Current': dummy,
+				'/Ac/L3/Current': dummy},
 			'com.victronenergy.genset' : {
 				'/Connected': dummy,
 				'/ProductName': dummy,
@@ -124,6 +130,9 @@ class SystemCalc:
 				'/Ac/L1/Power': dummy,
 				'/Ac/L2/Power': dummy,
 				'/Ac/L3/Power': dummy,
+				'/Ac/L1/Current': dummy,
+				'/Ac/L2/Current': dummy,
+				'/Ac/L3/Current': dummy,
 				'/StarterVoltage': dummy},
 			'com.victronenergy.settings' : {
 				'/Settings/SystemSetup/AcInput1' : dummy,
@@ -156,7 +165,9 @@ class SystemCalc:
 				'/Ac/In/1/Type': dummy,
 				'/Ac/In/2/Type': dummy,
 				'/Ac/In/1/L1/P': dummy,
+				'/Ac/In/1/L1/I': dummy,
 				'/Ac/In/2/L1/P': dummy,
+				'/Ac/In/2/L1/I': dummy,
 				'/Ac/Out/L1/P': dummy,
 				'/Ac/Out/L1/V': dummy,
 				'/Ac/Out/L1/I': dummy,
@@ -257,10 +268,16 @@ class SystemCalc:
 			'/Ac/ConsumptionOnInput/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/ConsumptionOnInput/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/ConsumptionOnInput/L3/Power': {'gettext': '%.0F W'},
+			'/Ac/ConsumptionOnInput/L1/Current': {'gettext': '%.1F A'},
+			'/Ac/ConsumptionOnInput/L2/Current': {'gettext': '%.1F A'},
+			'/Ac/ConsumptionOnInput/L3/Current': {'gettext': '%.1F A'},
 			'/Ac/Consumption/NumberOfPhases': {'gettext': '%.0F W'},
 			'/Ac/Consumption/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/Consumption/L2/Power': {'gettext': '%.0F W'},
 			'/Ac/Consumption/L3/Power': {'gettext': '%.0F W'},
+			'/Ac/Consumption/L1/Current': {'gettext': '%.1F A'},
+			'/Ac/Consumption/L2/Current': {'gettext': '%.1F A'},
+			'/Ac/Consumption/L3/Current': {'gettext': '%.1F A'},
 			'/Ac/Consumption/NumberOfPhases': {'gettext': '%.0F W'},
 			'/Ac/PvOnOutput/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/PvOnOutput/L2/Power': {'gettext': '%.0F W'},
@@ -823,6 +840,7 @@ class SystemCalc:
 				ac_in_guess = 2
 
 		consumption = { "L1" : None, "L2" : None, "L3" : None }
+		currentconsumption = { "L1" : None, "L2" : None, "L3" : None }
 		for device_type, em, _types in (('Grid', grid_meter, (1, 3)), ('Genset', genset_meter, (2,))):
 			# If a grid meter is present we use values from it. If not, we look at the multi. If it has
 			# AcIn1 or AcIn2 connected to the grid, we use those values.
@@ -832,39 +850,57 @@ class SystemCalc:
 			uses_active_input = ac_in_source in _types
 			for phase in consumption:
 				p = None
+				mc = None
 				pvpower = newvalues.get('/Ac/PvOn%s/%s/Power' % (device_type, phase))
+				pvcurrent = newvalues.get('/Ac/PvOn%s/%s/Current' % (device_type, phase))
 				if em is not None:
 					p = self._dbusmonitor.get_value(em.service, '/Ac/%s/Power' % phase)
+					mc = self._dbusmonitor.get_value(em.service, '/Ac/%s/Current' % phase)
 					# Compute consumption between energy meter and multi (meter power - multi AC in) and
 					# add an optional PV inverter on input to the mix.
 					c = None
+					cc = None
 					if uses_active_input:
-						if multi_path is not None and (ac_in := self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/P' % phase)) is not None:
-							c = _safeadd(c, -ac_in)
+						if multi_path is not None:
+							try:
+								c = _safeadd(c, -self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/P' % phase))
+								cc = _safeadd(cc, -self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/I' % phase))
+							except TypeError:
+								pass
 						elif non_vebus_inverter is not None and active_input in (0, 1):
-							ac_in = self._dbusmonitor.get_value(non_vebus_inverter, '/Ac/In/%d/%s/P' % (active_input+1, phase))
-							if ac_in is not None:
-								c = _safeadd(c, -ac_in)
+							try:
+								c = _safeadd(c, -self._dbusmonitor.get_value(non_vebus_inverter, '/Ac/In/%d/%s/P' % (active_input+1, phase)))
+								cc = _safeadd(cc, -self._dbusmonitor.get_value(non_vebus_inverter, '/Ac/In/%d/%s/I' % (active_input+1, phase)))
+							except TypeError:
+								pass
 
 					# If there's any power coming from a PV inverter in the inactive AC in (which is unlikely),
 					# it will still be used, because there may also be a load in the same ACIn consuming
 					# power, or the power could be fed back to the net.
 					c = _safeadd(c, p, pvpower)
+					cc = _safeadd(cc, mc, pvcurrent)
 					consumption[phase] = _safeadd(consumption[phase], _safemax(0, c))
+					currentconsumption[phase] = _safeadd(currentconsumption[phase], _safemax(0, cc))
 				else:
 					if uses_active_input:
 						if multi_path is not None  and (
 								p := self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/P' % phase)) is not None:
 							consumption[phase] = _safeadd(0, consumption[phase])
+							currentconsumption[phase] = _safeadd(0, currentconsumption[phase])
 						elif non_vebus_inverter is not None and active_input in (0, 1):
 							p = self._dbusmonitor.get_value(non_vebus_inverter, '/Ac/In/%d/%s/P' % (active_input + 1, phase))
 							if p is not None:
 								consumption[phase] = _safeadd(0, consumption[phase])
+								currentconsumption[phase] = _safeadd(0, currentconsumption[phase])
 
 					# No relevant energy meter present. Assume there is no load between the grid and the multi.
 					# There may be a PV inverter present though (Hub-3 setup).
-					if pvpower != None:
+					try:
 						p = _safeadd(p, -pvpower)
+						mc = _safeadd(mc, -pvcurrent)
+					except TypeError:
+						pass
+
 				newvalues['/Ac/%s/%s/Power' % (device_type, phase)] = p
 				if ac_in_guess in _types:
 					newvalues['/Ac/ActiveIn/%s/Power' % (phase,)] = p
@@ -923,7 +959,9 @@ class SystemCalc:
 			newvalues['/Ac/ConsumptionOnOutput/%s/Power' % phase] = c
 			newvalues['/Ac/ConsumptionOnOutput/%s/Current' % phase] = a
 			newvalues['/Ac/ConsumptionOnInput/%s/Power' % phase] = consumption[phase]
+			newvalues['/Ac/ConsumptionOnInput/%s/Current' % phase] = currentconsumption[phase]
 			newvalues['/Ac/Consumption/%s/Power' % phase] = _safeadd(consumption[phase], c)
+			newvalues['/Ac/Consumption/%s/Current' % phase] = _safeadd(currentconsumption[phase], a)
 		self._compute_number_of_phases('/Ac/Consumption', newvalues)
 		self._compute_number_of_phases('/Ac/ConsumptionOnOutput', newvalues)
 		self._compute_number_of_phases('/Ac/ConsumptionOnInput', newvalues)
