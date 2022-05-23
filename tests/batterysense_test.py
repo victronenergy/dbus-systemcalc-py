@@ -655,8 +655,10 @@ class VoltageSenseTest(TestSystemCalcBase):
 		self._set_setting('/Settings/Services/Bol', 0)
 		self._set_setting('/Settings/SystemSetup/SharedVoltageSense', 1)
 
-		# Pylontech, BYD, FreedomWON, Discover AES, BlueNova, BSL-BATT, BMZ, eTower, DYNESS
-		for product_id in (0xB009, 0xB00A, 0xB014, 0xB015, 0xB016, 0xB019, 0xB020, 0xB021, 0xB005, 0xB024, 0xB025):
+		# Pylontech, BYD, FreedomWON, Discover AES, BlueNova, BSL-BATT, BMZ,
+		# eTower, DYNESS, Cegasa
+		for product_id in (0xB009, 0xB00A, 0xB014, 0xB015, 0xB016, 0xB019,
+				0xB020, 0xB021, 0xB005, 0xB024, 0xB025, 0xB028):
 			self._add_device('com.victronenergy.battery.ttyO2',
 				product_name='battery',
 				values={
