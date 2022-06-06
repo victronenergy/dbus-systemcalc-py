@@ -74,6 +74,7 @@ s = DbusDummyService(servicename=args.name, deviceinstance=args.instance, paths=
 		'/Hub4/DisableFeedIn': {'initial': None},
 		'/Hub4/TargetPowerIsMaxFeedIn': {'initial': 0},
 		'/Hub4/FixSolarOffsetTo100mV': {'initial': 0},
+		'/Hub4/DoNotFeedInOvervoltage': {'initial': 0},
 		'/BatteryOperationalLimits/MaxChargeVoltage': {'initial': None},
 		'/BatteryOperationalLimits/MaxChargeCurrent': {'initial': None},
 		'/BatteryOperationalLimits/MaxDischargeCurrent': {'initial': None},
