@@ -10,6 +10,15 @@ from base import TestSystemCalcBase
 # Monkey patching for unit tests
 import patches
 
+class Charger(object):
+	def __init__(self, currentlimit, maxchargecurrent, current):
+		self.currentlimit = currentlimit # size of charger
+		self.maxchargecurrent = maxchargecurrent # current limit
+		self.smoothed_current = current
+	def __repr__(self):
+		return "[capacity={} limit={:.02f} current={}]".format(
+			self.currentlimit, self.maxchargecurrent, self.smoothed_current)
+
 class TestHubSystem(TestSystemCalcBase):
 	def __init__(self, methodName='runTest'):
 		TestSystemCalcBase.__init__(self, methodName)
@@ -373,82 +382,74 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Control/SolarChargerVoltageSense': 1,
 			'/Control/BmsParameters': 1})
 
-	def test_control_vedirect_solarcharger_charge_distribution(self):
-		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Dc/0/MaxChargeCurrent', 0)
-		self._update_values()
-		self._add_device('com.victronenergy.solarcharger.ttyO0', {
-			'/State': 3,
-			'/Settings/ChargeCurrentLimit': 100,
-			'/Link/NetworkMode': 0,
-			'/Link/ChargeVoltage': None,
-			'/Link/ChargeCurrent': 15,
-			'/Link/VoltageSense': None,
-			'/Dc/0/Voltage': 12.6,
-			'/Dc/0/Current': 14.3,
-			'/FirmwareVersion': 0x0129},
-			connection='VE.Direct')
-		self._add_device('com.victronenergy.solarcharger.ttyO2', {
-			'/State': 3,
-			'/Settings/ChargeCurrentLimit': 100,
-			'/Link/NetworkMode': 0,
-			'/Link/ChargeVoltage': None,
-			'/Link/ChargeCurrent': 15,
-			'/Link/VoltageSense': None,
-			'/Dc/0/Voltage': 12.6,
-			'/Dc/0/Current': 7,
-			'/FirmwareVersion': 0x0129},
-			connection='VE.Direct')
-		self._add_device('com.victronenergy.battery.ttyO2',
-			product_name='battery',
-			values={
-				'/Dc/0/Voltage': 12.3,
-				'/Dc/0/Current': 5.3,
-				'/Dc/0/Power': 65,
-				'/Soc': 15.3,
-				'/DeviceInstance': 2,
-				'/Info/BatteryLowVoltage': 47,
-				'/Info/MaxChargeCurrent': 25,
-				'/Info/MaxChargeVoltage': 58.2,
-				'/Info/MaxDischargeCurrent': 50})
+	def test_charge_current_distribution(self):
+		from delegates.dvcc import SolarChargerSubsystem
 
-		# Simulate the solar charger moving towards the requested limit
-		for _ in range(12):
-			self._update_values(interval=1000)
+		chargers = [
+			c1 := Charger(100, 95, 10), # 100A charger, limited at 95A, doing 10A
+			c2 := Charger(35, 15, 4), # 35A charger, limited at 15A, doing 2A
+			c3 := Charger(15, 10, 3) # 15A charger, limited at 10A, doing 1A
+		]
 
-			for c in ('com.victronenergy.solarcharger.ttyO0',
-					'com.victronenergy.solarcharger.ttyO2'):
-				self._monitor.set_value(c, '/Dc/0/Current', min(100.0,
-					self._monitor.get_value(c, '/Link/ChargeCurrent')))
+		# This approaches the right values over time
+		for _ in range(3):
+			SolarChargerSubsystem._distribute_current(chargers, 120)
 
-		total = self._monitor.get_value('com.victronenergy.vebus.ttyO1',
-				'/Dc/0/Current') + \
-			self._monitor.get_value('com.victronenergy.solarcharger.ttyO0',
-				'/Dc/0/Current') + \
-			self._monitor.get_value('com.victronenergy.solarcharger.ttyO2',
-				'/Dc/0/Current')
+		self.assertAlmostEqual(c1.maxchargecurrent, 78.7)
+		self.assertAlmostEqual(c2.maxchargecurrent, 28.0)
+		self.assertAlmostEqual(c3.maxchargecurrent, 13.3)
 
-		# Check that total is within 5%
-		self.assertTrue(abs(total - 25) <= 1.25)
+		# One charger starts doing better, requiring a rebalance
+		c2.smoothed_current = 14.5
+		for _ in range(3):
+			SolarChargerSubsystem._distribute_current(chargers, 120)
+		self.assertAlmostEqual(c1.maxchargecurrent, 72.6)
+		self.assertAlmostEqual(c2.maxchargecurrent, 35.0)
+		self.assertAlmostEqual(c3.maxchargecurrent, 12.4)
 
-		self._check_external_values({
-			'com.victronenergy.solarcharger.ttyO0': {
-				'/Link/NetworkMode': 13,
-				'/Link/ChargeVoltage': 58.2},
-			'com.victronenergy.solarcharger.ttyO2': {
-				'/Link/NetworkMode': 13,
-				'/Link/ChargeVoltage': 58.2},
-			'com.victronenergy.vebus.ttyO1': {
-				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
-				'/BatteryOperationalLimits/MaxChargeCurrent': 0,
-				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
-				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
-				# Difference goes to the multi
-				'/Dc/0/MaxChargeCurrent': 0 }})
-		self._check_values({
-			'/Control/SolarChargeCurrent': 1,
-			'/Control/SolarChargeVoltage': 1,
-			'/Control/EffectiveChargeVoltage': 58.2,
-			'/Control/BmsParameters': 1})
+		# Push Close to limit
+		c1.smoothed_current = 70.0
+		c2.smoothed_current = 30.0
+		c3.smoothed_current = 12.0
+		for _ in range(3):
+			SolarChargerSubsystem._distribute_current(chargers, 120)
+		self.assertAlmostEqual(c1.maxchargecurrent, 75.3)
+		self.assertAlmostEqual(c2.maxchargecurrent, 31.9)
+		self.assertAlmostEqual(c3.maxchargecurrent, 12.8)
+
+		c3.smoothed_current = 12.8
+		for _ in range(3):
+			SolarChargerSubsystem._distribute_current(chargers, 120)
+		self.assertAlmostEqual(c1.maxchargecurrent, 74.8)
+		self.assertAlmostEqual(c2.maxchargecurrent, 31.7)
+		self.assertAlmostEqual(c3.maxchargecurrent, 13.5)
+
+		# Two are running full power, do not restrict them
+		c2.smoothed_current = 35.0
+		c3.smoothed_current = 15.0
+		for _ in range(3):
+			SolarChargerSubsystem._distribute_current(chargers, 120)
+		self.assertAlmostEqual(c1.maxchargecurrent, 70.0)
+		self.assertAlmostEqual(c2.maxchargecurrent, 35.0)
+		self.assertAlmostEqual(c3.maxchargecurrent, 15.0)
+
+		self.assertEqual(sum(c.maxchargecurrent for c in (c1, c2, c3)), 120.0)
+
+	def test_charge_current_distribution_2(self):
+		# Check that it works sanely with two chargers
+		from delegates.dvcc import SolarChargerSubsystem
+
+		chargers = [
+			c1 := Charger(100, 95, 30), # 100A charger, limited at 95A, doing 10A
+			c2 := Charger(15, 10, 3) # 15A charger, limited at 10A, doing 1A
+		]
+
+		for _ in range(3):
+			SolarChargerSubsystem._distribute_current(chargers, 105)
+
+		# Both have roughly 62.5% margin (l-a)/c
+		self.assertAlmostEqual(c1.maxchargecurrent, 92.6)
+		self.assertAlmostEqual(c2.maxchargecurrent, 12.4)
 
 	def test_control_vedirect_solarcharger_bms_ess_feedback(self):
 		# When feedback is allowed we do not limit MPPTs

@@ -447,6 +447,32 @@ class SolarChargerSubsystem(object):
 		# Return flags of what we did
 		return voltage_written, int(network_mode_written and max_charge_current is not None), network_mode
 
+	# The math for the below is as follows. Let c be the total capacity of the
+	# charger, l be the current limit, a the actual current it produces, k the
+	# total current limit for the two chargers, and m the margin (l - a)
+	# between the limit and what is produced.
+	#
+	# We want m/c to be the same for all our chargers.
+	#
+	# Expression 1: (l1-a1)/c1 == (l2-a2)/c2
+	# Expression 2: l1 + l2 == k
+	#
+	# Solving that yields the expression below.
+	@staticmethod
+	def _balance_chargers(charger1, charger2, l1, l2):
+		c1, c2 = charger1.currentlimit, charger2.currentlimit
+		a1 = min(charger1.smoothed_current, c1)
+		a2 = min(charger2.smoothed_current, c2)
+		k = l1 + l2
+
+		try:
+			l1 = round((c2 * a1 - c1 * a2 + k * c1)/(c1 + c2), 1)
+		except ArithmeticError:
+			return l1, l2 # unchanged
+		else:
+			l1 = max(min(l1, c1), 0)
+			return l1, k - l1
+
 	@staticmethod
 	def _distribute_current(chargers, max_charge_current):
 		""" This is called if there are two or more solar chargers. It
@@ -472,29 +498,22 @@ class SolarChargerSubsystem(object):
 		delta = max_charge_current - sum(limits)
 		if abs(delta) > 0.1 * len(chargers):
 			limits = distribute(limits, ceilings, delta)
+			for charger, limit in zip(chargers, limits):
+				charger.maxchargecurrent = limit
 		else:
 			# Balance the limits so they have the same headroom at the top.
-			# This works well for the most part. A previous version of this
-			# algorithm attempted to balance the headroom percentage according
-			# to the capacity of the charger. This tended to break at the edges
-			# of the spectrum. The current algorithm may load a
-			# disproportionately smaller charger a bit harder, but in practice
-			# it seems to work well enough.
-			#
-			# We also round the figure a little for discrete distribution and
-			# stability.
-			actual = [min(c.smoothed_current, c.currentlimit) for c in chargers]
-			margins = [max(0, l - a) for a, l in zip(actual, limits)]
-			avgmargin = sum(margins)/len(margins)
-			deltas = [round(avgmargin - x, 1) for x in margins]
+			# Each charger is balanced against its neighbour, the one at the
+			# end is paired with the one at the start.
+			limits = []
+			r = chargers[0].maxchargecurrent
+			for c1, c2 in zip(chargers, chargers[1:]):
+				l, r = SolarChargerSubsystem._balance_chargers(c1, c2, r, c2.maxchargecurrent)
+				limits.append(l)
+			l, limits[0] = SolarChargerSubsystem._balance_chargers(c2, chargers[0], r, limits[0])
+			limits.append(l)
 
-			for i, d in zip(count(), deltas):
-				limits[i] += d
-
-		# Finally set the limits. Do this every time, otherwise the chargers
-		# go back to their default algorithm.
-		for charger, limit in zip(chargers, limits):
-			charger.maxchargecurrent = limit
+			for charger, limit in zip(chargers, limits):
+				charger.maxchargecurrent = limit
 
 	def update_values(self):
 		# This is called periodically from a timer to update contained
