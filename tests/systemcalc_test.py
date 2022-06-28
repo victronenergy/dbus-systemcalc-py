@@ -790,6 +790,34 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Dc/Battery/Power': None,
 			'/ActiveBatteryService': None})
 
+	def test_battery_selection_bms_first(self):
+		# TODO
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'default')
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 51.8,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 155.4,
+				'/Soc': 95,
+				'/DeviceInstance': 257,
+				'/ProductId': 0x203})
+		self._add_device('com.victronenergy.battery.socketcan_can1',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 52.8,
+				'/Dc/0/Current': 4,
+				'/Dc/0/Power': 152.4,
+				'/Soc': 95,
+				'/DeviceInstance': 512,
+				'/Info/BatteryLowVoltage': None,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 53.2,
+				'/Info/MaxDischargeCurrent': 25,
+				'/ProductId': 0xB009})
+		self._update_values()
+		self._check_values({'/ActiveBatteryService': 'com.victronenergy.battery/512'})
+
 	def test_battery_selection_wrong_format(self):
 		self._set_setting('/Settings/SystemSetup/BatteryService', 'wrong format')
 		self._update_values()

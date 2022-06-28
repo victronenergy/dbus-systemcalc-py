@@ -56,7 +56,8 @@ class SystemCalc:
 				'/TimeToGo': dummy,
 				'/ConsumedAmphours': dummy,
 				'/ProductId': dummy,
-				'/CustomName': dummy},
+				'/CustomName': dummy,
+				'/Info/MaxChargeVoltage': dummy},
 			'com.victronenergy.vebus' : {
 				'/Ac/ActiveIn/ActiveInput': dummy,
 				'/Ac/ActiveIn/L1/P': dummy,
@@ -414,9 +415,13 @@ class SystemCalc:
 		# there, assume this is a hub-2, hub-3 or hub-4 system and use VE.Bus SOC.
 		batteries = self._get_connected_service_list('com.victronenergy.battery')
 
-		# Pick the first battery service
+		# Pick the battery service that has the lowest DeviceInstance, giving
+		# preference to those with a BMS.
 		if len(batteries) > 0:
-			return sorted(batteries)[0]
+			batteries = [
+				(not self._dbusmonitor.seen(s, '/Info/MaxChargeVoltage'), i, s)
+				for s, i in batteries.items()]
+			return sorted(batteries, key=lambda x: x[:2])[0][2]
 
 		# No battery services, and there is a charger in the system. Abandon
 		# hope.
