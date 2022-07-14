@@ -193,7 +193,8 @@ class SystemCalc:
 			delegates.AcInputs(),
 			delegates.GensetStartStop(),
 			delegates.SocSync(self),
-			delegates.PvInverters()]
+			delegates.PvInverters(),
+			delegates.BmsService(self)]
 
 		for m in self._modules:
 			for service, paths in m.get_input():

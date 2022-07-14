@@ -1369,6 +1369,10 @@ class TestHubSystem(TestSystemCalcBase):
 		# Check that the selected battery is chosen, as both here have BMSes
 		self.assertEqual(Dvcc.instance.bms.service, 'com.victronenergy.battery.ttyO2')
 
+		# Check that this is also used as the Bms Service
+		self._check_values({'/ActiveBmsService': 'com.victronenergy.battery.ttyO2'})
+
+
 	def test_bms_selection_lowest_deviceinstance(self):
 		""" Test that if there is more than one BMS in the system,
 		    the lowest device instance """
@@ -1394,8 +1398,11 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_values({'/ActiveBatteryService': None})
 		self.assertEqual(len(Dvcc.instance._batterysystem.bmses), 3)
 
-		# Check that the lowest deviceinstante is chosen, as all here have BMSes
+		# Check that the lowest deviceinstance is chosen, as all here have BMSes
 		self.assertEqual(Dvcc.instance.bms.service, 'com.victronenergy.battery.ttyO0')
+
+		# This is also shown as BmsService
+		self._check_values({'/ActiveBmsService': 'com.victronenergy.battery.ttyO0'})
 
 	def test_bms_selection_no_bms(self):
 		""" Test that delegate shows no BMS if none is available. """
@@ -1410,6 +1417,42 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Soc': 95,
 				'/DeviceInstance': 0})
 		self.assertEqual(Dvcc.instance.bms, None)
+		self._check_values({'/ActiveBmsService': None})
+	
+	def test_bms_explicitly_selected(self):
+		from delegates.dvcc import Dvcc
+
+		# Default battery selection will pick the lowest DeviceInstance
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'default')
+
+		for did in (1, 0, 2):
+			self._add_device('com.victronenergy.battery.ttyO{}'.format(did),
+				product_name='battery',
+				values={
+					'/Dc/0/Voltage': 51.8,
+					'/Dc/0/Current': 3,
+					'/Dc/0/Power': 155.4,
+					'/Soc': 95,
+					'/DeviceInstance': did,
+					'/Info/BatteryLowVoltage': None,
+					'/Info/MaxChargeCurrent': 25,
+					'/Info/MaxChargeVoltage': 53.2,
+					'/Info/MaxDischargeCurrent': 25,
+					'/ProductId': 0xB009})
+		self._check_values({
+			'/ActiveBatteryService': 'com.victronenergy.battery/0',
+			'/ActiveBmsService': 'com.victronenergy.battery.ttyO0'})
+
+		# Now select a different battery for BMS duty
+		self._set_setting('/Settings/SystemSetup/BmsInstance', 2)
+		self._check_values({
+			'/ActiveBatteryService': 'com.victronenergy.battery/0',
+			'/ActiveBmsService': 'com.victronenergy.battery.ttyO2'})
+
+		# BMS is not there/was lost
+		self._set_setting('/Settings/SystemSetup/BmsInstance', 3)
+		self._check_values({
+			'/ActiveBmsService': None})
 
 	def test_firmware_warning(self):
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {

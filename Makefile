@@ -31,7 +31,8 @@ DELEGATES = \
 	$(SOURCEDIR)/delegates/acinput.py \
 	$(SOURCEDIR)/delegates/genset.py \
 	$(SOURCEDIR)/delegates/socsync.py \
-	$(SOURCEDIR)/delegates/pvinverter.py
+	$(SOURCEDIR)/delegates/pvinverter.py \
+	$(SOURCEDIR)/delegates/bmsservice.py
 
 VEDLIB_FILES = \
 	$(VEDLIBDIR)/logger.py \
