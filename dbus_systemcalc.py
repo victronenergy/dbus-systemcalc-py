@@ -403,9 +403,9 @@ class SystemCalc:
 				(self._settings['batteryservice'], self._batteryservice, newbatteryservice, instance))
 
 			# Battery service has changed. Notify delegates.
+			self._dbusservice['/Dc/Battery/BatteryService'] = self._batteryservice = newbatteryservice
 			for m in self._modules:
 				m.battery_service_changed(auto_selected, self._batteryservice, newbatteryservice)
-			self._dbusservice['/Dc/Battery/BatteryService'] = self._batteryservice = newbatteryservice
 
 	def _autoselect_battery_service(self):
 		# Default setting business logic:
