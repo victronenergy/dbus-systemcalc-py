@@ -11,6 +11,7 @@ from sc_utils import safeadd, copy_dbus_value, reify
 from ve_utils import exit_on_error
 
 from delegates.base import SystemCalcDelegate
+from delegates.bmsservice import BmsService
 
 # Adjust things this often (in seconds)
 # solar chargers has to switch to HEX mode each time we write a value to its
@@ -521,88 +522,6 @@ class SolarChargerSubsystem(object):
 		for charger in self._solarchargers.values():
 			charger.update_values()
 
-class Battery(object):
-	""" Class that encapsulates the battery and/or BMS. """
-	def __init__(self, monitor, service):
-		self.monitor = monitor
-		self.service = service
-
-	@property
-	def is_bms(self):
-		""" Indicates if this battery has a BMS that can communicate the
-		    preferred charge parameters. """
-		return self.monitor.get_value(self.service, '/Info/MaxChargeVoltage') is not None
-
-	@reify
-	def device_instance(self):
-		""" Returns the DeviceInstance of this device. """
-		return self.monitor.get_value(self.service, '/DeviceInstance')
-
-	@property
-	def maxchargecurrent(self):
-		""" Returns maxumum charge current published by the BMS. """
-		return self.monitor.get_value(self.service, '/Info/MaxChargeCurrent')
-
-	@property
-	def chargevoltage(self):
-		""" Returns charge voltage published by the BMS. """
-		return self.monitor.get_value(self.service, '/Info/MaxChargeVoltage')
-
-	@property
-	def batterylowvoltage(self):
-		""" Returns battery low voltage published by the BMS. """
-		return self.monitor.get_value(self.service, '/Info/BatteryLowVoltage')
-
-	@property
-	def maxdischargecurrent(self):
-		""" Returns max discharge current published by the BMS. """
-		return self.monitor.get_value(self.service, '/Info/MaxDischargeCurrent')
-
-	@property
-	def voltage(self):
-		""" Returns current voltage of battery. """
-		return self.monitor.get_value(self.service, '/Dc/0/Voltage')
-
-	@reify
-	def product_id(self):
-		""" Returns Product ID of battery. """
-		return self.monitor.get_value(self.service, '/ProductId')
-
-	@property
-	def capacity(self):
-		""" Capacity of battery, if defined. """
-		return self.monitor.get_value(self.service, '/InstalledCapacity')
-
-
-class BatterySubsystem(object):
-	""" Encapsulates multiple battery services. We may have both a BMV and a
-	    BMS. """
-	def __init__(self, monitor):
-		self.monitor = monitor
-		self._battery_services = {}
-
-	def __iter__(self):
-		return iter(self._battery_services.values())
-
-	def __len__(self):
-		return len(self._battery_services)
-
-	def __contains__(self, k):
-		return k in self._battery_services
-
-	def add_battery(self, service):
-		self._battery_services[service] = battery = Battery(self.monitor, service)
-		return battery
-
-	def remove_battery(self, service):
-		del self._battery_services[service]
-
-	@property
-	def bmses(self):
-		""" Returns the battery services with a BMS. """
-		return list(filter(lambda b: b.is_bms,
-			self._battery_services.values()))
-
 class BatteryOperationalLimits(object):
 	""" Only used to encapsulate this part of the Multi's functionality.
 	"""
@@ -748,12 +667,6 @@ class Dvcc(SystemCalcDelegate):
 
 	def get_input(self):
 		return [
-			('com.victronenergy.battery', [
-				'/Info/BatteryLowVoltage',
-				'/Info/MaxChargeCurrent',
-				'/Info/MaxChargeVoltage',
-				'/Info/MaxDischargeCurrent',
-				'/InstalledCapacity']),
 			('com.victronenergy.vebus', [
 				'/Ac/ActiveIn/Connected',
 				'/Hub/ChargeVoltage',
@@ -823,7 +736,6 @@ class Dvcc(SystemCalcDelegate):
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
-		self._batterysystem = BatterySubsystem(dbusmonitor)
 		self._solarsystem = SolarChargerSubsystem(dbusmonitor)
 		self._inverters = InverterSubsystem(dbusmonitor)
 		self._multi = Multi(dbusmonitor, dbusservice)
@@ -854,10 +766,11 @@ class Dvcc(SystemCalcDelegate):
 		elif service_type == 'vecan':
 			self._vecan_services.append(service)
 		elif service_type == 'battery':
-			self._batterysystem.add_battery(service)
+			pass # install timer below
 		else:
 			# Skip timer code below
 			return
+
 		if self._timer is None:
 			self._timer = GLib.timeout_add(1000, exit_on_error, self._on_timer)
 
@@ -869,12 +782,10 @@ class Dvcc(SystemCalcDelegate):
 				self._inverters.remove_inverter(service)
 		elif service in self._vecan_services:
 			self._vecan_services.remove(service)
-		elif service in self._batterysystem:
-			self._batterysystem.remove_battery(service)
 		elif service in self._inverters:
 			self._inverters.remove_inverter(service)
 		if len(self._solarsystem) == 0 and len(self._vecan_services) == 0 and \
-			len(self._batterysystem) == 0 and self._timer is not None:
+			len(BmsService.instance.batteries) == 0 and self._timer is not None:
 			GLib.source_remove(self._timer)
 			self._timer = None
 
@@ -918,13 +829,7 @@ class Dvcc(SystemCalcDelegate):
 
 	@property
 	def bms(self):
-		bmses = sorted(self._batterysystem.bmses,
-			key=lambda b: (b.service != self.systemcalc._batteryservice, b.device_instance))
-		try:
-			return bmses[0]
-		except IndexError:
-			pass
-		return None
+		return BmsService.instance.bms
 
 	@property
 	def bms_seen(self):
@@ -958,7 +863,7 @@ class Dvcc(SystemCalcDelegate):
 			not self._solarsystem.has_externalcontrol_support or (
 			self._multi.firmwareversion is not None and self._multi.firmwareversion < VEBUS_FIRMWARE_REQUIRED))
 		self._dbusservice['/Dvcc/Alarms/MultipleBatteries'] = int(
-			len(self._batterysystem.bmses) > 1)
+			len(BmsService.instance.bmses) > 1)
 
 		# Update subsystems
 		self._solarsystem.update_values()
@@ -1179,9 +1084,8 @@ class Dvcc(SystemCalcDelegate):
 			and to avoid maintaining two copies of systemcalc. """
 
 		max_charge_current = None
-		for battery in self._batterysystem:
-			max_charge_current = safeadd(max_charge_current, \
-				self._dbusmonitor.get_value(battery.service, '/Info/MaxChargeCurrent'))
+		for battery in BmsService.instance.batteries:
+			max_charge_current = safeadd(max_charge_current, battery.maxchargecurrent)
 
 		# Workaround: copying the max charge current from BMS batteries to the solarcharger leads to problems:
 		# excess PV power is not fed back to the grid any more, and loads on AC-out are not fed with PV power.

@@ -878,40 +878,6 @@ class TestHubSystem(TestSystemCalcBase):
 
 		self._monitor.set_value('com.victronenergy.battery.socketcan_can0_di0_uc30688', '/Info/MaxChargeCurrent', 100)
 
-	def test_battery_subsys_no_bms(self):
-		from delegates.dvcc import BatterySubsystem
-		self._add_device('com.victronenergy.battery.socketcan_can0_di0_uc30688', {
-			'/Dc/0/Voltage': 12.6,
-			'/Dc/0/Current': 9.3
-		}, connection='VE.Can')
-
-		system = BatterySubsystem(self._system_calc._dbusmonitor)
-		system.add_battery('com.victronenergy.battery.socketcan_can0_di0_uc30688')
-		self.assertEqual(system.bmses, [])
-
-		# Test magic methods
-		self.assertTrue('com.victronenergy.battery.socketcan_can0_di0_uc30688' in system)
-		self.assertTrue(len(system)==1)
-		batteries = list(system)
-		self.assertTrue(batteries[0].service == 'com.victronenergy.battery.socketcan_can0_di0_uc30688')
-
-	def test_battery_subsys_bms(self):
-		from delegates.dvcc import BatterySubsystem
-		self._add_device('com.victronenergy.battery.socketcan_can0_di0_uc30688', {
-			'/Dc/0/Voltage': 12.6,
-			'/Dc/0/Current': 9.3,
-			'/Info/MaxChargeVoltage': 15,
-			'/Info/MaxChargeCurrent': 100,
-			'/Info/MaxDischargeCurrent': 100
-		}, connection='VE.Can')
-
-		system = BatterySubsystem(self._system_calc._dbusmonitor)
-		battery = system.add_battery('com.victronenergy.battery.socketcan_can0_di0_uc30688')
-		self.assertTrue(system.bmses[0] is battery)
-		self.assertTrue(battery.maxchargecurrent == 100)
-		self.assertTrue(battery.chargevoltage == 15)
-		self.assertEqual(battery.voltage, 12.6)
-
 	def test_distribute(self):
 		from delegates.dvcc import distribute
 
@@ -1310,6 +1276,7 @@ class TestHubSystem(TestSystemCalcBase):
 	def test_battery_properties(self):
 		""" Test the propertes of battery objects. """
 		from delegates.dvcc import Dvcc
+		from delegates.bmsservice import BmsService
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',
 			values={
@@ -1325,7 +1292,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/ProductId': 0xB009})
 		self._update_values(interval=3000)
 
-		batteries = list(Dvcc.instance._batterysystem)
+		batteries = list(BmsService.instance.batteries)
 		self.assertEqual(batteries[0].device_instance, 2)
 		self.assertTrue(batteries[0].is_bms)
 
@@ -1333,6 +1300,7 @@ class TestHubSystem(TestSystemCalcBase):
 		""" Test that if there is more than one BMS in the system,
 		    the active battery service is preferred. """
 		from delegates.dvcc import Dvcc
+		from delegates.bmsservice import BmsService
 
 		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.battery/1')
 		self._check_values({'/ActiveBatteryService': None})
@@ -1364,7 +1332,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Info/MaxDischargeCurrent': 25,
 				'/ProductId': 0xB009})
 		self._check_values({'/ActiveBatteryService': 'com.victronenergy.battery/1'})
-		self.assertEqual(len(Dvcc.instance._batterysystem.bmses), 2)
+		self.assertEqual(len(BmsService.instance.bmses), 2)
 
 		# Check that the selected battery is chosen, as both here have BMSes
 		self.assertEqual(Dvcc.instance.bms.service, 'com.victronenergy.battery.ttyO2')
@@ -1377,6 +1345,7 @@ class TestHubSystem(TestSystemCalcBase):
 		""" Test that if there is more than one BMS in the system,
 		    the lowest device instance """
 		from delegates.dvcc import Dvcc
+		from delegates.bmsservice import BmsService
 
 		# Select a non-existent battery service to ensure that none is active
 		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.battery/111')
@@ -1396,7 +1365,7 @@ class TestHubSystem(TestSystemCalcBase):
 					'/Info/MaxDischargeCurrent': 25,
 					'/ProductId': 0xB009})
 		self._check_values({'/ActiveBatteryService': None})
-		self.assertEqual(len(Dvcc.instance._batterysystem.bmses), 3)
+		self.assertEqual(len(BmsService.instance.bmses), 3)
 
 		# Check that the lowest deviceinstance is chosen, as all here have BMSes
 		self.assertEqual(Dvcc.instance.bms.service, 'com.victronenergy.battery.ttyO0')
@@ -1420,8 +1389,6 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_values({'/ActiveBmsService': None})
 	
 	def test_bms_explicitly_selected(self):
-		from delegates.dvcc import Dvcc
-
 		# Default battery selection will pick the lowest DeviceInstance
 		self._set_setting('/Settings/SystemSetup/BatteryService', 'default')
 
