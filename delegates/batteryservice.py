@@ -48,6 +48,16 @@ class Battery(object):
 		""" Returns Product ID of battery. """
 		return self.monitor.get_value(self.service, '/ProductId')
 
+	@reify
+	def product_name(self):
+		""" Return product name. """
+		return self.monitor.get_value(self.service, '/ProductName')
+
+	@property
+	def custom_name(self):
+		""" Return product name. """
+		return self.monitor.get_value(self.service, '/CustomName')
+
 	@property
 	def capacity(self):
 		""" Capacity of battery, if defined. """
@@ -67,6 +77,7 @@ class BatteryService(SystemCalcDelegate):
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(BatteryService, self).set_sources(dbusmonitor, settings, dbusservice)
 		self._dbusservice.add_path('/ActiveBmsService', value=None)
+		self._dbusservice.add_path('/AvailableBmsServices', value=None)
 
 	def get_input(self):
 		return [
@@ -78,6 +89,8 @@ class BatteryService(SystemCalcDelegate):
 				'/Info/MaxDischargeCurrent',
 				'/Dc/0/Voltage',
 				'/ProductId',
+				'/ProductName',
+				'/CustomName',
 				'/InstalledCapacity']),
 		]
 
@@ -117,6 +130,17 @@ class BatteryService(SystemCalcDelegate):
 		return [b for b in self._batteries.values() if b.is_bms]
 
 	def _set_bms(self, *args, **kwargs):
+		bmses = self.bmses
+		if bmses:
+			self._dbusservice['/AvailableBmsServices'] = [
+				{
+					'name': b.custom_name or b.product_name,
+					'instance': b.device_instance
+				} for b in bmses
+			]
+		else:
+			self._dbusservice['/AvailableBmsServices'] = None
+
 		# Disabled
 		if self.selected_bms_instance == BatteryService.BMSSERVICE_NOBMS:
 			self.bms = None
@@ -142,7 +166,6 @@ class BatteryService(SystemCalcDelegate):
 
 		# Automatic selection. Try the main battery service first, hence
 		# hardcoded instance = -1
-		bmses = self.bmses
 		if self.systemcalc.batteryservice is not None and \
 				self.systemcalc.batteryservice.startswith('com.victronenergy.battery.'):
 			b = Battery(self._dbusmonitor, self.systemcalc.batteryservice, -1)
