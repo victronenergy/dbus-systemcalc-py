@@ -11,7 +11,7 @@ from sc_utils import safeadd, copy_dbus_value, reify
 from ve_utils import exit_on_error
 
 from delegates.base import SystemCalcDelegate
-from delegates.bmsservice import BmsService
+from delegates.batteryservice import BatteryService
 
 # Adjust things this often (in seconds)
 # solar chargers has to switch to HEX mode each time we write a value to its
@@ -785,7 +785,7 @@ class Dvcc(SystemCalcDelegate):
 		elif service in self._inverters:
 			self._inverters.remove_inverter(service)
 		if len(self._solarsystem) == 0 and len(self._vecan_services) == 0 and \
-			len(BmsService.instance.batteries) == 0 and self._timer is not None:
+			len(BatteryService.instance.batteries) == 0 and self._timer is not None:
 			GLib.source_remove(self._timer)
 			self._timer = None
 
@@ -829,7 +829,7 @@ class Dvcc(SystemCalcDelegate):
 
 	@property
 	def bms(self):
-		return BmsService.instance.bms
+		return BatteryService.instance.bms
 
 	@property
 	def bms_seen(self):
@@ -863,7 +863,7 @@ class Dvcc(SystemCalcDelegate):
 			not self._solarsystem.has_externalcontrol_support or (
 			self._multi.firmwareversion is not None and self._multi.firmwareversion < VEBUS_FIRMWARE_REQUIRED))
 		self._dbusservice['/Dvcc/Alarms/MultipleBatteries'] = int(
-			len(BmsService.instance.bmses) > 1)
+			len(BatteryService.instance.bmses) > 1)
 
 		# Update subsystems
 		self._solarsystem.update_values()
@@ -1084,7 +1084,7 @@ class Dvcc(SystemCalcDelegate):
 			and to avoid maintaining two copies of systemcalc. """
 
 		max_charge_current = None
-		for battery in BmsService.instance.batteries:
+		for battery in BatteryService.instance.batteries:
 			max_charge_current = safeadd(max_charge_current, battery.maxchargecurrent)
 
 		# Workaround: copying the max charge current from BMS batteries to the solarcharger leads to problems:

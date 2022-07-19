@@ -53,19 +53,19 @@ class Battery(object):
 		""" Capacity of battery, if defined. """
 		return self.monitor.get_value(self.service, '/InstalledCapacity')
 
-class BmsService(SystemCalcDelegate):
+class BatteryService(SystemCalcDelegate):
 	""" Keeps track of the (auto-)selected bms service. """
 	BMSSERVICE_DEFAULT = -1
 	BMSSERVICE_NOBMS = -255
 
 	def __init__(self, sc):
-		super(BmsService, self).__init__()
+		super(BatteryService, self).__init__()
 		self.systemcalc = sc
 		self._batteries = {}
 		self.bms = None
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
-		super(BmsService, self).set_sources(dbusmonitor, settings, dbusservice)
+		super(BatteryService, self).set_sources(dbusmonitor, settings, dbusservice)
 		self._dbusservice.add_path('/ActiveBmsService', value=None)
 
 	def get_input(self):
@@ -83,7 +83,7 @@ class BmsService(SystemCalcDelegate):
 
 	def get_settings(self):
 		return [
-			('bmsinstance', '/Settings/SystemSetup/BmsInstance', BmsService.BMSSERVICE_DEFAULT, 0, 0)
+			('bmsinstance', '/Settings/SystemSetup/BmsInstance', BatteryService.BMSSERVICE_DEFAULT, 0, 0)
 		]
 
 	def device_added(self, service, instance, *args):
@@ -118,14 +118,14 @@ class BmsService(SystemCalcDelegate):
 
 	def _set_bms(self, *args, **kwargs):
 		# Disabled
-		if self.selected_bms_instance == BmsService.BMSSERVICE_NOBMS:
+		if self.selected_bms_instance == BatteryService.BMSSERVICE_NOBMS:
 			self.bms = None
 			self._dbusservice['/ActiveBmsService'] = None
 			return
 
 
 		# Explicit selection
-		if self.selected_bms_instance != BmsService.BMSSERVICE_DEFAULT:
+		if self.selected_bms_instance != BatteryService.BMSSERVICE_DEFAULT:
 			try:
 				b = self._batteries[int(self.selected_bms_instance)]
 			except (ValueError, KeyError):

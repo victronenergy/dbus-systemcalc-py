@@ -32,7 +32,7 @@ DELEGATES = \
 	$(SOURCEDIR)/delegates/genset.py \
 	$(SOURCEDIR)/delegates/socsync.py \
 	$(SOURCEDIR)/delegates/pvinverter.py \
-	$(SOURCEDIR)/delegates/bmsservice.py
+	$(SOURCEDIR)/delegates/batteryservice.py
 
 VEDLIB_FILES = \
 	$(VEDLIBDIR)/logger.py \

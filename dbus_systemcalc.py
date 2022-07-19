@@ -194,7 +194,7 @@ class SystemCalc:
 			delegates.GensetStartStop(),
 			delegates.SocSync(self),
 			delegates.PvInverters(),
-			delegates.BmsService(self)]
+			delegates.BatteryService(self)]
 
 		for m in self._modules:
 			for service, paths in m.get_input():
