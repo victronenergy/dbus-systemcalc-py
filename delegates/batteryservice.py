@@ -73,6 +73,7 @@ class BatteryService(SystemCalcDelegate):
 		self.systemcalc = sc
 		self._batteries = {}
 		self.bms = None
+		self._notify = []
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(BatteryService, self).set_sources(dbusmonitor, settings, dbusservice)
@@ -130,6 +131,14 @@ class BatteryService(SystemCalcDelegate):
 	def bmses(self):
 		return [b for b in self._batteries.values() if b.is_bms]
 
+	def add_bms_changed_callback(self, cb):
+		self._notify.append(cb)
+
+	def __set_bms(self, service):
+		self._dbusservice['/ActiveBmsService'] = service
+		for cb in self._notify:
+			cb(service)
+
 	def _set_bms(self, *args, **kwargs):
 		bmses = self.bmses
 		if bmses:
@@ -145,7 +154,7 @@ class BatteryService(SystemCalcDelegate):
 		# Disabled
 		if self.selected_bms_instance == BatteryService.BMSSERVICE_NOBMS:
 			self.bms = None
-			self._dbusservice['/ActiveBmsService'] = None
+			self.__set_bms(None)
 			return
 
 
@@ -155,14 +164,14 @@ class BatteryService(SystemCalcDelegate):
 				b = self._batteries[int(self.selected_bms_instance)]
 			except (ValueError, KeyError):
 				self.bms = None
-				self._dbusservice['/ActiveBmsService'] = None
+				self.__set_bms(None)
 			else:
 				if b.is_bms:
 					self.bms = b
-					self._dbusservice['/ActiveBmsService'] = b.service
+					self.__set_bms(b.service)
 				else:
 					self.bms = None
-					self._dbusservice['/ActiveBmsService'] = None
+					self.__set_bms(None)
 			return
 
 		# Automatic selection. Try the main battery service first, hence
@@ -175,7 +184,7 @@ class BatteryService(SystemCalcDelegate):
 
 		if bmses:
 			self.bms = sorted(bmses, key=lambda x: x.instance)[0]
-			self._dbusservice['/ActiveBmsService'] = self.bms.service
+			self.__set_bms(self.bms.service)
 		else:
 			self.bms = None
-			self._dbusservice['/ActiveBmsService'] = None
+			self.__set_bms(None)

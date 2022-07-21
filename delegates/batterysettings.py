@@ -1,5 +1,6 @@
 from delegates.base import SystemCalcDelegate
 from delegates.dvcc import Dvcc
+from delegates.batteryservice import BatteryService
 
 # Battery IDs
 BATTERY_BMZ = 0xB005
@@ -23,13 +24,9 @@ class BatterySettings(SystemCalcDelegate):
 		super(BatterySettings, self).__init__()
 		self.systemcalc = sc
 
-	def device_added(self, service, instance, *args):
-		if service.startswith('com.victronenergy.battery.') and \
-				self.systemcalc._batteryservice == service:
-			self.apply_battery_settings(service)
-
-	def battery_service_changed(self, auto, oldservice, newservice):
-		self.apply_battery_settings(newservice)
+	def set_sources(self, dbusmonitor, settings, dbusservice):
+		super(BatterySettings, self).set_sources(dbusmonitor, settings, dbusservice)
+		BatteryService.instance.add_bms_changed_callback(self.apply_battery_settings)
 
 	def apply_battery_settings(self, service):
 		pid = None if service is None else self._dbusmonitor.get_value(service, '/ProductId')

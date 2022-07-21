@@ -665,6 +665,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 					'/Dc/0/Voltage': 12.15,
 					'/Dc/0/Current': 5.3,
 					'/Dc/0/Power': 65,
+					'/Info/MaxChargeVoltage': 13.5,
 					'/Soc': 50,
 					'/DeviceInstance': 0,
 					'/ProductId': product_id})
@@ -686,6 +687,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 					'/Dc/0/Voltage': 12.15,
 					'/Dc/0/Current': 5.3,
 					'/Dc/0/Power': 65,
+					'/Info/MaxChargeVoltage': 13.5,
 					'/Soc': 50,
 					'/DeviceInstance': 0,
 					'/ProductId': product_id})
@@ -708,6 +710,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 					'/Dc/0/Current': 5.3,
 					'/Dc/0/Power': 65,
 					'/Soc': 50,
+					'/Info/MaxChargeVoltage': 13.5,
 					'/DeviceInstance': 0,
 					'/ProductId': product_id})
 
@@ -728,6 +731,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/Dc/0/Voltage': 12.15,
 				'/Dc/0/Current': 5.3,
 				'/Dc/0/Power': 65,
+				'/Info/MaxChargeVoltage': 13.5,
 				'/Soc': 50,
 				'/DeviceInstance': 0,
 				'/ProductId': 0xB007})
@@ -736,6 +740,40 @@ class VoltageSenseTest(TestSystemCalcBase):
 		self._check_settings({
 			'vsense': 1, # Remains on, no longer forced
 			'bol': 1 # Remains on, no longer forced
+		})
+
+	def test_forced_settings_selected_bms_only(self):
+		""" Test that when a BMS is selected other than the battery monitor,
+		    then the settings is applied based on the selected BMS. """
+		# Add two batteries, generic, Pylontech
+		for instance, product_id in enumerate((0xB007, 0xB009)):
+			self._add_device('com.victronenergy.battery.ttyO{}'.format(instance),
+				product_name='battery',
+				values={
+					'/Dc/0/Voltage': 12.15,
+					'/Dc/0/Current': 5.3,
+					'/Dc/0/Power': 65,
+					'/Info/MaxChargeVoltage': 13.5,
+					'/Soc': 50,
+					'/DeviceInstance': instance,
+					'/ProductId': product_id})
+
+		# Set BMS selection to second one, check that settings are forced
+		self._set_setting('/Settings/SystemSetup/BmsInstance', 1)
+		self._update_values()
+		self._check_settings({
+			'vsense': 2, # Forced OFF
+			'tsense': 2, # Forced OFF
+			'bol': 3 # Forced ON
+		})
+
+		# Select the generic BMS, check that settings are unforced
+		self._set_setting('/Settings/SystemSetup/BmsInstance', 0)
+		self._update_values()
+		self._check_settings({
+			'vsense': 0,
+			'tsense': 0,
+			'bol': 1
 		})
 
 	def test_voltage_sense_inverter_and_battery_monitor(self):
