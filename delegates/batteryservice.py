@@ -103,6 +103,7 @@ class BatteryService(SystemCalcDelegate):
 		if service.startswith('com.victronenergy.battery.'):
 			self._batteries[instance] = Battery(self._dbusmonitor, service, instance)
 			self._dbusmonitor.track_value(service, "/Info/MaxChargeVoltage", self._set_bms)
+			self._dbusmonitor.track_value(service, "/CustomName", self._set_bms)
 			self._set_bms()
 
 	def device_removed(self, service, instance):
