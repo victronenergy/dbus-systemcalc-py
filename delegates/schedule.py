@@ -78,9 +78,10 @@ class ScheduledWindow(object):
 		return "Start: {}, Stop: {}".format(self.start, self.stop)
 
 class ScheduledChargeWindow(ScheduledWindow):
-	def __init__(self, starttime, duration, soc):
+	def __init__(self, starttime, duration, soc, allow_discharge):
 		super(ScheduledChargeWindow, self).__init__(starttime, duration)
 		self.soc = soc
+		self.allow_discharge = allow_discharge
 
 	def soc_reached(self, s):
 		return not self.soc >= 100 and s >= self.soc
@@ -132,28 +133,31 @@ class ScheduledCharging(SystemCalcDelegate):
 				BLPATH + "/Schedule/Charge/{}/Duration".format(i), 0, 0, 0))
 			settings.append(("schedule_soc_{}".format(i),
 				BLPATH + "/Schedule/Charge/{}/Soc".format(i), 100, 0, 100))
+			settings.append(("schedule_discharge_{}".format(i),
+				BLPATH + "/Schedule/Charge/{}/AllowDischarge".format(i), 0, 0, 1))
 
 		return settings
 
 	@classmethod
-	def _charge_windows(klass, today, days, starttimes, durations, stopsocs):
+	def _charge_windows(klass, today, days, starttimes, durations, stopsocs, discharges):
 		starttimes = (time(x//3600, x//60 % 60, x % 60) for x in starttimes)
 
-		for d, starttime, duration, soc in zip(days, starttimes, durations, stopsocs):
+		for d, starttime, duration, soc, discharge in zip(days, starttimes, durations, stopsocs, discharges):
 			if d >= 0:
 				d0 = prev_schedule_day(today, d)
 				d1 = next_schedule_day(today, d)
 				yield ScheduledChargeWindow(
-					datetime.combine(d0, starttime), duration, soc)
+					datetime.combine(d0, starttime), duration, soc, discharge)
 				yield ScheduledChargeWindow(
-					datetime.combine(d1, starttime), duration, soc)
+					datetime.combine(d1, starttime), duration, soc, discharge)
 
 	def charge_windows(self, today):
 		days = (self._settings['schedule_day_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		starttimes = (self._settings['schedule_start_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		durations = (self._settings['schedule_duration_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		stopsocs = (self._settings['schedule_soc_{}'.format(i)] for i in range(NUM_SCHEDULES))
-		return self._charge_windows(today, days, starttimes, durations, stopsocs)
+		discharges = (self._settings['schedule_discharge_{}'.format(i)] for i in range(NUM_SCHEDULES))
+		return self._charge_windows(today, days, starttimes, durations, stopsocs, discharges)
 
 	@property
 	def forcecharge(self):
@@ -218,16 +222,25 @@ class ScheduledCharging(SystemCalcDelegate):
 					self.maxdischargepower = -1
 					break # from the for loop, skip the else clause below.
 
-
-				# The discharge is limited to 1W or whatever is available
-				# from PV. 1W essentially disables discharge without
-				# disabling feed-in, so Power-Assist and feeding in
-				# the excess continues to work. Setting this to the pv-power
-				# causes it to directly consume the PV for loads and charge
-				# only with the excess. Scale it between 80% and 93%
-				# of PV-power depending on the SOC.
-				scale = 0.8 + min(max(0, self.soc - w.soc), 1.3)*0.1
-				self.maxdischargepower = max(1, round(self.pvpower*scale))
+				# If we are here, it means the battery has reached the target
+				# soc, and the target was less than 100%. If the SOC is close
+				# to the target, we want to keep it there by limiting the
+				# discharge power to available PV, so it settles slightly
+				# above the requested target. If the SOC is above the target
+				# by some margin, we want to allow normal discharge.
+				#
+				# If the SOC is within 1% of the target, then pass through
+				# between 80% and 95% of the PV power depending on how far
+				# over we are. If 1% or more over, and discharge is allowed,
+				# then do normal discharge.
+				#
+				# The ESS MinSoc is still obeyed and takes precedence.
+				delta = max(0, self.soc - w.soc)
+				if delta > 1 and w.allow_discharge:
+					self.maxdischargepower = -1
+				else:
+					scale = 0.8 + min(delta, 1)*0.15
+					self.maxdischargepower = max(1, round(self.pvpower*scale))
 				break
 		else:
 			self.forcecharge = False

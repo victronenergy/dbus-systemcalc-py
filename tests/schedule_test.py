@@ -309,7 +309,7 @@ class TestSchedule(TestSystemCalcBase):
 		from delegates.schedule import ScheduledCharging, ScheduledWindow
 		windows = ScheduledCharging._charge_windows(
 			date(2018, 6, 6), [1, 7, 8, 9], [0, 3600, 7200, 10800],
-			[3595]*4, [100]*4)
+			[3595]*4, [100]*4, [False]*4)
 		windows = list(windows)
 		self.assertEqual(len(windows), 8)
 
@@ -332,7 +332,7 @@ class TestSchedule(TestSystemCalcBase):
 		# Retest week day from a weekend
 		for d in (date(2018, 6, 9), date(2018, 6, 10)):
 			windows = ScheduledCharging._charge_windows(d, [8], [0], [3600],
-				[100])
+				[100], [False])
 			windows = list(windows)
 			self.assertEqual(len(windows), 2)
 
@@ -343,7 +343,7 @@ class TestSchedule(TestSystemCalcBase):
 		from delegates.schedule import ScheduledChargeWindow
 
 		# Simple test
-		window = ScheduledChargeWindow(datetime(2018, 6, 6, 0, 0, 1), 2, 99)
+		window = ScheduledChargeWindow(datetime(2018, 6, 6, 0, 0, 1), 2, 99, False)
 		self.assertTrue(datetime(2018, 6, 6, 0, 0, 1) in window)
 		self.assertTrue(datetime(2018, 6, 6, 0, 0, 2) in window)
 		self.assertTrue(datetime(2018, 6, 6, 0, 0, 3) not in window)
@@ -352,11 +352,11 @@ class TestSchedule(TestSystemCalcBase):
 		self.assertTrue(window.soc_reached(100))
 
 		# Never stop on SoC is set to 100%
-		window = ScheduledChargeWindow(datetime(2018, 6, 6, 0, 0, 1), 2, 100)
+		window = ScheduledChargeWindow(datetime(2018, 6, 6, 0, 0, 1), 2, 100, False)
 		self.assertFalse(window.soc_reached(100))
 
 		# Wrap around midnight
-		window = ScheduledChargeWindow(datetime(2018, 6, 6, 23, 50, 00), 1200, 97)
+		window = ScheduledChargeWindow(datetime(2018, 6, 6, 23, 50, 00), 1200, 97, False)
 		self.assertTrue(datetime(2018, 6, 6, 23, 49, 0) not in window)
 		self.assertTrue(datetime(2018, 6, 7, 0, 11, 0) not in window)
 		self.assertTrue(datetime(2018, 6, 7, 8, 0, 0) not in window)
@@ -367,7 +367,7 @@ class TestSchedule(TestSystemCalcBase):
 		self.assertTrue(window.soc_reached(97))
 
 		# Failed corner case 1
-		window = ScheduledChargeWindow(datetime(2018, 6, 6, 8, 0, 0), 57601, 98)
+		window = ScheduledChargeWindow(datetime(2018, 6, 6, 8, 0, 0), 57601, 98, False)
 		self.assertTrue(datetime(2018, 6, 6, 17, 0, 0) in window)
 
 	def test_inactive_when_keepcharged(self):
