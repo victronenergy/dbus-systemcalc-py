@@ -214,16 +214,24 @@ class ScheduledCharging(SystemCalcDelegate):
 					self.maxdischargepower = -1
 					break # from the for loop, skip the else clause below.
 
-
-				# The discharge is limited to 1W or whatever is available
-				# from PV. 1W essentially disables discharge without
-				# disabling feed-in, so Power-Assist and feeding in
-				# the excess continues to work. Setting this to the pv-power
-				# causes it to directly consume the PV for loads and charge
-				# only with the excess. Scale it between 80% and 93%
-				# of PV-power depending on the SOC.
-				scale = 0.8 + min(max(0, self.soc - w.soc), 1.3)*0.1
-				self.maxdischargepower = max(1, round(self.pvpower*scale))
+				# If we are here, it means the battery has reached the target
+				# soc, and the target was less than 100%. If the SOC is close
+				# to the target, we want to keep it there by limiting the
+				# discharge power to available PV, so it settles slightly
+				# above the requested target. If the SOC is above the target
+				# by some margin, we want to allow normal discharge.
+				#
+				# If the SOC is within 1% of the target, then pass through
+				# between 80% and 95% of the PV power depending on how far
+				# over we are. If 1% or more over, allow normal discharge.
+				#
+				# The ESS MinSoc is still obeyed and takes precedence.
+				delta = max(0, self.soc - w.soc)
+				if delta > 1:
+					self.maxdischargepower = -1
+				else:
+					scale = 0.8 + min(delta, 1)*0.15
+					self.maxdischargepower = max(1, round(self.pvpower*scale))
 				break
 		else:
 			self.forcecharge = False
