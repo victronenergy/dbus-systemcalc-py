@@ -60,7 +60,9 @@ class TestSchedule(TestSystemCalcBase):
 				'com.victronenergy.hub4': {
 				'/Overrides/ForceCharge': 0,
 		}})
-		self._check_values({'/Control/ScheduledCharge': 0})
+		self._check_values({
+			'/Control/ScheduledCharge': 0,
+			'/Control/ScheduledSoc': None})
 
 		# Another minute or so, it should pop unto scheduled charge
 		timer_manager.run(66000)
@@ -76,7 +78,8 @@ class TestSchedule(TestSystemCalcBase):
 		timer_manager.run(1000)
 		self._check_values({
 			'/SystemState/State': 0x103,
-			'/Control/ScheduledCharge': 1})
+			'/Control/ScheduledCharge': 1,
+			'/Control/ScheduledSoc': 100})
 
 		# Another minute and scheduled charging will end.
 		timer_manager.run(65000)

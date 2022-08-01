@@ -105,6 +105,8 @@ class ScheduledCharging(SystemCalcDelegate):
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 		self._dbusservice.add_path('/Control/ScheduledCharge', value=0)
+		self._dbusservice.add_path('/Control/ScheduledSoc', value=None,
+			gettextcallback=lambda p, v: '{}%'.format(v))
 
 	def get_input(self):
 		return [
@@ -179,6 +181,7 @@ class ScheduledCharging(SystemCalcDelegate):
 
 		if BatteryLife.instance.state == BatteryLifeState.KeepCharged:
 			self._dbusservice['/Control/ScheduledCharge'] = 0
+			self._dbusservice['/Control/ScheduledSoc'] = None
 			return True
 
 		now = self._get_time()
@@ -201,6 +204,7 @@ class ScheduledCharging(SystemCalcDelegate):
 
 				# Signal that scheduled charging is active
 				self.active = True
+				self._dbusservice['/Control/ScheduledSoc'] = w.soc
 
 				# If we are force-charging, that means in hub4control the mode
 				# is set to either MaxoutSetpoint or SetpointIsMaxFeedIn. When
@@ -237,6 +241,7 @@ class ScheduledCharging(SystemCalcDelegate):
 			self.forcecharge = False
 			self.maxdischargepower = -1
 			self.active = False
+			self._dbusservice['/Control/ScheduledSoc'] = None
 
 		self._dbusservice['/Control/ScheduledCharge'] = int(self.active)
 		self.hysteresis = True
