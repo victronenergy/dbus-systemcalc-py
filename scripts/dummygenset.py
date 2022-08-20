@@ -56,6 +56,7 @@ s = DbusDummyService(
 		'/Ac/L3/Current': {'initial': 1.1},
 		'/Ac/L3/Power': {'initial': 481.1},
 		'/Ac/L3/Frequency': {'initial': 50.1},
+		'/NrOfPhases': {'initial': 3},
     },
     productname='Generic Genset',
     connection='CAN-bus')

@@ -202,6 +202,19 @@ class ScheduledCharging(SystemCalcDelegate):
 				# Signal that scheduled charging is active
 				self.active = True
 
+				# If we are force-charging, that means in hub4control the mode
+				# is set to either MaxoutSetpoint or SetpointIsMaxFeedIn. When
+				# it is set to SetpointIsMaxFeedIn, the discharge limit affects
+				# the maximum feed-in, and setting this to too low a value (at
+				# 100%) will break feeding in of excess PV. Therefore avoid
+				# setting a discharge limit if we're currently charging, in
+				# other words, if we're below the target soc, or if the target
+				# soc is 100%.
+				if self.forcecharge:
+					self.maxdischargepower = -1
+					break # from the for loop, skip the else clause below.
+
+
 				# The discharge is limited to 1W or whatever is available
 				# from PV. 1W essentially disables discharge without
 				# disabling feed-in, so Power-Assist and feeding in

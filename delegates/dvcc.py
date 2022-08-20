@@ -1047,7 +1047,7 @@ class Dvcc(SystemCalcDelegate):
 
 		# Try to push the solar chargers to the vebus-compensated value
 		voltage_written, current_written, effective_charge_voltage = \
-			self._update_solarchargers(has_bms, charge_voltage,
+			self._update_solarchargers_and_vecan(has_bms, charge_voltage,
 			_max_charge_current, feedback_allowed, stop_on_mcc0)
 		update_solarcharger_control_flags(voltage_written, current_written, effective_charge_voltage)
 
@@ -1136,7 +1136,7 @@ class Dvcc(SystemCalcDelegate):
 			self._dbusmonitor.get_value('com.victronenergy.settings',
 				'/Settings/CGwacs/OvervoltageFeedIn') == 1
 
-	def _update_solarchargers(self, has_bms, bms_charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0):
+	def _update_solarchargers_and_vecan(self, has_bms, bms_charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0):
 		""" This function updates the solar chargers only. Parameters
 		    related to the Multi are handled elsewhere. """
 
@@ -1161,9 +1161,8 @@ class Dvcc(SystemCalcDelegate):
 		voltage_written, current_written, network_mode = self._solarsystem.set_networked(
 			has_bms, charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0)
 
-		# Charge voltage cannot by written directly to the CAN-bus solar chargers, we have to use
-		# the com.victronenergy.vecan.* service instead.
-		if charge_voltage is not None and self._solarsystem.has_vecan_chargers:
+		# Write the voltage to VE.Can. Also update the networkmode.
+		if charge_voltage is not None:
 			for service in self._vecan_services:
 				try:
 					# In case there is no path at all, the set_value below will
@@ -1231,6 +1230,8 @@ class Dvcc(SystemCalcDelegate):
 				# better to keep it for the moment.
 				pass
 
+		# The below is different to the non-legacy case above, where the voltage
+		# the com.victronenergy.vecan.* service instead.
 		if charge_voltage is not None and self._solarsystem.has_vecan_chargers:
 			# Charge voltage cannot by written directly to the CAN-bus solar chargers, we have to use
 			# the com.victronenergy.vecan.* service instead.

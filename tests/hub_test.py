@@ -1980,3 +1980,18 @@ class TestHubSystem(TestSystemCalcBase):
 			'com.victronenergy.solarcharger.ttyO1': {
 				'/Link/NetworkMode': 13,
 				'/Link/ChargeCurrent': 100 }})
+
+	def test_always_send_charge_voltage_to_vecan(self):
+		""" Charge voltage is copied to VE.Can, even when no solarcharger. """
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 12.65)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', 2)
+		self._add_device('com.victronenergy.vecan.can0', {
+			'/Link/NetworkMode': None,
+			'/Link/ChargeVoltage': None
+		}, connection='VE.Can')
+		self._update_values(3000)
+		self._check_external_values({
+			'com.victronenergy.vecan.can0': {
+				'/Link/NetworkMode': 5,
+				'/Link/ChargeVoltage': 12.65
+		}})
