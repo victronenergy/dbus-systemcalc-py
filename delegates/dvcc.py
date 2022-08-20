@@ -52,10 +52,14 @@ def _pylontech_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed
 	    Identify 24-V batteries by the lower charge voltage, and do the same
 	    thing with an 8-to-15 cell ratio, +-3.48V per cell.
 	"""
-	# Use 3.48V per cell plus a little, 52.4V for 48V batteries.
+	# Use 3.48V per cell plus a little, 52.4V for 15 cell 48V batteries.
 	# Use 3.46V per cell plus a little, 27.8V for 24V batteries testing shows that's 100% SOC.
 	# That leaves 1.6V margin for 48V batteries and 1.0V for 24V.
 	# See https://github.com/victronenergy/venus/issues/536
+	if charge_voltage > 55:
+		# 48V battery (16 cells), such as the SOK SK48v100 from Current Connected.
+		# Assume BMS knows what it's doing.  -Brian Finley <brian@thefinleys.com>-
+		return (charge_voltage, charge_current, feedback_allowed, False)
 	if charge_voltage > 30:
 		# 48V battery (15 cells)
 		return (min(charge_voltage, 52.4), charge_current, feedback_allowed, False)
