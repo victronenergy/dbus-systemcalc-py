@@ -1375,6 +1375,41 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Ac/ConsumptionOnOutput/L1/Power': 230
 		})
 
+	def test_pv_allocated_correctly_to_grid_genset(self):
+		self._add_device('com.victronenergy.pvinverter.fronius_122_2314', {
+			'/Ac/L1/Power': 105,
+			'/Position': 0 # AC-in 1
+		})
+		self._add_device('com.victronenergy.pvinverter.fronius_122_2315', {
+			'/Ac/L1/Power': 210,
+			'/Position': 2 # AC-in 2
+		})
+
+		# AC-in 1 is Grid, AC-in 2 is genset
+		self._monitor.set_value('com.victronenergy.settings', '/Settings/SystemSetup/AcInput1', 1) # Grid
+		self._monitor.set_value('com.victronenergy.settings', '/Settings/SystemSetup/AcInput2', 2) # Genset
+		self._update_values()
+		self._check_values({
+			'/Ac/PvOnGenset/L1/Power': 210,
+			'/Ac/PvOnGrid/L1/Power': 105
+		})
+
+		# Shore is also grid
+		self._monitor.set_value('com.victronenergy.settings', '/Settings/SystemSetup/AcInput1', 3) # Shore
+		self._update_values()
+		self._check_values({
+			'/Ac/PvOnGenset/L1/Power': 210,
+			'/Ac/PvOnGrid/L1/Power': 105
+		})
+
+		# Swap genset and grid, make sure Pv values also swap
+		self._monitor.set_value('com.victronenergy.settings', '/Settings/SystemSetup/AcInput1', 2) # Genset
+		self._monitor.set_value('com.victronenergy.settings', '/Settings/SystemSetup/AcInput2', 1) # Grid
+		self._update_values()
+		self._check_values({
+			'/Ac/PvOnGenset/L1/Power': 105,
+			'/Ac/PvOnGrid/L1/Power': 210
+		})
 
 if __name__ == '__main__':
 	unittest.main()

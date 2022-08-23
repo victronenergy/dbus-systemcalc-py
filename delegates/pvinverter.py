@@ -63,14 +63,29 @@ class PvInverters(SystemCalcDelegate):
 		productids.discard(None)
 		self._dbusservice['/PvInvertersProductIds'] = list(productids)
 
+	def map_position(self, p):
+		""" Map the position of the PV-inverter to the AC-source on that
+		    position. We're primarily concerned about Grid vs Genset. """
+		if p == 1:
+			return '/Ac/PvOnOutput'
+		s = {
+			0: self._dbusmonitor.get_value(
+				'com.victronenergy.settings', '/Settings/SystemSetup/AcInput1'),
+			2: self._dbusmonitor.get_value(
+				'com.victronenergy.settings', '/Settings/SystemSetup/AcInput2')
+			}.get(p)
+		return {
+			1: '/Ac/PvOnGrid',
+			2: '/Ac/PvOnGenset',
+			3: '/Ac/PvOnGrid'}.get(s)
+
 	def get_totals(self):
-		pos = {0: '/Ac/PvOnGrid', 1: '/Ac/PvOnOutput', 2: '/Ac/PvOnGenset'}
 		newvalues = {}
 		for pvinverter in self.pvinverters:
 			# Position will be None if PV inverter service has just been removed (after retrieving the
 			# service list).
-			position = pos.get(self._dbusmonitor.get_value(pvinverter, '/Position'))
-			if position is not None:
+			pos = self._dbusmonitor.get_value(pvinverter, '/Position')
+			if pos is not None and (position := self.map_position(pos)) is not None:
 				for phase in range(1, 4):
 					power = self._dbusmonitor.get_value(pvinverter, '/Ac/L%s/Power' % phase)
 					if power is not None:
