@@ -42,18 +42,6 @@ class SystemCalc:
 				'/Dc/0/Current': dummy,
 				'/Load/I': dummy,
 				'/FirmwareVersion': dummy},
-			'com.victronenergy.pvinverter': {
-				'/Connected': dummy,
-				'/ProductName': dummy,
-				'/Mgmt/Connection': dummy,
-				'/Ac/L1/Power': dummy,
-				'/Ac/L2/Power': dummy,
-				'/Ac/L3/Power': dummy,
-				'/Ac/L1/Current': dummy,
-				'/Ac/L2/Current': dummy,
-				'/Ac/L3/Current': dummy,
-				'/Position': dummy,
-				'/ProductId': dummy},
 			'com.victronenergy.battery': {
 				'/Connected': dummy,
 				'/ProductName': dummy,
@@ -202,7 +190,8 @@ class SystemCalc:
 			delegates.Gps(),
 			delegates.AcInputs(),
 			delegates.GensetStartStop(),
-			delegates.SocSync(self)]
+			delegates.SocSync(self),
+			delegates.PvInverters()]
 
 		for m in self._modules:
 			for service, paths in m.get_input():
@@ -245,8 +234,6 @@ class SystemCalc:
 			'/ActiveBatteryService', value=None, gettextcallback=self._gettext)
 		self._dbusservice.add_path(
 			'/Dc/Battery/BatteryService', value=None)
-		self._dbusservice.add_path(
-			'/PvInvertersProductIds', value=None)
 		self._summeditems = {
 			'/Ac/Grid/L1/Power': {'gettext': '%.0F W'},
 			'/Ac/Grid/L2/Power': {'gettext': '%.0F W'},
@@ -288,27 +275,6 @@ class SystemCalc:
 			'/Ac/Consumption/L2/Current': {'gettext': '%.1F A'},
 			'/Ac/Consumption/L3/Current': {'gettext': '%.1F A'},
 			'/Ac/Consumption/NumberOfPhases': {'gettext': '%.0F W'},
-			'/Ac/PvOnOutput/L1/Power': {'gettext': '%.0F W'},
-			'/Ac/PvOnOutput/L2/Power': {'gettext': '%.0F W'},
-			'/Ac/PvOnOutput/L3/Power': {'gettext': '%.0F W'},
-			'/Ac/PvOnOutput/L1/Current': {'gettext': '%.1F A'},
-			'/Ac/PvOnOutput/L2/Current': {'gettext': '%.1F A'},
-			'/Ac/PvOnOutput/L3/Current': {'gettext': '%.1F A'},
-			'/Ac/PvOnOutput/NumberOfPhases': {'gettext': '%.0F W'},
-			'/Ac/PvOnGrid/L1/Power': {'gettext': '%.0F W'},
-			'/Ac/PvOnGrid/L2/Power': {'gettext': '%.0F W'},
-			'/Ac/PvOnGrid/L3/Power': {'gettext': '%.0F W'},
-			'/Ac/PvOnGrid/L1/Current': {'gettext': '%.1F A'},
-			'/Ac/PvOnGrid/L2/Current': {'gettext': '%.1F A'},
-			'/Ac/PvOnGrid/L3/Current': {'gettext': '%.1F A'},
-			'/Ac/PvOnGrid/NumberOfPhases': {'gettext': '%.0F W'},
-			'/Ac/PvOnGenset/L1/Power': {'gettext': '%.0F W'},
-			'/Ac/PvOnGenset/L2/Power': {'gettext': '%.0F W'},
-			'/Ac/PvOnGenset/L3/Power': {'gettext': '%.0F W'},
-			'/Ac/PvOnGenset/L1/Current': {'gettext': '%.1F A'},
-			'/Ac/PvOnGenset/L2/Current': {'gettext': '%.1F A'},
-			'/Ac/PvOnGenset/L3/Current': {'gettext': '%.1F A'},
-			'/Ac/PvOnGenset/NumberOfPhases': {'gettext': '%d'},
 			'/Dc/Pv/Power': {'gettext': '%.0F W'},
 			'/Dc/Pv/Current': {'gettext': '%.1F A'},
 			'/Dc/Battery/Voltage': {'gettext': '%.2F V'},
@@ -500,17 +466,6 @@ class SystemCalc:
 
 		return True  # keep timer running
 
-	def _updatepvinverterspidlist(self):
-		# Create list of connected pv inverters id's
-		pvinverters = self._dbusmonitor.get_service_list('com.victronenergy.pvinverter')
-		productids = []
-
-		for pvinverter in pvinverters:
-			pid = self._dbusmonitor.get_value(pvinverter, '/ProductId')
-			if pid is not None and pid not in productids:
-				productids.append(pid)
-		self._dbusservice['/PvInvertersProductIds'] = productids
-
 	def _updatevalues(self):
 		# ==== PREPARATIONS ====
 		newvalues = {}
@@ -532,26 +487,16 @@ class SystemCalc:
 				vebuspower += v * i
 
 		# ==== PVINVERTERS ====
-		pvinverters = self._dbusmonitor.get_service_list('com.victronenergy.pvinverter')
-		pos = {0: '/Ac/PvOnGrid', 1: '/Ac/PvOnOutput', 2: '/Ac/PvOnGenset'}
-		for pvinverter in pvinverters:
-			# Position will be None if PV inverter service has just been removed (after retrieving the
-			# service list).
-			position = pos.get(self._dbusmonitor.get_value(pvinverter, '/Position'))
-			if position is not None:
-				for phase in range(1, 4):
-					power = self._dbusmonitor.get_value(pvinverter, '/Ac/L%s/Power' % phase)
-					if power is not None:
-						path = '%s/L%s/Power' % (position, phase)
-						newvalues[path] = _safeadd(newvalues.get(path), power)
-
-					current = self._dbusmonitor.get_value(pvinverter, '/Ac/L%s/Current' % phase)
-					if current is not None:
-						path = '%s/L%s/Current' % (position, phase)
-						newvalues[path] = _safeadd(newvalues.get(path), current)
-
-		for path in pos.values():
-			self._compute_number_of_phases(path, newvalues)
+		# Work is done in pv-inverter delegate. Ideally all of this should
+		# happen in update_values in the delegate, but these values are
+		# used below in calculating consumption, so until this is less
+		# unwieldy this has to stay here.
+		# TODO this can go away once consumption below no longer relies
+		# on these values, or has moved to its own delegate.
+		newvalues.update(delegates.PvInverters.instance.get_totals())
+		self._compute_number_of_phases('/Ac/PvOnGrid', newvalues)
+		self._compute_number_of_phases('/Ac/PvOnOutput', newvalues)
+		self._compute_number_of_phases('/Ac/PvOnGenset', newvalues)
 
 		# ==== SOLARCHARGERS ====
 		solarchargers = self._dbusmonitor.get_service_list('com.victronenergy.solarcharger')
@@ -1040,7 +985,6 @@ class SystemCalc:
 		self._dbusservice['/AvailableBatteryMeasurements'] = ul
 
 		self._determinebatteryservice()
-		self._updatepvinverterspidlist()
 
 		self._changed = True
 

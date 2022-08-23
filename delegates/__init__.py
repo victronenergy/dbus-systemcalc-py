@@ -24,3 +24,4 @@ from delegates.acinput import AcInputs
 from delegates.multi import Multi
 from delegates.genset import GensetStartStop
 from delegates.socsync import SocSync
+from delegates.pvinverter import PvInverters
