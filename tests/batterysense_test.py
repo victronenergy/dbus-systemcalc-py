@@ -657,8 +657,8 @@ class VoltageSenseTest(TestSystemCalcBase):
 
 		# Pylontech, BYD, FreedomWON, Discover AES, BlueNova, BSL-BATT, BMZ,
 		# eTower, Cegasa
-		for product_id in (0xB009, 0xB00A, 0xB014, 0xB015, 0xB016, 0xB019,
-				0xB020, 0xB021, 0xB005, 0xB024, 0xB028):
+		for product_id in (0xB009, 0xB00A, 0xB015, 0xB016, 0xB019,
+				0xB020, 0xB021, 0xB005, 0xB028):
 			self._add_device('com.victronenergy.battery.ttyO2',
 				product_name='battery',
 				values={
@@ -678,6 +678,26 @@ class VoltageSenseTest(TestSystemCalcBase):
 			self.assertTrue(Dvcc.instance.has_dvcc)
 			self._remove_device('com.victronenergy.battery.ttyO2')
 
+		# FreedomWON forces bol, but not SVS
+		for product_id in (0xB014, 0xB024):
+			self._add_device('com.victronenergy.battery.ttyO2',
+				product_name='battery',
+				values={
+					'/Dc/0/Voltage': 12.15,
+					'/Dc/0/Current': 5.3,
+					'/Dc/0/Power': 65,
+					'/Soc': 50,
+					'/DeviceInstance': 0,
+					'/ProductId': product_id})
+			self._update_values()
+			self._check_settings({
+				'vsense': 0, # Not forced
+				'tsense': 2, # Forced OFF
+				'bol': 3 # Forced ON
+			})
+			self.assertFalse(BatterySense.instance.has_vsense)
+			self.assertTrue(Dvcc.instance.has_dvcc)
+			self._remove_device('com.victronenergy.battery.ttyO2')
 
 		# Lynx Smart wants SVS on
 		for product_id in (0xA3E5, 0xA3E6):
