@@ -16,6 +16,7 @@ BATTERY_LYNX_SMART_BMS_1000 = 0xA3E6
 BATTERY_BSLBATT = 0xB021
 BATTERY_ETOWER = 0xB024
 BATTERY_CEGASA = 0xB028
+BATTERY_HUBBLE = 0xB051
 
 class BatterySettings(SystemCalcDelegate):
 	""" Manages battery settings for known batteries. At present
@@ -39,7 +40,7 @@ class BatterySettings(SystemCalcDelegate):
 			self._settings['vsense'] = 2 # Forced Off
 			self._settings['tsense'] = 2 # Forced Off
 			self._settings['bol'] = 3 # Forced on
-		elif pid in (BATTERY_FREEDOMWON, BATTERY_ETOWER):
+		elif pid in (BATTERY_FREEDOMWON, BATTERY_ETOWER, BATTERY_HUBBLE):
 			if self._settings['vsense'] & 2:
 				self._settings['vsense'] &= 1 # Remove setting if it was forced
 			self._settings['tsense'] = 2 # Forced Off
