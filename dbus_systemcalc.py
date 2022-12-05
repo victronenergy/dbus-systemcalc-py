@@ -752,7 +752,7 @@ class SystemCalc:
 						inverter_power += self._dbusmonitor.get_value(
 							i, '/Dc/0/Voltage', 0) * inverter_current
 					else:
-						inverter_power += self._dbusmonitor.get_value(
+						inverter_power -= self._dbusmonitor.get_value(
 							i, '/Ac/Out/L1/V', 0) * self._dbusmonitor.get_value(
 							i, '/Ac/Out/L1/I', 0)
 				newvalues['/Dc/System/MeasurementType'] = 0 # estimated
@@ -760,8 +760,8 @@ class SystemCalc:
 				# calculated DC power, because it will be individually
 				# displayed. For now, we leave it out so that in the current
 				# version of Venus it does not break user's expectations.
-				#newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + fuelcell_power + vebuspower - inverter_power - battery_power - alternator_power
-				newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + fuelcell_power + vebuspower - inverter_power - battery_power
+				#newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + fuelcell_power + vebuspower + inverter_power - battery_power - alternator_power
+				newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + fuelcell_power + vebuspower + inverter_power - battery_power
 
 		elif self._settings['hasdcsystem'] == 1 and solarchargers_loadoutput_power is not None:
 			newvalues['/Dc/System/MeasurementType'] = 0 # estimated

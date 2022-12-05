@@ -1141,12 +1141,12 @@ class TestSystemCalc(TestSystemCalcBase):
 						product_name='inverter',
 						values={
 								'/Dc/0/Voltage': 12.8,
-								'/Dc/0/Current': 20, # RS Smart has a current sensor on the DC side
+								'/Dc/0/Current': -20, # RS Smart has a current sensor on the DC side
 								'/Ac/Out/L1/V': 220,
 								'/Ac/Out/L1/I': 1.0 })
 		self._update_values()
 		self._check_values({
-			'/Dc/System/Power': 44 }) # 300W minus the 12.8*20W of the inverter
+			'/Dc/System/Power': 44 }) # 300W minus the 12.8*20A of the inverter
 
 	def test_battery_state(self):
 		self._check_values({
