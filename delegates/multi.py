@@ -1,3 +1,4 @@
+from ve_utils import get_product_id
 from delegates.base import SystemCalcDelegate
 
 class Service(object):
@@ -27,17 +28,30 @@ class Service(object):
 		return [(i, self.monitor.get_value('com.victronenergy.settings',
 			'/Settings/SystemSetup/AcInput{}'.format(i + 1))) for i in range(self.number_of_inputs or 0)]
 
+	@property
+	def port(self):
+		return self.monitor.get_value(self.service, '/Interfaces/Mk2/Connection') or ''
+
+	@property
+	def onboard(self):
+		return not self.port.startswith('/dev/ttyUSB')
+
 class Multi(SystemCalcDelegate):
 	def __init__(self):
 		super(Multi, self).__init__()
 		self.multis = {}
 		self.multi = None
 
+		# Determine if this platform has a built-in MK2/3. Maxi-GX
+		# and generic (Raspberry Pi) does not.
+		self.has_onboard_mkx = get_product_id() not in ('C009', 'C003')
+
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 
 	def get_input(self):
 		return [('com.victronenergy.vebus', [
+				'/Interfaces/Mk2/Connection',
 				'/Ac/ActiveIn/ActiveInput',
 				'/Ac/NumberOfAcInputs'])]
 
@@ -56,7 +70,13 @@ class Multi(SystemCalcDelegate):
 			self._set_multi()
 
 	def _set_multi(self, *args, **kwargs):
-		multis = [m for m in self.multis.values() if m.connected]
+		# If platform has an onboard mkx, use only that as VE.Bus service.
+		# On other platforms, use the Multi with the lowest DeviceInstance.
+		if self.has_onboard_mkx:
+			multis = [m for m in self.multis.values() if m.connected and m.onboard]
+		else:
+			multis = [m for m in self.multis.values() if m.connected]
+
 		if multis:
 			self.multi = sorted(multis, key=lambda x: x.instance)[0]
 		else:
