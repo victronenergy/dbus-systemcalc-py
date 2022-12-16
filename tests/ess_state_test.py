@@ -45,6 +45,7 @@ class TestEssStates(TestSystemCalcBase):
                 '/Dc/0/Current': 5.6,
                 '/Dc/0/Power': 69.4,
                 '/Soc': 53.2,
+                '/Info/MaxChargeVoltage': 13.5,
                 '/Info/ChargeRequest': 0})
 
         # Self-Consumption, BatteryLife

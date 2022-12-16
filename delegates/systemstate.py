@@ -4,6 +4,7 @@ from itertools import chain
 import sc_utils
 from delegates.base import SystemCalcDelegate
 from delegates.schedule import ScheduledCharging
+from delegates.batteryservice import BatteryService
 
 class BL(object):
     Disabled = 0
@@ -131,9 +132,10 @@ class SystemState(SystemCalcDelegate):
 				ss = self._dbusmonitor.get_value(inverter, '/State')
 
 			# Check if we can get the bms state from the selected batteryservice
-			if self.systemcalc.batteryservice is not None:
+			if BatteryService.instance.bms is not None:
 				flags.ChargeDisabled, flags.DischargeDisabled = map(
-					lambda x: int(not x), self.bms_state_2(self.systemcalc.batteryservice))
+					lambda x: int(not x), self.bms_state_2(
+					BatteryService.instance.bms.service))
 
 			return (ss, flags)
 
@@ -188,7 +190,9 @@ class SystemState(SystemCalcDelegate):
 				if hubstate == BL.ForceCharge:
 					flags.SlowCharge = 1
 
-			if self._dbusmonitor.get_value(self.systemcalc.batteryservice,
+			if BatteryService.instance.bms is not None and \
+					self._dbusmonitor.get_value(
+					BatteryService.instance.bms.service,
 					'/Info/ChargeRequest') == 1:
 				# Battery requested a recharge. Sustain may also be active
 				# but this one is more important
