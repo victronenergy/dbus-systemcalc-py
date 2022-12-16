@@ -29,6 +29,7 @@ class SystemState(SystemCalcDelegate):
 	# vebus states are passed right through, and range from 0x00 (Off) to 0x0b (psu). Let's start ESS
 	# states at 0x20.
 	UNKNOWN = 0x00
+	EXTERNALCONTROL = 0xFC
 	DISCHARGING = 0x100
 	SUSTAIN = 0x101
 	RECHARGE = 0x102
@@ -53,6 +54,7 @@ class SystemState(SystemCalcDelegate):
 				'/Hub4/Sustain',
 				'/State',
 				'/VebusMainState',
+				'/BatteryOperationalLimits/MaxChargeVoltage',
 				'/BatteryOperationalLimits/MaxChargeCurrent',
 				'/BatteryOperationalLimits/MaxDischargeCurrent',
 				'/Bms/AllowToDischarge',
@@ -135,8 +137,15 @@ class SystemState(SystemCalcDelegate):
 
 			return (ss, flags)
 
-		# VEBUS is available
-		ss = self._dbusmonitor.get_value(vebus, '/State')
+		# VEBUS is available. If a managed battery is present, then the
+		# system state is "External Control". Otherwise it is whatever
+		# the Multi's charge state may be.
+		if self._dbusmonitor.get_value(vebus,
+				'/BatteryOperationalLimits/MaxChargeVoltage') is not None:
+			ss = SystemState.EXTERNALCONTROL
+		else:
+			ss = self._dbusmonitor.get_value(vebus, '/State')
+
 		assistant_id  = self._dbusmonitor.get_value(vebus, '/Hub4/AssistantId')
 		if assistant_id is None:
 			# ESS not installed. Return vebus state

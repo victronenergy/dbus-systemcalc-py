@@ -78,6 +78,10 @@ class TestEssStates(TestSystemCalcBase):
         self._update_values()
         self._check_values({'/SystemState/State': 0x101}) # Sustain
 
+    def test_external_control_state(self):
+        self._monitor.set_value(self.vebus, '/BatteryOperationalLimits/MaxChargeVoltage', 13.5)
+        self._update_values()
+        self._check_values({'/SystemState/State': 0xFC}) # External Control
 
     def test_no_flags(self):
         # Check that all flags are cleared when in good state
