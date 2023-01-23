@@ -113,21 +113,32 @@ class BatteryLife(SystemCalcDelegate):
 			return State.BLRestart
 
 	def _restart(self):
-		# Do the same as in the default case
-		return self._default(False)
+		# Determine the initial state, this really only happens the first
+		# time ESS is detected.
+		if self.is_active_soc_low:
+			return State.BLSustain if self.sustain else State.BLDischarged
+		if self.soc >= Constants.FloatLevel:
+			return State.BLFloat
+		if self.soc >= Constants.AbsorptionLevel:
+			return State.BLAbsorption
+
+		return State.BLDefault
 
 	@property
 	def is_active_soc_low(self):
 		limit = self.active_soclimit
 		return self.sustain or (limit > 0 and self.soc <= limit and self.soc < 100)
 
-	def _default(self, adjust=True):
+	def _default(self):
 		if self.is_active_soc_low:
-			return self.on_discharged(adjust)
+			self.on_discharged()
+			return State.BLSustain if self.sustain else State.BLDischarged
 		elif self.soc >= Constants.FloatLevel:
-			return self.on_float(adjust)
+			self.on_float()
+			return State.BLFloat
 		elif self.soc >= Constants.AbsorptionLevel:
-			return self.on_absorption(adjust)
+			self.on_absorption()
+			return State.BLAbsorption
 
 		# Remain in default state
 		return State.BLDefault
@@ -153,15 +164,18 @@ class BatteryLife(SystemCalcDelegate):
 
 	def _absorption(self):
 		if self.is_active_soc_low:
-			return self.on_discharged(True)
+			self.on_discharged()
+			return State.BLSustain if self.sustain else State.BLDischarged
 		elif self.soc > Constants.FloatLevel:
-			return self.on_float(True)
+			self.on_float()
+			return State.BLFloat
 		elif self.soc < Constants.AbsorptionLevel - Constants.SocSwitchOffset:
 			return State.BLDefault
 
 	def _float(self):
 		if self.is_active_soc_low:
-			return self.on_discharged(True)
+			self.on_discharged()
+			return State.BLSustain if self.sustain else State.BLDischarged
 		elif self.soc < Constants.FloatLevel - Constants.SocSwitchOffset:
 			return State.BLAbsorption
 
@@ -184,33 +198,28 @@ class BatteryLife(SystemCalcDelegate):
 			self._settings['soclimit']) + delta
 		self._settings['soclimit'] = bound(0.0, limit, Constants.SocSwitchMax)
 
-	def on_discharged(self, adjust):
-		if adjust:
-			if not self.flags & Flags.Discharged:
-				self.flags |= Flags.Discharged
-				self.adjust_soc_limit(Constants.SocSwitchIncrement)
-			self.dischargedtime = dt_to_stamp(self._get_time())
-		return State.BLSustain if self.sustain else State.BLDischarged
+	def on_discharged(self):
+		if not self.flags & Flags.Discharged:
+			self.flags |= Flags.Discharged
+			self.adjust_soc_limit(Constants.SocSwitchIncrement)
+		self.dischargedtime = dt_to_stamp(self._get_time())
 
-	def on_absorption(self, adjust):
-		if adjust and not self.flags & Flags.Absorption:
+	def on_absorption(self):
+		if not self.flags & Flags.Absorption:
 			self.flags |= Flags.Absorption
 			self.adjust_soc_limit(-Constants.SocSwitchIncrement)
-		return State.BLAbsorption
 
-	def on_float(self, adjust):
+	def on_float(self):
 		offset = 0
 		flags = self.flags
-		if adjust:
-			if not (flags & Flags.Absorption):
-				offset -= Constants.SocSwitchIncrement
-				flags |= Flags.Absorption
-			if not (flags & Flags.Float):
-				offset -= Constants.SocSwitchIncrement
-				flags |= Flags.Float
-			self.flags = flags
-			self.adjust_soc_limit(offset)
-		return State.BLFloat
+		if not (flags & Flags.Absorption):
+			offset -= Constants.SocSwitchIncrement
+			flags |= Flags.Absorption
+		if not (flags & Flags.Float):
+			offset -= Constants.SocSwitchIncrement
+			flags |= Flags.Float
+		self.flags = flags
+		self.adjust_soc_limit(offset)
 
 	_map = {
 		State.BLDisabled: _disabled,
