@@ -1026,6 +1026,7 @@ class SystemCalc:
 			tz = changes.get('Value')
 			if tz is not None:
 				os.environ['TZ'] = tz
+				time.tzset()
 
 	def _device_added(self, service, instance, do_service_change=True):
 		if do_service_change:
