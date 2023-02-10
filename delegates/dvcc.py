@@ -975,13 +975,13 @@ class Dvcc(SystemCalcDelegate):
 		#    It used to be necessary to set a high current; and only then disable the setting or reset
 		#    the VE.Bus system to re-initialise from the stored setting as per VEConfigure.
 		bms_parameters_written = 0
-		if bms_service is None:
+		if bms_service is None and not self._multi.has_vebus_bms:
 			if max_charge_current is None:
 				self._multi.maxchargecurrent = None
 			else:
 				# Don't bother setting a charge current at 1A or less
 				self._multi.maxchargecurrent = max_charge_current if max_charge_current > 1 else 0
-		else:
+		elif bms_service is not None:
 			bms_parameters_written = self._update_battery_operational_limits(bms_service, charge_voltage, max_charge_current)
 		self._dbusservice['/Control/BmsParameters'] = int(bms_parameters_written or (bms_service is not None and voltage_written))
 
