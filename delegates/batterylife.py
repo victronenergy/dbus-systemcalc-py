@@ -64,6 +64,10 @@ class BatteryLife(SystemCalcDelegate):
 		self._tracked_values = {}
 		self._timer = GLib.timeout_add(900000, exit_on_error, self._on_timer)
 
+	def set_sources(self, dbusmonitor, settings, dbusservice):
+		super(BatteryLife, self).set_sources(dbusmonitor, settings, dbusservice)
+		self._dbusservice.add_path('/Control/ActiveSocLimit', value=None)
+
 	def get_input(self):
 		# We need to check the assistantid to know if we should even be active.
 		# We also need to check the sustain flag.
@@ -308,6 +312,14 @@ class BatteryLife(SystemCalcDelegate):
 			if _newstate is None or _newstate == newstate: break
 			newstate = _newstate
 		self.state = newstate
+
+		# Publish the active SOC limit on dbus
+		if newstate < State.KeepCharged:
+			self._dbusservice['/Control/ActiveSocLimit'] = self.active_soclimit
+		elif newstate > State.KeepCharged:
+			self._dbusservice['/Control/ActiveSocLimit'] = self.minsoclimit
+		else:
+			self._dbusservice['/Control/ActiveSocLimit'] = None
 
 	def _on_timer(self):
 		now = self._get_time()
