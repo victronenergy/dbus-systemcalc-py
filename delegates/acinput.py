@@ -128,10 +128,7 @@ class AcInputs(SystemCalcDelegate):
 
 			if source is None:
 				# Use vebus
-				if multi is not None:
-					newvalues.update(self.input_tree(source_count, multi.service, multi.instance, t, int(multi.active_input == i)))
-				else:
-					newvalues.update(self.input_tree(source_count, None, None, t, 0))
+				newvalues.update(self.input_tree(source_count, multi.service, multi.instance, t, int(multi.active_input == i)))
 			else:
 				active = getattr(multi, 'active_input', None) == i
 				newvalues.update(self.input_tree(source_count, source.service, source.instance, t, int(active)))
