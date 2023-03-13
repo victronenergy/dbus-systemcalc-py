@@ -187,14 +187,14 @@ class SystemCalc:
 			delegates.BatteryLife(),
 			delegates.ScheduledCharging(),
 			delegates.SourceTimers(),
-			#delegates.BydCurrentSense(self),
 			delegates.BatteryData(),
 			delegates.Gps(),
 			delegates.AcInputs(),
 			delegates.GensetStartStop(),
 			delegates.SocSync(self),
 			delegates.PvInverters(),
-			delegates.BatteryService(self)]
+			delegates.BatteryService(self),
+			delegates.CanBatterySense()]
 
 		for m in self._modules:
 			for service, paths in m.get_input():

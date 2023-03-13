@@ -956,3 +956,48 @@ class VoltageSenseTest(TestSystemCalcBase):
 			'com.victronenergy.solarcharger.ttyO2': {
 				'/Link/VoltageSense': 53.1,
 				'/Link/TemperatureSense': 24.5}})
+
+	def test_can_bms_sense_data(self):
+		""" Test that for some BMSes, the shunt information is passed
+		    along as sense data. """
+
+		# Add BMS
+		self._add_device('com.victronenergy.battery.ttyO1',
+			product_name='BatriumV',
+			values={
+				'/Dc/0/Voltage': 0,
+				'/Dc/0/Current': 0,
+				'/Dc/0/Power': 0,
+				'/Info/MaxChargeVoltage': 13.5,
+				'/Soc': 0,
+                '/Sense/Voltage': None,
+                '/Sense/Current': None,
+                '/Sense/Temperature': None,
+                '/Sense/Soc': None,
+				'/DeviceInstance': 512,
+				'/ProductId': 0xB038})
+
+		# Add shunt
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.15,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Temperature': 25.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 50,
+				'/DeviceInstance': 256,
+				'/ProductId': 0xA381}) # BMV-712
+
+		# Select BMS and battery monitor. Enable sending Sense-values to CAN-bms.
+		self._set_setting('/Settings/SystemSetup/BmsInstance', 512)
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.battery/256')
+		self._set_setting('/Settings/SystemSetup/CanBmsSense', 1)
+		self._update_values()
+
+		self._check_external_values({
+			'com.victronenergy.battery.ttyO1': {
+				'/Sense/Voltage': 12.15,
+				'/Sense/Current': 5.3,
+				'/Sense/Temperature': 25.3,
+				'/Sense/Soc': 50}})

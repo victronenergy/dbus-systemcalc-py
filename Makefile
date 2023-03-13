@@ -23,7 +23,6 @@ DELEGATES = \
 	$(SOURCEDIR)/delegates/batterylife.py \
 	$(SOURCEDIR)/delegates/schedule.py \
 	$(SOURCEDIR)/delegates/sourcetimers.py \
-	$(SOURCEDIR)/delegates/bydbattery.py \
 	$(SOURCEDIR)/delegates/batterysettings.py \
 	$(SOURCEDIR)/delegates/batterydata.py \
 	$(SOURCEDIR)/delegates/gps.py \
@@ -32,7 +31,8 @@ DELEGATES = \
 	$(SOURCEDIR)/delegates/genset.py \
 	$(SOURCEDIR)/delegates/socsync.py \
 	$(SOURCEDIR)/delegates/pvinverter.py \
-	$(SOURCEDIR)/delegates/batteryservice.py
+	$(SOURCEDIR)/delegates/batteryservice.py \
+	$(SOURCEDIR)/delegates/canbatterysense.py
 
 VEDLIB_FILES = \
 	$(VEDLIBDIR)/logger.py \

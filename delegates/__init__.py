@@ -18,7 +18,6 @@ from delegates.batterysoc import BatterySoc
 from delegates.schedule import ScheduledCharging
 from delegates.batterydata import BatteryData
 from delegates.sourcetimers import SourceTimers
-from delegates.bydbattery import BydCurrentSense
 from delegates.batterysettings import BatterySettings
 from delegates.gps import Gps
 from delegates.acinput import AcInputs
@@ -27,3 +26,4 @@ from delegates.genset import GensetStartStop
 from delegates.socsync import SocSync
 from delegates.pvinverter import PvInverters
 from delegates.batteryservice import BatteryService
+from delegates.canbatterysense import CanBatterySense

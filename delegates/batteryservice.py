@@ -43,6 +43,21 @@ class Battery(object):
 		""" Returns current voltage of battery. """
 		return self.monitor.get_value(self.service, '/Dc/0/Voltage')
 
+	@property
+	def current(self):
+		""" Returns charge/discharge current. """
+		return self.monitor.get_value(self.service, '/Dc/0/Current')
+
+	@property
+	def temperature(self):
+		""" Returns battery temperature. """
+		return self.monitor.get_value(self.service, '/Dc/0/Temperature')
+
+	@property
+	def soc(self):
+		""" Returns battery SOC. """
+		return self.monitor.get_value(self.service, '/Soc')
+
 	@reify
 	def product_id(self):
 		""" Returns Product ID of battery. """
@@ -89,10 +104,13 @@ class BatteryService(SystemCalcDelegate):
 				'/Info/MaxChargeCurrent',
 				'/Info/MaxDischargeCurrent',
 				'/Dc/0/Voltage',
+				'/Dc/0/Current',
+				'/Dc/0/Temperature',
 				'/ProductId',
 				'/ProductName',
 				'/CustomName',
-				'/InstalledCapacity']),
+				'/InstalledCapacity',
+				'/Soc']),
 		]
 
 	def get_settings(self):
@@ -130,6 +148,14 @@ class BatteryService(SystemCalcDelegate):
 	@property
 	def bmses(self):
 		return [b for b in self._batteries.values() if b.is_bms]
+
+	@property
+	def batteryservice(self):
+		if self.systemcalc.batteryservice is not None and \
+				self.systemcalc.batteryservice.startswith('com.victronenergy.battery.'):
+			return Battery(self._dbusmonitor, self.systemcalc.batteryservice, -1)
+
+		return None
 
 	def add_bms_changed_callback(self, cb):
 		self._notify.append(cb)
@@ -176,11 +202,9 @@ class BatteryService(SystemCalcDelegate):
 
 		# Automatic selection. Try the main battery service first, hence
 		# hardcoded instance = -1
-		if self.systemcalc.batteryservice is not None and \
-				self.systemcalc.batteryservice.startswith('com.victronenergy.battery.'):
-			b = Battery(self._dbusmonitor, self.systemcalc.batteryservice, -1)
-			if b.is_bms:
-				bmses.append(b)
+		b = self.batteryservice
+		if b is not None and b.is_bms:
+			bmses.append(b)
 
 		if bmses:
 			self.bms = sorted(bmses, key=lambda x: x.instance)[0]
