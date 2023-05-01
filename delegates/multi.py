@@ -40,7 +40,8 @@ class Multi(SystemCalcDelegate):
 	def __init__(self):
 		super(Multi, self).__init__()
 		self.multis = {}
-		self.multi = None
+		self.multi = None # The actual Multi that is connected and working
+		self.vebus_service = None # The VE.Bus service, Multi could be offline
 
 		# Determine if this platform has a built-in MK2/3. Maxi-GX
 		# and generic (Raspberry Pi) does not.
@@ -73,14 +74,20 @@ class Multi(SystemCalcDelegate):
 		# If platform has an onboard mkx, use only that as VE.Bus service.
 		# On other platforms, use the Multi with the lowest DeviceInstance.
 		if self.has_onboard_mkx:
-			multis = [m for m in self.multis.values() if m.connected and m.onboard]
+			multis = [m for m in self.multis.values() if m.onboard]
 		else:
-			multis = [m for m in self.multis.values() if m.connected]
+			multis = self.multis.values()
 
-		if multis:
-			self.multi = sorted(multis, key=lambda x: x.instance)[0]
+		multis = sorted(multis, key=lambda x: x.instance)
+		if multis and multis[0].connected:
+			self.multi = multis[0]
 		else:
 			self.multi = None
+
+		if multis:
+			self.vebus_service = multis[0]
+		else:
+			self.vebus_service = None
 
 	def update_values(self, newvalues):
 		# If there are multis connected, but for some reason none is selected

@@ -12,6 +12,7 @@ from ve_utils import exit_on_error
 
 from delegates.base import SystemCalcDelegate
 from delegates.batteryservice import BatteryService
+from delegates.multi import Multi as MultiService
 
 # Adjust things this often (in seconds)
 # solar chargers has to switch to HEX mode each time we write a value to its
@@ -566,10 +567,7 @@ class Multi(object):
 
 	@property
 	def service(self):
-		try:
-			return self._service['/VebusService']
-		except KeyError:
-			return None
+		return getattr(MultiService.instance.vebus_service, 'service', None)
 
 	@property
 	def active(self):
