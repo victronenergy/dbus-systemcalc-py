@@ -638,12 +638,22 @@ class Multi(object):
 
 	@property
 	def has_vebus_bmsv2(self):
-		""" Checks that we have v2 of the VE.Bus BMS. """
-		return (self.monitor.get_value(self.service, '/Devices/Bms/Version')  or 0) >= 1146100
+		""" Checks that we have v2 of the VE.Bus BMS, but also that we can
+		    properly use it, that is we also have an mk3. """
+		version = self.monitor.get_value(self.service, '/Devices/Bms/Version')
+		atc = self.monitor.get_value(self.service, '/Bms/AllowToCharge')
 
-	@property
-	def has_mk3(self):
-		return self.monitor.get_value(self.service, '/Interfaces/Mk2/ProductName') == 'MK3'
+		# If AllowToCharge is defined, but we have no version, then the Multi
+		# is off, but we still have a v2 BMS. V1 goes invalid if the multi
+		# is off. Yes, this is kludgy, but it is less kludgy than the
+		# fix the other end would require.
+		if self.has_vebus_bms and atc is not None and version is None:
+			return True
+
+		# Otherwise, if the Multi is on, check the version to see if we should
+		# enable v2 functionality.
+		return (version or 0) >= 1146100 and \
+			self.monitor.get_value(self.service, '/Interfaces/Mk2/ProductName') == 'MK3'
 
 	def update_values(self, limit):
 		c = self.monitor.get_value(self.service, '/Dc/0/Current', 0)
@@ -880,8 +890,7 @@ class Dvcc(SystemCalcDelegate):
 		# is lost, stop passing information to the solar chargers so that they
 		# might time out.
 		bms_service = self.bms
-		if self.bms_seen and bms_service is None and not (
-				self._multi.has_vebus_bmsv2 and self._multi.has_mk3):
+		if self.bms_seen and bms_service is None and not self._multi.has_vebus_bmsv2:
 			# BMS is lost
 			update_solarcharger_control_flags(0, 0, None)
 			return True
@@ -907,7 +916,7 @@ class Dvcc(SystemCalcDelegate):
 		# go into #67 if we lose it.
 		if self._multi.has_vebus_bms:
 			stop_on_mcc0 = True
-			has_bms = has_bms or (self._multi.has_vebus_bmsv2 and self._multi.has_mk3)
+			has_bms = has_bms or self._multi.has_vebus_bmsv2
 			max_charge_current = 10000 if self._multi.allow_to_charge else 0
 
 		# Take the lesser of the BMS and user current limits, wherever they exist
