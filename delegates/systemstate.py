@@ -142,7 +142,8 @@ class SystemState(SystemCalcDelegate):
 		# VEBUS is available. If a managed battery is present, then the
 		# system state is "External Control". Otherwise it is whatever
 		# the Multi's charge state may be.
-		if self._dbusmonitor.get_value(vebus,
+		mainstate = self._dbusmonitor.get_value(vebus, '/VebusMainState')
+		if mainstate == 9 and self._dbusmonitor.get_value(vebus,
 				'/BatteryOperationalLimits/MaxChargeVoltage') is not None:
 			ss = SystemState.EXTERNALCONTROL
 		else:
@@ -153,9 +154,7 @@ class SystemState(SystemCalcDelegate):
 			# ESS not installed. Return vebus state
 			return (ss, flags)
 
-		# VEBUS is available and ESS is installed
-		mainstate = self._dbusmonitor.get_value(vebus, '/VebusMainState')
-
+		# ESS is installed
 		# Charge or bypass mode.
 		if mainstate in (8, 9):
 			# BMS state

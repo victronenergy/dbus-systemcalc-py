@@ -84,6 +84,11 @@ class TestEssStates(TestSystemCalcBase):
         self._update_values()
         self._check_values({'/SystemState/State': 0xFC}) # External Control
 
+        self._monitor.set_value(self.vebus, '/VebusMainState', 4) # Inverting
+        self._monitor.set_value(self.vebus, '/State', 9) # Inverting
+        self._update_values()
+        self._check_values({'/SystemState/State': 9}) # Don't show External control
+
     def test_no_flags(self):
         # Check that all flags are cleared when in good state
         self._check_values({
