@@ -138,6 +138,7 @@ class SystemCalc:
 				'/Mgmt/Connection': dummy,
 				'/Dc/0/Voltage': dummy,
 				'/Dc/0/Current': dummy,
+				'/Dc/0/Power': dummy,
 				'/Ac/Out/L1/P': dummy,
 				'/Ac/Out/L1/S': dummy,
 				'/Ac/Out/L1/V': dummy,
