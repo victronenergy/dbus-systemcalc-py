@@ -17,6 +17,7 @@ BATTERY_BSLBATT = 0xB021
 BATTERY_ETOWER = 0xB024
 BATTERY_CEGASA = 0xB028
 BATTERY_HUBBLE = 0xB051
+BATTERY_PELIO_L = 0xB029
 
 class BatterySettings(SystemCalcDelegate):
 	""" Manages battery settings for known batteries. At present
@@ -36,7 +37,7 @@ class BatterySettings(SystemCalcDelegate):
 		# for some batteries.
 		if pid in (BATTERY_PYLONTECH, BATTERY_BYD, BATTERY_BYD_L, BATTERY_BYD_PREMIUM,
 				BATTERY_DISCOVER_AES, BATTERY_BLUENOVA,
-				BATTERY_BSLBATT, BATTERY_BMZ, BATTERY_CEGASA):
+				BATTERY_BSLBATT, BATTERY_BMZ, BATTERY_CEGASA, BATTERY_PELIO_L):
 			self._settings['vsense'] = 2 # Forced Off
 			self._settings['tsense'] = 2 # Forced Off
 			self._settings['bol'] = 3 # Forced on
