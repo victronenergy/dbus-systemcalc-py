@@ -1,12 +1,4 @@
 class TrackInstance(type):
-	def __init__(klass, *args, **kwargs):
-		if not hasattr(klass, '_instance'):
-			klass._instance = None
-		else:
-			if klass._instance is not None:
-				raise RuntimeError("Multiple instances of {}".format(klass.__name__))
-			klass._instance = klass
-
 	@property
 	def instance(klass):
 		return klass._instance

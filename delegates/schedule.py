@@ -9,6 +9,7 @@ from delegates.base import SystemCalcDelegate
 from delegates.batterylife import BatteryLife, BLPATH
 from delegates.batterylife import State as BatteryLifeState
 from delegates.dvcc import Dvcc
+from delegates.batterysoc import BatterySoc
 
 HUB4_SERVICE = 'com.victronenergy.hub4'
 
@@ -97,7 +98,6 @@ class ScheduledCharging(SystemCalcDelegate):
 
 	def __init__(self):
 		super(ScheduledCharging, self).__init__()
-		self.soc = None
 		self.pvpower = 0
 		self.active = False
 		self.hysteresis = True
@@ -252,6 +252,9 @@ class ScheduledCharging(SystemCalcDelegate):
 		self.hysteresis = True
 		return True
 
+	@property
+	def soc(self):
+		return BatterySoc.instance.soc
+
 	def update_values(self, newvalues):
-		self.soc = newvalues.get('/Dc/Battery/Soc')
 		self.pvpower = newvalues.get('/Dc/Pv/Power') or 0

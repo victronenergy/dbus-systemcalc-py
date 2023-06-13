@@ -8,9 +8,11 @@ class BatterySoc(SystemCalcDelegate):
 	def get_output(self):
 		return [('/Dc/Battery/Soc', {'gettext': '%.0F %%'})]
 
-	def update_values(self, newvalues):
-		soc = None
+	@property
+	def soc(self):
 		if self.systemcalc.batteryservice is not None:
-			soc = self._dbusmonitor.get_value(self.systemcalc.batteryservice, '/Soc')
+			return self._dbusmonitor.get_value(self.systemcalc.batteryservice, '/Soc')
+		return None
 
-		newvalues['/Dc/Battery/Soc'] = soc
+	def update_values(self, newvalues):
+		newvalues['/Dc/Battery/Soc'] = self.soc
