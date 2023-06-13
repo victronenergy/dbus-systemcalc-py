@@ -74,6 +74,16 @@ def _pylontech_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed
 		capacity = bms.capacity or 55
 		return (min(charge_voltage, 27.8), max(charge_current, round(capacity/4.0)), feedback_allowed, False)
 
+def _pylontech_pelio_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
+	""" Quirk for Pelio-L batteries. This is a 16-cell battery. 56V is 3.5V per
+	    cell which is where this battery registers 100% SOC. Battery sends
+	    CCL=0 at 3.55V per cell, to ensure good feed-in of excess DC coupled
+	    PV, set the lower limit to 20% of capacity, which is what the battery
+	    itself imposes at around 98% SOC.
+	"""
+	capacity = bms.capacity or 100.0
+	return (min(charge_voltage, 56.0), max(charge_current, round(capacity/5.0)), feedback_allowed, False)
+
 def _lynx_smart_bms_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
 	""" When the Lynx Smart BMS sends CCL=0, it wants all chargers to stop. """
 	return (charge_voltage, charge_current, feedback_allowed, True)
@@ -84,6 +94,7 @@ QUIRKS = {
 	0xB00A: _byd_quirk,
 	0xB015: _byd_quirk,
 	0xB019: _byd_quirk,
+	0xB029: _pylontech_pelio_quirk,
 	0xA3E5: _lynx_smart_bms_quirk,
 	0xA3E6: _lynx_smart_bms_quirk,
 }
