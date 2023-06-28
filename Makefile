@@ -32,7 +32,8 @@ DELEGATES = \
 	$(SOURCEDIR)/delegates/socsync.py \
 	$(SOURCEDIR)/delegates/pvinverter.py \
 	$(SOURCEDIR)/delegates/batteryservice.py \
-	$(SOURCEDIR)/delegates/canbatterysense.py
+	$(SOURCEDIR)/delegates/canbatterysense.py \
+	$(SOURCEDIR)/delegates/dynamicess.py
 
 VEDLIB_FILES = \
 	$(VEDLIBDIR)/logger.py \

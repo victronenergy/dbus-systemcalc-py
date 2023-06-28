@@ -196,7 +196,8 @@ class SystemCalc:
 			delegates.SocSync(self),
 			delegates.PvInverters(),
 			delegates.BatteryService(self),
-			delegates.CanBatterySense()]
+			delegates.CanBatterySense(),
+			delegates.DynamicEss()]
 
 		for m in self._modules:
 			for service, paths in m.get_input():

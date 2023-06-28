@@ -10,6 +10,7 @@ from delegates.batterylife import BatteryLife, BLPATH
 from delegates.batterylife import State as BatteryLifeState
 from delegates.dvcc import Dvcc
 from delegates.batterysoc import BatterySoc
+from delegates.dynamicess import DynamicEss
 
 HUB4_SERVICE = 'com.victronenergy.hub4'
 
@@ -186,6 +187,9 @@ class ScheduledCharging(SystemCalcDelegate):
 		if BatteryLife.instance.state == BatteryLifeState.KeepCharged:
 			self._dbusservice['/Control/ScheduledCharge'] = 0
 			self._dbusservice['/Control/ScheduledSoc'] = None
+			return True
+
+		if DynamicEss.instance.active:
 			return True
 
 		now = self._get_time()
