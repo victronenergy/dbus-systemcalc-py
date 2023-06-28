@@ -4,6 +4,7 @@ from itertools import chain
 import sc_utils
 from delegates.base import SystemCalcDelegate
 from delegates.schedule import ScheduledCharging
+from delegates.dynamicess import DynamicEss
 from delegates.batteryservice import BatteryService
 
 class BL(object):
@@ -35,6 +36,7 @@ class SystemState(SystemCalcDelegate):
 	SUSTAIN = 0x101
 	RECHARGE = 0x102
 	SCHEDULEDCHARGE = 0x103
+	DYNAMICESS = 0x104
 
 	def __init__(self, sc):
 		super(SystemState, self).__init__()
@@ -178,6 +180,8 @@ class SystemState(SystemCalcDelegate):
 			# ESS state
 			if (hubstate != SOCG.KeepCharged) and ScheduledCharging.instance.active:
 				ss = SystemState.SCHEDULEDCHARGE
+			elif (hubstate != SOCG.KeepCharged) and DynamicEss.instance.active:
+				ss = SystemState.DYNAMICESS
 			elif hubstate in (BL.Default, BL.Absorption, BL.Float, SOCG.Default):
 				if (newvalues.get('/Dc/Battery/Power') or 0) < -30:
 					ss = SystemState.DISCHARGING
