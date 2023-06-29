@@ -30,7 +30,8 @@ class DynamicEss(SystemCalcDelegate):
 
 	def get_settings(self):
 		return [
-			('dynamic_ess_minsoc', '/Settings/DynamicEss/MinSoc', 20.0, 0.0, 100.0)
+			('dynamic_ess_minsoc', '/Settings/DynamicEss/MinSoc', 20, 0, 100),
+			('dynamic_ess_maxpower', '/Settings/DynamicEss/MaxPower', -1, 0, 0)
 		]
 
 	def get_input(self):
@@ -67,6 +68,12 @@ class DynamicEss(SystemCalcDelegate):
 	@property
 	def minsoc(self):
 		return self._settings['dynamic_ess_minsoc']
+
+	@property
+	def maxpower(self):
+		if self._settings['dynamic_ess_maxpower'] < 0:
+			return 32000
+		return self._settings['dynamic_ess_maxpower']
 
 	@property
 	def soc(self):
@@ -150,7 +157,7 @@ class DynamicEss(SystemCalcDelegate):
 		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 0)
 
 	def do_export(self):
-		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', -32000) # Export hard as we can
+		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', -self.maxpower)
 		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
 		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
 		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 1)
