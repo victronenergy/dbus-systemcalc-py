@@ -64,7 +64,7 @@ def _pylontech_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed
 	if charge_voltage > 30:
 		# 48V battery (15 cells)
 		return (min(charge_voltage, 52.4), charge_current, feedback_allowed, False)
-	else:
+	if charge_voltage > 20:
 		# 24V battery (8 cells). 24V batteries send CCL=0 when they are full,
 		# whereas the 48V batteries reduce CCL by 50% when the battery is full.
 		# Do the same for 24V batteries. The normal limit is C/2, so put the
@@ -73,6 +73,9 @@ def _pylontech_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed
 		# issue.
 		capacity = bms.capacity or 55
 		return (min(charge_voltage, 27.8), max(charge_current, round(capacity/4.0)), feedback_allowed, False)
+
+	# Not known, probably a 12V battery.
+	return (charge_voltage, charge_current, feedback_allowed, False)
 
 def _pylontech_pelio_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
 	""" Quirk for Pelio-L batteries. This is a 16-cell battery. 56V is 3.5V per
