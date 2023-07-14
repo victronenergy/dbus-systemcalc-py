@@ -61,7 +61,8 @@ class SystemState(SystemCalcDelegate):
 				'/BatteryOperationalLimits/MaxChargeCurrent',
 				'/BatteryOperationalLimits/MaxDischargeCurrent',
 				'/Bms/AllowToDischarge',
-				'/Bms/AllowToCharge']),
+				'/Bms/AllowToCharge',
+				'/Dc/0/PreferRenewableEnergy']),
 			('com.victronenergy.multi', [
 				'/State'
 			]),
@@ -148,6 +149,8 @@ class SystemState(SystemCalcDelegate):
 		if mainstate == 9 and self._dbusmonitor.get_value(vebus,
 				'/BatteryOperationalLimits/MaxChargeVoltage') is not None:
 			ss = SystemState.EXTERNALCONTROL
+		elif mainstate == 9 and self._dbusmonitor.get_value(vebus, '/Dc/0/PreferRenewableEnergy') == 1:
+			ss = SystemState.SUSTAIN
 		else:
 			ss = self._dbusmonitor.get_value(vebus, '/State')
 
