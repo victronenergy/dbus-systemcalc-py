@@ -146,11 +146,11 @@ class SystemState(SystemCalcDelegate):
 		# system state is "External Control". Otherwise it is whatever
 		# the Multi's charge state may be.
 		mainstate = self._dbusmonitor.get_value(vebus, '/VebusMainState')
-		if mainstate == 9 and self._dbusmonitor.get_value(vebus,
+		if mainstate == 9 and self._dbusmonitor.get_value(vebus, '/Dc/0/PreferRenewableEnergy') == 1:
+			ss = SystemState.SUSTAIN
+		elif mainstate == 9 and self._dbusmonitor.get_value(vebus,
 				'/BatteryOperationalLimits/MaxChargeVoltage') is not None:
 			ss = SystemState.EXTERNALCONTROL
-		elif mainstate == 9 and self._dbusmonitor.get_value(vebus, '/Dc/0/PreferRenewableEnergy') == 1:
-			ss = SystemState.SUSTAIN
 		else:
 			ss = self._dbusmonitor.get_value(vebus, '/State')
 
