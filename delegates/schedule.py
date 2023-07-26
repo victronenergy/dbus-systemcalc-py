@@ -10,7 +10,6 @@ from delegates.batterylife import BatteryLife, BLPATH
 from delegates.batterylife import State as BatteryLifeState
 from delegates.dvcc import Dvcc
 from delegates.batterysoc import BatterySoc
-from delegates.dynamicess import DynamicEss
 
 HUB4_SERVICE = 'com.victronenergy.hub4'
 
@@ -189,6 +188,7 @@ class ScheduledCharging(SystemCalcDelegate):
 			self._dbusservice['/Control/ScheduledSoc'] = None
 			return True
 
+		from delegates.dynamicess import DynamicEss
 		if DynamicEss.instance.active:
 			return True
 

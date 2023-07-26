@@ -1,38 +1,69 @@
+from datetime import datetime
 from gi.repository import GLib
 from delegates.base import SystemCalcDelegate
 from delegates.batterysoc import BatterySoc
+from delegates.schedule import ScheduledWindow
+from delegates.dvcc import Dvcc
 
-INTERVAL = 10
+NUM_SCHEDULES = 4
+INTERVAL = 5
+SELLPOWER = -32000
 HUB4_SERVICE = 'com.victronenergy.hub4'
 
 MODES = {
-	0: 'Disabled',
-	1: 'Idle',
-	2: 'Import',
-	3: 'Export'
+       0: 'Off',
+       1: 'Auto',
+       2: 'Buy',
+       3: 'Sell'
 }
 
+class DynamicEssWindow(ScheduledWindow):
+	def __init__(self, start, duration, soc, allow_feedin):
+		super(DynamicEssWindow, self).__init__(start, duration)
+		self.soc = soc
+		self.allow_feedin = allow_feedin
+
+	def __repr__(self):
+		return "Start: {}, Stop: {}, Soc: {}".format(
+			self.start, self.stop, self.soc)
+
 class DynamicEss(SystemCalcDelegate):
+	_get_time = datetime.now
 
 	def __init__(self):
 		super(DynamicEss, self).__init__()
-		self.pvpower = 0
+		self.hysteresis = 0
 		self._timer = None
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(DynamicEss, self).set_sources(dbusmonitor, settings, dbusservice)
-		self._dbusservice.add_path('/DynamicEss/Active', value=False)
-		self._dbusservice.add_path('/DynamicEss/Timeout', None, writeable=True,
-			onchangecallback=self._on_timeout_changed)
-		self._dbusservice.add_path('/DynamicEss/Mode', 0, writeable=True,
-			onchangecallback=self._on_mode_changed,
+		self._dbusservice.add_path('/DynamicEss/Active', value=0,
 			gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
+		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=None)
+
+		if self.mode > 0:
+			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
 
 	def get_settings(self):
-		return [
-			('dynamic_ess_minsoc', '/Settings/DynamicEss/MinSoc', 20, 0, 100),
-			('dynamic_ess_maxpower', '/Settings/DynamicEss/MaxPower', -1, 0, 0)
+		# Settings for DynamicEss
+		path = '/Settings/DynamicEss'
+
+		settings = [
+			("dess_mode", path + "/Mode", 0, 0, 3),
+			("dess_minsoc", path + "/MinSoc", 20.0, 0.0, 100.0)
 		]
+
+		for i in range(NUM_SCHEDULES):
+			settings.append(("dess_start_{}".format(i),
+				path + "/Schedule/{}/Start".format(i), 0, 0, 0))
+			settings.append(("dess_duration_{}".format(i),
+				path + "/Schedule/{}/Duration".format(i), 0, 0, 0))
+			settings.append(("dess_soc_{}".format(i),
+				path + "/Schedule/{}/Soc".format(i), 100, 0, 100))
+			settings.append(("dess_discharge_{}".format(i),
+				path + "/Schedule/{}/AllowGridFeedIn".format(i), 0, 0, 1))
+
+		return settings
 
 	def get_input(self):
 		return [
@@ -41,126 +72,142 @@ class DynamicEss(SystemCalcDelegate):
 				'/Overrides/FeedInExcess'])
 		]
 
-	@property
-	def active(self):
-		return bool(self._dbusservice['/DynamicEss/Active'])
+	def settings_changed(self, setting, oldvalue, newvalue):
+		if setting == 'dess_mode':
+			if oldvalue == 0 and newvalue > 0:
+				self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
 
-	@active.setter
-	def active(self, v):
-		self._dbusservice['/DynamicEss/Active'] = int(bool(v))
+	def windows(self):
+		starttimes = (self._settings['dess_start_{}'.format(i)] for i in range(NUM_SCHEDULES))
+		durations = (self._settings['dess_duration_{}'.format(i)] for i in range(NUM_SCHEDULES))
+		socs = (self._settings['dess_soc_{}'.format(i)] for i in range(NUM_SCHEDULES))
+		discharges = (self._settings['dess_discharge_{}'.format(i)] for i in range(NUM_SCHEDULES))
+
+		for start, duration, soc, discharge in zip(starttimes, durations, socs, discharges):
+			yield DynamicEssWindow(
+				datetime.fromtimestamp(start), duration, soc, discharge)
 
 	@property
 	def mode(self):
-		return self._dbusservice['/DynamicEss/Mode']
-	
-	@mode.setter
-	def mode(self, v):
-		self._dbusservice['/DynamicEss/Mode'] = v
+		return self._settings['dess_mode']
 
-	@property
-	def timeout(self):
-		return self._dbusservice['/DynamicEss/Timeout']
-	
-	@timeout.setter
-	def timeout(self, v):
-		self._dbusservice['/DynamicEss/Timeout'] = v
-	
 	@property
 	def minsoc(self):
-		return self._settings['dynamic_ess_minsoc']
+		return self._settings['dess_minsoc']
 
 	@property
-	def maxpower(self):
-		if self._settings['dynamic_ess_maxpower'] < 0:
-			return 32000
-		return self._settings['dynamic_ess_maxpower']
+	def active(self):
+		return self._dbusservice['/DynamicEss/Active']
+
+	@active.setter
+	def active(self, v):
+		self._dbusservice['/DynamicEss/Active'] = v
+
+	@property
+	def targetsoc(self):
+		return self._dbusservice['/DynamicEss/TargetSoc']
+
+	@targetsoc.setter
+	def targetsoc(self, v):
+		self._dbusservice['/DynamicEss/TargetSoc'] = v
 
 	@property
 	def soc(self):
 		return BatterySoc.instance.soc
 
-	def _on_mode_changed(self, path, value):
-		if value == 0:
-			GLib.idle_add(self._on_timeout)
-		else:
-			self.restart(self.timeout)
-		return 0 <= value <= 3
+	@property
+	def pvpower(self):
+		return self._dbusservice['/Dc/Pv/Power'] or 0
 
-	def _on_timeout_changed(self, path, value):
-		self.restart(value)
-		return True
-	
-	def restart(self, timeout):
-		if timeout is not None and timeout > 0:
-			# We're about to set a new timer, remove an old one if there is
-			# one.
-			if self._timer is not None:
-				GLib.source_remove(self._timer)
-
-			self.active = True
-			GLib.idle_add(lambda: self._on_timer(0) and False)
-			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
-
-		elif (timeout is None or timeout == 0) and self._timer is not None:
-			GLib.idle_add(self._on_timeout);
-
-	def _on_timer(self, delta=INTERVAL):
-		mode = self.mode
-		if mode == 3: # Export
-			if self.soc > self.minsoc:
-				self.do_export()
-			else:
-				self.do_idle()
-		elif mode == 2: # Import
-			self.do_import()
-		elif mode == 1: # Idle
-			# Prevent battery discharge, no feed-in
-			self.do_idle()
-
-		remaining = self.timeout or 0
-		if remaining > delta:
-			self.timeout = remaining - delta
+	def _on_timer(self):
+		# Can't do anything unless we have an SOC, and the ESS assistant
+		if self.soc is None:
+			self.active = 0 # Off
+			self.targetsoc = None
+			return True
+		if not Dvcc.instance.has_ess_assistant:
+			self.active = 0 # Off
+			self.targetsoc = None
 			return True
 
-		self._on_timeout()
-		return False
+		# If DESS was disabled, deactivate and kill timer.
+		if self.mode == 0:
+			self.deactivate()
+			return False
 
-	def _on_timeout(self):
-		self.timeout = None
-		self.mode = 0
-		self.active = False
+		if self.mode == 2: # BUY
+			self.active = 2
+			self.targetsoc = None
+			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 1)
+			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
+			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
+			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
+			return True
 
-		# Reset hub4 values
+		if self.mode == 3: # SELL
+			self.active = 3
+			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 2)
+			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
+			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', SELLPOWER)
+			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
+			return True
+
+		# self.mode == 1 (Auto) below here
+		# If our SOC is too low, stop DESS
+		if self.soc <= self.minsoc:
+			self.deactivate()
+			return True
+
+		now = self._get_time()
+		for w in self.windows():
+			if now in w:
+				self.active = 1 # Auto
+				self.targetsoc = w.soc
+
+				# If schedule allows for feed-in, enable that now.
+				self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess',
+					2 if w.allow_feedin else 1)
+
+				if self.soc + self.hysteresis < w.soc: # Charge
+					self.hysteresis = 0
+					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
+					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
+					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
+				else: # Discharge or idle
+					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
+
+					if self.soc - self.hysteresis > w.soc: # Discharge
+						self.hysteresis = 0
+						self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
+					else: # battery idle
+						# SOC/target-soc needs to move 1% to move out of idle
+						# zone
+						self.hysteresis = 1
+						# This keeps battery idle by not allowing more power
+						# to be taken from the DC bus than what DC-coupled
+						# PV provides.
+						self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
+							max(1.0, round(0.9*self.pvpower)))
+
+					# If Feed-in is requested, set a large negative setpoint.
+					# The battery limit above will ensure that no more than
+					# available PV is fed in.
+					if w.allow_feedin:
+						self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', SELLPOWER)
+					else:
+						self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None) # Normal ESS
+				break # out of for loop
+		else:
+			# No matching windows
+			if self.active:
+				self.deactivate()
+
+		return True
+
+	def deactivate(self):
 		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
 		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
 		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
-		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 1)
-
-		if self._timer is not None:
-			GLib.source_remove(self._timer)
-		self._timer = None
-
-	def do_idle(self):
-		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
-		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
 		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 0)
-
-		# Allow some of the PV to be used for loads. No less than 1W,
-		# so peak-shaving continues to work.
-		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
-			max(1.0, round(0.8*self.pvpower)))
-	
-	def do_import(self):
-		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
-		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
-		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
-		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 0)
-
-	def do_export(self):
-		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', -self.maxpower)
-		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
-		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
-		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 1)
-
-	def update_values(self, newvalues):
-		self.pvpower = newvalues.get('/Dc/Pv/Power') or 0
+		self.active = 0 # Off
+		self.targetsoc = None
