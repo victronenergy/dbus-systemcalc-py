@@ -39,7 +39,8 @@ class DynamicEss(SystemCalcDelegate):
 		super(DynamicEss, self).set_sources(dbusmonitor, settings, dbusservice)
 		self._dbusservice.add_path('/DynamicEss/Active', value=0,
 			gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
-		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=None)
+		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=None,
+			gettextcallback=lambda p, v: '{}%'.format(v))
 
 		if self.mode > 0:
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
