@@ -4,6 +4,8 @@ from delegates.base import SystemCalcDelegate
 from delegates.batterysoc import BatterySoc
 from delegates.schedule import ScheduledWindow
 from delegates.dvcc import Dvcc
+from delegates.batterylife import BatteryLife
+from delegates.batterylife import State as BatteryLifeState
 
 NUM_SCHEDULES = 4
 INTERVAL = 5
@@ -70,7 +72,9 @@ class DynamicEss(SystemCalcDelegate):
 		return [
 			(HUB4_SERVICE, ['/Overrides/ForceCharge',
 				'/Overrides/MaxDischargePower', '/Overrides/Setpoint',
-				'/Overrides/FeedInExcess'])
+				'/Overrides/FeedInExcess']),
+			('com.victronenergy.settings', [
+				'/Settings/CGwacs/Hub4Mode'])
 		]
 
 	def settings_changed(self, setting, oldvalue, newvalue):
@@ -87,6 +91,11 @@ class DynamicEss(SystemCalcDelegate):
 		for start, duration, soc, discharge in zip(starttimes, durations, socs, discharges):
 			yield DynamicEssWindow(
 				datetime.fromtimestamp(start), duration, soc, discharge)
+
+	@property
+	def hub4mode(self):
+		self._dbusmonitor.get_value('com.victronenergy.settings',
+                '/Settings/CGwacs/Hub4Mode')
 
 	@property
 	def mode(self):
@@ -127,6 +136,12 @@ class DynamicEss(SystemCalcDelegate):
 			self.targetsoc = None
 			return True
 		if not Dvcc.instance.has_ess_assistant:
+			self.active = 0 # Off
+			self.targetsoc = None
+			return True
+
+		# In Keep-Charged mode or external control, no point in doing anything
+		if BatteryLife.instance.state == BatteryLifeState.KeepCharged or self.hub4mode == 3:
 			self.active = 0 # Off
 			self.targetsoc = None
 			return True
