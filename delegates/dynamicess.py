@@ -94,7 +94,7 @@ class DynamicEss(SystemCalcDelegate):
 
 	@property
 	def hub4mode(self):
-		self._dbusmonitor.get_value('com.victronenergy.settings',
+		return self._dbusmonitor.get_value('com.victronenergy.settings',
                 '/Settings/CGwacs/Hub4Mode')
 
 	@property
