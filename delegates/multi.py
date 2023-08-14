@@ -57,7 +57,9 @@ class Multi(SystemCalcDelegate):
 				'/Ac/NumberOfAcInputs'])]
 
 	def get_output(self):
-		return [('/VebusService', {'gettext': '%s'})]
+		return [
+			('/VebusService', {'gettext': '%s'}),
+			('/VebusInstance', {'gettext': '%s'})]
 
 	def device_added(self, service, instance, *args):
 		if service.startswith('com.victronenergy.vebus.'):
@@ -97,3 +99,4 @@ class Multi(SystemCalcDelegate):
 			self._set_multi()
 
 		newvalues['/VebusService'] = getattr(self.multi, 'service', None)
+		newvalues['/VebusInstance'] = getattr(self.multi, 'instance', None)
