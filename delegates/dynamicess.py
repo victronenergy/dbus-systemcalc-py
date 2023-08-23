@@ -169,11 +169,6 @@ class DynamicEss(SystemCalcDelegate):
 			return True
 
 		# self.mode == 1 (Auto) below here
-		# If our SOC is too low, stop DESS
-		if self.soc <= self.minsoc:
-			self.deactivate()
-			return True
-
 		now = self._get_time()
 		for w in self.windows():
 			if now in w:
@@ -189,7 +184,7 @@ class DynamicEss(SystemCalcDelegate):
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
-				else: # Discharge or idle
+				elif self.soc > self.minsoc: # Discharge or idle
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
 
 					if self.soc - self.hysteresis > w.soc: # Discharge
@@ -212,6 +207,8 @@ class DynamicEss(SystemCalcDelegate):
 						self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', SELLPOWER)
 					else:
 						self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None) # Normal ESS
+				elif self.active: # Discharge requested, but soc too low.
+					self.deactivate()
 				break # out of for loop
 		else:
 			# No matching windows
