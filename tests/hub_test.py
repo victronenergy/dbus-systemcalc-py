@@ -2005,3 +2005,27 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Link/NetworkMode': 5,
 				'/Link/ChargeVoltage': 12.65
 		}})
+
+	def test_internal_maxchargecurrent(self):
+		""" The DVCC assistant allows other assistants to set an internal limit. """
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 4,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': 100,
+			'/Link/VoltageSense': None,
+			'/Dc/0/Voltage': 12.4,
+			'/Dc/0/Current': 9.7,
+			'/FirmwareVersion': 0x129,
+			'/Settings/ChargeCurrentLimit': 100 },
+			connection='VE.Direct')
+
+		# Set an internal limit
+		from delegates.dvcc import Dvcc
+		Dvcc.instance.internal_maxchargepower = 124.0
+
+		self._update_values(3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeCurrent': 10.0 }})

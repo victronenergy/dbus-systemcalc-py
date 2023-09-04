@@ -689,6 +689,7 @@ class Dvcc(SystemCalcDelegate):
 		self._timer = None
 		self._tickcount = ADJUST
 		self._dcsyscurrent = LowPassFilter((2 * pi)/20, 0.0)
+		self._internal_mcp = None # In-memory charge power limit in addition to user/bms
 
 	def get_input(self):
 		return [
@@ -826,6 +827,14 @@ class Dvcc(SystemCalcDelegate):
 	currentoffset = property(partial(_property, '/Debug/BatteryOperationalLimits/CurrentOffset'))
 
 	@property
+	def internal_maxchargepower(self):
+		return self._internal_mcp
+
+	@internal_maxchargepower.setter
+	def internal_maxchargepower(self, v):
+		self._internal_mcp = v
+
+	@property
 	def dcsyscurrent(self):
 		""" Return non-zero DC system current, if it is based on
 		    a real measurement. If an estimate/calculation, we cannot use it.
@@ -934,7 +943,12 @@ class Dvcc(SystemCalcDelegate):
 			max_charge_current = 10000 if self._multi.allow_to_charge else 0
 
 		# Take the lesser of the BMS and user current limits, wherever they exist
-		maximae = [x for x in (user_max_charge_current, max_charge_current) if x is not None]
+		internal_mcc = None
+		try:
+			internal_mcc = self._internal_mcp / self._dbusservice['/Dc/Battery/Voltage']
+		except (TypeError, ZeroDivisionError):
+			pass
+		maximae = [x for x in (user_max_charge_current, max_charge_current, internal_mcc) if x is not None]
 		max_charge_current = min(maximae) if maximae else None
 
 		# Override the battery charge voltage by taking the lesser of the
