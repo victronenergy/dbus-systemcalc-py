@@ -35,6 +35,8 @@ class DynamicEss(SystemCalcDelegate):
 	def __init__(self):
 		super(DynamicEss, self).__init__()
 		self.hysteresis = 0
+		self.prevsoc = None
+		self.chargerate = None # How fast to charge/discharge to get to the next target
 		self._timer = None
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
@@ -53,7 +55,8 @@ class DynamicEss(SystemCalcDelegate):
 
 		settings = [
 			("dess_mode", path + "/Mode", 0, 0, 3),
-			("dess_minsoc", path + "/MinSoc", 20.0, 0.0, 100.0)
+			("dess_minsoc", path + "/MinSoc", 20.0, 0.0, 100.0),
+			("dess_capacity", path + "/BatteryCapacity", 2.0, 0.0, 1000.0),
 		]
 
 		for i in range(NUM_SCHEDULES):
@@ -129,6 +132,24 @@ class DynamicEss(SystemCalcDelegate):
 	def pvpower(self):
 		return self._dbusservice['/Dc/Pv/Power'] or 0
 
+	@property
+	def capacity(self):
+		return self._settings["dess_capacity"]
+
+	def update_chargerate(self, now, end, percentage):
+		""" now is current time, end is end of slot, percentage is amount of battery
+		    we want to dump before then. """
+
+		# Only update the charge rate if a new soc value has to be considered
+		if self.chargerate is None or self.soc != self.prevsoc:
+			try:
+				# a Watt is a Joule-second, a Wh is 3600 joules.
+				# Capacity is kWh, so multiply by 100, percentage needs division by 100, therefore 36000.
+				self.chargerate = round((percentage * self.capacity * 36000) / abs((end - now).total_seconds()))
+				self.prevsoc = self.soc
+			except ZeroDivisionError:
+				self.chargerate = None
+
 	def _on_timer(self):
 		# Can't do anything unless we have an SOC, and the ESS assistant
 		if self.soc is None:
@@ -173,6 +194,9 @@ class DynamicEss(SystemCalcDelegate):
 		for w in self.windows():
 			if now in w:
 				self.active = 1 # Auto
+
+				if self.targetsoc != w.soc:
+					self.chargerate = None # For recalculation
 				self.targetsoc = w.soc
 
 				# If schedule allows for feed-in, enable that now.
@@ -184,12 +208,21 @@ class DynamicEss(SystemCalcDelegate):
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
+
+					# Calculate how fast to buy
+					self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
+					Dvcc.instance.internal_maxchargepower = self.chargerate
 				elif self.soc > self.minsoc: # Discharge or idle
+					Dvcc.instance.internal_maxchargepower = None
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
 
 					if self.soc - self.hysteresis > w.soc: # Discharge
 						self.hysteresis = 0
-						self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
+
+						# Calculate how fast to sell
+						self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
+						self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
+							self.chargerate or -1.0)
 					else: # battery idle
 						# SOC/target-soc needs to move 1% to move out of idle
 						# zone
@@ -224,3 +257,5 @@ class DynamicEss(SystemCalcDelegate):
 		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 0)
 		self.active = 0 # Off
 		self.targetsoc = None
+		self.chargerate = None
+		Dvcc.instance.internal_maxchargepower = None
