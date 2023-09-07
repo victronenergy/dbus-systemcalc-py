@@ -16,7 +16,8 @@ MODES = {
        0: 'Off',
        1: 'Auto',
        2: 'Buy',
-       3: 'Sell'
+       3: 'Sell',
+       4: 'Local'
 }
 
 class DynamicEssWindow(ScheduledWindow):
@@ -54,7 +55,7 @@ class DynamicEss(SystemCalcDelegate):
 		path = '/Settings/DynamicEss'
 
 		settings = [
-			("dess_mode", path + "/Mode", 0, 0, 3),
+			("dess_mode", path + "/Mode", 0, 0, 4),
 			("dess_minsoc", path + "/MinSoc", 20.0, 0.0, 100.0),
 			("dess_capacity", path + "/BatteryCapacity", 2.0, 0.0, 1000.0),
 		]
@@ -189,7 +190,7 @@ class DynamicEss(SystemCalcDelegate):
 			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
 			return True
 
-		# self.mode == 1 (Auto) below here
+		# self.mode == 1 or self.mode == 4 (Auto) below here
 		now = self._get_time()
 		for w in self.windows():
 			if now in w:
