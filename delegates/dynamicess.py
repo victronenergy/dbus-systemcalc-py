@@ -68,7 +68,7 @@ class DynamicEss(SystemCalcDelegate):
 		settings = [
 			("dess_mode", path + "/Mode", 0, 0, 4),
 			("dess_minsoc", path + "/MinSoc", 20.0, 0.0, 100.0),
-			("dess_capacity", path + "/BatteryCapacity", 2.0, 0.0, 1000.0),
+			("dess_capacity", path + "/BatteryCapacity", 0.0, 0.0, 1000.0),
 		]
 
 		for i in range(NUM_SCHEDULES):
@@ -171,15 +171,27 @@ class DynamicEss(SystemCalcDelegate):
 				self.chargerate = None
 
 	def _on_timer(self):
+		# If DESS was disabled, deactivate and kill timer.
+		if self.mode == 0:
+			self.deactivate(0) # No error
+			return False
+
 		# Can't do anything unless we have an SOC, and the ESS assistant
 		if self.soc is None:
 			self.active = 0 # Off
 			self.errorcode = 4 # SOC low
 			self.targetsoc = None
 			return True
+
 		if not Dvcc.instance.has_ess_assistant:
 			self.active = 0 # Off
 			self.errorcode = 1 # No ESS
+			self.targetsoc = None
+			return True
+
+		if self.capacity == 0.0:
+			self.active = 0 # Off
+			self.errorcode = 5 # Capacity not set
 			self.targetsoc = None
 			return True
 
@@ -189,11 +201,6 @@ class DynamicEss(SystemCalcDelegate):
 			self.errorcode = 2 # ESS mode is wrong
 			self.targetsoc = None
 			return True
-
-		# If DESS was disabled, deactivate and kill timer.
-		if self.mode == 0:
-			self.deactivate(0) # No error
-			return False
 
 		if self.mode == 2: # BUY
 			self.active = 2
