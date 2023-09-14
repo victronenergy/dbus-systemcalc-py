@@ -20,6 +20,15 @@ MODES = {
        4: 'Local'
 }
 
+ERRORS = {
+	0: 'No error',
+	1: 'No ESS',
+	2: 'ESS mode',
+	3: 'No matching schedule',
+	4: 'SOC low',
+	5: 'Battery capacity unset'
+}
+
 class DynamicEssWindow(ScheduledWindow):
 	def __init__(self, start, duration, soc, allow_feedin):
 		super(DynamicEssWindow, self).__init__(start, duration)
@@ -46,6 +55,8 @@ class DynamicEss(SystemCalcDelegate):
 			gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
 		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=None,
 			gettextcallback=lambda p, v: '{}%'.format(v))
+		self._dbusservice.add_path('/DynamicEss/ErrorCode', value=0,
+			gettextcallback=lambda p, v: ERRORS.get(v, 'Unknown'))
 
 		if self.mode > 0:
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
@@ -118,6 +129,14 @@ class DynamicEss(SystemCalcDelegate):
 		self._dbusservice['/DynamicEss/Active'] = v
 
 	@property
+	def errorcode(self):
+		return self._dbusservice['/DynamicEss/ErrorCode']
+
+	@errorcode.setter
+	def errorcode(self, v):
+		self._dbusservice['/DynamicEss/ErrorCode'] = v
+
+	@property
 	def targetsoc(self):
 		return self._dbusservice['/DynamicEss/TargetSoc']
 
@@ -155,26 +174,30 @@ class DynamicEss(SystemCalcDelegate):
 		# Can't do anything unless we have an SOC, and the ESS assistant
 		if self.soc is None:
 			self.active = 0 # Off
+			self.errorcode = 4 # SOC low
 			self.targetsoc = None
 			return True
 		if not Dvcc.instance.has_ess_assistant:
 			self.active = 0 # Off
+			self.errorcode = 1 # No ESS
 			self.targetsoc = None
 			return True
 
 		# In Keep-Charged mode or external control, no point in doing anything
 		if BatteryLife.instance.state == BatteryLifeState.KeepCharged or self.hub4mode == 3:
 			self.active = 0 # Off
+			self.errorcode = 2 # ESS mode is wrong
 			self.targetsoc = None
 			return True
 
 		# If DESS was disabled, deactivate and kill timer.
 		if self.mode == 0:
-			self.deactivate()
+			self.deactivate(0) # No error
 			return False
 
 		if self.mode == 2: # BUY
 			self.active = 2
+			self.errorcode = 0 # No error
 			self.targetsoc = None
 			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 1)
 			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
@@ -184,6 +207,7 @@ class DynamicEss(SystemCalcDelegate):
 
 		if self.mode == 3: # SELL
 			self.active = 3
+			self.errorcode = 0 # No error
 			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 2)
 			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
 			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', SELLPOWER)
@@ -195,6 +219,7 @@ class DynamicEss(SystemCalcDelegate):
 		for w in self.windows():
 			if now in w:
 				self.active = 1 # Auto
+				self.errorcode = 0 # No error
 
 				if self.targetsoc != w.soc:
 					self.chargerate = None # For recalculation
@@ -242,21 +267,22 @@ class DynamicEss(SystemCalcDelegate):
 					else:
 						self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None) # Normal ESS
 				elif self.active: # Discharge requested, but soc too low.
-					self.deactivate()
+					self.deactivate(4)
 				break # out of for loop
 		else:
 			# No matching windows
 			if self.active:
-				self.deactivate()
+				self.deactivate(3)
 
 		return True
 
-	def deactivate(self):
+	def deactivate(self, reason):
 		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
 		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
 		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
 		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 0)
 		self.active = 0 # Off
+		self.errorcode = reason
 		self.targetsoc = None
 		self.chargerate = None
 		Dvcc.instance.internal_maxchargepower = None
