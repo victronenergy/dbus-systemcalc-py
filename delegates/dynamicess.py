@@ -89,7 +89,8 @@ class DynamicEss(SystemCalcDelegate):
 				'/Overrides/MaxDischargePower', '/Overrides/Setpoint',
 				'/Overrides/FeedInExcess']),
 			('com.victronenergy.settings', [
-				'/Settings/CGwacs/Hub4Mode'])
+				'/Settings/CGwacs/Hub4Mode',
+				'/Settings/CGwacs/MaxFeedInPower'])
 		]
 
 	def settings_changed(self, setting, oldvalue, newvalue):
@@ -111,6 +112,12 @@ class DynamicEss(SystemCalcDelegate):
 	def hub4mode(self):
 		return self._dbusmonitor.get_value('com.victronenergy.settings',
                 '/Settings/CGwacs/Hub4Mode')
+
+	@property
+	def maxfeedinpower(self):
+		l = self._dbusmonitor.get_value('com.victronenergy.settings',
+                '/Settings/CGwacs/MaxFeedInPower')
+		return SELLPOWER if l < 0 else max(-l, SELLPOWER)
 
 	@property
 	def mode(self):
@@ -217,7 +224,7 @@ class DynamicEss(SystemCalcDelegate):
 			self.errorcode = 0 # No error
 			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 2)
 			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
-			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', SELLPOWER)
+			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
 			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
 			return True
 
@@ -270,7 +277,7 @@ class DynamicEss(SystemCalcDelegate):
 					# The battery limit above will ensure that no more than
 					# available PV is fed in.
 					if w.allow_feedin:
-						self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', SELLPOWER)
+						self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
 					else:
 						self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None) # Normal ESS
 				elif self.active: # Discharge requested, but soc too low.
