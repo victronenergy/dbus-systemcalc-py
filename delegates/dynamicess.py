@@ -233,7 +233,6 @@ class DynamicEss(SystemCalcDelegate):
 		for w in self.windows():
 			if now in w:
 				self.active = 1 # Auto
-				self.errorcode = 0 # No error
 
 				if self.targetsoc != w.soc:
 					self.chargerate = None # For recalculation
@@ -245,6 +244,7 @@ class DynamicEss(SystemCalcDelegate):
 
 				if self.soc + self.hysteresis < w.soc: # Charge
 					self.hysteresis = 0
+					self.errorcode = 0 # No error
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
@@ -252,12 +252,13 @@ class DynamicEss(SystemCalcDelegate):
 					# Calculate how fast to buy
 					self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
 					Dvcc.instance.internal_maxchargepower = self.chargerate
-				elif self.soc > self.minsoc: # Discharge or idle
+				else: # Discharge or idle
 					Dvcc.instance.internal_maxchargepower = None
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
 
-					if self.soc - self.hysteresis > w.soc: # Discharge
+					if self.soc - self.hysteresis > max(w.soc, self.minsoc): # Discharge
 						self.hysteresis = 0
+						self.errorcode = 0 # No error
 
 						# Calculate how fast to sell
 						self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
@@ -267,6 +268,7 @@ class DynamicEss(SystemCalcDelegate):
 						# SOC/target-soc needs to move 1% to move out of idle
 						# zone
 						self.hysteresis = 1
+						self.errorcode = 4 # Not discharging cause SOC low
 						# This keeps battery idle by not allowing more power
 						# to be taken from the DC bus than what DC-coupled
 						# PV provides.
@@ -280,8 +282,6 @@ class DynamicEss(SystemCalcDelegate):
 						self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
 					else:
 						self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None) # Normal ESS
-				elif self.active: # Discharge requested, but soc too low.
-					self.deactivate(4)
 				break # out of for loop
 		else:
 			# No matching windows
