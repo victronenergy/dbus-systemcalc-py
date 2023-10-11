@@ -24,30 +24,41 @@ class BuzzerControl(SystemCalcDelegate):
 		self._gpio_path = None
 		self._pwm_frequency = None
 
-	def set_sources(self, dbusmonitor, settings, dbusservice):
-		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
+	def set_paths(self):
 		# Find GPIO buzzer
 		gpio_paths = sc_utils.gpio_paths(BuzzerControl.GPIO_BUZZER_PATH)
-		if len(gpio_paths) > 0:
+		try:
 			self._gpio_path = os.path.join(gpio_paths[0], 'value')
+		except IndexError:
+			pass
+		else:
 			logging.info('GPIO buzzer found: {}'.format(self._gpio_path))
+
 		# Find PWM buzzer
 		self._pwm_frequency = None
+		pwm_frequency = sc_utils.gpio_paths(BuzzerControl.PWM_BUZZER_PATH)
 		try:
-			pwm_frequency = sc_utils.gpio_paths(BuzzerControl.PWM_BUZZER_PATH)
-			if len(pwm_frequency) > 0:
-				self._pwm_frequency = int(pwm_frequency[0])
-				logging.info('PWM buzzer found @ frequency: {}'.format(self._pwm_frequency))
+			self._pwm_frequency = int(pwm_frequency[0])
+		except IndexError:
+			pass
 		except ValueError:
 			logging.error('Parsing of PWM buzzer settings at %s failed', BuzzerControl.PWM_BUZZER_PATH)
-		if self._gpio_path is None and self._pwm_frequency is None:
+		else:
+			logging.info('PWM buzzer found @ frequency: {}'.format(self._pwm_frequency))
+
+		return not (self._gpio_path is None and self._pwm_frequency is None)
+
+	def set_sources(self, dbusmonitor, settings, dbusservice):
+		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
+		if not self.set_paths():
 			logging.info('No buzzer found')
 			return
+
 		self._dbusservice.add_path('/Buzzer/State', value=0, writeable=True,
 			onchangecallback=lambda p, v: exit_on_error(self._on_buzzer_state_changed, v))
 		# Reset the buzzer so the buzzer state equals the D-Bus value. It will also silence the buzzer after
 		# a restart of the service/system.
-		self._set_buzzer(False)
+		self.set_buzzer(False)
 
 	def _on_buzzer_state_changed(self, value):
 		try:
@@ -55,21 +66,21 @@ class BuzzerControl(SystemCalcDelegate):
 			if value == 1:
 				if self._timer is None:
 					self._timer = GLib.timeout_add(500, exit_on_error, self._on_timer)
-					self._set_buzzer(True)
+					self.set_buzzer(True)
 			elif self._timer is not None:
 				GLib.source_remove(self._timer)
 				self._timer = None
-				self._set_buzzer(False)
+				self.set_buzzer(False)
 			self._dbusservice['/Buzzer/State'] = value
 		except (TypeError, ValueError):
 			logging.error('Incorrect value received on /Buzzer/State: %s', value)
 		return False
 
 	def _on_timer(self):
-		self._set_buzzer(not self._buzzer_on)
+		self.set_buzzer(not self._buzzer_on)
 		return True
 
-	def _set_buzzer(self, on):
+	def set_buzzer(self, on):
 		self._set_gpio_buzzer(on)
 		self._set_pwm_buzzer(on)
 		self._buzzer_on = on
