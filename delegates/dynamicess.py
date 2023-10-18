@@ -256,9 +256,9 @@ class DynamicEss(SystemCalcDelegate):
 					Dvcc.instance.internal_maxchargepower = None
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
 
+					self.errorcode = 0 # No error
 					if self.soc - self.hysteresis > max(w.soc, self.minsoc): # Discharge
 						self.hysteresis = 0
-						self.errorcode = 0 # No error
 
 						# Calculate how fast to sell
 						self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
@@ -268,7 +268,6 @@ class DynamicEss(SystemCalcDelegate):
 						# SOC/target-soc needs to move 1% to move out of idle
 						# zone
 						self.hysteresis = 1
-						self.errorcode = 4 # Not discharging cause SOC low
 						# This keeps battery idle by not allowing more power
 						# to be taken from the DC bus than what DC-coupled
 						# PV provides.
