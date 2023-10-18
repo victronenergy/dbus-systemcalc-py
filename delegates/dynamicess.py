@@ -67,7 +67,6 @@ class DynamicEss(SystemCalcDelegate):
 
 		settings = [
 			("dess_mode", path + "/Mode", 0, 0, 4),
-			("dess_minsoc", path + "/MinSoc", 20.0, 0.0, 100.0),
 			("dess_capacity", path + "/BatteryCapacity", 0.0, 0.0, 1000.0),
 		]
 
@@ -125,7 +124,8 @@ class DynamicEss(SystemCalcDelegate):
 
 	@property
 	def minsoc(self):
-		return self._settings['dess_minsoc']
+		# The BatteryLife delegate puts the active soc limit here.
+		return self._dbusservice['/Control/ActiveSocLimit']
 
 	@property
 	def active(self):
@@ -184,7 +184,7 @@ class DynamicEss(SystemCalcDelegate):
 			return False
 
 		# Can't do anything unless we have an SOC, and the ESS assistant
-		if self.soc is None:
+		if self.soc is None or self.minsoc is None:
 			self.active = 0 # Off
 			self.errorcode = 4 # SOC low
 			self.targetsoc = None
