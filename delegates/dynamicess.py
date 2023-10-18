@@ -68,6 +68,7 @@ class DynamicEss(SystemCalcDelegate):
 		settings = [
 			("dess_mode", path + "/Mode", 0, 0, 4),
 			("dess_capacity", path + "/BatteryCapacity", 0.0, 0.0, 1000.0),
+			("dess_efficiency", path + "/SystemEfficiency", 90.0, 0.0, 100.0),
 		]
 
 		for i in range(NUM_SCHEDULES):
