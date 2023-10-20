@@ -159,7 +159,7 @@ class TestDynamicEss(TestSystemCalcBase):
 			'com.victronenergy.hub4': {
 				'/Overrides/ForceCharge': 0,
 				'/Overrides/Setpoint': -32000,
-				'/Overrides/MaxDischargePower': 501, # 5% of 10kWh over 1 hour
+				'/Overrides/MaxDischargePower': 1001, # 5% of 10kWh over 1 hour, including 500W from PV
 				'/Overrides/FeedInExcess': 2
 		}})
 

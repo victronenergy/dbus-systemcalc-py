@@ -69,6 +69,8 @@ class DynamicEss(SystemCalcDelegate):
 			("dess_mode", path + "/Mode", 0, 0, 4),
 			("dess_capacity", path + "/BatteryCapacity", 0.0, 0.0, 1000.0),
 			("dess_efficiency", path + "/SystemEfficiency", 90.0, 0.0, 100.0),
+			# 0=None, 1=disallow export, 2=disallow import
+			("dess_restrictions", path + "/Restrictions", 0, 0, 2),
 		]
 
 		for i in range(NUM_SCHEDULES):
@@ -161,8 +163,28 @@ class DynamicEss(SystemCalcDelegate):
 		return self._dbusservice['/Dc/Pv/Power'] or 0
 
 	@property
+	def consumption(self):
+		return max(0, (self._dbusservice['/Ac/Consumption/L1/Power'] or 0) +
+			(self._dbusservice['/Ac/Consumption/L2/Power'] or 0) +
+			(self._dbusservice['/Ac/Consumption/L3/Power'] or 0))
+
+	@property
+	def acpv(self):
+		return (self._dbusservice['/Ac/PvOnGrid/L1/Power'] or 0) + \
+			(self._dbusservice['/Ac/PvOnGrid/L2/Power'] or 0) + \
+			(self._dbusservice['/Ac/PvOnGrid/L3/Power'] or 0)
+
+	@property
 	def capacity(self):
 		return self._settings["dess_capacity"]
+
+	@property
+	def batteryexport(self):
+		return not self._settings["dess_restrictions"] & 1 # Disallow battery export
+
+	@property
+	def batteryimport(self):
+		return not self._settings["dess_restrictions"] & 2 # Disallow battery import
 
 	def update_chargerate(self, now, end, percentage):
 		""" now is current time, end is end of slot, percentage is amount of battery
@@ -253,7 +275,8 @@ class DynamicEss(SystemCalcDelegate):
 					# Calculate how fast to buy. Multi is given the remainder
 					# after subtracting PV power.
 					self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
-					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxChargePower', max(0.0, self.chargerate - self.pvpower))
+					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxChargePower',
+						max(0.0, self.chargerate - self.pvpower) if self.batteryimport else self.acpv)
 				else: # Discharge or idle
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxChargePower', -1.0)
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
@@ -262,10 +285,16 @@ class DynamicEss(SystemCalcDelegate):
 					if self.soc - self.hysteresis > max(w.soc, self.minsoc): # Discharge
 						self.hysteresis = 0
 
-						# Calculate how fast to sell
+						# Calculate how fast to sell. If exporting the battery
+						# to the grid is allowed, then export chargerate plus
+						# whatever DC-coupled PV is making. If exporting the
+						# battery is not allowed, then limit that to DC-coupled
+						# PV plus local consumption.
 						self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
 						self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
-							self.chargerate or -1.0)
+							(self.chargerate + self.pvpower
+								if self.chargerate else -1.0) if self.batteryexport \
+							else self.pvpower + self.consumption + 1.0) # 1.0 to allow selling overvoltage
 					else: # battery idle
 						# SOC/target-soc needs to move 1% to move out of idle
 						# zone
