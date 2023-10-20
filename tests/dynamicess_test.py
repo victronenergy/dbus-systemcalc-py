@@ -36,6 +36,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._add_device('com.victronenergy.hub4',
 			values={
 				'/Overrides/ForceCharge': 0,
+				'/Overrides/MaxChargePower': -1,
 				'/Overrides/MaxDischargePower': -1,
 				'/Overrides/Setpoint': None,
 				'/Overrides/FeedInExcess': 0
@@ -56,8 +57,8 @@ class TestDynamicEss(TestSystemCalcBase):
 
 		self._set_setting('/Settings/DynamicEss/Mode', 1)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp+6)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 10)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 60)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 300)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 57)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
 
 		timer_manager.run(5000)
@@ -67,6 +68,7 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Overrides/ForceCharge': 0,
 				'/Overrides/Setpoint': None,
 				'/Overrides/MaxDischargePower': -1,
+				'/Overrides/MaxChargePower': -1,
 				'/Overrides/FeedInExcess': 0
 		}})
 
@@ -78,14 +80,19 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Overrides/MaxDischargePower': -1,
 				'/Overrides/FeedInExcess': 1
 		}})
+		# Charge power should be around 2400W (200Wh in 5 minutes)
+		self.assertEqual(2400, round(
+			self._monitor.get_value('com.victronenergy.hub4',
+			'/Overrides/MaxChargePower'), -2))
 
-		timer_manager.run(10000)
+		timer_manager.run(300000)
 		# slot is over
 		self._check_external_values({
 			'com.victronenergy.hub4': {
 				'/Overrides/ForceCharge': 0,
 				'/Overrides/Setpoint': None,
 				'/Overrides/MaxDischargePower': -1,
+				'/Overrides/MaxChargePower': -1,
 				'/Overrides/FeedInExcess': 0
 		}})
 
@@ -177,3 +184,36 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Overrides/MaxDischargePower': 450,
 				'/Overrides/FeedInExcess': 1 # Feed-in not allowed
 		}})
+
+	def test_buy_account_for_solar(self):
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 252,
+			'/Link/NetworkMode': 5,
+			'/Link/ChargeVoltage': 55.0,
+			'/Link/VoltageSense': None,
+			'/Dc/0/Voltage': 50.0,
+			'/Dc/0/Current': 5,
+			'/FirmwareVersion': 0x129}, connection='VE.Direct')
+
+		now = timer_manager.datetime
+		stamp = int(now.timestamp())
+
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp-5)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 60)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
+
+		timer_manager.run(5000)
+
+		self._check_external_values({
+			'com.victronenergy.hub4': {
+				'/Overrides/ForceCharge': 1, # Charging is forced
+				'/Overrides/Setpoint': None,
+				'/Overrides/MaxDischargePower': -1,
+				'/Overrides/FeedInExcess': 1
+		}})
+		# Charge power should be around 500W, minus 250W from solar (500Wh in 1 hour)
+		self.assertEqual(250, round(
+			self._monitor.get_value('com.victronenergy.hub4',
+			'/Overrides/MaxChargePower'), -1))
