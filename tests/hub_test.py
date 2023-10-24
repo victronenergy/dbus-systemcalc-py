@@ -1991,6 +1991,41 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Link/NetworkMode': 13,
 				'/Link/ChargeCurrent': 100 }})
 
+	def test_vebus_bms_user_charge_limit(self):
+		""" This is for VE.Bus BMS v2. If it disallows charging, we must
+		    communicate that to the solar chargers. """
+		self._set_setting('/Settings/SystemSetup/MaxChargeCurrent', 40)
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
+			'/Dc/0/Voltage': 12.4,
+			'/Dc/0/Current': 30.0,
+			'/FirmwareVersion': 0x129,
+			'/Settings/ChargeCurrentLimit': 35},
+			connection='VE.Direct')
+
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Bms/BmsType', 2)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Devices/Bms/Version', 1145100)
+		self._update_values(3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/NetworkMode': 5,
+				'/Link/ChargeCurrent': 35 },
+			'com.victronenergy.vebus.ttyO1': {
+				'/Dc/0/MaxChargeCurrent': 10}})
+
+		self._set_setting('/Settings/SystemSetup/MaxChargeCurrent', -1)
+		self._update_values(3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/NetworkMode': 5,
+				'/Link/ChargeCurrent': 35 },
+			'com.victronenergy.vebus.ttyO1': {
+				'/Dc/0/MaxChargeCurrent': 9970}}) # 10000 constant, minus 30A from solar charger
+
 	def test_always_send_charge_voltage_to_vecan(self):
 		""" Charge voltage is copied to VE.Can, even when no solarcharger. """
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 12.65)

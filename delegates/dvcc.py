@@ -578,6 +578,7 @@ class Multi(object):
 		self._service = service
 		self.bol = BatteryOperationalLimits(self)
 		self._dc_current = LowPassFilter((2 * pi)/30, 0)
+		self._v = None
 
 	@property
 	def service(self):
@@ -623,10 +624,11 @@ class Multi(object):
 	@maxchargecurrent.setter
 	def maxchargecurrent(self, v):
 		# If the Multi is not ready, don't write to it just yet
-		if self.active and self.maxchargecurrent is not None:
+		if self.active and self.maxchargecurrent is not None and v != self._v:
 			# The maximum present charge current is 6-parallel 12V 5kva units, 6*220 = 1320A.
 			# We will consider 10000A to be impossibly high.
 			self.monitor.set_value_async(self.service, '/Dc/0/MaxChargeCurrent', 10000 if v is None else v)
+			self._v = v
 
 	@property
 	def state(self):
@@ -996,13 +998,13 @@ class Dvcc(SystemCalcDelegate):
 		#    It used to be necessary to set a high current; and only then disable the setting or reset
 		#    the VE.Bus system to re-initialise from the stored setting as per VEConfigure.
 		bms_parameters_written = 0
-		if bms_service is None and not self._multi.has_vebus_bms:
+		if bms_service is None:
 			if max_charge_current is None:
 				self._multi.maxchargecurrent = None
 			else:
 				# Don't bother setting a charge current at 1A or less
 				self._multi.maxchargecurrent = max_charge_current if max_charge_current > 1 else 0
-		elif bms_service is not None:
+		else:
 			bms_parameters_written = self._update_battery_operational_limits(bms_service, charge_voltage, max_charge_current)
 		self._dbusservice['/Control/BmsParameters'] = int(bms_parameters_written or (bms_service is not None and voltage_written))
 
