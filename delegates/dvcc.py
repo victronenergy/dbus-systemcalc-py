@@ -344,6 +344,14 @@ class InverterCharger(SolarCharger):
 		return (self.monitor.get_value(self.service,
 			'/Settings/ChargeCurrentLimit') or 0) > 0
 
+class DcGenset(BaseCharger):
+	""" Encapsulates a DC genset on dbus. Exposes dbus paths as convenient
+	    attributes. """
+	@property
+	def has_externalcontrol_support(self):
+		""" For now only support Hatz gensets """
+		return self.product_id in [0xB045]
+
 class InverterSubsystem(object):
 	""" Encapsulate collection of inverters. """
 	def __init__(self, monitor):
@@ -389,6 +397,10 @@ class ChargerSubsystem(object):
 	def add_alternator(self, service):
 		self._otherchargers[service] = charger = Alternator(self.monitor, service)
 		return charger
+
+	def add_dcgenset(self, service):
+		self._otherchargers[service] = dcgenset = DcGenset(self.monitor, service)
+		return dcgenset
 
 	def add_invertercharger(self, service):
 		self._solarchargers[service] = inverter = InverterCharger(self.monitor, service)
@@ -804,6 +816,9 @@ class Dvcc(SystemCalcDelegate):
 				'/N2kDeviceInstance',
 				'/Mgmt/Connection',
 				'/Settings/BmsPresent']),
+			('com.victronenergy.dcgenset', [
+				'/ProductId',
+				'/Link/ChargeVoltage']),
 			('com.victronenergy.inverter', [
 				'/ProductId',
 				'/Dc/0/Current',
@@ -875,6 +890,8 @@ class Dvcc(SystemCalcDelegate):
 			self._vecan_services.append(service)
 		elif service_type == 'alternator':
 			self._chargesystem.add_alternator(service)
+		elif service_type == 'dcgenset':
+			self._chargesystem.add_dcgenset(service)
 		elif service_type == 'battery':
 			pass # install timer below
 		else:
