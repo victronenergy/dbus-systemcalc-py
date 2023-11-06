@@ -217,3 +217,61 @@ class TestDynamicEss(TestSystemCalcBase):
 		self.assertEqual(250, round(
 			self._monitor.get_value('com.victronenergy.hub4',
 			'/Overrides/MaxChargePower'), -1))
+
+	def test_hysteresis(self):
+		""" Test case for batteries that don't report whole numbers, but
+		    jumps between SOC values and don't always hit match target SOC
+		    exactly. Use case jitters between 43.8% and 44.4%. """
+		now = timer_manager.datetime
+		stamp = int(now.timestamp())
+
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 44)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
+
+		self._monitor.set_value(self.vebus, '/Soc', 44.4)
+		timer_manager.run(5000)
+		self.assertTrue(self._monitor.get_value('com.victronenergy.hub4',
+			'/Overrides/MaxDischargePower') > 1.0) # Controlled discharge
+
+		self._monitor.set_value(self.vebus, '/Soc', 43.8)
+		timer_manager.run(5000)
+		# SOC is reached, idle
+		self.assertTrue(self._monitor.get_value('com.victronenergy.hub4',
+			'/Overrides/MaxDischargePower') == 1.0)
+		self.assertTrue(self._monitor.get_value('com.victronenergy.hub4',
+			'/Overrides/MaxChargePower') == -1.0)
+
+		# Returns to 44.4, remain in idle
+		self._monitor.set_value(self.vebus, '/Soc', 44.4)
+		timer_manager.run(5000)
+		self.assertTrue(self._monitor.get_value('com.victronenergy.hub4',
+			'/Overrides/MaxDischargePower') == 1.0)
+		self.assertTrue(self._monitor.get_value('com.victronenergy.hub4',
+			'/Overrides/MaxChargePower') == -1.0)
+
+
+		# Increases to 45.1%, go back to discharge.
+		self._monitor.set_value(self.vebus, '/Soc', 45.1)
+		timer_manager.run(5000)
+		self.assertTrue(self._monitor.get_value('com.victronenergy.hub4',
+			'/Overrides/MaxDischargePower') > 1.0) # Controlled discharge
+
+		# Idle again
+		self._monitor.set_value(self.vebus, '/Soc', 43.8)
+		timer_manager.run(5000)
+		# SOC is reached, idle
+		self.assertTrue(self._monitor.get_value('com.victronenergy.hub4',
+			'/Overrides/MaxDischargePower') == 1.0)
+		self.assertTrue(self._monitor.get_value('com.victronenergy.hub4',
+			'/Overrides/MaxChargePower') == -1.0)
+
+		# Back to charge if we go low enough
+		self._monitor.set_value(self.vebus, '/Soc', 42.9)
+		timer_manager.run(5000)
+		self.assertTrue(self._monitor.get_value('com.victronenergy.hub4',
+			'/Overrides/MaxDischargePower') == -1.0)
+		self.assertTrue(self._monitor.get_value('com.victronenergy.hub4',
+			'/Overrides/MaxChargePower') > 0.0)

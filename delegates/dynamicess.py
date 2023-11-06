@@ -44,7 +44,8 @@ class DynamicEss(SystemCalcDelegate):
 
 	def __init__(self):
 		super(DynamicEss, self).__init__()
-		self.hysteresis = 0
+		self.charge_hysteresis = 0
+		self.discharge_hysteresis = 0
 		self.prevsoc = None
 		self.chargerate = None # How fast to charge/discharge to get to the next target
 		self._timer = None
@@ -265,8 +266,9 @@ class DynamicEss(SystemCalcDelegate):
 				self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess',
 					2 if w.allow_feedin else 1)
 
-				if self.soc + self.hysteresis < w.soc: # Charge
-					self.hysteresis = 0
+				if self.soc + self.charge_hysteresis < w.soc: # Charge
+					self.charge_hysteresis = 0
+					self.discharge_hysteresis = 0
 					self.errorcode = 0 # No error
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
@@ -278,12 +280,13 @@ class DynamicEss(SystemCalcDelegate):
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxChargePower',
 						max(0.0, self.chargerate - self.pvpower) if self.batteryimport else self.acpv)
 				else: # Discharge or idle
+					self.charge_hysteresis = 1
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxChargePower', -1.0)
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
 
 					self.errorcode = 0 # No error
-					if self.soc - self.hysteresis > max(w.soc, self.minsoc): # Discharge
-						self.hysteresis = 0
+					if self.soc - self.discharge_hysteresis > max(w.soc, self.minsoc): # Discharge
+						self.discharge_hysteresis = 0
 
 						# Calculate how fast to sell. If exporting the battery
 						# to the grid is allowed, then export chargerate plus
@@ -298,7 +301,7 @@ class DynamicEss(SystemCalcDelegate):
 					else: # battery idle
 						# SOC/target-soc needs to move 1% to move out of idle
 						# zone
-						self.hysteresis = 1
+						self.discharge_hysteresis = 1
 						# This keeps battery idle by not allowing more power
 						# to be taken from the DC bus than what DC-coupled
 						# PV provides.
