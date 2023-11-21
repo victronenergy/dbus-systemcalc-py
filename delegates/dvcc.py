@@ -154,15 +154,10 @@ class LowPassFilter(object):
 	def value(self):
 		return self._value
 
-class SolarCharger(object):
-	""" Encapsulates a solar charger on dbus. Exposes dbus paths as convenient
-	    attributes. """
-
+class BaseCharger(object):
 	def __init__(self, monitor, service):
 		self.monitor = monitor
 		self.service = service
-		self._smoothed_current = LowPassFilter((2 * pi)/20, self.chargecurrent or 0)
-		self._has_externalcontrol_support = False
 
 	def _get_path(self, path):
 		return self.monitor.get_value(self.service, path)
@@ -180,8 +175,88 @@ class SolarCharger(object):
 		return self.monitor.get_value(self.service, '/ProductId') or 0
 
 	@property
+	def chargecurrent(self):
+		return self._get_path('/Dc/0/Current')
+
+	@property
 	def n2k_device_instance(self):
 		return self.monitor.get_value(self.service, '/N2kDeviceInstance')
+
+	@property
+	def connection(self):
+		return self._get_path('/Mgmt/Connection')
+
+	@property
+	def state(self):
+		return self._get_path('/State')
+
+	@property
+	def has_externalcontrol_support(self):
+		""" Override this to implement detection of external control support.
+		"""
+		return False
+
+	@property
+	def want_bms(self):
+		""" Indicates whether this solar charger was previously
+		    controlled by a BMS and therefore expects one to
+		    be present. """
+		return self._get_path('/Settings/BmsPresent') == 1
+
+	@property
+	def maxchargecurrent(self):
+		v = self._get_path('/Link/ChargeCurrent')
+		return v if v is not None else self.currentlimit
+
+	@maxchargecurrent.setter
+	def maxchargecurrent(self, v):
+		v = max(0, min(v, self.currentlimit))
+		self._set_path('/Link/ChargeCurrent', v)
+
+	@property
+	def chargevoltage(self):
+		return self._get_path('/Link/ChargeVoltage')
+
+	@chargevoltage.setter
+	def chargevoltage(self, v):
+		self._set_path('/Link/ChargeVoltage', v)
+
+	@property
+	def currentlimit(self):
+		return self._get_path('/Settings/ChargeCurrentLimit')
+
+	def maximize_charge_current(self):
+		""" Max out the charge current of this solar charger by setting
+		    ChargeCurrent to the configured limit in settings. """
+		if self.monitor.seen(self.service, '/Link/ChargeCurrent'):
+			copy_dbus_value(self.monitor,
+				self.service, '/Settings/ChargeCurrentLimit',
+				self.service, '/Link/ChargeCurrent')
+
+	@property
+	def smoothed_current(self):
+		# For chargers that are not solar-chargers, the generated current
+		# should be fairly stable already
+		return self.chargecurrent or 0
+
+class Networkable(object):
+	""" Mix into BaseCharger to support network paths. """
+	@property
+	def networkmode(self):
+		return self._get_path('/Link/NetworkMode')
+
+	@networkmode.setter
+	def networkmode(self, v):
+		self._set_path('/Link/NetworkMode', v)
+
+class SolarCharger(BaseCharger, Networkable):
+	""" Encapsulates a solar charger on dbus. Exposes dbus paths as convenient
+	    attributes. """
+
+	def __init__(self, monitor, service):
+		super().__init__(monitor, service)
+		self._smoothed_current = LowPassFilter((2 * pi)/20, self.chargecurrent or 0)
+		self._has_externalcontrol_support = False
 
 	@property
 	def has_externalcontrol_support(self):
@@ -215,66 +290,9 @@ class SolarCharger(object):
 		return self._has_externalcontrol_support
 
 	@property
-	def connection(self):
-		return self._get_path('/Mgmt/Connection')
-
-	@property
-	def networkmode(self):
-		return self._get_path('/Link/NetworkMode')
-
-	@networkmode.setter
-	def networkmode(self, v):
-		self._set_path('/Link/NetworkMode', v)
-
-	@property
-	def chargecurrent(self):
-		return self._get_path('/Dc/0/Current')
-
-	@property
-	def maxchargecurrent(self):
-		v = self._get_path('/Link/ChargeCurrent')
-		return v if v is not None else self.currentlimit
-
-	@maxchargecurrent.setter
-	def maxchargecurrent(self, v):
-		v = max(0, min(v, self.currentlimit))
-		self._set_path('/Link/ChargeCurrent', v)
-
-	@property
-	def chargevoltage(self):
-		return self._get_path('/Link/ChargeVoltage')
-
-	@chargevoltage.setter
-	def chargevoltage(self, v):
-		self._set_path('/Link/ChargeVoltage', v)
-
-	@property
-	def currentlimit(self):
-		return self._get_path('/Settings/ChargeCurrentLimit')
-
-	@property
-	def state(self):
-		return self._get_path('/State')
-
-	@property
-	def want_bms(self):
-		""" Indicates whether this solar charger was previously
-		    controlled by a BMS and therefore expects one to
-		    be present. """
-		return self._get_path('/Settings/BmsPresent') == 1
-
-	@property
 	def smoothed_current(self):
 		""" Returns the internal low-pass filtered current value. """
 		return self._smoothed_current.value
-
-	def maximize_charge_current(self):
-		""" Max out the charge current of this solar charger by setting
-		    ChargeCurrent to the configured limit in settings. """
-		if self.monitor.seen(self.service, '/Link/ChargeCurrent'):
-			copy_dbus_value(self.monitor,
-				self.service, '/Settings/ChargeCurrentLimit',
-				self.service, '/Link/ChargeCurrent')
 
 	def update_values(self):
 		# This is called periodically from a timer to maintain
@@ -340,71 +358,71 @@ class InverterSubsystem(object):
 		for inverter in self:
 			inverter.set_maxdischargecurrent(limit)
 
-class SolarChargerSubsystem(object):
-	""" Encapsulates a collection of solar chargers that collectively make up
-	    a charging system (sans Multi). Properties related to the whole
-	    system or some combination of the individual chargers are exposed
-		here as attributes. """
+class ChargerSubsystem(object):
+	""" Encapsulates a collection of chargers or devices that incorporate a
+	    charger, to collectively make up a charging system (sans Multi).
+	    Properties related to the whole system or some combination of the
+	    individual chargers are exposed here as attributes. """
 	def __init__(self, monitor):
 		self.monitor = monitor
-		self._solarchargers = {}
+		self._chargers = {}
 
-	def add_charger(self, service):
-		self._solarchargers[service] = charger = SolarCharger(self.monitor, service)
+	def add_solar_charger(self, service):
+		self._chargers[service] = charger = SolarCharger(self.monitor, service)
 		return charger
 
 	def add_invertercharger(self, service):
-		self._solarchargers[service] = inverter = InverterCharger(self.monitor, service)
+		self._chargers[service] = inverter = InverterCharger(self.monitor, service)
 		return inverter
 
 	def remove_charger(self, service):
-		del self._solarchargers[service]
+		del self._chargers[service]
 
 	def __iter__(self):
-		return iter(self._solarchargers.values())
+		return iter(self._chargers.values())
 
 	def __len__(self):
-		return len(self._solarchargers)
+		return len(self._chargers)
 
 	def __contains__(self, k):
-		return k in self._solarchargers
+		return k in self._chargers
 
 	@property
 	def has_externalcontrol_support(self):
-		return all(s.has_externalcontrol_support for s in self._solarchargers.values())
+		return all(s.has_externalcontrol_support for s in self._chargers.values())
 
 	@property
 	def has_vecan_chargers(self):
 		""" Returns true if we have any VE.Can chargers in the system. This is
 		    used elsewhere to enable broadcasting charge voltages on the relevant
 		    can device. """
-		return any((s.connection == 'VE.Can' for s in self._solarchargers.values()))
+		return any((s.connection == 'VE.Can' for s in self._chargers.values()))
 
 	@property
 	def want_bms(self):
 		""" Return true if any of our solar chargers expect a BMS to
 		    be present. """
-		return any((s.want_bms for s in self._solarchargers.values()))
+		return any((s.want_bms for s in self._chargers.values()))
 
 	@property
 	def capacity(self):
 		""" Total capacity if all chargers are running at full power. """
-		return safeadd(*(c.currentlimit for c in self._solarchargers.values()))
+		return safeadd(*(c.currentlimit for c in self._chargers.values()))
 
 	@property
 	def smoothed_current(self):
 		""" Total smoothed current, calculated by adding the smoothed current
 		    of the individual chargers. """
-		return safeadd(*(c.smoothed_current for c in self._solarchargers.values())) or 0
+		return safeadd(*(c.smoothed_current for c in self._chargers.values())) or 0
 
 	def maximize_charge_current(self):
 		""" Max out all chargers. """
-		for charger in self._solarchargers.values():
+		for charger in self._chargers.values():
 			charger.maximize_charge_current()
 
 	def shutdown_chargers(self):
 		""" Shut down all chargers. """
-		for charger in self._solarchargers.values():
+		for charger in self._chargers.values():
 			charger.maxchargecurrent = 0
 
 	def set_networked(self, has_bms, charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0):
@@ -421,15 +439,15 @@ class SolarChargerSubsystem(object):
 		# bit 3: Remote BMS control (MPPT enter BMS mode)
 		network_mode = 1 | (0 if charge_voltage is None and max_charge_current is None else 4) | (8 if has_bms else 0)
 		network_mode_written = False
-		for charger in self._solarchargers.values():
+		for charger in self._chargers.values():
 			charger.networkmode = network_mode
 			network_mode_written = True
 
 		# Distribute the voltage setpoint. Simply write it to all of them.
 		voltage_written = 0
 		if charge_voltage is not None:
-			voltage_written = int(len(self._solarchargers)>0)
-			for charger in self._solarchargers.values():
+			voltage_written = int(len(self._chargers)>0)
+			for charger in self._chargers.values():
 				charger.chargevoltage = charge_voltage
 
 		# Do not limit max charge current when feedback is allowed. The
@@ -441,7 +459,7 @@ class SolarChargerSubsystem(object):
 		# current.
 		#
 		# Additionally, don't bother with chargers that are disconnected.
-		chargers = [x for x in self._solarchargers.values() if x.state !=0 and x.maxchargecurrent is not None and x.n2k_device_instance in (0, None)]
+		chargers = [x for x in self._chargers.values() if x.state !=0 and x.maxchargecurrent is not None and x.n2k_device_instance in (0, None)]
 		if len(chargers) > 0:
 			if stop_on_mcc0 and max_charge_current == 0:
 				self.shutdown_chargers()
@@ -526,9 +544,9 @@ class SolarChargerSubsystem(object):
 			limits = []
 			r = chargers[0].maxchargecurrent
 			for c1, c2 in zip(chargers, chargers[1:]):
-				l, r = SolarChargerSubsystem._balance_chargers(c1, c2, r, c2.maxchargecurrent)
+				l, r = ChargerSubsystem._balance_chargers(c1, c2, r, c2.maxchargecurrent)
 				limits.append(l)
-			l, limits[0] = SolarChargerSubsystem._balance_chargers(c2, chargers[0], r, limits[0])
+			l, limits[0] = ChargerSubsystem._balance_chargers(c2, chargers[0], r, limits[0])
 			limits.append(l)
 
 			for charger, limit in zip(chargers, limits):
@@ -537,8 +555,11 @@ class SolarChargerSubsystem(object):
 	def update_values(self):
 		# This is called periodically from a timer to update contained
 		# solar chargers with values that they track.
-		for charger in self._solarchargers.values():
-			charger.update_values()
+		for charger in self._chargers.values():
+			try:
+				charger.update_values()
+			except AttributeError:
+				pass
 
 class BatteryOperationalLimits(object):
 	""" Only used to encapsulate this part of the Multi's functionality.
@@ -686,7 +707,7 @@ class Dvcc(SystemCalcDelegate):
 	def __init__(self, sc):
 		super(Dvcc, self).__init__()
 		self.systemcalc = sc
-		self._solarsystem = None
+		self._chargesystem = None
 		self._vecan_services = []
 		self._timer = None
 		self._tickcount = ADJUST
@@ -763,7 +784,7 @@ class Dvcc(SystemCalcDelegate):
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
-		self._solarsystem = SolarChargerSubsystem(dbusmonitor)
+		self._chargesystem = ChargerSubsystem(dbusmonitor)
 		self._inverters = InverterSubsystem(dbusmonitor)
 		self._multi = Multi(dbusmonitor, dbusservice)
 
@@ -782,14 +803,14 @@ class Dvcc(SystemCalcDelegate):
 	def device_added(self, service, instance, do_service_change=True):
 		service_type = service.split('.')[2]
 		if service_type == 'solarcharger':
-			self._solarsystem.add_charger(service)
+			self._chargesystem.add_solar_charger(service)
 		elif service_type in ('inverter', 'multi'):
 			if self._dbusmonitor.get_value(service, '/IsInverterCharger') == 1:
 				# Add to both the solarcharger and inverter collections.
 				# add_invertercharger returns an object that can be directly
 				# added to the inverter collection.
 				self._inverters._add_inverter(
-					self._solarsystem.add_invertercharger(service))
+					self._chargesystem.add_invertercharger(service))
 		elif service_type == 'vecan':
 			self._vecan_services.append(service)
 		elif service_type == 'battery':
@@ -802,8 +823,8 @@ class Dvcc(SystemCalcDelegate):
 			self._timer = GLib.timeout_add(1000, exit_on_error, self._on_timer)
 
 	def device_removed(self, service, instance):
-		if service in self._solarsystem:
-			self._solarsystem.remove_charger(service)
+		if service in self._chargesystem:
+			self._chargesystem.remove_charger(service)
 			# Some solar chargers are inside an inverter
 			if service in self._inverters:
 				self._inverters.remove_inverter(service)
@@ -811,7 +832,7 @@ class Dvcc(SystemCalcDelegate):
 			self._vecan_services.remove(service)
 		elif service in self._inverters:
 			self._inverters.remove_inverter(service)
-		if len(self._solarsystem) == 0 and len(self._vecan_services) == 0 and \
+		if len(self._chargesystem) == 0 and len(self._vecan_services) == 0 and \
 			len(BatteryService.instance.batteries) == 0 and self._timer is not None:
 			GLib.source_remove(self._timer)
 			self._timer = None
@@ -860,7 +881,7 @@ class Dvcc(SystemCalcDelegate):
 
 	@property
 	def bms_seen(self):
-		return self._solarsystem.want_bms
+		return self._chargesystem.want_bms
 
 	def _on_timer(self):
 		def update_solarcharger_control_flags(voltage_written, current_written, chargevoltage):
@@ -887,14 +908,14 @@ class Dvcc(SystemCalcDelegate):
 
 		# BOL/DVCC support below
 		self._dbusservice['/Dvcc/Alarms/FirmwareInsufficient'] = int(
-			not self._solarsystem.has_externalcontrol_support or (
+			not self._chargesystem.has_externalcontrol_support or (
 			self._multi.firmwareversion is not None and self._multi.firmwareversion < VEBUS_FIRMWARE_REQUIRED))
 		self._dbusservice['/Dvcc/Alarms/MultipleBatteries'] = int(
 			len(BatteryService.instance.bmses) > 1)
 
 		# Update subsystems
-		self._solarsystem.update_values()
-		self._multi.update_values(self._solarsystem.capacity)
+		self._chargesystem.update_values()
+		self._multi.update_values(self._chargesystem.capacity)
 
 		# Below are things we only do every ADJUST seconds
 		if self._tickcount > 0: return True
@@ -980,7 +1001,7 @@ class Dvcc(SystemCalcDelegate):
 
 		# The Multi gets the remainder after subtracting what the solar chargers made
 		if max_charge_current is not None:
-			max_charge_current = max(0.0, round(max_charge_current - self._solarsystem.smoothed_current))
+			max_charge_current = max(0.0, round(max_charge_current - self._chargesystem.smoothed_current))
 
 		# Write the remainder to the Multi.
 		# There are two ways to limit the charge current of a VE.Bus system. If we have a BMS,
@@ -1085,7 +1106,7 @@ class Dvcc(SystemCalcDelegate):
 		if charge_voltage is None and max_charge_current is None:
 			return 0, 0, None
 
-		voltage_written, current_written, network_mode = self._solarsystem.set_networked(
+		voltage_written, current_written, network_mode = self._chargesystem.set_networked(
 			has_bms, charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0)
 
 		# Write the voltage to VE.Can. Also update the networkmode.
@@ -1135,7 +1156,7 @@ class Dvcc(SystemCalcDelegate):
 		network_mode = 1 | (0 if charge_voltage is None else 4) | (0 if max_charge_current is None else 8)
 		voltage_written = 0
 		current_written = 0
-		for charger in self._solarsystem:
+		for charger in self._chargesystem:
 			try:
 				# We use /Link/NetworkMode to detect Hub support in the solarcharger. Existence of this item
 				# implies existence of the other /Link/* fields.
@@ -1158,7 +1179,7 @@ class Dvcc(SystemCalcDelegate):
 
 		# The below is different to the non-legacy case above, where the voltage
 		# the com.victronenergy.vecan.* service instead.
-		if charge_voltage is not None and self._solarsystem.has_vecan_chargers:
+		if charge_voltage is not None and self._chargesystem.has_vecan_chargers:
 			# Charge voltage cannot by written directly to the CAN-bus solar chargers, we have to use
 			# the com.victronenergy.vecan.* service instead.
 			# Writing charge current to CAN-bus solar charger is not supported yet.

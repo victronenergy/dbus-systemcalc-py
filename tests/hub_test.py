@@ -383,7 +383,7 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Control/BmsParameters': 1})
 
 	def test_charge_current_distribution(self):
-		from delegates.dvcc import SolarChargerSubsystem
+		from delegates.dvcc import ChargerSubsystem
 
 		chargers = [
 			c1 := Charger(100, 95, 10), # 100A charger, limited at 95A, doing 10A
@@ -393,7 +393,7 @@ class TestHubSystem(TestSystemCalcBase):
 
 		# This approaches the right values over time
 		for _ in range(3):
-			SolarChargerSubsystem._distribute_current(chargers, 120)
+			ChargerSubsystem._distribute_current(chargers, 120)
 
 		self.assertAlmostEqual(c1.maxchargecurrent, 78.7)
 		self.assertAlmostEqual(c2.maxchargecurrent, 28.0)
@@ -402,7 +402,7 @@ class TestHubSystem(TestSystemCalcBase):
 		# One charger starts doing better, requiring a rebalance
 		c2.smoothed_current = 14.5
 		for _ in range(3):
-			SolarChargerSubsystem._distribute_current(chargers, 120)
+			ChargerSubsystem._distribute_current(chargers, 120)
 		self.assertAlmostEqual(c1.maxchargecurrent, 72.6)
 		self.assertAlmostEqual(c2.maxchargecurrent, 35.0)
 		self.assertAlmostEqual(c3.maxchargecurrent, 12.4)
@@ -412,14 +412,14 @@ class TestHubSystem(TestSystemCalcBase):
 		c2.smoothed_current = 30.0
 		c3.smoothed_current = 12.0
 		for _ in range(3):
-			SolarChargerSubsystem._distribute_current(chargers, 120)
+			ChargerSubsystem._distribute_current(chargers, 120)
 		self.assertAlmostEqual(c1.maxchargecurrent, 75.3)
 		self.assertAlmostEqual(c2.maxchargecurrent, 31.9)
 		self.assertAlmostEqual(c3.maxchargecurrent, 12.8)
 
 		c3.smoothed_current = 12.8
 		for _ in range(3):
-			SolarChargerSubsystem._distribute_current(chargers, 120)
+			ChargerSubsystem._distribute_current(chargers, 120)
 		self.assertAlmostEqual(c1.maxchargecurrent, 74.8)
 		self.assertAlmostEqual(c2.maxchargecurrent, 31.7)
 		self.assertAlmostEqual(c3.maxchargecurrent, 13.5)
@@ -428,7 +428,7 @@ class TestHubSystem(TestSystemCalcBase):
 		c2.smoothed_current = 35.0
 		c3.smoothed_current = 15.0
 		for _ in range(3):
-			SolarChargerSubsystem._distribute_current(chargers, 120)
+			ChargerSubsystem._distribute_current(chargers, 120)
 		self.assertAlmostEqual(c1.maxchargecurrent, 70.0)
 		self.assertAlmostEqual(c2.maxchargecurrent, 35.0)
 		self.assertAlmostEqual(c3.maxchargecurrent, 15.0)
@@ -437,7 +437,7 @@ class TestHubSystem(TestSystemCalcBase):
 
 	def test_charge_current_distribution_2(self):
 		# Check that it works sanely with two chargers
-		from delegates.dvcc import SolarChargerSubsystem
+		from delegates.dvcc import ChargerSubsystem
 
 		chargers = [
 			c1 := Charger(100, 95, 30), # 100A charger, limited at 95A, doing 10A
@@ -445,7 +445,7 @@ class TestHubSystem(TestSystemCalcBase):
 		]
 
 		for _ in range(3):
-			SolarChargerSubsystem._distribute_current(chargers, 105)
+			ChargerSubsystem._distribute_current(chargers, 105)
 
 		# Both have roughly 62.5% margin (l-a)/c
 		self.assertAlmostEqual(c1.maxchargecurrent, 92.6)
@@ -773,7 +773,7 @@ class TestHubSystem(TestSystemCalcBase):
 
 
 	def test_solar_subsys(self):
-		from delegates.dvcc import SolarChargerSubsystem
+		from delegates.dvcc import ChargerSubsystem
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
 			'/Link/NetworkMode': 0,
@@ -801,9 +801,9 @@ class TestHubSystem(TestSystemCalcBase):
 			'/FirmwareVersion': 0x102ff,
 		}, connection='VE.Can')
 
-		system = SolarChargerSubsystem(self._system_calc._dbusmonitor)
-		system.add_charger('com.victronenergy.solarcharger.ttyO1')
-		system.add_charger('com.victronenergy.solarcharger.ttyO2')
+		system = ChargerSubsystem(self._system_calc._dbusmonitor)
+		system.add_solar_charger('com.victronenergy.solarcharger.ttyO1')
+		system.add_solar_charger('com.victronenergy.solarcharger.ttyO2')
 
 		# Test __contains__
 		self.assertTrue('com.victronenergy.solarcharger.ttyO1' in system)
@@ -820,7 +820,7 @@ class TestHubSystem(TestSystemCalcBase):
 
 		# Add vecan charger
 		self.assertFalse(system.has_vecan_chargers)
-		system.add_charger('com.victronenergy.solarcharger.socketcan_can0_di0_uc30688')
+		system.add_solar_charger('com.victronenergy.solarcharger.socketcan_can0_di0_uc30688')
 		self.assertTrue(system.has_vecan_chargers)
 
 		# Check parallel support
@@ -832,7 +832,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self.assertTrue(system.want_bms)
 
 	def test_solar_subsys_distribution(self):
-		from delegates.dvcc import SolarChargerSubsystem
+		from delegates.dvcc import ChargerSubsystem
 		self._add_device('com.victronenergy.battery.socketcan_can0_di0_uc30688', {
 			'/Dc/0/Voltage': 12.6,
 			'/Dc/0/Current': 9.3,
@@ -869,10 +869,10 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Settings/ChargeCurrentLimit': 15,
 		}, connection='VE.Direct')
 
-		system = SolarChargerSubsystem(self._system_calc._dbusmonitor)
-		system.add_charger('com.victronenergy.solarcharger.ttyO1')
-		system.add_charger('com.victronenergy.solarcharger.ttyO2')
-		system.add_charger('com.victronenergy.solarcharger.ttyO3')
+		system = ChargerSubsystem(self._system_calc._dbusmonitor)
+		system.add_solar_charger('com.victronenergy.solarcharger.ttyO1')
+		system.add_solar_charger('com.victronenergy.solarcharger.ttyO2')
+		system.add_solar_charger('com.victronenergy.solarcharger.ttyO3')
 
 		self.assertTrue(system.capacity == 120)
 
