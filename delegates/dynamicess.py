@@ -30,10 +30,19 @@ ERRORS = {
 }
 
 class DynamicEssWindow(ScheduledWindow):
-	def __init__(self, start, duration, soc, allow_feedin):
+	def __init__(self, start, duration, soc, allow_feedin, restrictions):
 		super(DynamicEssWindow, self).__init__(start, duration)
 		self.soc = soc
 		self.allow_feedin = allow_feedin
+		self.restrictions = restrictions
+
+	@property
+	def batteryexport(self):
+		return not self.restrictions & 1 # Disallow battery export
+
+	@property
+	def batteryimport(self):
+		return not self.restrictions & 2 # Disallow battery import
 
 	def __repr__(self):
 		return "Start: {}, Stop: {}, Soc: {}".format(
@@ -85,6 +94,8 @@ class DynamicEss(SystemCalcDelegate):
 				path + "/Schedule/{}/Soc".format(i), 100, 0, 100))
 			settings.append(("dess_discharge_{}".format(i),
 				path + "/Schedule/{}/AllowGridFeedIn".format(i), 0, 0, 1))
+			settings.append(("dess_restrictions_{}".format(i),
+				path + "/Schedule/{}/Restrictions".format(i), 0, 0, 2))
 
 		return settings
 
@@ -108,10 +119,11 @@ class DynamicEss(SystemCalcDelegate):
 		durations = (self._settings['dess_duration_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		socs = (self._settings['dess_soc_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		discharges = (self._settings['dess_discharge_{}'.format(i)] for i in range(NUM_SCHEDULES))
+		restrictions = (self._settings['dess_restrictions_{}'.format(i)] for i in range(NUM_SCHEDULES))
 
-		for start, duration, soc, discharge in zip(starttimes, durations, socs, discharges):
+		for start, duration, soc, discharge, restrict in zip(starttimes, durations, socs, discharges, restrictions):
 			yield DynamicEssWindow(
-				datetime.fromtimestamp(start), duration, soc, discharge)
+				datetime.fromtimestamp(start), duration, soc, discharge, restrict)
 
 	@property
 	def hub4mode(self):
@@ -280,7 +292,7 @@ class DynamicEss(SystemCalcDelegate):
 					# after subtracting PV power.
 					self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxChargePower',
-						max(0.0, self.chargerate - self.pvpower) if self.batteryimport else self.acpv)
+						max(0.0, self.chargerate - self.pvpower) if (self.batteryimport and w.batteryimport) else self.acpv)
 				else: # Discharge or idle
 					self.charge_hysteresis = 1
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxChargePower', -1.0)
@@ -298,7 +310,7 @@ class DynamicEss(SystemCalcDelegate):
 						self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
 						self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
 							(self.chargerate + self.pvpower
-								if self.chargerate else -1.0) if self.batteryexport \
+								if self.chargerate else -1.0) if (self.batteryexport and w.batteryexport) \
 							else self.pvpower + self.consumption + 1.0) # 1.0 to allow selling overvoltage
 					else: # battery idle
 						# SOC/target-soc needs to move 1% to move out of idle
