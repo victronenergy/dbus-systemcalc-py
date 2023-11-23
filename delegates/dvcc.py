@@ -405,7 +405,7 @@ class ChargerSubsystem(object):
 		return any((s.want_bms for s in self._chargers.values()))
 
 	@property
-	def capacity(self):
+	def totalcapacity(self):
 		""" Total capacity if all chargers are running at full power. """
 		return safeadd(*(c.currentlimit for c in self._chargers.values()))
 
@@ -472,7 +472,7 @@ class ChargerSubsystem(object):
 					sc = chargers[0]
 					cc = min(ceil(max_charge_current), sc.currentlimit)
 					sc.maxchargecurrent = cc
-				elif max_charge_current > self.capacity * 0.95:
+				elif max_charge_current > self.totalcapacity * 0.95:
 					# Another simple case, we're asking for more than our
 					# combined capacity (with a 5% margin)
 					self.maximize_charge_current()
@@ -915,7 +915,7 @@ class Dvcc(SystemCalcDelegate):
 
 		# Update subsystems
 		self._chargesystem.update_values()
-		self._multi.update_values(self._chargesystem.capacity)
+		self._multi.update_values(self._chargesystem.totalcapacity)
 
 		# Below are things we only do every ADJUST seconds
 		if self._tickcount > 0: return True
