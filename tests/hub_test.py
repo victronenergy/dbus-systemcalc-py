@@ -2040,3 +2040,112 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Link/NetworkMode': 5,
 				'/Link/ChargeVoltage': 12.65
 		}})
+
+
+	def test_dvcc_for_alternators(self):
+		""" DVCC sends voltage to alternators and DC/DC converters. """
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 14.0,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 56,
+				'/Soc': 15.3,
+				'/DeviceInstance': 0,
+				'/Info/BatteryLowVoltage': 11,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 14.2,
+				'/Info/MaxDischargeCurrent': 50})
+		self._add_device('com.victronenergy.alternator.ttyO4', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Settings/ChargeCurrentLimit': 50,
+			'/Dc/0/Voltage': 14.0,
+			'/Dc/0/Current': 33,
+			'/FirmwareVersion': 0 },
+			connection='VE.Direct')
+		self._update_values(interval=30000)
+		self._check_external_values({
+			'com.victronenergy.alternator.ttyO4': {
+				'/Link/ChargeVoltage': 14.2,
+				'/Link/ChargeCurrent': 25 + 8}, # 25A limit, 8A VEBus
+		})
+
+	def test_current_distribution_to_alternators_solarchargers(self):
+		""" Check that current is shared between solar chargers and DC/DC converters. """
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 14.0,
+				'/Dc/0/Current': 5.0,
+				'/Dc/0/Power': 70,
+				'/Soc': 15.3,
+				'/DeviceInstance': 0,
+				'/Info/BatteryLowVoltage': 11,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 14.2,
+				'/Info/MaxDischargeCurrent': 50})
+		self._add_device('com.victronenergy.solarcharger.ttyUSB0', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Dc/0/Voltage': 14.0,
+			'/Dc/0/Current': 4.0,
+			'/FirmwareVersion': 0x0129},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.alternator.ttyO4', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Settings/ChargeCurrentLimit': 50,
+			'/Dc/0/Voltage': 14.0,
+			'/Dc/0/Current': 33,
+			'/FirmwareVersion': 0 },
+			connection='VE.Direct')
+		self._update_values(interval=30000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyUSB0': {
+				'/Link/ChargeCurrent': 25 + 8 },
+			'com.victronenergy.alternator.ttyO4': {
+				'/Link/ChargeVoltage': 14.2,
+				'/Link/ChargeCurrent': 25 + 8 - 4},
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeCurrent': 0}})
+
+	def test_between_alternators(self):
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._set_setting('/Settings/SystemSetup/MaxChargeCurrent', 60)
+
+		self._add_device('com.victronenergy.alternator.ttyO4', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Settings/ChargeCurrentLimit': 25,
+			'/Dc/0/Voltage': 14.0,
+			'/Dc/0/Current': 20,
+			'/FirmwareVersion': 0 },
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.alternator.ttyO5', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Settings/ChargeCurrentLimit': 50,
+			'/Dc/0/Voltage': 14.0,
+			'/Dc/0/Current': 20,
+			'/FirmwareVersion': 0 },
+			connection='VE.Direct')
+		self._update_values(interval=30000)
+
+		self._check_external_values({
+			'com.victronenergy.alternator.ttyO4': {
+				'/Link/ChargeCurrent': 20},
+			'com.victronenergy.alternator.ttyO5': {
+				'/Link/ChargeCurrent': 40}})
