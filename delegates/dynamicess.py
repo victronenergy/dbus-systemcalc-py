@@ -69,6 +69,8 @@ class DynamicEss(SystemCalcDelegate):
 			gettextcallback=lambda p, v: '{}%'.format(v))
 		self._dbusservice.add_path('/DynamicEss/ErrorCode', value=0,
 			gettextcallback=lambda p, v: ERRORS.get(v, 'Unknown'))
+		self._dbusservice.add_path('/DynamicEss/LastScheduledStart', value=None)
+		self._dbusservice.add_path('/DynamicEss/LastScheduledEnd', value=None)
 
 		if self.mode > 0:
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
@@ -268,7 +270,14 @@ class DynamicEss(SystemCalcDelegate):
 
 		# self.mode == 1 or self.mode == 4 (Auto) below here
 		now = self._get_time()
+		start = None
+		stop = None
 		for w in self.windows():
+			# Keep track of maximum available schedule
+			if start is None or w.start > start:
+				start = w.start
+				stop = w.stop
+
 			if now in w:
 				self.active = 1 # Auto
 
@@ -334,6 +343,9 @@ class DynamicEss(SystemCalcDelegate):
 			# No matching windows
 			if self.active:
 				self.deactivate(3)
+
+		self._dbusservice['/DynamicEss/LastScheduledStart'] = None if start is None else int(datetime.timestamp(start))
+		self._dbusservice['/DynamicEss/LastScheduledEnd'] = None if stop is None else int(datetime.timestamp(stop))
 
 		return True
 
