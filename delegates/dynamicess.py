@@ -7,7 +7,7 @@ from delegates.dvcc import Dvcc
 from delegates.batterylife import BatteryLife
 from delegates.batterylife import State as BatteryLifeState
 
-NUM_SCHEDULES = 4
+NUM_SCHEDULES = 12
 INTERVAL = 5
 SELLPOWER = -32000
 HUB4_SERVICE = 'com.victronenergy.hub4'
