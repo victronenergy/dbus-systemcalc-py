@@ -124,8 +124,9 @@ class DynamicEss(SystemCalcDelegate):
 		restrictions = (self._settings['dess_restrictions_{}'.format(i)] for i in range(NUM_SCHEDULES))
 
 		for start, duration, soc, discharge, restrict in zip(starttimes, durations, socs, discharges, restrictions):
-			yield DynamicEssWindow(
-				datetime.fromtimestamp(start), duration, soc, discharge, restrict)
+			if start > 0:
+				yield DynamicEssWindow(
+					datetime.fromtimestamp(start), duration, soc, discharge, restrict)
 
 	@property
 	def hub4mode(self):
