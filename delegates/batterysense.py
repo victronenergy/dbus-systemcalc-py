@@ -368,7 +368,10 @@ class BatterySense(SystemCalcDelegate):
 			written = 1
 
 		# Write to supporting inverters
-		for charger in self._dbusmonitor.get_service_list('com.victronenergy.inverter'):
+		for charger in chain(
+				self._dbusmonitor.get_service_list('com.victronenergy.inverter'),
+				self._dbusmonitor.get_service_list('com.victronenergy.multi')):
+
 			# Don't write the temperature back to its source
 			if charger == sense_temp_service:
 				continue
