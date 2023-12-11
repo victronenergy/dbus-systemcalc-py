@@ -87,7 +87,11 @@ class BatterySense(SystemCalcDelegate):
 			('com.victronenergy.battery', [
 				'/Dc/0/Temperature']),
 			('com.victronenergy.temperature', [
-				'/Temperature', '/TemperatureType'])
+				'/Temperature', '/TemperatureType']),
+			('com.victronenergy.dcdc', [
+				'/Dc/0/Temperature', '/Link/TemperatureSense']),
+			('com.victronenergy.alternator', [
+				'/Dc/0/Temperature', '/Link/TemperatureSense'])
 		]
 
 	def get_settings(self):
@@ -207,7 +211,9 @@ class BatterySense(SystemCalcDelegate):
 				service.startswith('com.victronenergy.vebus.') or \
 				service.startswith('com.victronenergy.solarcharger.') or \
 				service.startswith('com.victronenergy.inverter.') or \
-				service.startswith('com.victronenergy.multi.'):
+				service.startswith('com.victronenergy.multi.') or \
+				service.startswith('com.victronenergy.dcdc.') or \
+				service.startswith('com.victronenergy.alternator'):
 			self.temperaturesensors[service] = TemperatureSensor(service,
 				'/Dc/0/Temperature', instance,
 				lambda s=service: self._dbusmonitor.get_value(s, '/Dc/0/Temperature') is not None)
@@ -368,7 +374,11 @@ class BatterySense(SystemCalcDelegate):
 			written = 1
 
 		# Write to supporting inverters
-		for charger in self._dbusmonitor.get_service_list('com.victronenergy.inverter'):
+		for charger in chain(
+				self._dbusmonitor.get_service_list('com.victronenergy.inverter'),
+				self._dbusmonitor.get_service_list('com.victronenergy.dcdc'),
+				self._dbusmonitor.get_service_list('com.victronenergy.alternator')):
+
 			# Don't write the temperature back to its source
 			if charger == sense_temp_service:
 				continue
