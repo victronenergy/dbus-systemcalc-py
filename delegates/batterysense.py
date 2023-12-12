@@ -89,9 +89,11 @@ class BatterySense(SystemCalcDelegate):
 			('com.victronenergy.temperature', [
 				'/Temperature', '/TemperatureType']),
 			('com.victronenergy.dcdc', [
-				'/Dc/0/Temperature', '/Link/TemperatureSense']),
+				'/Dc/0/Temperature', '/Link/TemperatureSense',
+				'/Link/VoltageSense']),
 			('com.victronenergy.alternator', [
-				'/Dc/0/Temperature', '/Link/TemperatureSense'])
+				'/Dc/0/Temperature', '/Link/TemperatureSense',
+				'/Link/VoltageSense'])
 		]
 
 	def get_settings(self):
@@ -289,9 +291,12 @@ class BatterySense(SystemCalcDelegate):
 		elif not has_vsense:
 			return multi_written, charger_written
 
-		# Forward voltage sense to solarchargers and supporting inverters
+		# Forward voltage sense to solarchargers, dcdc converters, alternators
+		# and supporting inverters.
 		for service in chain(self._dbusmonitor.get_service_list('com.victronenergy.solarcharger'),
-			self._dbusmonitor.get_service_list('com.victronenergy.inverter')):
+			self._dbusmonitor.get_service_list('com.victronenergy.inverter'),
+			self._dbusmonitor.get_service_list('com.victronenergy.dcdc'),
+			self._dbusmonitor.get_service_list('com.victronenergy.alternator')):
 			if service == sense_voltage_service:
 				continue
 			if not self._dbusmonitor.seen(service, '/Link/VoltageSense'):
