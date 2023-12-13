@@ -679,8 +679,8 @@ class VoltageSenseTest(TestSystemCalcBase):
 			self.assertTrue(Dvcc.instance.has_dvcc)
 			self._remove_device('com.victronenergy.battery.ttyO2')
 
-		# FreedomWON and Hubble forces bol, but not SVS
-		for product_id in (0xB014, 0xB024, 0xB051):
+		# FreedomWON, Hubble and FD forces bol, but not SVS
+		for product_id in (0xB014, 0xB024, 0xB051, 0xB02B):
 			self._add_device('com.victronenergy.battery.ttyO2',
 				product_name='battery',
 				values={
