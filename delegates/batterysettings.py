@@ -18,6 +18,7 @@ BATTERY_ETOWER = 0xB024
 BATTERY_CEGASA = 0xB028
 BATTERY_HUBBLE = 0xB051
 BATTERY_PELIO_L = 0xB029
+BATTERY_WECO = 0xB02A
 BATTERY_FINDREAMS = 0xB02B
 
 class BatterySettings(SystemCalcDelegate):
@@ -42,7 +43,7 @@ class BatterySettings(SystemCalcDelegate):
 			self._settings['vsense'] = 2 # Forced Off
 			self._settings['tsense'] = 2 # Forced Off
 			self._settings['bol'] = 3 # Forced on
-		elif pid in (BATTERY_FREEDOMWON, BATTERY_ETOWER, BATTERY_HUBBLE, BATTERY_FINDREAMS):
+		elif pid in (BATTERY_FREEDOMWON, BATTERY_ETOWER, BATTERY_HUBBLE, BATTERY_FINDREAMS, BATTERY_WECO):
 			if self._settings['vsense'] & 2:
 				self._settings['vsense'] &= 1 # Remove setting if it was forced
 			self._settings['tsense'] = 2 # Forced Off
