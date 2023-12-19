@@ -273,12 +273,18 @@ class DynamicEss(SystemCalcDelegate):
 		now = self._get_time()
 		start = None
 		stop = None
-		for w in self.windows():
+		windows = list(self.windows())
+
+		for w in windows:
 			# Keep track of maximum available schedule
 			if start is None or w.start > start:
 				start = w.start
 				stop = w.stop
 
+		self._dbusservice['/DynamicEss/LastScheduledStart'] = None if start is None else int(datetime.timestamp(start))
+		self._dbusservice['/DynamicEss/LastScheduledEnd'] = None if stop is None else int(datetime.timestamp(stop))
+
+		for w in windows:
 			if now in w:
 				self.active = 1 # Auto
 
@@ -344,9 +350,6 @@ class DynamicEss(SystemCalcDelegate):
 			# No matching windows
 			if self.active:
 				self.deactivate(3)
-
-		self._dbusservice['/DynamicEss/LastScheduledStart'] = None if start is None else int(datetime.timestamp(start))
-		self._dbusservice['/DynamicEss/LastScheduledEnd'] = None if stop is None else int(datetime.timestamp(stop))
 
 		return True
 
