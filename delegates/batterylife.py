@@ -159,12 +159,21 @@ class BatteryLife(SystemCalcDelegate):
 		# we will enter LowSocCharge, so we should not switch out until
 		# we picked up at least to 3% (SocSwitchOffset).
 		if self.soc >= min(100, max(self.minsoclimit, Constants.SocSwitchOffset)):
+			# Once we reach minsoclimit, check if we shouldn't go (back) to
+			# Slow charge (aka Force Charge). If it's been too long since
+			# reaching the discharged state, go to slow charge.
+			if self.dischargedtime and \
+					self._get_time() - datetime.fromtimestamp(self.dischargedtime) \
+					> timedelta(seconds=Constants.ForceChargeInterval):
+				return State.BLForceCharge
 			return State.BLDischarged
 
 	def _forcecharge(self):
 		if not self.sustain and (self.soc > self.active_soclimit or self.soc >= 100):
 			self.dischargedtime = dt_to_stamp(self._get_time())
 			return State.BLDischarged
+		elif self.soc <= self.minsoclimit - Constants.LowSocChargeOffset:
+			return State.BLLowSocCharge
 
 	def _absorption(self):
 		if self.is_active_soc_low:

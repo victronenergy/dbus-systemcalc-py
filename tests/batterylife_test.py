@@ -238,6 +238,43 @@ class TestBatteryLife(TestSystemCalcBase):
         self._update_values()
         self._check_settings({ 'state': State.SocGuardDischarged })
 
+    def test_auto_recharge_from_slowcharge(self):
+        self._set_setting('/Settings/CGwacs/BatteryLife/SocLimit', 55)
+        self._set_setting('/Settings/CGwacs/BatteryLife/MinimumSocLimit', 50)
+        self._set_setting('/Settings/CGwacs/BatteryLife/State', State.BLDischarged)
+        self._set_setting('/Settings/CGwacs/BatteryLife/Flags', Flags.Discharged) # Discharged
+        self._set_setting('/Settings/CGwacs/BatteryLife/DischargedTime', 1)
+
+        timer_manager.run(900000)
+        self._check_settings({
+            'state': State.BLForceCharge, # Slow charge
+            'flags': Flags.Discharged,
+        })
+
+        # Falls by more than 5%, recharge
+        self._monitor.set_value(self.vebus, '/Soc', 44)
+        self._update_values()
+        self._check_settings({
+            'state': State.BLLowSocCharge, # Auto recharge
+            'flags': Flags.Discharged,
+        })
+
+        # Recovers to 50%, back to slow charge, discharged flag retained
+        self._monitor.set_value(self.vebus, '/Soc', 50)
+        self._update_values()
+        self._check_settings({
+            'state': State.BLForceCharge,
+            'flags': Flags.Discharged,
+        })
+
+        # Recovers to 55%, back to Discharged
+        self._monitor.set_value(self.vebus, '/Soc', 60.1)
+        self._update_values()
+        self._check_settings({
+            'state': State.BLDischarged,
+            'flags': Flags.Discharged,
+        })
+
     def test_stability(self):
         """ No flapping between states on boundaries. """
         bl = BatteryLife()
