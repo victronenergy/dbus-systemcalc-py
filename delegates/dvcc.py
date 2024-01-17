@@ -335,8 +335,7 @@ class InverterCharger(SolarCharger):
 	def set_maxdischargecurrent(self, limit):
 		""" Write the maximum discharge limit across. The firmware
 		    already handles a zero by turning off. """
-		if self.maxdischargecurrent != limit:
-			self.maxdischargecurrent = limit
+		self.maxdischargecurrent = limit
 
 class InverterSubsystem(object):
 	""" Encapsulate collection of inverters. """
