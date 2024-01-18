@@ -63,6 +63,7 @@ class DynamicEss(SystemCalcDelegate):
 		super(DynamicEss, self).set_sources(dbusmonitor, settings, dbusservice)
 		# Capabilities, 1 = supports charge/discharge restrictions
 		self._dbusservice.add_path('/DynamicEss/Capabilities', value=1)
+		self._dbusservice.add_path('/DynamicEss/Available', value=None)
 		self._dbusservice.add_path('/DynamicEss/Active', value=0,
 			gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
 		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=None,
@@ -219,6 +220,11 @@ class DynamicEss(SystemCalcDelegate):
 				self.chargerate = None
 
 	def _on_timer(self):
+		# Indicate whether this system has DESS capability. Presently
+		# that means it has ESS capability.
+		has_ess_assistant = Dvcc.instance.has_ess_assistant
+		self._dbusservice['/DynamicEss/Available'] = int(has_ess_assistant)
+
 		# If DESS was disabled, deactivate and kill timer.
 		if self.mode == 0:
 			self.deactivate(0) # No error
@@ -231,7 +237,7 @@ class DynamicEss(SystemCalcDelegate):
 			self.targetsoc = None
 			return True
 
-		if not Dvcc.instance.has_ess_assistant:
+		if not has_ess_assistant:
 			self.active = 0 # Off
 			self.errorcode = 1 # No ESS
 			self.targetsoc = None
