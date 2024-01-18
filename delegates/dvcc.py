@@ -187,8 +187,8 @@ class BaseCharger(object):
 		return self._get_path('/Mgmt/Connection')
 
 	@property
-	def state(self):
-		return self._get_path('/State')
+	def active(self):
+		return self._get_path('/State') != 0
 
 	@property
 	def has_externalcontrol_support(self):
@@ -337,6 +337,13 @@ class InverterCharger(SolarCharger):
 		    already handles a zero by turning off. """
 		self.maxdischargecurrent = limit
 
+	@property
+	def active(self):
+		# The charger part is active, as long as the maximum charging
+		# power value is more than zero.
+		return (self.monitor.get_value(self.service,
+			'/Settings/ChargeCurrentLimit') or 0) > 0
+
 class InverterSubsystem(object):
 	""" Encapsulate collection of inverters. """
 	def __init__(self, monitor):
@@ -481,7 +488,7 @@ class ChargerSubsystem(object):
 		# current.
 		#
 		# Additionally, don't bother with chargers that are disconnected.
-		chargers = [x for x in self._solarchargers.values() if x.state !=0 and x.maxchargecurrent is not None and x.n2k_device_instance in (0, None)]
+		chargers = [x for x in self._solarchargers.values() if x.active and x.maxchargecurrent is not None and x.n2k_device_instance in (0, None)]
 		if len(chargers) > 0:
 			if stop_on_mcc0 and max_charge_current == 0:
 				self.shutdown_chargers()
