@@ -85,7 +85,7 @@ class DynamicEss(SystemCalcDelegate):
 			("dess_capacity", path + "/BatteryCapacity", 0.0, 0.0, 1000.0),
 			("dess_efficiency", path + "/SystemEfficiency", 90.0, 0.0, 100.0),
 			# 0=None, 1=disallow export, 2=disallow import
-			("dess_restrictions", path + "/Restrictions", 0, 0, 2),
+			("dess_restrictions", path + "/Restrictions", 0, 0, 3),
 		]
 
 		for i in range(NUM_SCHEDULES):
@@ -98,7 +98,7 @@ class DynamicEss(SystemCalcDelegate):
 			settings.append(("dess_discharge_{}".format(i),
 				path + "/Schedule/{}/AllowGridFeedIn".format(i), 0, 0, 1))
 			settings.append(("dess_restrictions_{}".format(i),
-				path + "/Schedule/{}/Restrictions".format(i), 0, 0, 2))
+				path + "/Schedule/{}/Restrictions".format(i), 0, 0, 3))
 
 		return settings
 
