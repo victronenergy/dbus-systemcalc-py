@@ -6,6 +6,7 @@ from delegates.schedule import ScheduledWindow
 from delegates.dvcc import Dvcc
 from delegates.batterylife import BatteryLife
 from delegates.batterylife import State as BatteryLifeState
+from enum import Enum
 
 NUM_SCHEDULES = 12
 INTERVAL = 5
@@ -29,12 +30,17 @@ ERRORS = {
 	5: 'Battery capacity unset'
 }
 
+class Strategy(int, Enum):
+	TARGETSOC = 0
+	SELFCONSUME = 1
+
 class DynamicEssWindow(ScheduledWindow):
-	def __init__(self, start, duration, soc, allow_feedin, restrictions):
+	def __init__(self, start, duration, soc, allow_feedin, restrictions, strategy):
 		super(DynamicEssWindow, self).__init__(start, duration)
 		self.soc = soc
 		self.allow_feedin = allow_feedin
 		self.restrictions = restrictions
+		self.strategy = strategy
 
 	@property
 	def batteryexport(self):
@@ -99,6 +105,8 @@ class DynamicEss(SystemCalcDelegate):
 				path + "/Schedule/{}/AllowGridFeedIn".format(i), 0, 0, 1))
 			settings.append(("dess_restrictions_{}".format(i),
 				path + "/Schedule/{}/Restrictions".format(i), 0, 0, 3))
+			settings.append(("dess_strategy_{}".format(i),
+				path + "/Schedule/{}/Strategy".format(i), 0, 0, 1))
 
 		return settings
 
@@ -123,11 +131,12 @@ class DynamicEss(SystemCalcDelegate):
 		socs = (self._settings['dess_soc_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		discharges = (self._settings['dess_discharge_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		restrictions = (self._settings['dess_restrictions_{}'.format(i)] for i in range(NUM_SCHEDULES))
+		strategies = (self._settings['dess_strategy_{}'.format(i)] for i in range(NUM_SCHEDULES))
 
-		for start, duration, soc, discharge, restrict in zip(starttimes, durations, socs, discharges, restrictions):
+		for start, duration, soc, discharge, restrict, strategy in zip(starttimes, durations, socs, discharges, restrictions, strategies):
 			if start > 0:
 				yield DynamicEssWindow(
-					datetime.fromtimestamp(start), duration, soc, discharge, restrict)
+					datetime.fromtimestamp(start), duration, soc, discharge, restrict, strategy)
 
 	@property
 	def hub4mode(self):
@@ -294,13 +303,35 @@ class DynamicEss(SystemCalcDelegate):
 			if now in w:
 				self.active = 1 # Auto
 
-				if self.targetsoc != w.soc:
-					self.chargerate = None # For recalculation
-				self.targetsoc = w.soc
-
 				# If schedule allows for feed-in, enable that now.
 				self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess',
 					2 if w.allow_feedin else 1)
+
+				if w.strategy == Strategy.SELFCONSUME:
+					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None) # Normal ESS
+					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
+
+					# If importing into battery is allowed, then no restriction, let the
+					# setpoint determine that. If disallowed, then only AC-coupled PV may
+					# be imported into battery.
+					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxChargePower',
+						-1 if (self.batteryimport and w.batteryimport) else self.acpv)
+
+					# If above window SOC, then normal ESS for reaching the
+					# ESS grid setpoint. Unless there are export restrictions,
+					# then limited to the pvpower and the local consumption. So
+					# a negative setpoint cannot cause power to go to the grid.
+					# If below SOC, limit to 90% of PV power only.
+					dcp = -1.0 if (self.batteryexport and w.batteryexport) \
+						else max(self.pvpower + self.consumption, 1.0)
+
+					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', dcp)
+					break # Out of FOR loop
+
+				# Below here, strategy is Strategy.TARGETSOC
+				if self.targetsoc != w.soc:
+					self.chargerate = None # For recalculation
+				self.targetsoc = w.soc
 
 				if self.soc + self.charge_hysteresis < w.soc: # Charge
 					self.charge_hysteresis = 0

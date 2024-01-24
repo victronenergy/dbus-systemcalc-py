@@ -275,3 +275,24 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/Overrides/MaxDischargePower') == -1.0)
 		self.assertTrue(self._monitor.get_value('com.victronenergy.hub4',
 			'/Overrides/MaxChargePower') > 0.0)
+
+	def test_self_consume(self):
+		now = timer_manager.datetime
+		stamp = int(now.timestamp())
+
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 1) # Self consume
+
+		timer_manager.run(5000)
+
+		self._check_external_values({
+			'com.victronenergy.hub4': {
+				'/Overrides/ForceCharge': 0,
+				'/Overrides/Setpoint': None,
+				'/Overrides/MaxDischargePower': -1,
+				'/Overrides/MaxChargePower': -1,
+				'/Overrides/FeedInExcess': 1
+		}})
