@@ -90,10 +90,10 @@ class BatterySense(SystemCalcDelegate):
 				'/Temperature', '/TemperatureType']),
 			('com.victronenergy.dcdc', [
 				'/Dc/0/Temperature', '/Link/TemperatureSense',
-				'/Link/VoltageSense']),
+				'/Link/VoltageSense', '/Link/BatteryCurrent']),
 			('com.victronenergy.alternator', [
 				'/Dc/0/Temperature', '/Link/TemperatureSense',
-				'/Link/VoltageSense'])
+				'/Link/VoltageSense', '/Link/BatteryCurrent'])
 		]
 
 	def get_settings(self):
@@ -336,7 +336,9 @@ class BatterySense(SystemCalcDelegate):
 		sent = BatterySense.ISENSE_NO_CHARGERS
 		for service in chain(self._dbusmonitor.get_service_list(
 			'com.victronenergy.solarcharger').keys(), self._dbusmonitor.get_service_list(
-			'com.victronenergy.inverter').keys()):
+			'com.victronenergy.inverter').keys(), self._dbusmonitor.get_service_list(
+			'com.victronenergy.dcdc').keys(), self._dbusmonitor.get_service_list(
+			'com.victronenergy.alternator').keys()):
 			# Skip for old firmware versions to save some dbus traffic
 			if not self._dbusmonitor.seen(service, '/Link/BatteryCurrent'):
 				continue # No such feature on this charger
