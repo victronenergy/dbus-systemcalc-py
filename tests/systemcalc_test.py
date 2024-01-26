@@ -1439,5 +1439,82 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Ac/PvOnGrid/L1/Power': 210
 		})
 
+	def test_multi_rs_3phase_summing(self):
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._add_device('com.victronenergy.multi.ttyO1',
+						product_name='inverter',
+						values={
+							'/DeviceInstance': 0,
+							'/Ac/In/1/Type': 1,
+							'/Ac/In/1/L1/P': 230.0,
+							'/Ac/In/1/L1/I': 1.0,
+							'/Ac/Out/L1/P': 230.0,
+							'/Ac/Out/L1/V': 230.0,
+							'/Ac/Out/L1/I': 1.0})
+		self._add_device('com.victronenergy.multi.ttyO2',
+						product_name='inverter',
+						values={
+							'/DeviceInstance': 1,
+							'/Ac/In/1/Type': 1,
+							'/Ac/In/1/L2/P': 120.0,
+							'/Ac/In/1/L2/I': 0.5,
+							'/Ac/Out/L2/P': 120.0,
+							'/Ac/Out/L2/V': 230.0,
+							'/Ac/Out/L2/I': 0.5})
+		self._add_device('com.victronenergy.multi.ttyO3',
+						product_name='inverter',
+						values={
+							'/DeviceInstance': 2,
+							'/Ac/In/1/Type': 1,
+							'/Ac/In/1/L3/P': 460.0,
+							'/Ac/In/1/L3/I': 2.0,
+							'/Ac/Out/L3/P': 460.0,
+							'/Ac/Out/L3/V': 230.0,
+							'/Ac/Out/L3/I': 2.0})
+		self._update_values()
+
+		self._check_values({
+			'/Ac/Consumption/L1/Power': 230,
+			'/Ac/Consumption/L1/Current': 1.0,
+			'/Ac/ConsumptionOnOutput/L1/Power': 230,
+			'/Ac/ConsumptionOnOutput/L1/Current': 1.0,
+			'/Ac/Consumption/L2/Power': 120,
+			'/Ac/Consumption/L2/Current': 0.5,
+			'/Ac/ConsumptionOnOutput/L2/Power': 120,
+			'/Ac/ConsumptionOnOutput/L2/Current': 0.5,
+			'/Ac/Consumption/L3/Power': 460,
+			'/Ac/Consumption/L3/Current': 2.0,
+			'/Ac/ConsumptionOnOutput/L3/Power': 460,
+			'/Ac/ConsumptionOnOutput/L3/Current': 2.0,
+			'/Ac/Consumption/NumberOfPhases': 3
+			})
+
+		# Add a meter
+		self._add_device('com.victronenergy.grid.ttyUSB1', {
+			'/Ac/L1/Power': 2300,
+			'/Ac/L2/Power': 1100,
+			'/Ac/L3/Power': 4600,
+			'/Ac/L1/Current': 10,
+			'/Ac/L2/Current': 5,
+			'/Ac/L3/Current': 20
+			})
+		self._update_values()
+
+		self._check_values({
+			'/Ac/Consumption/L1/Power': 2530,
+			'/Ac/Consumption/L1/Current': 11.0,
+			'/Ac/Consumption/L2/Power': 1220,
+			'/Ac/Consumption/L2/Current': 5.5,
+			'/Ac/Consumption/L3/Power': 5060,
+			'/Ac/Consumption/L3/Current': 22,
+			'/Ac/ConsumptionOnInput/L1/Power': 2300,
+			'/Ac/ConsumptionOnInput/L1/Current': 10.0,
+			'/Ac/ConsumptionOnInput/L2/Power': 1100,
+			'/Ac/ConsumptionOnInput/L2/Current': 5,
+			'/Ac/ConsumptionOnInput/L3/Power': 4600,
+			'/Ac/ConsumptionOnInput/L3/Current': 20,
+			'/Ac/Consumption/NumberOfPhases': 3
+			})
+
 if __name__ == '__main__':
 	unittest.main()

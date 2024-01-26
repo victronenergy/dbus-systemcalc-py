@@ -143,6 +143,14 @@ class SystemCalc:
 				'/Ac/Out/L1/S': dummy,
 				'/Ac/Out/L1/V': dummy,
 				'/Ac/Out/L1/I': dummy,
+				'/Ac/Out/L2/P': dummy,
+				'/Ac/Out/L2/S': dummy,
+				'/Ac/Out/L2/V': dummy,
+				'/Ac/Out/L2/I': dummy,
+				'/Ac/Out/L3/P': dummy,
+				'/Ac/Out/L3/S': dummy,
+				'/Ac/Out/L3/V': dummy,
+				'/Ac/Out/L3/I': dummy,
 				'/Yield/Power': dummy,
 				'/Soc': dummy},
 			'com.victronenergy.multi': {
@@ -162,6 +170,20 @@ class SystemCalc:
 				'/Ac/Out/L1/P': dummy,
 				'/Ac/Out/L1/V': dummy,
 				'/Ac/Out/L1/I': dummy,
+				'/Ac/In/1/L2/P': dummy,
+				'/Ac/In/1/L2/I': dummy,
+				'/Ac/In/2/L2/P': dummy,
+				'/Ac/In/2/L2/I': dummy,
+				'/Ac/Out/L2/P': dummy,
+				'/Ac/Out/L2/V': dummy,
+				'/Ac/Out/L2/I': dummy,
+				'/Ac/In/1/L3/P': dummy,
+				'/Ac/In/1/L3/I': dummy,
+				'/Ac/In/2/L3/P': dummy,
+				'/Ac/In/2/L3/I': dummy,
+				'/Ac/Out/L3/P': dummy,
+				'/Ac/Out/L3/V': dummy,
+				'/Ac/Out/L3/I': dummy,
 				'/Yield/Power': dummy,
 				'/Soc': dummy},
 			'com.victronenergy.dcsystem': {
@@ -853,11 +875,12 @@ class SystemCalc:
 							except TypeError:
 								pass
 						elif non_vebus_inverter is not None and active_input in (0, 1):
-							try:
-								c = _safeadd(c, -self._dbusmonitor.get_value(non_vebus_inverter, '/Ac/In/%d/%s/P' % (active_input+1, phase)))
-								cc = _safeadd(cc, -self._dbusmonitor.get_value(non_vebus_inverter, '/Ac/In/%d/%s/I' % (active_input+1, phase)))
-							except TypeError:
-								pass
+							for i in non_vebus_inverters:
+								try:
+									c = _safeadd(c, -self._dbusmonitor.get_value(i, '/Ac/In/%d/%s/P' % (active_input+1, phase)))
+									cc = _safeadd(cc, -self._dbusmonitor.get_value(i, '/Ac/In/%d/%s/I' % (active_input+1, phase)))
+								except TypeError:
+									pass
 
 					# If there's any power coming from a PV inverter in the inactive AC in (which is unlikely),
 					# it will still be used, because there may also be a load in the same ACIn consuming
@@ -874,11 +897,12 @@ class SystemCalc:
 							currentconsumption[phase] = _safeadd(0, currentconsumption[phase])
 							mc = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/I' % phase)
 						elif non_vebus_inverter is not None and active_input in (0, 1):
-							p = self._dbusmonitor.get_value(non_vebus_inverter, '/Ac/In/%d/%s/P' % (active_input + 1, phase))
-							mc = self._dbusmonitor.get_value(non_vebus_inverter, '/Ac/In/%d/%s/I' % (active_input + 1, phase))
-							if p is not None:
-								consumption[phase] = _safeadd(0, consumption[phase])
-								currentconsumption[phase] = _safeadd(0, currentconsumption[phase])
+							for i in non_vebus_inverters:
+								p = self._dbusmonitor.get_value(i, '/Ac/In/%d/%s/P' % (active_input + 1, phase))
+								mc = self._dbusmonitor.get_value(i, '/Ac/In/%d/%s/I' % (active_input + 1, phase))
+								if p is not None:
+									consumption[phase] = _safeadd(0, p, consumption[phase])
+									currentconsumption[phase] = _safeadd(0, mc, currentconsumption[phase])
 
 					# No relevant energy meter present. Assume there is no load between the grid and the multi.
 					# There may be a PV inverter present though (Hub-3 setup).
