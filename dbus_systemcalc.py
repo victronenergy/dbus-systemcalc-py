@@ -898,11 +898,13 @@ class SystemCalc:
 							mc = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/I' % phase)
 						elif non_vebus_inverter is not None and active_input in (0, 1):
 							for i in non_vebus_inverters:
-								p = self._dbusmonitor.get_value(i, '/Ac/In/%d/%s/P' % (active_input + 1, phase))
-								mc = self._dbusmonitor.get_value(i, '/Ac/In/%d/%s/I' % (active_input + 1, phase))
-								if p is not None:
-									consumption[phase] = _safeadd(0, p, consumption[phase])
-									currentconsumption[phase] = _safeadd(0, mc, currentconsumption[phase])
+								p = _safeadd(p,
+									self._dbusmonitor.get_value(i, '/Ac/In/%d/%s/P' % (active_input + 1, phase)))
+								mc = _safeadd(mc,
+									self._dbusmonitor.get_value(i, '/Ac/In/%d/%s/I' % (active_input + 1, phase)))
+							if p is not None:
+								consumption[phase] = _safeadd(0, p, consumption[phase])
+								currentconsumption[phase] = _safeadd(0, mc, currentconsumption[phase])
 
 					# No relevant energy meter present. Assume there is no load between the grid and the multi.
 					# There may be a PV inverter present though (Hub-3 setup).
