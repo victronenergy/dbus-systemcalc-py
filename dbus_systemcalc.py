@@ -903,8 +903,8 @@ class SystemCalc:
 								mc = _safeadd(mc,
 									self._dbusmonitor.get_value(i, '/Ac/In/%d/%s/I' % (active_input + 1, phase)))
 							if p is not None:
-								consumption[phase] = _safeadd(0, p, consumption[phase])
-								currentconsumption[phase] = _safeadd(0, mc, currentconsumption[phase])
+								consumption[phase] = _safeadd(0, consumption[phase])
+								currentconsumption[phase] = _safeadd(0, currentconsumption[phase])
 
 					# No relevant energy meter present. Assume there is no load between the grid and the multi.
 					# There may be a PV inverter present though (Hub-3 setup).
