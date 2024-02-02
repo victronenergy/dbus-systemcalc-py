@@ -68,7 +68,8 @@ class DynamicEss(SystemCalcDelegate):
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(DynamicEss, self).set_sources(dbusmonitor, settings, dbusservice)
 		# Capabilities, 1 = supports charge/discharge restrictions
-		self._dbusservice.add_path('/DynamicEss/Capabilities', value=1)
+		#               2 = supports self-consumption strategy
+		self._dbusservice.add_path('/DynamicEss/Capabilities', value=3)
 		self._dbusservice.add_path('/DynamicEss/Available', value=None)
 		self._dbusservice.add_path('/DynamicEss/Active', value=0,
 			gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
