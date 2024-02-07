@@ -858,7 +858,7 @@ class Dvcc(SystemCalcDelegate):
 		self._dbusservice.add_path('/Control/EffectiveChargeVoltage', value=None)
 		self._dbusservice.add_path('/Control/BmsParameters', value=0)
 		self._dbusservice.add_path('/Control/MaxChargeCurrent', value=0)
-		self._dbusservice.add_path('/Control/Dvcc', value=1)
+		self._dbusservice.add_path('/Control/Dvcc', value=self.has_dvcc)
 		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/SolarVoltageOffset', value=0, writeable=True)
 		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/VebusVoltageOffset', value=0, writeable=True)
 		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/CurrentOffset', value=0, writeable=True)
