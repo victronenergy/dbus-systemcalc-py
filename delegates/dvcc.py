@@ -796,19 +796,6 @@ class Dvcc(SystemCalcDelegate):
 				'/N2kDeviceInstance',
 				'/Mgmt/Connection',
 				'/Settings/BmsPresent']),
-			('com.victronenergy.dcdc', [
-				'/ProductId',
-				'/Dc/0/Voltage',
-				'/Dc/0/Current',
-				'/Link/NetworkMode',
-				'/Link/ChargeVoltage',
-				'/Link/ChargeCurrent',
-				'/Settings/ChargeCurrentLimit',
-				'/State',
-				'/FirmwareVersion',
-				'/N2kDeviceInstance',
-				'/Mgmt/Connection',
-				'/Settings/BmsPresent']),
 			('com.victronenergy.inverter', [
 				'/ProductId',
 				'/Dc/0/Current',
@@ -878,7 +865,7 @@ class Dvcc(SystemCalcDelegate):
 					self._chargesystem.add_invertercharger(service))
 		elif service_type == 'vecan':
 			self._vecan_services.append(service)
-		elif service_type in ('dcdc', 'alternator'):
+		elif service_type == 'alternator':
 			self._chargesystem.add_alternator(service)
 		elif service_type == 'battery':
 			pass # install timer below

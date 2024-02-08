@@ -88,9 +88,6 @@ class BatterySense(SystemCalcDelegate):
 				'/Dc/0/Temperature']),
 			('com.victronenergy.temperature', [
 				'/Temperature', '/TemperatureType']),
-			('com.victronenergy.dcdc', [
-				'/Dc/0/Temperature', '/Link/TemperatureSense',
-				'/Link/VoltageSense', '/Link/BatteryCurrent']),
 			('com.victronenergy.alternator', [
 				'/Dc/0/Temperature', '/Link/TemperatureSense',
 				'/Link/VoltageSense', '/Link/BatteryCurrent'])
@@ -214,7 +211,6 @@ class BatterySense(SystemCalcDelegate):
 				service.startswith('com.victronenergy.solarcharger.') or \
 				service.startswith('com.victronenergy.inverter.') or \
 				service.startswith('com.victronenergy.multi.') or \
-				service.startswith('com.victronenergy.dcdc.') or \
 				service.startswith('com.victronenergy.alternator'):
 			self.temperaturesensors[service] = TemperatureSensor(service,
 				'/Dc/0/Temperature', instance,
@@ -291,11 +287,10 @@ class BatterySense(SystemCalcDelegate):
 		elif not has_vsense:
 			return multi_written, charger_written
 
-		# Forward voltage sense to solarchargers, dcdc converters, alternators
+		# Forward voltage sense to solarchargers, alternators
 		# and supporting inverters.
 		for service in chain(self._dbusmonitor.get_service_list('com.victronenergy.solarcharger'),
 			self._dbusmonitor.get_service_list('com.victronenergy.inverter'),
-			self._dbusmonitor.get_service_list('com.victronenergy.dcdc'),
 			self._dbusmonitor.get_service_list('com.victronenergy.alternator')):
 			if service == sense_voltage_service:
 				continue
@@ -337,7 +332,6 @@ class BatterySense(SystemCalcDelegate):
 		for service in chain(self._dbusmonitor.get_service_list(
 			'com.victronenergy.solarcharger').keys(), self._dbusmonitor.get_service_list(
 			'com.victronenergy.inverter').keys(), self._dbusmonitor.get_service_list(
-			'com.victronenergy.dcdc').keys(), self._dbusmonitor.get_service_list(
 			'com.victronenergy.alternator').keys()):
 			# Skip for old firmware versions to save some dbus traffic
 			if not self._dbusmonitor.seen(service, '/Link/BatteryCurrent'):
@@ -383,7 +377,6 @@ class BatterySense(SystemCalcDelegate):
 		# Write to supporting inverters
 		for charger in chain(
 				self._dbusmonitor.get_service_list('com.victronenergy.inverter'),
-				self._dbusmonitor.get_service_list('com.victronenergy.dcdc'),
 				self._dbusmonitor.get_service_list('com.victronenergy.alternator')):
 
 			# Don't write the temperature back to its source

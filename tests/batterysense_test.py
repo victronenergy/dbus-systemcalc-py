@@ -1002,7 +1002,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/Sense/Temperature': 25.3,
 				'/Sense/Soc': 50}})
 
-	def test_distribute_current_to_dcdc_and_alternator(self):
+	def test_distribute_current_to_alternator(self):
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',
 			values={
@@ -1014,7 +1014,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/Info/MaxChargeVoltage': None,
 				'/DeviceInstance': 2})
 
-		self._add_device('com.victronenergy.dcdc.ttyO1', {
+		self._add_device('com.victronenergy.alternator.ttyO1', {
 			'/State': 1,
 			'/Link/NetworkMode': 0,
 			'/Link/VoltageSense': None,
@@ -1033,5 +1033,5 @@ class VoltageSenseTest(TestSystemCalcBase):
 			'/Control/BatteryCurrentSense': 4 # enabled
 		})
 		self._check_external_values({
-			'com.victronenergy.dcdc.ttyO1': {
+			'com.victronenergy.alternator.ttyO1': {
 				'/Link/BatteryCurrent': 5.3}})
