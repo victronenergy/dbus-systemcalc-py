@@ -2149,3 +2149,60 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Link/ChargeCurrent': 20},
 			'com.victronenergy.alternator.ttyO5': {
 				'/Link/ChargeCurrent': 40}})
+
+	def test_dvcc_with_ess_for_alternators(self):
+		""" DVCC sends voltage to alternators and DC/DC converters. """
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 14.0,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 56,
+				'/Soc': 15.3,
+				'/DeviceInstance': 0,
+				'/Info/BatteryLowVoltage': 11,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 14.2,
+				'/Info/MaxDischargeCurrent': 50})
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 14.6)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', 3)
+
+		self._add_device('com.victronenergy.alternator.ttyO4', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Settings/ChargeCurrentLimit': 50,
+			'/Dc/0/Voltage': 14.0,
+			'/Dc/0/Current': 33,
+			'/FirmwareVersion': 0 },
+			connection='VE.Direct')
+		self._update_values(interval=30000)
+		self._check_external_values({
+			'com.victronenergy.alternator.ttyO4': {
+				'/Link/ChargeVoltage': 14.2, # Not the voltage sent by the Multi
+				'/Link/ChargeCurrent': 25 + 8}, # 25A limit, 8A VEBus
+		})
+
+	def test_dvcc_with_ess_no_battery_for_alternators(self):
+		""" DVCC sends voltage to alternators and DC/DC converters. """
+		self._set_setting('/Settings/SystemSetup/MaxChargeCurrent', 25)
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 14.6)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', 3)
+
+		self._add_device('com.victronenergy.alternator.ttyO4', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Settings/ChargeCurrentLimit': 50,
+			'/Dc/0/Voltage': 14.0,
+			'/Dc/0/Current': 33,
+			'/FirmwareVersion': 0 },
+			connection='VE.Direct')
+		self._update_values(interval=30000)
+		self._check_external_values({
+			'com.victronenergy.alternator.ttyO4': {
+				'/Link/ChargeVoltage': None,
+				'/Link/ChargeCurrent': 25 + 8}, # 25A limit, 8A VEBus
+		})

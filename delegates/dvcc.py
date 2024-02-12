@@ -454,7 +454,7 @@ class ChargerSubsystem(object):
 		for charger in self:
 			charger.maxchargecurrent = 0
 
-	def set_networked(self, has_bms, charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0):
+	def set_networked(self, has_bms, bms_charge_voltage, charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0):
 		""" This is the main entry-point into the solar charger subsystem. This
 		    sets all chargers to the same charge_voltage, and distributes
 		    max_charge_current between the chargers. If feedback_allowed, then
@@ -472,12 +472,19 @@ class ChargerSubsystem(object):
 			charger.networkmode = network_mode
 			network_mode_written = True
 
-		# Distribute the voltage setpoint. Simply write it to all of them.
+		# Distribute the voltage setpoint to all solar chargers.
+		# Non-solar chargers are controlled elsewhere.
 		voltage_written = 0
 		if charge_voltage is not None:
 			voltage_written = int(len(self)>0)
-			for charger in self:
+			for charger in self._solarchargers.values():
 				charger.chargevoltage = charge_voltage
+
+		# Distribute the original BMS voltage setpoint, if there is one,
+		# to the other chargers
+		if bms_charge_voltage is not None:
+			for charger in self._otherchargers.values():
+				charger.chargevoltage = bms_charge_voltage
 
 		# Do not limit max charge current when feedback is allowed. The
 		# rationale behind this is that MPPT charge power should match the
@@ -1161,7 +1168,8 @@ class Dvcc(SystemCalcDelegate):
 			return 0, 0, None
 
 		voltage_written, current_written, network_mode = self._chargesystem.set_networked(
-			has_bms, charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0)
+			has_bms, bms_charge_voltage, charge_voltage,
+			max_charge_current, feedback_allowed, stop_on_mcc0)
 
 		# Write the voltage to VE.Can. Also update the networkmode.
 		if charge_voltage is not None:
