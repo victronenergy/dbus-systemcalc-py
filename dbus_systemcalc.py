@@ -329,6 +329,14 @@ class SystemCalc:
 			'/Ac/ActiveIn/L2/Current': {'gettext': '%.1F A'},
 			'/Ac/ActiveIn/L3/Current': {'gettext': '%.1F A'},
 			'/Ac/ActiveIn/NumberOfPhases': {'gettext': '%d'},
+			'/Ac/In/0/Current/Min': {'gettext': '%.1F'},
+			'/Ac/In/0/Current/Max': {'gettext': '%.1F'},
+			'/Ac/In/1/Current/Min': {'gettext': '%.1F'},
+			'/Ac/In/1/Current/Max': {'gettext': '%.1F'},
+			'/Ac/Consumption/Current/Max': {'gettext': '%.1F'},
+			'/Pv/Power/Max': {'gettext': '%d'},
+			'/Dc/Input/Power/Max': {'gettext': '%d'},
+			'/Dc/System/Power/Max': {'gettext': '%d'}
 		}
 
 		for m in self._modules:
@@ -984,6 +992,57 @@ class SystemCalc:
 
 		for m in self._modules:
 			m.update_values(newvalues)
+
+		# ==== UPDATE MINIMUM AND MAXIMUM LEVELS ====
+		# min/max computations are done here because the _updatevalues method abstracts them
+		# away from the delegates.
+
+		# Quattro has 2 AC inputs which cannot be active simultaneously.
+		# activeIn needs to 1 when 'Ac/In/1/Connected' is 1 and can be 0 otherwise.
+		activeIn = self._dbusservice['/Ac/In/1/Connected'] or 0
+
+		# AC input
+		# Minimum values occur when feeding back to the grid.
+		# For the minimum value, make sure it is 0 at its maximum.
+		newvalues['/Ac/In/%s/Current/Min' % activeIn] = min(0,
+															self._dbusservice['/Ac/In/%s/Current/Min' % activeIn] or float("inf"),
+															newvalues.get('/Ac/ActiveIn/L1/Current') or float("inf"),
+															newvalues.get('/Ac/ActiveIn/L2/Current') or float("inf"),
+															newvalues.get('/Ac/ActiveIn/L3/Current') or float("inf"))
+
+		newvalues['/Ac/In/%s/Current/Max' % activeIn] = max(self._dbusservice['/Ac/In/%s/Current/Min' % activeIn] or 0,
+															newvalues.get('/Ac/ActiveIn/L1/Current') or 0,
+															newvalues.get('/Ac/ActiveIn/L2/Current') or 0,
+															newvalues.get('/Ac/ActiveIn/L3/Current') or 0)
+
+		# AC output
+		newvalues['/Ac/Consumption/Current/Max'] =  max(self._dbusservice['/Ac/Consumption/Current/Max'] or 0,
+																newvalues.get('/Ac/Consumption/L1/Current') or 0,
+																newvalues.get('/Ac/Consumption/L2/Current') or 0,
+																newvalues.get('/Ac/Consumption/L3/Current') or 0)
+
+		# DC input
+		newvalues['/Dc/Input/Power/Max'] = max(self._dbusservice['/Dc/Input/Power/Max'] or 0, 
+												sum([newvalues.get('/Dc/Charger/Power') or 0,
+													newvalues.get('/Dc/FuelCell/Power') or 0,
+													newvalues.get('/Dc/Alternator/Power') or 0]))
+
+		# DC output
+		newvalues['/Dc/System/Power/Max'] = _safemax(self._dbusservice['/Dc/System/Power/Max'] or 0,
+														newvalues.get('/Dc/System/Power') or 0)
+
+		# PV power
+		newvalues['/Pv/Power/Max'] = _safemax(self._dbusservice['/Pv/Power/Max'] or 0,
+												_safeadd(newvalues.get('/Dc/Pv/Power') or 0,
+												self._dbusservice['/Ac/PvOnGrid/L1/Power'],
+												self._dbusservice['/Ac/PvOnGrid/L2/Power'],
+												self._dbusservice['/Ac/PvOnGrid/L3/Power'],
+												self._dbusservice['/Ac/PvOnGenset/L1/Power'],
+												self._dbusservice['/Ac/PvOnGenset/L2/Power'],
+												self._dbusservice['/Ac/PvOnGenset/L3/Power'],
+												self._dbusservice['/Ac/PvOnOutput/L1/Power'],
+												self._dbusservice['/Ac/PvOnOutput/L2/Power'],
+												self._dbusservice['/Ac/PvOnOutput/L3/Power']))
 
 		# ==== UPDATE DBUS ITEMS ====
 		with self._dbusservice as sss:
