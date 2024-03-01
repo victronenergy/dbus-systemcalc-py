@@ -64,6 +64,7 @@ class DynamicEss(SystemCalcDelegate):
 		self.prevsoc = None
 		self.chargerate = None # How fast to charge/discharge to get to the next target
 		self._timer = None
+		self._av_timer = None
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(DynamicEss, self).set_sources(dbusmonitor, settings, dbusservice)
@@ -80,6 +81,8 @@ class DynamicEss(SystemCalcDelegate):
 		self._dbusservice.add_path('/DynamicEss/LastScheduledStart', value=None)
 		self._dbusservice.add_path('/DynamicEss/LastScheduledEnd', value=None)
 
+		self._check_availability()
+		self._av_timer = GLib.timeout_add(60000, self._check_availability)
 		if self.mode > 0:
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
 
@@ -229,12 +232,13 @@ class DynamicEss(SystemCalcDelegate):
 			except ZeroDivisionError:
 				self.chargerate = None
 
-	def _on_timer(self):
+	def _check_availability(self):
 		# Indicate whether this system has DESS capability. Presently
 		# that means it has ESS capability.
-		has_ess_assistant = Dvcc.instance.has_ess_assistant
-		self._dbusservice['/DynamicEss/Available'] = int(has_ess_assistant)
+		self._dbusservice['/DynamicEss/Available'] = int(Dvcc.instance.has_ess_assistant)
+		return True
 
+	def _on_timer(self):
 		# If DESS was disabled, deactivate and kill timer.
 		if self.mode == 0:
 			self.deactivate(0) # No error
@@ -247,7 +251,7 @@ class DynamicEss(SystemCalcDelegate):
 			self.targetsoc = None
 			return True
 
-		if not has_ess_assistant:
+		if not Dvcc.instance.has_ess_assistant:
 			self.active = 0 # Off
 			self.errorcode = 1 # No ESS
 			self.targetsoc = None
