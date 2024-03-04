@@ -1,3 +1,4 @@
+import dbus
 from ve_utils import get_product_id
 from delegates.base import SystemCalcDelegate
 
@@ -36,6 +37,10 @@ class Service(object):
 	def onboard(self):
 		return not self.port.startswith('/dev/ttyUSB')
 
+	def set_ignore_ac(self, inp, ignore):
+		self.monitor.set_value_async(self.service, '/Ac/Control/IgnoreAcIn{}'.format(inp + 1),
+			dbus.Int32(ignore, variant_level=1))
+
 class Multi(SystemCalcDelegate):
 	def __init__(self):
 		super(Multi, self).__init__()
@@ -54,7 +59,9 @@ class Multi(SystemCalcDelegate):
 		return [('com.victronenergy.vebus', [
 				'/Interfaces/Mk2/Connection',
 				'/Ac/ActiveIn/ActiveInput',
-				'/Ac/NumberOfAcInputs'])]
+				'/Ac/NumberOfAcInputs',
+				'/Ac/Control/IgnoreAcIn1',
+				'/Ac/Control/IgnoreAcIn2'])]
 
 	def get_output(self):
 		return [
