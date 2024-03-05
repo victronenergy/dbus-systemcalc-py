@@ -37,6 +37,10 @@ class Service(object):
 	def onboard(self):
 		return not self.port.startswith('/dev/ttyUSB')
 
+	@property
+	def has_ess_assistant(self):
+		return self.monitor.get_value(self.service, '/Hub4/AssistantId') == 5
+
 	def set_ignore_ac(self, inp, ignore):
 		self.monitor.set_value_async(self.service, '/Ac/Control/IgnoreAcIn{}'.format(inp + 1),
 			dbus.Int32(ignore, variant_level=1))
@@ -61,7 +65,8 @@ class Multi(SystemCalcDelegate):
 				'/Ac/ActiveIn/ActiveInput',
 				'/Ac/NumberOfAcInputs',
 				'/Ac/Control/IgnoreAcIn1',
-				'/Ac/Control/IgnoreAcIn2'])]
+				'/Ac/Control/IgnoreAcIn2',
+				'/Hub4/AssistantId'])]
 
 	def get_output(self):
 		return [
