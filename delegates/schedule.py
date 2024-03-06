@@ -11,6 +11,8 @@ from delegates.batterylife import State as BatteryLifeState
 from delegates.dvcc import Dvcc
 from delegates.batterysoc import BatterySoc
 
+from delegates.chargecontrol import ChargeControl
+
 HUB4_SERVICE = 'com.victronenergy.hub4'
 
 # Number of scheduled charge slots
@@ -91,9 +93,9 @@ class ScheduledChargeWindow(ScheduledWindow):
 		return "Start charge: {}, Stop: {}, Soc: {}".format(
 			self.start, self.stop, self.soc)
 
-class ScheduledCharging(SystemCalcDelegate):
+class ScheduledCharging(SystemCalcDelegate, ChargeControl):
 	""" Let the system do other things based on time schedule. """
-
+	control_priority = 20
 	_get_time = datetime.now
 
 	def __init__(self):
@@ -104,7 +106,7 @@ class ScheduledCharging(SystemCalcDelegate):
 		self._timer = GLib.timeout_add(5000, exit_on_error, self._on_timer)
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
-		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
+		super(ScheduledCharging, self).set_sources(dbusmonitor, settings, dbusservice)
 		self._dbusservice.add_path('/Control/ScheduledCharge', value=0)
 		self._dbusservice.add_path('/Control/ScheduledSoc', value=None,
 			gettextcallback=lambda p, v: '{}%'.format(v))
@@ -188,8 +190,10 @@ class ScheduledCharging(SystemCalcDelegate):
 			self._dbusservice['/Control/ScheduledSoc'] = None
 			return True
 
-		from delegates.dynamicess import DynamicEss
-		if DynamicEss.instance.active:
+		# Another delegate controls charging
+		if not self.can_acquire_control:
+			self._dbusservice['/Control/ScheduledCharge'] = 0
+			self._dbusservice['/Control/ScheduledSoc'] = None
 			return True
 
 		now = self._get_time()
@@ -211,6 +215,7 @@ class ScheduledCharging(SystemCalcDelegate):
 					self.forcecharge = True
 
 				# Signal that scheduled charging is active
+				self.acquire_control() # Block out other controllers
 				self.active = True
 				self._dbusservice['/Control/ScheduledSoc'] = w.soc
 
@@ -250,6 +255,7 @@ class ScheduledCharging(SystemCalcDelegate):
 			self.forcecharge = False
 			self.maxdischargepower = -1
 			self.active = False
+			self.release_control()
 			self._dbusservice['/Control/ScheduledSoc'] = None
 
 		self._dbusservice['/Control/ScheduledCharge'] = int(self.active)

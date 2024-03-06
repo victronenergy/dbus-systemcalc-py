@@ -42,6 +42,9 @@ class TestSchedule(TestSystemCalcBase):
 
 		self._update_values()
 
+	def tearDown(self):
+		ScheduledCharging.instance.release_control()
+
 	def test_scheduled_charge(self):
 		# Determine seconds since midnight on timer right now.
 		now = timer_manager.datetime

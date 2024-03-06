@@ -51,6 +51,9 @@ class TestDynamicEss(TestSystemCalcBase):
 
 		self._update_values()
 
+	def tearDown(self):
+		DynamicEss.instance.release_control()
+
 	def test_buy(self):
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())

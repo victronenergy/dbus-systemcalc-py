@@ -6,6 +6,7 @@ from delegates.schedule import ScheduledWindow
 from delegates.dvcc import Dvcc
 from delegates.batterylife import BatteryLife
 from delegates.batterylife import State as BatteryLifeState
+from delegates.chargecontrol import ChargeControl
 from enum import Enum
 
 NUM_SCHEDULES = 12
@@ -54,7 +55,8 @@ class DynamicEssWindow(ScheduledWindow):
 		return "Start: {}, Stop: {}, Soc: {}".format(
 			self.start, self.stop, self.soc)
 
-class DynamicEss(SystemCalcDelegate):
+class DynamicEss(SystemCalcDelegate, ChargeControl):
+	control_priority = 0
 	_get_time = datetime.now
 
 	def __init__(self):
@@ -246,18 +248,21 @@ class DynamicEss(SystemCalcDelegate):
 
 		# Can't do anything unless we have an SOC, and the ESS assistant
 		if self.soc is None or self.minsoc is None:
+			self.release_control()
 			self.active = 0 # Off
 			self.errorcode = 4 # SOC low
 			self.targetsoc = None
 			return True
 
 		if not Dvcc.instance.has_ess_assistant:
+			self.release_control()
 			self.active = 0 # Off
 			self.errorcode = 1 # No ESS
 			self.targetsoc = None
 			return True
 
 		if self.capacity == 0.0:
+			self.release_control()
 			self.active = 0 # Off
 			self.errorcode = 5 # Capacity not set
 			self.targetsoc = None
@@ -265,12 +270,13 @@ class DynamicEss(SystemCalcDelegate):
 
 		# In Keep-Charged mode or external control, no point in doing anything
 		if BatteryLife.instance.state == BatteryLifeState.KeepCharged or self.hub4mode == 3:
+			self.release_control()
 			self.active = 0 # Off
 			self.errorcode = 2 # ESS mode is wrong
 			self.targetsoc = None
 			return True
 
-		if self.mode == 2: # BUY
+		if self.mode == 2 and self.acquire_control(): # BUY
 			self.active = 2
 			self.errorcode = 0 # No error
 			self.targetsoc = None
@@ -280,7 +286,7 @@ class DynamicEss(SystemCalcDelegate):
 			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
 			return True
 
-		if self.mode == 3: # SELL
+		if self.mode == 3 and self.acquire_control(): # SELL
 			self.active = 3
 			self.errorcode = 0 # No error
 			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 2)
@@ -305,7 +311,7 @@ class DynamicEss(SystemCalcDelegate):
 		self._dbusservice['/DynamicEss/LastScheduledEnd'] = None if stop is None else int(datetime.timestamp(stop))
 
 		for w in windows:
-			if now in w:
+			if now in w and self.acquire_control():
 				self.active = 1 # Auto
 
 				# If schedule allows for feed-in, enable that now.
@@ -401,6 +407,7 @@ class DynamicEss(SystemCalcDelegate):
 		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxChargePower', -1.0)
 		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
 		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 0)
+		self.release_control()
 		self.active = 0 # Off
 		self.errorcode = reason
 		self.targetsoc = None
