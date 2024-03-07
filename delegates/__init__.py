@@ -28,3 +28,4 @@ from delegates.pvinverter import PvInverters
 from delegates.batteryservice import BatteryService
 from delegates.canbatterysense import CanBatterySense
 from delegates.dynamicess import DynamicEss
+from delegates.loadshedding import LoadShedding
