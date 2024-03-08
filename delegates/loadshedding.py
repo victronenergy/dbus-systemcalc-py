@@ -76,6 +76,8 @@ class LoadShedding(SystemCalcDelegate, ChargeControl):
 			gettextcallback=lambda p, v: ACTIVE.get(v, 'Unknown'))
 		self._dbusservice.add_path('/LoadShedding/ErrorCode', value=0,
 			gettextcallback=lambda p, v: ERRORS.get(v, 'Unknown'))
+		self._dbusservice.add_path('/LoadShedding/NextDisconnect', value=None,
+			gettextcallback=lambda p, v: datetime.fromtimestamp(v).isoformat())
 
 		if self.mode > 0:
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
@@ -270,6 +272,13 @@ class LoadShedding(SystemCalcDelegate, ChargeControl):
 		stop = None
 
 		windows = list(self.windows(now))
+		nextshed = None
+		for w in windows:
+			if now < w.start and (nextshed is None or w.start < nextshed):
+				nextshed = w.start
+
+		self._dbusservice['/LoadShedding/NextDisconnect'] = \
+			None if nextshed is None else int(datetime.timestamp(nextshed))
 
 		for w in windows:
 			if now in w and self.acquire_control():
