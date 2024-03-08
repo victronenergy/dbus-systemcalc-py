@@ -246,7 +246,7 @@ class LoadShedding(SystemCalcDelegate, ChargeControl):
 				else:
 					self.forcecharge = 0
 
-				if self.forcecharge:
+				if self.forcecharge or self.soc > self.minsoc + 4.0:
 					self.maxdischargepower = -1
 				else:
 					# Try to hold the SOC by limiting discharge to PV
