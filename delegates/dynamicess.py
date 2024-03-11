@@ -73,7 +73,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# Capabilities, 1 = supports charge/discharge restrictions
 		#               2 = supports self-consumption strategy
 		self._dbusservice.add_path('/DynamicEss/Capabilities', value=3)
-		self._dbusservice.add_path('/DynamicEss/Available', value=None)
 		self._dbusservice.add_path('/DynamicEss/Active', value=0,
 			gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
 		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=None,
@@ -83,8 +82,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice.add_path('/DynamicEss/LastScheduledStart', value=None)
 		self._dbusservice.add_path('/DynamicEss/LastScheduledEnd', value=None)
 
-		self._check_availability()
-		self._av_timer = GLib.timeout_add(60000, self._check_availability)
 		if self.mode > 0:
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
 
@@ -125,6 +122,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				'/Settings/CGwacs/Hub4Mode',
 				'/Settings/CGwacs/MaxFeedInPower'])
 		]
+
+	def get_output(self):
+		return [('/DynamicEss/Available', {'gettext': '%s'})]
 
 	def settings_changed(self, setting, oldvalue, newvalue):
 		if setting == 'dess_mode':
@@ -233,12 +233,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				self.prevsoc = self.soc
 			except ZeroDivisionError:
 				self.chargerate = None
-
-	def _check_availability(self):
-		# Indicate whether this system has DESS capability. Presently
-		# that means it has ESS capability.
-		self._dbusservice['/DynamicEss/Available'] = int(Dvcc.instance.has_ess_assistant)
-		return True
 
 	def _on_timer(self):
 		# If DESS was disabled, deactivate and kill timer.
@@ -412,3 +406,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self.errorcode = reason
 		self.targetsoc = None
 		self.chargerate = None
+
+	def update_values(self, newvalues):
+		# Indicate whether this system has DESS capability. Presently
+		# that means it has ESS capability.
+		newvalues['/DynamicEss/Available'] = int(Dvcc.instance.has_ess_assistant)
