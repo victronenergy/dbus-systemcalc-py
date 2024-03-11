@@ -71,7 +71,6 @@ class LoadShedding(SystemCalcDelegate, ChargeControl):
 		super(LoadShedding, self).set_sources(dbusmonitor, settings, dbusservice)
 		# Future path for capabilities
 		self._dbusservice.add_path('/LoadShedding/Capabilities', value=0)
-		self._dbusservice.add_path('/LoadShedding/Available', value=1)
 		self._dbusservice.add_path('/LoadShedding/Active', value=0,
 			gettextcallback=lambda p, v: ACTIVE.get(v, 'Unknown'))
 		self._dbusservice.add_path('/LoadShedding/ErrorCode', value=0,
@@ -122,6 +121,9 @@ class LoadShedding(SystemCalcDelegate, ChargeControl):
 				'/Mode',
 			]),
 		]
+
+	def get_output(self):
+		return [('/LoadShedding/Available', {'gettext': '%s'})]
 
 	def settings_changed(self, setting, oldvalue, newvalue):
 		if setting == 'loadshedding_mode':
@@ -303,3 +305,9 @@ class LoadShedding(SystemCalcDelegate, ChargeControl):
 		self.release_control()
 		self.active = 0 # Off
 		self.errorcode = reason
+
+	def update_values(self, newvalues):
+		multi = Multi.instance.multi
+		available = multi is not None and any(t in (1, 3) for i, t in multi.input_types)
+		available = available or bool(self.devices)
+		newvalues['/LoadShedding/Available'] = int(available)
