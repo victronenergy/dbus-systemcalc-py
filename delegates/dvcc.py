@@ -7,7 +7,7 @@ from itertools import count, chain
 from functools import partial, wraps
 
 # Victron packages
-from sc_utils import safeadd, copy_dbus_value, reify
+from sc_utils import safeadd, copy_dbus_value, reify, ExpiringValue
 from ve_utils import exit_on_error
 
 from delegates.base import SystemCalcDelegate
@@ -758,6 +758,7 @@ class Dvcc(SystemCalcDelegate):
 		self._timer = None
 		self._tickcount = ADJUST
 		self._dcsyscurrent = LowPassFilter((2 * pi)/20, 0.0)
+		self._internal_mcp = ExpiringValue(3, None) # Max charging power
 
 	def get_input(self):
 		return [
@@ -910,6 +911,14 @@ class Dvcc(SystemCalcDelegate):
 	currentoffset = property(partial(_property, '/Debug/BatteryOperationalLimits/CurrentOffset'))
 
 	@property
+	def internal_maxchargepower(self):
+		return self._internal_mcp.get()
+
+	@internal_maxchargepower.setter
+	def internal_maxchargepower(self, v):
+		self._internal_mcp.set(v)
+
+	@property
 	def dcsyscurrent(self):
 		""" Return non-zero DC system current, if it is based on
 		    a real measurement. If an estimate/calculation, we cannot use it.
@@ -1060,9 +1069,21 @@ class Dvcc(SystemCalcDelegate):
 			_max_charge_current, feedback_allowed, stop_on_mcc0)
 		update_solarcharger_control_flags(voltage_written, current_written, effective_charge_voltage)
 
-		# The Multi gets the remainder after subtracting what the solar chargers made
+		# The Multi gets the remainder after subtracting what the solar
+		# chargers made. If there is a maximum charge power from another
+		# delegate (dynamicess), apply that here.
 		if max_charge_current is not None:
 			max_charge_current = max(0.0, round(max_charge_current - self._chargesystem.smoothed_current))
+
+		try:
+			internal_mcc = self.internal_maxchargepower / self._dbusservice['/Dc/Battery/Voltage']
+		except (TypeError, ZeroDivisionError):
+			pass
+		else:
+			try:
+				max_charge_current = min(x for x in (internal_mcc, max_charge_current) if x is not None)
+			except ValueError:
+				pass
 
 		# Write the remainder to the Multi.
 		# There are two ways to limit the charge current of a VE.Bus system. If we have a BMS,

@@ -88,3 +88,20 @@ class smart_dict(dict):
 			raise AttributeError(k)
 	def __setattr__(self, k, v):
 		self[k] = v
+
+class ExpiringValue(object):
+	""" Class that holds a value that we want to expire if it is not
+	    updated frequently enough. Doesn't use a timer, relies on the
+	    timing interval of the code, allows the number to be used
+	    maxage number of times. """
+	def __init__(self, maxage, v):
+		self._ttl = self._maxage = maxage
+		self._value = v
+	def get(self):
+		if self._ttl > 0:
+			self._ttl -= 1
+			return self._value
+		return None
+	def set(self, v):
+		self._value = v
+		self._ttl = self._maxage

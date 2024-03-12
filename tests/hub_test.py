@@ -2206,3 +2206,47 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Link/ChargeVoltage': None,
 				'/Link/ChargeCurrent': 25 + 8}, # 25A limit, 8A VEBus
 		})
+
+	def test_internal_maxchargecurrent(self):
+		""" The DVCC assistant allows other assistants to set an internal limit
+		    for the Multi. """
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.4,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 0,
+				'/Info/BatteryLowVoltage': 11,
+				'/Info/MaxChargeCurrent': 200,
+				'/Info/MaxChargeVoltage': 14.5,
+				'/Info/MaxDischargeCurrent': 200})
+
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+				'/State': 4,
+				'/Link/NetworkMode': 0,
+				'/Link/ChargeVoltage': None,
+				'/Link/ChargeCurrent': 100,
+				'/Link/VoltageSense': None,
+				'/Dc/0/Voltage': 12.4,
+				'/Dc/0/Current': 10.0,
+				'/FirmwareVersion': 0x129,
+				'/Settings/ChargeCurrentLimit': 100 },
+				connection='VE.Direct')
+
+		# Set an internal limit
+		from delegates.dvcc import Dvcc
+		Dvcc.instance.internal_maxchargepower = 124.0
+
+		self._update_values(3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeCurrent': 100.0 },
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeCurrent': 10.0}})
+
+		self._update_values(9000) # Enough time to make value expire
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeCurrent': 190}}) # 200 minus 10
