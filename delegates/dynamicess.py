@@ -116,8 +116,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 	def get_input(self):
 		return [
 			(HUB4_SERVICE, ['/Overrides/ForceCharge',
-				'/Overrides/MaxDischargePower', '/Overrides/MaxChargePower',
-				'/Overrides/Setpoint', '/Overrides/FeedInExcess']),
+				'/Overrides/MaxDischargePower', '/Overrides/Setpoint',
+				'/Overrides/FeedInExcess']),
 			('com.victronenergy.settings', [
 				'/Settings/CGwacs/Hub4Mode',
 				'/Settings/CGwacs/MaxFeedInPower'])
@@ -234,6 +234,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			except ZeroDivisionError:
 				self.chargerate = None
 
+	def set_charge_power(self, v):
+		Dvcc.instance.internal_maxchargepower = v
+
 	def _on_timer(self):
 		# If DESS was disabled, deactivate and kill timer.
 		if self.mode == 0:
@@ -319,8 +322,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					# If importing into battery is allowed, then no restriction, let the
 					# setpoint determine that. If disallowed, then only AC-coupled PV may
 					# be imported into battery.
-					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxChargePower',
-						-1 if (self.batteryimport and w.batteryimport) else self.acpv)
+					self.set_charge_power(None if (self.batteryimport and w.batteryimport) else self.acpv)
 
 					# If above window SOC, then normal ESS for reaching the
 					# ESS grid setpoint. Unless there are export restrictions,
@@ -349,11 +351,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					# Calculate how fast to buy. Multi is given the remainder
 					# after subtracting PV power.
 					self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
-					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxChargePower',
-						max(0.0, self.chargerate - self.pvpower) if (self.batteryimport and w.batteryimport) else self.acpv)
+					self.set_charge_power(max(0.0, self.chargerate - self.pvpower) if (self.batteryimport and w.batteryimport) else self.acpv)
 				else: # Discharge or idle
 					self.charge_hysteresis = 1
-					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxChargePower', -1.0)
+					self.set_charge_power(None)
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
 
 					self.errorcode = 0 # No error
@@ -398,9 +399,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 	def deactivate(self, reason):
 		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
 		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
-		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxChargePower', -1.0)
 		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
 		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 0)
+		self.set_charge_power(None)
 		self.release_control()
 		self.active = 0 # Off
 		self.errorcode = reason

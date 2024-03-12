@@ -36,7 +36,6 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._add_device('com.victronenergy.hub4',
 			values={
 				'/Overrides/ForceCharge': 0,
-				'/Overrides/MaxChargePower': -1,
 				'/Overrides/MaxDischargePower': -1,
 				'/Overrides/Setpoint': None,
 				'/Overrides/FeedInExcess': 0
@@ -55,6 +54,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		DynamicEss.instance.release_control()
 
 	def test_buy(self):
+		from delegates import Dvcc
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
 
@@ -71,9 +71,9 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Overrides/ForceCharge': 0,
 				'/Overrides/Setpoint': None,
 				'/Overrides/MaxDischargePower': -1,
-				'/Overrides/MaxChargePower': -1,
 				'/Overrides/FeedInExcess': 0
 		}})
+		self.assertEqual(None, Dvcc.instance.internal_maxchargepower)
 
 		timer_manager.run(5000)
 		self._check_external_values({
@@ -84,9 +84,7 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Overrides/FeedInExcess': 1
 		}})
 		# Charge power should be around 2400W (200Wh in 5 minutes)
-		self.assertEqual(2400, round(
-			self._monitor.get_value('com.victronenergy.hub4',
-			'/Overrides/MaxChargePower'), -2))
+		self.assertEqual(2400, round(Dvcc.instance.internal_maxchargepower, -2))
 
 		timer_manager.run(300000)
 		# slot is over
@@ -95,9 +93,9 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Overrides/ForceCharge': 0,
 				'/Overrides/Setpoint': None,
 				'/Overrides/MaxDischargePower': -1,
-				'/Overrides/MaxChargePower': -1,
 				'/Overrides/FeedInExcess': 0
 		}})
+		self.assertEqual(None, Dvcc.instance.internal_maxchargepower)
 
 	def test_sell(self):
 		now = timer_manager.datetime
@@ -217,14 +215,14 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Overrides/FeedInExcess': 1
 		}})
 		# Charge power should be around 500W, minus 250W from solar (500Wh in 1 hour)
-		self.assertEqual(250, round(
-			self._monitor.get_value('com.victronenergy.hub4',
-			'/Overrides/MaxChargePower'), -1))
+		from delegates import Dvcc
+		self.assertEqual(250, round(Dvcc.instance.internal_maxchargepower, -1))
 
 	def test_hysteresis(self):
 		""" Test case for batteries that don't report whole numbers, but
 		    jumps between SOC values and don't always hit match target SOC
 		    exactly. Use case jitters between 43.8% and 44.4%. """
+		from delegates import Dvcc
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
 
@@ -244,17 +242,14 @@ class TestDynamicEss(TestSystemCalcBase):
 		# SOC is reached, idle
 		self.assertTrue(self._monitor.get_value('com.victronenergy.hub4',
 			'/Overrides/MaxDischargePower') == 1.0)
-		self.assertTrue(self._monitor.get_value('com.victronenergy.hub4',
-			'/Overrides/MaxChargePower') == -1.0)
+		self.assertEqual(None, Dvcc.instance.internal_maxchargepower)
 
 		# Returns to 44.4, remain in idle
 		self._monitor.set_value(self.vebus, '/Soc', 44.4)
 		timer_manager.run(5000)
 		self.assertTrue(self._monitor.get_value('com.victronenergy.hub4',
 			'/Overrides/MaxDischargePower') == 1.0)
-		self.assertTrue(self._monitor.get_value('com.victronenergy.hub4',
-			'/Overrides/MaxChargePower') == -1.0)
-
+		self.assertEqual(None, Dvcc.instance.internal_maxchargepower)
 
 		# Increases to 45.1%, go back to discharge.
 		self._monitor.set_value(self.vebus, '/Soc', 45.1)
@@ -268,18 +263,17 @@ class TestDynamicEss(TestSystemCalcBase):
 		# SOC is reached, idle
 		self.assertTrue(self._monitor.get_value('com.victronenergy.hub4',
 			'/Overrides/MaxDischargePower') == 1.0)
-		self.assertTrue(self._monitor.get_value('com.victronenergy.hub4',
-			'/Overrides/MaxChargePower') == -1.0)
+		self.assertEqual(None, Dvcc.instance.internal_maxchargepower)
 
 		# Back to charge if we go low enough
 		self._monitor.set_value(self.vebus, '/Soc', 42.9)
 		timer_manager.run(5000)
 		self.assertTrue(self._monitor.get_value('com.victronenergy.hub4',
 			'/Overrides/MaxDischargePower') == -1.0)
-		self.assertTrue(self._monitor.get_value('com.victronenergy.hub4',
-			'/Overrides/MaxChargePower') > 0.0)
+		self.assertTrue(Dvcc.instance.internal_maxchargepower > 0.0)
 
 	def test_self_consume(self):
+		from delegates import Dvcc
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
 
@@ -296,6 +290,6 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Overrides/ForceCharge': 0,
 				'/Overrides/Setpoint': None,
 				'/Overrides/MaxDischargePower': -1,
-				'/Overrides/MaxChargePower': -1,
 				'/Overrides/FeedInExcess': 1
 		}})
+		self.assertEqual(None, Dvcc.instance.internal_maxchargepower)
