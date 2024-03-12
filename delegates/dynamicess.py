@@ -340,7 +340,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					self.chargerate = None # For recalculation
 				self.targetsoc = w.soc
 
-				if self.soc + self.charge_hysteresis < w.soc: # Charge
+				# When 100% is requested, don't go into idle mode
+				if self.soc + self.charge_hysteresis < w.soc or w.soc >= 100: # Charge
 					self.charge_hysteresis = 0
 					self.discharge_hysteresis = 0
 					self.errorcode = 0 # No error
