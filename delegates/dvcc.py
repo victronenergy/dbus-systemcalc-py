@@ -1077,11 +1077,11 @@ class Dvcc(SystemCalcDelegate):
 
 		try:
 			internal_mcc = self.internal_maxchargepower / self._dbusservice['/Dc/Battery/Voltage']
-		except (TypeError, ZeroDivisionError):
+		except (TypeError, ZeroDivisionError, ValueError):
 			pass
 		else:
 			try:
-				max_charge_current = min(x for x in (internal_mcc, max_charge_current) if x is not None)
+				max_charge_current = min(x for x in (ceil(internal_mcc), max_charge_current) if x is not None)
 			except ValueError:
 				pass
 
