@@ -352,7 +352,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					# Calculate how fast to buy. Multi is given the remainder
 					# after subtracting PV power.
 					self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
-					self.set_charge_power(max(0.0, self.chargerate - self.pvpower) if (self.batteryimport and w.batteryimport) else self.acpv)
+					self.set_charge_power(max(0.0, self.chargerate - self.pvpower) if (self.batteryimport and w.batteryimport) else 0.9 * self.acpv)
 				else: # Discharge or idle
 					self.charge_hysteresis = 1
 					self.set_charge_power(None)
