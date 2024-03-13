@@ -229,7 +229,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			try:
 				# a Watt is a Joule-second, a Wh is 3600 joules.
 				# Capacity is kWh, so multiply by 100, percentage needs division by 100, therefore 36000.
-				self.chargerate = round((percentage * self.capacity * 36000) / abs((end - now).total_seconds()))
+				self.chargerate = round(1.1 * (percentage * self.capacity * 36000) / abs((end - now).total_seconds()))
 				self.prevsoc = self.soc
 			except ZeroDivisionError:
 				self.chargerate = None
@@ -362,33 +362,41 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					if self.soc - self.discharge_hysteresis > max(w.soc, self.minsoc): # Discharge
 						self.discharge_hysteresis = 0
 
-						# Calculate how fast to sell. If exporting the battery
-						# to the grid is allowed, then export chargerate plus
-						# whatever DC-coupled PV is making. If exporting the
-						# battery is not allowed, then limit that to DC-coupled
-						# PV plus local consumption.
-						self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
-						self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
-							(self.chargerate + self.pvpower
-								if self.chargerate else -1.0) if (self.batteryexport and w.batteryexport) \
-							else self.pvpower + self.consumption + 1.0) # 1.0 to allow selling overvoltage
+						if w.allow_feedin:
+							# Calculate how fast to sell. If exporting the battery
+							# to the grid is allowed, then export chargerate plus
+							# whatever DC-coupled PV is making. If exporting the
+							# battery is not allowed, then limit that to DC-coupled
+							# PV plus local consumption.
+							self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
+							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
+							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
+								(self.chargerate + self.pvpower
+									if self.chargerate else -1.0) if (self.batteryexport and w.batteryexport) \
+								else self.pvpower + self.consumption + 1.0) # 1.0 to allow selling overvoltage
+						else:
+							# If we are not allowed to sell to the grid, then we
+							# effectively do normal ESS here.
+							self.chargerate = None
+							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', 0) # Normal ESS, no feedin
+							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
+
 					else: # battery idle
 						# SOC/target-soc needs to move 1% to move out of idle
 						# zone
 						self.discharge_hysteresis = 1
-						# This keeps battery idle by not allowing more power
-						# to be taken from the DC bus than what DC-coupled
-						# PV provides.
-						self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
-							max(1.0, round(0.9*self.pvpower)))
 
-					# If Feed-in is requested, set a large negative setpoint.
-					# The battery limit above will ensure that no more than
-					# available PV is fed in.
-					if w.allow_feedin:
-						self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
-					else:
-						self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None) # Normal ESS
+						if w.allow_feedin:
+							# This keeps battery idle by not allowing more power
+							# to be taken from the DC bus than what DC-coupled
+							# PV provides.
+							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
+								max(1.0, round(0.9*self.pvpower)))
+							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
+						else:
+							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None) # Normal ESS
+							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', 1.0)
+
 				break # out of for loop
 		else:
 			# No matching windows

@@ -84,7 +84,7 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Overrides/FeedInExcess': 1
 		}})
 		# Charge power should be around 2400W (200Wh in 5 minutes)
-		self.assertEqual(2400, round(Dvcc.instance.internal_maxchargepower, -2))
+		self.assertEqual(2700, round(Dvcc.instance.internal_maxchargepower, -2))
 
 		timer_manager.run(300000)
 		# slot is over
@@ -122,7 +122,7 @@ class TestDynamicEss(TestSystemCalcBase):
 			'com.victronenergy.hub4': {
 				'/Overrides/ForceCharge': 0,
 				'/Overrides/Setpoint': -32000,
-				'/Overrides/MaxDischargePower': 501, # 5% of 10kWh over 1 hour
+				'/Overrides/MaxDischargePower': 551, # 5% of 10kWh over 1 hour
 				'/Overrides/FeedInExcess': 2
 		}})
 
@@ -160,7 +160,7 @@ class TestDynamicEss(TestSystemCalcBase):
 			'com.victronenergy.hub4': {
 				'/Overrides/ForceCharge': 0,
 				'/Overrides/Setpoint': -32000,
-				'/Overrides/MaxDischargePower': 1001, # 5% of 10kWh over 1 hour, including 500W from PV
+				'/Overrides/MaxDischargePower': 1051, # 5% of 10kWh over 1 hour, including 500W from PV
 				'/Overrides/FeedInExcess': 2
 		}})
 
@@ -182,7 +182,7 @@ class TestDynamicEss(TestSystemCalcBase):
 			'com.victronenergy.hub4': {
 				'/Overrides/ForceCharge': 0,
 				'/Overrides/Setpoint': None,
-				'/Overrides/MaxDischargePower': 450,
+				'/Overrides/MaxDischargePower': 1,
 				'/Overrides/FeedInExcess': 1 # Feed-in not allowed
 		}})
 
@@ -216,7 +216,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		}})
 		# Charge power should be around 500W, minus 250W from solar (500Wh in 1 hour)
 		from delegates import Dvcc
-		self.assertEqual(250, round(Dvcc.instance.internal_maxchargepower, -1))
+		self.assertEqual(300, round(Dvcc.instance.internal_maxchargepower, -1))
 
 	def test_hysteresis(self):
 		""" Test case for batteries that don't report whole numbers, but
