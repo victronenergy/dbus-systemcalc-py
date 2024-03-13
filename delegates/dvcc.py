@@ -1124,6 +1124,12 @@ class Dvcc(SystemCalcDelegate):
 
 			if mcc is not None:
 				self._multi.bol.maxchargecurrent = mcc
+				# Also set the maxchargecurrent, to ensure this is not stuck
+				# at some lower value that overrides the intent here.
+				try:
+					self._multi.maxchargecurrent = max(self._multi.maxchargecurrent, mcc)
+				except TypeError:
+					pass
 
 			# Copy the rest unmodified
 			self._multi.bol.maxdischargecurrent = bms_service.maxdischargecurrent
