@@ -71,7 +71,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self.prevsoc = None
 		self.chargerate = None # How fast to charge/discharge to get to the next target
 		self._timer = None
-		self._av_timer = None
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(DynamicEss, self).set_sources(dbusmonitor, settings, dbusservice)
@@ -87,6 +86,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			gettextcallback=lambda p, v: ERRORS.get(v, 'Unknown'))
 		self._dbusservice.add_path('/DynamicEss/LastScheduledStart', value=None)
 		self._dbusservice.add_path('/DynamicEss/LastScheduledEnd', value=None)
+		self._dbusservice.add_path('/DynamicEss/ChargeRate', value=None)
 
 		if self.mode > 0:
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
@@ -240,10 +240,13 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			try:
 				# a Watt is a Joule-second, a Wh is 3600 joules.
 				# Capacity is kWh, so multiply by 100, percentage needs division by 100, therefore 36000.
-				self.chargerate = round(1.1 * (percentage * self.capacity * 36000) / abs((end - now).total_seconds()))
+				chargerate = round(1.1 * (percentage * self.capacity * 36000) / abs((end - now).total_seconds()))
+				self.chargerate = chargerate if self.chargerate is None else max(self.chargerate, chargerate)
 				self.prevsoc = self.soc
 			except ZeroDivisionError:
 				self.chargerate = None
+
+		self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate
 
 	def set_charge_power(self, v):
 		Dvcc.instance.internal_maxchargepower = None if v is None else max(v, 50)
@@ -354,14 +357,14 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				# When 100% is requested, don't go into idle mode
 				if self.soc + self.charge_hysteresis < w.soc or w.soc >= 100: # Charge
 					self.charge_hysteresis = 0
-					self.discharge_hysteresis = 0
+					self.discharge_hysteresis = 1
 					self.errorcode = 0 # No error
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
 
 					if w.flags & Flags.FASTCHARGE:
-						self.chargerate = None
+						self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
 						self.set_charge_power(None)
 					else:
 						# Calculate how fast to buy. Multi is given the remainder
@@ -383,19 +386,19 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 							# whatever DC-coupled PV is making. If exporting the
 							# battery is not allowed, then limit that to DC-coupled
 							# PV plus local consumption.
-							self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
 							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
 							if w.flags & Flags.FASTCHARGE:
 								self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
 							else:
+								self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
 								self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
 									(self.chargerate + self.pvpower
-										if self.chargerate else -1.0) if (self.batteryexport and w.batteryexport) \
+										if self.chargerate else 1.0) if (self.batteryexport and w.batteryexport) \
 									else self.pvpower + self.consumption + 1.0) # 1.0 to allow selling overvoltage
 						else:
 							# If we are not allowed to sell to the grid, then we
 							# effectively do normal ESS here.
-							self.chargerate = None
+							self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
 							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', 0) # Normal ESS, no feedin
 							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
 
@@ -403,6 +406,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 						# SOC/target-soc needs to move 1% to move out of idle
 						# zone
 						self.discharge_hysteresis = 1
+						self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
 
 						if w.allow_feedin:
 							# This keeps battery idle by not allowing more power
@@ -433,7 +437,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self.active = 0 # Off
 		self.errorcode = reason
 		self.targetsoc = None
-		self.chargerate = None
+		self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
 
 	def update_values(self, newvalues):
 		# Indicate whether this system has DESS capability. Presently
