@@ -235,7 +235,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				self.chargerate = None
 
 	def set_charge_power(self, v):
-		Dvcc.instance.internal_maxchargepower = v
+		Dvcc.instance.internal_maxchargepower = None if v is None else max(v, 50)
 
 	def _on_timer(self):
 		# If DESS was disabled, deactivate and kill timer.
