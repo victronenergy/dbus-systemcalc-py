@@ -645,7 +645,7 @@ class Multi(object):
 		self._service = service
 		self.bol = BatteryOperationalLimits(self)
 		self._dc_current = LowPassFilter((2 * pi)/30, 0)
-		self._v = None
+		self._v = object()
 
 	@property
 	def service(self):
