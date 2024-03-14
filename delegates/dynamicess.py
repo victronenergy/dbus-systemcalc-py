@@ -101,6 +101,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			("dess_efficiency", path + "/SystemEfficiency", 90.0, 0.0, 100.0),
 			# 0=None, 1=disallow export, 2=disallow import
 			("dess_restrictions", path + "/Restrictions", 0, 0, 3),
+			("dess_fullchargeinterval", path + "/FullChargeInterval", 7, 0, 0),
+			("dess_fullchargeduration", path + "/FullChargeDuration", 7, 0, 0),
 		]
 
 		for i in range(NUM_SCHEDULES):
