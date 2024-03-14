@@ -219,8 +219,8 @@ class SystemCalc:
 			delegates.PvInverters(),
 			delegates.BatteryService(self),
 			delegates.CanBatterySense(),
-			delegates.DynamicEss(),
-			delegates.LoadShedding()]
+			delegates.DynamicEss()]
+			#delegates.LoadShedding()]
 
 		for m in self._modules:
 			for service, paths in m.get_input():
