@@ -231,11 +231,38 @@ class SystemCalc:
 		self._dbusmonitor = self._create_dbus_monitor(dbus_tree, valueChangedCallback=self._dbus_value_changed,
 			deviceAddedCallback=self._device_added, deviceRemovedCallback=self._device_removed)
 
+		# Used to store AC output maximum values for the scenarios:
+		# No AC input connected
+		# Ac input 1 connected
+		# Ac input 2 connected
+		self._acMaxima = {
+			'NoAcIn': 0,
+			'AcIn1': 0,
+			'AcIn2': 0
+		}
+
+		self._minMaxPaths = {
+			'/Ac/In/0/Current/Min': [float(0), -float("inf"), 0],
+			'/Ac/In/1/Current/Min': [float(0), -float("inf"), 0],
+			'/Ac/In/0/Current/Max': [float(0), 0, float("inf")],
+			'/Ac/In/1/Current/Max': [float(0), 0, float("inf")],
+			'/Dc/Input/Power/Max': [float(0), 0, float("inf")],
+			'/Dc/System/Power/Max': [float(0), 0, float("inf")],
+			'/Pv/Power/Max': [float(0), 0, float("inf")]
+		}
+
+		for p in self._acMaxima.keys():
+			self._minMaxPaths['/Ac/%s/Consumption/Current/Max' % p] = [float(0), 0, float("inf")]
+
 		# Connect to localsettings
 		supported_settings = {
 			'batteryservice': ['/Settings/SystemSetup/BatteryService', self.BATSERVICE_DEFAULT, 0, 0],
 			'hasdcsystem': ['/Settings/SystemSetup/HasDcSystem', 0, 0, 1],
-			'useacout': ['/Settings/SystemSetup/HasAcOutSystem', 1, 0, 1]}
+			'useacout': ['/Settings/SystemSetup/HasAcOutSystem', 1, 0, 1],
+			'gaugeautomax': ['/Settings/Gui/Gauges/AutoMax', 1, 0, 1]}
+
+		for p, s in self._minMaxPaths.items():
+			supported_settings[p] = ['/Settings/Gui/Gauges' + p, s[0], s[1], s[2]]
 
 		for m in self._modules:
 			for setting in m.get_settings():
@@ -994,55 +1021,93 @@ class SystemCalc:
 			m.update_values(newvalues)
 
 		# ==== UPDATE MINIMUM AND MAXIMUM LEVELS ====
+		# min/max values are stored in localsettings and synched once in a while.
+		# values are stored under /Settings/Gui/Briefview
+		# /Settings/Gui/Gauges/AutoMax:
+		#	1-> Automatic: Maxima are updated automatically and synched to localsettings
+		# 	0-> Manual: Maxima are pulled from localsettings.
 		# min/max computations are done here because the _updatevalues method abstracts them
 		# away from the delegates.
 
+		# AC output
+		# This maximum is maintained for 3 situations:
+		# 1: AC input 1 is connected
+		# 2: AC input 2 is connected
+		# 3: No AC input is connected
+		# All 3 scenarios may lead to different maximum values since the capabilities of the system changes.
+		# So 3 different maxima are stored and relayed to /Ac/Consumption/Current/Max based on the active scenario.
+		activeIn = 'AcIn1' if (self._dbusservice['/Ac/In/0/Connected'] == 1) else \
+					'AcIn2' if (self._dbusservice['/Ac/In/1/Connected'] == 1) else \
+					'NoAcIn'
+
 		# Quattro has 2 AC inputs which cannot be active simultaneously.
 		# activeIn needs to 1 when 'Ac/In/1/Connected' is 1 and can be 0 otherwise.
-		activeIn = self._dbusservice['/Ac/In/1/Connected'] or 0
+		if (self._settings['gaugeautomax']):
+			activeInNr = int(activeIn[-1]) -1 if activeIn != 'NoAcIn' else None
 
-		# AC input
-		# Minimum values occur when feeding back to the grid.
-		# For the minimum value, make sure it is 0 at its maximum.
-		newvalues['/Ac/In/%s/Current/Min' % activeIn] = min(0,
-															self._dbusservice['/Ac/In/%s/Current/Min' % activeIn] or float("inf"),
-															newvalues.get('/Ac/ActiveIn/L1/Current') or float("inf"),
-															newvalues.get('/Ac/ActiveIn/L2/Current') or float("inf"),
-															newvalues.get('/Ac/ActiveIn/L3/Current') or float("inf"))
+			# AC input
+			# Minimum values occur when feeding back to the grid.
+			# For the minimum value, make sure it is 0 at its maximum.
+			# Update correct '/Ac/In/..' based on the current active input.
+			# When no inputs are active, paths '/Ac/In/[0/1]/Current/[Min/Max] will all be invalidated.
+			if(activeInNr != None):
+				newvalues['/Ac/In/%s/Current/Min' % activeInNr] = min(0,
+																	self._dbusservice['/Ac/In/%s/Current/Min' % activeInNr] or float("inf"),
+																	newvalues.get('/Ac/ActiveIn/L1/Current') or float("inf"),
+																	newvalues.get('/Ac/ActiveIn/L2/Current') or float("inf"),
+																	newvalues.get('/Ac/ActiveIn/L3/Current') or float("inf"))
 
-		newvalues['/Ac/In/%s/Current/Max' % activeIn] = max(self._dbusservice['/Ac/In/%s/Current/Min' % activeIn] or 0,
-															newvalues.get('/Ac/ActiveIn/L1/Current') or 0,
-															newvalues.get('/Ac/ActiveIn/L2/Current') or 0,
-															newvalues.get('/Ac/ActiveIn/L3/Current') or 0)
+				newvalues['/Ac/In/%s/Current/Max' % activeInNr] = max(self._dbusservice['/Ac/In/%s/Current/Min' % activeInNr] or 0,
+																	newvalues.get('/Ac/ActiveIn/L1/Current') or 0,
+																	newvalues.get('/Ac/ActiveIn/L2/Current') or 0,
+																	newvalues.get('/Ac/ActiveIn/L3/Current') or 0)
 
-		# AC output
-		newvalues['/Ac/Consumption/Current/Max'] =  max(self._dbusservice['/Ac/Consumption/Current/Max'] or 0,
+			self._acMaxima[activeIn] = max(self._acMaxima[activeIn],
 																newvalues.get('/Ac/Consumption/L1/Current') or 0,
 																newvalues.get('/Ac/Consumption/L2/Current') or 0,
 																newvalues.get('/Ac/Consumption/L3/Current') or 0)
 
-		# DC input
-		newvalues['/Dc/Input/Power/Max'] = max(self._dbusservice['/Dc/Input/Power/Max'] or 0, 
-												sum([newvalues.get('/Dc/Charger/Power') or 0,
-													newvalues.get('/Dc/FuelCell/Power') or 0,
-													newvalues.get('/Dc/Alternator/Power') or 0]))
+			newvalues['/Ac/Consumption/Current/Max'] = self._acMaxima[activeIn]
 
-		# DC output
-		newvalues['/Dc/System/Power/Max'] = _safemax(self._dbusservice['/Dc/System/Power/Max'] or 0,
-														newvalues.get('/Dc/System/Power') or 0)
+			# DC input
+			newvalues['/Dc/Input/Power/Max'] = max(self._dbusservice['/Dc/Input/Power/Max'] or 0,
+													sum([newvalues.get('/Dc/Charger/Power') or 0,
+														newvalues.get('/Dc/FuelCell/Power') or 0,
+														newvalues.get('/Dc/Alternator/Power') or 0]))
 
-		# PV power
-		newvalues['/Pv/Power/Max'] = _safemax(self._dbusservice['/Pv/Power/Max'] or 0,
-												_safeadd(newvalues.get('/Dc/Pv/Power') or 0,
-												self._dbusservice['/Ac/PvOnGrid/L1/Power'],
-												self._dbusservice['/Ac/PvOnGrid/L2/Power'],
-												self._dbusservice['/Ac/PvOnGrid/L3/Power'],
-												self._dbusservice['/Ac/PvOnGenset/L1/Power'],
-												self._dbusservice['/Ac/PvOnGenset/L2/Power'],
-												self._dbusservice['/Ac/PvOnGenset/L3/Power'],
-												self._dbusservice['/Ac/PvOnOutput/L1/Power'],
-												self._dbusservice['/Ac/PvOnOutput/L2/Power'],
-												self._dbusservice['/Ac/PvOnOutput/L3/Power']))
+			# DC output
+			newvalues['/Dc/System/Power/Max'] = _safemax(self._dbusservice['/Dc/System/Power/Max'] or 0,
+															newvalues.get('/Dc/System/Power') or 0)
+
+			# PV power
+			newvalues['/Pv/Power/Max'] = _safemax(self._dbusservice['/Pv/Power/Max'] or 0,
+													_safeadd(newvalues.get('/Dc/Pv/Power') or 0,
+													self._dbusservice['/Ac/PvOnGrid/L1/Power'],
+													self._dbusservice['/Ac/PvOnGrid/L2/Power'],
+													self._dbusservice['/Ac/PvOnGrid/L3/Power'],
+													self._dbusservice['/Ac/PvOnGenset/L1/Power'],
+													self._dbusservice['/Ac/PvOnGenset/L2/Power'],
+													self._dbusservice['/Ac/PvOnGenset/L3/Power'],
+													self._dbusservice['/Ac/PvOnOutput/L1/Power'],
+													self._dbusservice['/Ac/PvOnOutput/L2/Power'],
+													self._dbusservice['/Ac/PvOnOutput/L3/Power']))
+
+			# Sync max values to localsettings (once each second)
+			for p in self._minMaxPaths.keys():
+				if (p in newvalues and newvalues[p] != self._settings[p]):
+					self._settings[p] = newvalues[p]
+
+			# Store the ac maxima values for the 3 different scenarios. These aren't in newvalues.
+			if(self._acMaxima[activeIn] != self._settings['/Ac/%s/Consumption/Current/Max' % activeIn]):
+				self._settings['/Ac/%s/Consumption/Current/Max' % activeIn] = self._acMaxima[activeIn]
+
+		# Manual mode: relay min/max settings from localsettings to newvalues
+		# We have to fill newvalues on every iteration here because if we don't the value in dbusservice is invalidated
+		else:
+			for p in self._minMaxPaths.keys():
+				newvalues[p] = self._settings[p]
+
+			newvalues['/Ac/Consumption/Current/Max'] = self._settings['/Ac/%s/Consumption/Current/Max' % activeIn]
 
 		# ==== UPDATE DBUS ITEMS ====
 		with self._dbusservice as sss:
