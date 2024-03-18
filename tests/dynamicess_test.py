@@ -181,8 +181,8 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.hub4': {
 				'/Overrides/ForceCharge': 0,
-				'/Overrides/Setpoint': None,
-				'/Overrides/MaxDischargePower': 1,
+				'/Overrides/Setpoint': 0,
+				'/Overrides/MaxDischargePower': 500, # Available solar
 				'/Overrides/FeedInExcess': 1 # Feed-in not allowed
 		}})
 

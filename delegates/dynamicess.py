@@ -416,8 +416,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 								max(1.0, round(0.9*self.pvpower)))
 							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
 						else:
-							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None) # Normal ESS
-							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', 1.0)
+							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', 0) # Normal ESS
+							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', max(1.0, self.pvpower))
 
 				break # out of for loop
 		else:
