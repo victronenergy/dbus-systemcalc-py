@@ -1,4 +1,5 @@
 from delegates.base import SystemCalcDelegate
+from delegates.multi import Multi
 
 class HubTypeSelect(SystemCalcDelegate):
 	def get_input(self):
@@ -9,11 +10,10 @@ class HubTypeSelect(SystemCalcDelegate):
 		return [('/Hub', {'gettext': '%s'}), ('/SystemType', {'gettext': '%s'})]
 
 	def get_multi(self):
-		services = sorted(self._dbusmonitor.get_service_list('com.victronenergy.vebus').items(),
-			key=lambda x: x[1])
-		if services:
-			return services[0][0]
-		return None
+		try:
+			return Multi.instance.vebus_service.service
+		except AttributeError:
+			return None
 
 	def update_values(self, newvalues):
 		# The code below should be executed after PV inverter data has been updated, because we need the
