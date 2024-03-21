@@ -1202,7 +1202,14 @@ class SystemCalc:
 			return state[value]
 		item = self._summeditems.get(path)
 		if item is not None:
-			return item['gettext'] % value
+			try:
+				gettext = item['gettext']
+			except KeyError:
+				pass
+			else:
+				if callable(gettext):
+					return gettext(value)
+				return gettext % value
 		return str(value)
 
 	def _compute_number_of_phases(self, path, newvalues):
