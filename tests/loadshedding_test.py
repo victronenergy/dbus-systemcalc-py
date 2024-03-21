@@ -1,4 +1,3 @@
-import unittest
 from datetime import datetime, date, time, timedelta
 
 # This adapts sys.path to include all relevant packages
@@ -17,7 +16,6 @@ import patches
 # Time travel patch
 LoadShedding._get_time = lambda *a: timer_manager.datetime
 
-@unittest.skip("Skip load-shedding tests for now")
 class TestLoadShedding(TestSystemCalcBase):
 	vebus = 'com.victronenergy.vebus.ttyO1'
 	def __init__(self, methodName='runTest'):
