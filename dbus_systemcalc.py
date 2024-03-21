@@ -337,7 +337,10 @@ class SystemCalc:
 			'/Dc/Battery/VoltageService': {'gettext': '%s'},
 			'/Dc/Battery/Current': {'gettext': '%.1F A'},
 			'/Dc/Battery/Power': {'gettext': '%.0F W'},
-			'/Dc/Battery/State': {'gettext': '%s'},
+			'/Dc/Battery/State': {'gettext': lambda v: ({
+				self.STATE_IDLE: 'Idle',
+				self.STATE_CHARGING: 'Charging',
+				self.STATE_DISCHARGING: 'Discharging'}.get(v, 'Unknown'))},
 			'/Dc/Battery/TimeToGo': {'gettext': '%.0F s'},
 			'/Dc/Battery/ConsumedAmphours': {'gettext': '%.1F Ah'},
 			'/Dc/Battery/ProductId': {'gettext': '0x%x'},
@@ -1196,10 +1199,6 @@ class SystemCalc:
 			m.device_removed(service, instance)
 
 	def _gettext(self, path, value):
-		if path == '/Dc/Battery/State':
-			state = {self.STATE_IDLE: 'Idle', self.STATE_CHARGING: 'Charging',
-				self.STATE_DISCHARGING: 'Discharging'}
-			return state[value]
 		item = self._summeditems.get(path)
 		if item is not None:
 			try:
