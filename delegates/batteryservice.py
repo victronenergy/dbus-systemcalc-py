@@ -207,7 +207,10 @@ class BatteryService(SystemCalcDelegate):
 			bmses.append(b)
 
 		if bmses:
-			self.bms = sorted(bmses, key=lambda x: x.instance)[0]
+			# Prefer Lynx parallel BMS services over individual Lynx BMSes. Such that when 2 or more 
+			# Lynx smart BMSes are present and combined into a Lynx parallel BMS, the parallel one gets autoselected.
+			self.bms = sorted([b for b in bmses if b.service.startswith('com.victronenergy.battery.lynxparallel')] or bmses,
+					 key=lambda x: x.instance)[0]
 			self.__set_bms(self.bms.service)
 		else:
 			self.bms = None
