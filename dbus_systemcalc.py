@@ -347,8 +347,6 @@ class SystemCalc:
 			'/Dc/Charger/Power': {'gettext': '%.0F %%'},
 			'/Dc/FuelCell/Power': {'gettext': '%.0F %%'},
 			'/Dc/Alternator/Power': {'gettext': '%.0F W'},
-			'/Dc/Vebus/Current': {'gettext': '%.1F A'},
-			'/Dc/Vebus/Power': {'gettext': '%.0F W'},
 			'/Dc/System/Power': {'gettext': '%.0F W'},
 			'/Dc/System/MeasurementType': {'gettext': '%d'},
 			'/Ac/ActiveIn/Source': {'gettext': '%s'},
@@ -831,23 +829,8 @@ class SystemCalc:
 			newvalues['/Dc/System/MeasurementType'] = 0 # estimated
 			newvalues['/Dc/System/Power'] = solarchargers_loadoutput_power
 
-		# ==== Vebus ====
-		multi_path = getattr(delegates.Multi.instance.multi, 'service', None)
-		if multi_path is not None:
-			dc_current = self._dbusmonitor.get_value(multi_path, '/Dc/0/Current')
-			newvalues['/Dc/Vebus/Current'] = dc_current
-			dc_power = self._dbusmonitor.get_value(multi_path, '/Dc/0/Power')
-			# Just in case /Dc/0/Power is not available
-			if dc_power == None and dc_current is not None:
-				dc_voltage = self._dbusmonitor.get_value(multi_path, '/Dc/0/Voltage')
-				if dc_voltage is not None:
-					dc_power = dc_voltage * dc_current
-			# Note that there is also vebuspower, which is the total DC power summed over all multis.
-			# However, this value cannot be combined with /Dc/Multi/Current, because it does not make sense
-			# to add the Dc currents of all multis if they do not share the same DC voltage.
-			newvalues['/Dc/Vebus/Power'] = dc_power
-
 		# ===== AC IN SOURCE =====
+		multi_path = getattr(delegates.Multi.instance.multi, 'service', None)
 		ac_in_source = None
 		active_input = None
 		if multi_path is None:
