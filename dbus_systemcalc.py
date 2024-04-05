@@ -219,6 +219,7 @@ class SystemCalc:
 			delegates.PvInverters(),
 			delegates.BatteryService(self),
 			delegates.CanBatterySense(),
+			delegates.InverterCharger(),
 			delegates.DynamicEss(),
 			delegates.LoadShedding()]
 
