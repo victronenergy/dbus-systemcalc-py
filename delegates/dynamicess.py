@@ -217,7 +217,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 	def acpv(self):
 		return (self._dbusservice['/Ac/PvOnGrid/L1/Power'] or 0) + \
 			(self._dbusservice['/Ac/PvOnGrid/L2/Power'] or 0) + \
-			(self._dbusservice['/Ac/PvOnGrid/L3/Power'] or 0)
+			(self._dbusservice['/Ac/PvOnGrid/L3/Power'] or 0) + \
+			(self._dbusservice['/Ac/PvOnOutput/L1/Power'] or 0) + \
+			(self._dbusservice['/Ac/PvOnOutput/L2/Power'] or 0) + \
+			(self._dbusservice['/Ac/PvOnOutput/L3/Power'] or 0)
 
 	@property
 	def capacity(self):
