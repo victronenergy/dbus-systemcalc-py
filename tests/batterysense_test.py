@@ -701,8 +701,8 @@ class VoltageSenseTest(TestSystemCalcBase):
 			self.assertTrue(Dvcc.instance.has_dvcc)
 			self._remove_device('com.victronenergy.battery.ttyO2')
 
-		# Lynx Smart wants SVS on
-		for product_id in (0xA3E5, 0xA3E6):
+		# Lynx Smart and MeterBoost wants SVS on
+		for product_id in (0xA3E5, 0xA3E6, 0xB02E):
 			self._add_device('com.victronenergy.battery.ttyO2',
 				product_name='battery',
 				values={
