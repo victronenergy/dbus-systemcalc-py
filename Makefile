@@ -33,7 +33,10 @@ DELEGATES = \
 	$(SOURCEDIR)/delegates/pvinverter.py \
 	$(SOURCEDIR)/delegates/batteryservice.py \
 	$(SOURCEDIR)/delegates/canbatterysense.py \
-	$(SOURCEDIR)/delegates/dynamicess.py
+	$(SOURCEDIR)/delegates/dynamicess.py \
+	$(SOURCEDIR)/delegates/chargecontrol.py \
+	$(SOURCEDIR)/delegates/invertercharger.py \
+	$(SOURCEDIR)/delegates/loadshedding.py
 
 VEDLIB_FILES = \
 	$(VEDLIBDIR)/logger.py \
