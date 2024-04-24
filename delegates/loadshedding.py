@@ -93,7 +93,7 @@ class LoadShedding(SystemCalcDelegate, ChargeControl):
 			("loadshedding_preparetime", path + "/PreparationTime", 3600, 0, 0),
 			# How long before the slot to disconnect, default 5 minutes
 			("loadshedding_disconnectmargin", path + "/DisconnectMargin", 300, 0, 0),
-			# How long before the slot ends to attempt reconnection, default 30 minutes
+			# How long after the slot starts to allow reconnection, default 30 minutes
 			("loadshedding_reconnectmargin", path + "/ReconnectMargin", 1800, 0, 0),
 			# Minimum SOC ahead of an outage
 			("loadshedding_minsoc", path + "/MinSoc", 0, 0, 100),
@@ -147,8 +147,9 @@ class LoadShedding(SystemCalcDelegate, ChargeControl):
 		for start, duration in zip(starttimes, durations):
 			# Check that start time is set to something and that the end of the
 			# time slot is not in the past already.
+			duration += self.disconnectmargin
+			duration = min(duration, self.reconnectmargin)
 			if start > 0 and datetime.fromtimestamp(start + duration) > now:
-				duration = max(0, duration - self.reconnectmargin)
 				yield LoadSheddingWindow(
 					datetime.fromtimestamp(start - self.disconnectmargin), duration)
 
