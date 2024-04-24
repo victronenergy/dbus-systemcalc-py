@@ -42,8 +42,15 @@ class Service(object):
 		return self.monitor.get_value(self.service, '/Hub4/AssistantId') == 5
 
 	def set_ignore_ac(self, inp, ignore):
+		if inp not in (0, 1):
+			raise ValueError(inp)
 		self.monitor.set_value_async(self.service, '/Ac/Control/IgnoreAcIn{}'.format(inp + 1),
 			dbus.Int32(ignore, variant_level=1))
+
+	def ac_in_available(self, inp):
+		if inp not in (0, 1):
+			raise ValueError(inp)
+		return self.monitor.get_value(self.service, '/Ac/State/AcIn{}Available'.format(inp + 1)) != 0
 
 class Multi(SystemCalcDelegate):
 	def __init__(self):
@@ -66,6 +73,8 @@ class Multi(SystemCalcDelegate):
 				'/Ac/NumberOfAcInputs',
 				'/Ac/Control/IgnoreAcIn1',
 				'/Ac/Control/IgnoreAcIn2',
+				'/Ac/State/AcIn1Available',
+				'/Ac/State/AcIn2Available',
 				'/Hub4/AssistantId'])]
 
 	def get_output(self):
