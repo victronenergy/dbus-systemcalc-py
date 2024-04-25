@@ -101,6 +101,8 @@ class LoadShedding(SystemCalcDelegate, ChargeControl):
 			("loadshedding_disconnectmargin", path + "/DisconnectMargin", 300, 0, 0),
 			# How long after the slot starts to allow reconnection, default 30 minutes
 			("loadshedding_reconnectmargin", path + "/ReconnectMargin", 1800, 0, 0),
+			# Time after power returns to wait before reconnecting
+			("loadshedding_stabilitymargin", path + "/StabilityMargin", 60, 0, 0),
 			# Minimum SOC ahead of an outage
 			("loadshedding_minsoc", path + "/MinSoc", 0, 0, 100),
 			# A place to store the token used for the external API. mqtt-rpc
@@ -178,6 +180,10 @@ class LoadShedding(SystemCalcDelegate, ChargeControl):
 	@property
 	def reconnectmargin(self):
 		return self._settings['loadshedding_reconnectmargin']
+
+	@property
+	def stabilitymargin(self):
+		return self._settings['loadshedding_stabilitymargin']
 
 	@property
 	def active(self):
