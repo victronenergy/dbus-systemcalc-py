@@ -35,6 +35,9 @@ class SwitchableDevice(object):
 	def prepare(self):
 		raise NotImplementedError("prepare")
 
+	def ac_available(self):
+		raise NotImplementedError("ac_available")
+
 class MultiRs(SwitchableDevice):
 	@property
 	def ac_in_type(self):
@@ -53,6 +56,9 @@ class MultiRs(SwitchableDevice):
 		# Not supported yet. Could set /Settings/Ess/Mode to 2 (Keep charged)
 		# but that is a flash write. So for now, not supported.
 		pass
+
+	def ac_available(self):
+		return True # For now, assume AC is available. Reconnect soon.
 
 class LoadSheddingWindow(ScheduledWindow):
 	def __init__(self, start, duration):
@@ -213,6 +219,14 @@ class LoadShedding(SystemCalcDelegate, ChargeControl):
 	@maxdischargepower.setter
 	def maxdischargepower(self, v):
 		return self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', v)
+
+	def ac_available(self):
+		multi = Multi.instance.multi
+		try:
+			return any(d.ac_available() for d in self.devices.values()) or \
+				multi.ac_in_available(0) or multi.ac_in_available(1)
+		except AttributeError:
+			return False
 
 	def connect(self):
 		# Connect the main VE.Bus instance
