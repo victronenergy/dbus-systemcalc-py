@@ -10,10 +10,14 @@ NUM_SCHEDULES = 4
 INTERVAL = 5
 HUB4_SERVICE = 'com.victronenergy.hub4'
 
+# States 1 to 4 represents the cyclic nature of load-shedding
 ACTIVE = {
        0: 'Off',
-       1: 'Load-shedding',
-	   2: 'Preparing'
+	   1: 'Preparing',
+       2: 'Pre-emptive disconnect',
+	   3: 'Power fail',
+	   4: 'Reconnect delay',
+	   5: 'Recovery',
 }
 
 ERRORS = {
@@ -57,9 +61,6 @@ class MultiRs(SwitchableDevice):
 		# but that is a flash write. So for now, not supported.
 		pass
 
-	def ac_available(self):
-		return True # For now, assume AC is available. Reconnect soon.
-
 class LoadSheddingWindow(ScheduledWindow):
 	def __init__(self, start, duration):
 		super(LoadSheddingWindow, self).__init__(start, duration)
@@ -71,6 +72,7 @@ class LoadShedding(SystemCalcDelegate, ChargeControl):
 	def __init__(self):
 		super(LoadShedding, self).__init__()
 		self._timer = None
+		self._stability_timer = 300
 		self.devices = {}
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
@@ -153,13 +155,16 @@ class LoadShedding(SystemCalcDelegate, ChargeControl):
 		durations = (self._settings['loadshedding_duration_{}'.format(i)] for i in range(NUM_SCHEDULES))
 
 		for start, duration in zip(starttimes, durations):
+			# duration includes the margin
+			duration += self.disconnectmargin
+
+			# We start before the disconnection time
+			starttime = datetime.fromtimestamp(start - self.disconnectmargin)
+
 			# Check that start time is set to something and that the end of the
 			# time slot is not in the past already.
-			duration += self.disconnectmargin
-			duration = min(duration, self.reconnectmargin)
-			if start > 0 and datetime.fromtimestamp(start + duration) > now:
-				yield LoadSheddingWindow(
-					datetime.fromtimestamp(start - self.disconnectmargin), duration)
+			if start > 0 and starttime + timedelta(seconds = duration) > now:
+				yield LoadSheddingWindow(starttime, duration)
 
 	@property
 	def mode(self):
@@ -229,10 +234,9 @@ class LoadShedding(SystemCalcDelegate, ChargeControl):
 	def ac_available(self):
 		multi = Multi.instance.multi
 		try:
-			return any(d.ac_available() for d in self.devices.values()) or \
-				multi.ac_in_available(0) or multi.ac_in_available(1)
-		except AttributeError:
-			return False
+			return multi.ac_in_available(0) or multi.ac_in_available(1)
+		except (AttributeError, ValueError):
+			return any(d.ac_available() for d in self.devices.values())
 
 	def connect(self):
 		# Connect the main VE.Bus instance
@@ -305,18 +309,56 @@ class LoadShedding(SystemCalcDelegate, ChargeControl):
 
 		for w in windows:
 			if now in w and self.acquire_control():
-				self.active = 1 # Auto
-				self.disconnect()
+				if self.active in (0, 1):
+					self.active = 2 # Pre-emptive disconnect
+					self.disconnect()
+				elif self.active == 2:
+					# We're disconnected and waiting for the grid to fail,
+					# or if it does not fail, we will reconnect after
+					# reconnectmargin seconds and go to state 5, auto recovery.
+					ac_available = False
+					try:
+						ac_available = self.ac_available()
+					except NotImplementedError:
+						pass
+					if not ac_available:
+						self.active = 3 # Power fail
+					elif (now - w.start).total_seconds() > self.reconnectmargin + self.disconnectmargin:
+						self.active = 5 # Early recovery
+						self.connect()
+				elif self.active == 3:
+					try:
+						if self.ac_available():
+							self._stability_timer = self.stabilitymargin
+							self.active = 4 # Reconnect delay
+					except NotImplementedError:
+						# No firmware support for detecting grid state,
+						# stay here until at least reconnectmargin is over
+						if (now - w.start).total_seconds() > self.reconnectmargin + self.disconnectmargin:
+							self.active = 5 # recovery
+							self.connect()
+				elif self.active == 4:
+					# Wait for stabilitymargin seconds, then reconnect
+					# and go to state 5 (recovery)
+					if self._stability_timer <= 0:
+						self.connect()
+						self.active = 5
+					self._stability_timer -= INTERVAL
+
 				break # skip else below
 		else:
 			# No matching windows, check if we have to prepare
-			self.connect()
 			for w in windows:
 				if now < w.start and now + timedelta(seconds=self.preparetime) >= w.start and self.acquire_control():
-					self.active = 2
+					if self.active in (2, 3, 4):
+						# We're still disconnected, reconnect so we can charge
+						self.connect()
+					self.active = 1 # Preparing
 					self.prepare()
 					break # Skip else
 			else:
+				if self.active in (2, 3, 4):
+					self.connect()
 				if self.active:
 					self.deactivate(0)
 

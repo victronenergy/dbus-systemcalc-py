@@ -48,9 +48,12 @@ class Service(object):
 			dbus.Int32(ignore, variant_level=1))
 
 	def ac_in_available(self, inp):
-		if inp not in (0, 1):
+		if inp not in range(0, self.number_of_inputs or 0):
 			raise ValueError(inp)
-		return self.monitor.get_value(self.service, '/Ac/State/AcIn{}Available'.format(inp + 1)) != 0
+		v = self.monitor.get_value(self.service, '/Ac/State/AcIn{}Available'.format(inp + 1))
+		if v is None:
+			raise NotImplementedError("ac_in_available")
+		return v == 1
 
 class Multi(SystemCalcDelegate):
 	def __init__(self):
