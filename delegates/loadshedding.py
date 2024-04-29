@@ -309,6 +309,10 @@ class LoadShedding(SystemCalcDelegate, ChargeControl):
 
 		for w in windows:
 			if now in w and self.acquire_control():
+				if self.active == 1:
+					# Cancel the preparatory measures
+					self.forcecharge = 0
+					self.maxdischargepower = -1
 				if self.active in (0, 1):
 					self.active = 2 # Pre-emptive disconnect
 					self.disconnect()
@@ -360,6 +364,9 @@ class LoadShedding(SystemCalcDelegate, ChargeControl):
 				if self.active in (2, 3, 4):
 					self.connect()
 				if self.active:
+					# reverse any residual charge instructions
+					self.forcecharge = 0
+					self.maxdischargepower = -1
 					self.deactivate(0)
 
 		return True
