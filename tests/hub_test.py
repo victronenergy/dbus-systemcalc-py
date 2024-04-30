@@ -2111,8 +2111,10 @@ class TestHubSystem(TestSystemCalcBase):
 		self._update_values(interval=30000)
 		self._check_external_values({
 			'com.victronenergy.solarcharger.ttyUSB0': {
+				'/Link/NetworkMode': 13,
 				'/Link/ChargeCurrent': 25 + 8 },
 			'com.victronenergy.alternator.ttyO4': {
+				'/Link/NetworkMode': 13,
 				'/Link/ChargeVoltage': 14.2,
 				'/Link/ChargeCurrent': 25 + 8 - 4},
 			'com.victronenergy.vebus.ttyO1': {
