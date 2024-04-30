@@ -327,6 +327,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		for w in windows:
 			if now in w and self.acquire_control():
 				self.active = 1 # Auto
+				self.errorcode = 0 # No error
 
 				# If schedule allows for feed-in, enable that now.
 				self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess',
@@ -361,7 +362,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				if self.soc + self.charge_hysteresis < w.soc or w.soc >= 100: # Charge
 					self.charge_hysteresis = 0
 					self.discharge_hysteresis = 1
-					self.errorcode = 0 # No error
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
@@ -379,7 +379,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					self.set_charge_power(None)
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
 
-					self.errorcode = 0 # No error
 					if self.soc - self.discharge_hysteresis > max(w.soc, self.minsoc): # Discharge
 						self.discharge_hysteresis = 0
 
