@@ -93,6 +93,7 @@ class BatteryService(SystemCalcDelegate):
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(BatteryService, self).set_sources(dbusmonitor, settings, dbusservice)
 		self._dbusservice.add_path('/ActiveBmsService', value=None)
+		self._dbusservice.add_path('/ActiveBmsInstance', value=None)
 		self._dbusservice.add_path('/AvailableBmsServices', value=None)
 
 	def get_input(self):
@@ -160,8 +161,9 @@ class BatteryService(SystemCalcDelegate):
 	def add_bms_changed_callback(self, cb):
 		self._notify.append(cb)
 
-	def __set_bms(self, service):
+	def __set_bms(self, service, instance):
 		self._dbusservice['/ActiveBmsService'] = service
+		self._dbusservice['/ActiveBmsInstance'] = instance
 		for cb in self._notify:
 			cb(service)
 
@@ -180,7 +182,7 @@ class BatteryService(SystemCalcDelegate):
 		# Disabled
 		if self.selected_bms_instance == BatteryService.BMSSERVICE_NOBMS:
 			self.bms = None
-			self.__set_bms(None)
+			self.__set_bms(None, None)
 			return
 
 
@@ -190,14 +192,14 @@ class BatteryService(SystemCalcDelegate):
 				b = self._batteries[int(self.selected_bms_instance)]
 			except (ValueError, KeyError):
 				self.bms = None
-				self.__set_bms(None)
+				self.__set_bms(None, None)
 			else:
 				if b.is_bms:
 					self.bms = b
-					self.__set_bms(b.service)
+					self.__set_bms(b.service, b.device_instance)
 				else:
 					self.bms = None
-					self.__set_bms(None)
+					self.__set_bms(None, None)
 			return
 
 		# Automatic selection. Try the main battery service first, hence
@@ -211,7 +213,7 @@ class BatteryService(SystemCalcDelegate):
 			# Lynx smart BMSes are present and combined into a Lynx parallel BMS, the parallel one gets autoselected.
 			self.bms = sorted([b for b in bmses if b.service.startswith('com.victronenergy.battery.lynxparallel')] or bmses,
 					 key=lambda x: x.instance)[0]
-			self.__set_bms(self.bms.service)
+			self.__set_bms(self.bms.service, self.bms.device_instance)
 		else:
 			self.bms = None
-			self.__set_bms(None)
+			self.__set_bms(None, None)
