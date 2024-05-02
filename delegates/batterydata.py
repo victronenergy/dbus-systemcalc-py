@@ -214,6 +214,10 @@ class BatteryData(SystemCalcDelegate):
 		elif service.startswith('com.victronenergy.multi.'):
 			self.add_trackers(service,
 				MultiTracker(service, instance, self._dbusservice, self._dbusmonitor))
+		elif service.startswith('com.victronenergy.inverter.'):
+			if self._dbusmonitor.seen(service, '/Soc'):
+				self.add_trackers(service,
+					MultiTracker(service, instance, self._dbusservice, self._dbusmonitor))
 		elif service.startswith('com.victronenergy.genset.'):
 			self.add_trackers(service, FischerPandaTracker(service, instance, self._dbusmonitor))
 		elif service == 'com.victronenergy.settings':
