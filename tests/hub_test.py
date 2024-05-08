@@ -2252,3 +2252,19 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyO1': {
 				'/BatteryOperationalLimits/MaxChargeCurrent': 190}}) # 200 minus 10
+
+	def test_no_systemtype(self):
+		# No ESS assistant
+		self._update_values()
+		self._check_values({
+			'/SystemType': None,
+			'/IsGridParallel': 0
+		})
+
+	def test_ess_systemtype(self):
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub4/AssistantId', 5)
+		self._update_values(60000)
+		self._check_values({
+			'/SystemType': 'ESS',
+			'/IsGridParallel': 1
+		})
