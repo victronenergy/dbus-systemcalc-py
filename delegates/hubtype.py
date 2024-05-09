@@ -7,11 +7,7 @@ class HubTypeSelect(SystemCalcDelegate):
 			('com.victronenergy.vebus', ['/Hub/ChargeVoltage', '/Hub4/AssistantId'])]
 
 	def get_output(self):
-		return [
-			('/Hub', {'gettext': '%s'}),
-			('/SystemType', {'gettext': '%s'}),
-			('/IsGridParallel', {'gettext': '%s'}),
-		]
+		return [('/Hub', {'gettext': '%s'}), ('/SystemType', {'gettext': '%s'})]
 
 	def get_multi(self):
 		try:
@@ -24,14 +20,12 @@ class HubTypeSelect(SystemCalcDelegate):
 		# PV inverter total power to update the consumption.
 		hub = None
 		system_type = None
-		grid_parallel = 0
 		vebus_path = self.get_multi()
 		if vebus_path is not None:
 			hub4_assistant_id = self._dbusmonitor.get_value(vebus_path, '/Hub4/AssistantId')
 			if hub4_assistant_id is not None:
 				hub = 4
 				system_type = 'ESS' if hub4_assistant_id == 5 else 'Hub-4'
-				grid_parallel = 1
 			elif self._dbusmonitor.get_value(vebus_path, '/Hub/ChargeVoltage') is not None or \
 				newvalues.get('/Dc/Pv/Power') is not None:
 				hub = 1
@@ -45,4 +39,3 @@ class HubTypeSelect(SystemCalcDelegate):
 				system_type = 'Hub-3'
 		newvalues['/Hub'] = hub
 		newvalues['/SystemType'] = system_type
-		newvalues['/IsGridParallel'] = grid_parallel

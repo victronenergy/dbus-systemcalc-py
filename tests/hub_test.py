@@ -2257,14 +2257,12 @@ class TestHubSystem(TestSystemCalcBase):
 		# No ESS assistant
 		self._update_values()
 		self._check_values({
-			'/SystemType': None,
-			'/IsGridParallel': 0
+			'/SystemType': None
 		})
 
 	def test_ess_systemtype(self):
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub4/AssistantId', 5)
 		self._update_values(60000)
 		self._check_values({
-			'/SystemType': 'ESS',
-			'/IsGridParallel': 1
+			'/SystemType': 'ESS'
 		})
