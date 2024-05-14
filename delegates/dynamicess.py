@@ -89,6 +89,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice.add_path('/DynamicEss/ChargeRate', value=None)
 		self._dbusservice.add_path('/DynamicEss/Strategy', value=None)
 		self._dbusservice.add_path('/DynamicEss/Restrictions', value=None)
+		self._dbusservice.add_path('/DynamicEss/AllowGridFeedIn', value=None)
 
 		if self.mode > 0:
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
@@ -338,6 +339,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				# Set some paths on dbus for easier debugging
 				self._dbusservice['/DynamicEss/Strategy'] = w.strategy
 				self._dbusservice['/DynamicEss/Restrictions'] = w.restrictions | self.restrictions
+				self._dbusservice['/DynamicEss/AllowGridFeedIn'] = int(w.allow_feedin)
 
 				# If schedule allows for feed-in, enable that now.
 				self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess',
@@ -454,6 +456,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
 		self._dbusservice['/DynamicEss/Strategy'] = None
 		self._dbusservice['/DynamicEss/Restrictions'] = None
+		self._dbusservice['/DynamicEss/AllowGridFeedIn'] = None
 
 	def update_values(self, newvalues):
 		# Indicate whether this system has DESS capability. Presently
