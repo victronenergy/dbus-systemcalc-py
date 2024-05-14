@@ -344,6 +344,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					2 if w.allow_feedin else 1)
 
 				if w.strategy == Strategy.SELFCONSUME:
+					self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None) # Normal ESS
 					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
 
@@ -400,6 +401,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 							# PV plus local consumption.
 							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
 							if w.flags & Flags.FASTCHARGE:
+								self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
 								self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
 							else:
 								self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
