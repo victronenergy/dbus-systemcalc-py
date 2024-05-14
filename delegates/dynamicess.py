@@ -87,6 +87,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice.add_path('/DynamicEss/LastScheduledStart', value=None)
 		self._dbusservice.add_path('/DynamicEss/LastScheduledEnd', value=None)
 		self._dbusservice.add_path('/DynamicEss/ChargeRate', value=None)
+		self._dbusservice.add_path('/DynamicEss/Strategy', value=None)
+		self._dbusservice.add_path('/DynamicEss/Restrictions', value=None)
 
 		if self.mode > 0:
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
@@ -227,12 +229,16 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		return self._settings["dess_capacity"]
 
 	@property
+	def restrictions(self):
+		return self._settings["dess_restrictions"]
+
+	@property
 	def batteryexport(self):
-		return not self._settings["dess_restrictions"] & 1 # Disallow battery export
+		return not self.restrictions & 1 # Disallow battery export
 
 	@property
 	def batteryimport(self):
-		return not self._settings["dess_restrictions"] & 2 # Disallow battery import
+		return not self.restrictions & 2 # Disallow battery import
 
 	def update_chargerate(self, now, end, percentage):
 		""" now is current time, end is end of slot, percentage is amount of battery
@@ -328,6 +334,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			if now in w and self.acquire_control():
 				self.active = 1 # Auto
 				self.errorcode = 0 # No error
+
+				# Set some paths on dbus for easier debugging
+				self._dbusservice['/DynamicEss/Strategy'] = w.strategy
+				self._dbusservice['/DynamicEss/Restrictions'] = w.restrictions | self.restrictions
 
 				# If schedule allows for feed-in, enable that now.
 				self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess',
@@ -440,6 +450,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self.errorcode = reason
 		self.targetsoc = None
 		self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
+		self._dbusservice['/DynamicEss/Strategy'] = None
+		self._dbusservice['/DynamicEss/Restrictions'] = None
 
 	def update_values(self, newvalues):
 		# Indicate whether this system has DESS capability. Presently
