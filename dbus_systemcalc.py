@@ -802,15 +802,11 @@ class SystemCalc:
 							i, '/Ac/Out/L1/V', 0) * self._dbusmonitor.get_value(
 							i, '/Ac/Out/L1/I', 0)
 				newvalues['/Dc/System/MeasurementType'] = 0 # estimated
-				# FIXME In future we will subtract alternator power from the
-				# calculated DC power, because it will be individually
-				# displayed. For now, we leave it out so that in the current
-				# version of Venus it does not break user's expectations.
 				newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + fuelcell_power + alternator_power + vebuspower + inverter_power - battery_power
 				try:
 					newvalues['/Dc/System/Current'] = \
 						newvalues['/Dc/System/Power'] / newvalues['/Dc/Battery/Voltage']
-				except KeyError:
+				except (KeyError, ZeroDivisionError):
 					pass
 
 		elif self._settings['hasdcsystem'] == 1 and solarchargers_loadoutput_power is not None:
@@ -819,7 +815,7 @@ class SystemCalc:
 			try:
 				newvalues['/Dc/System/Current'] = \
 					solarchargers_loadoutput_power / newvalues['/Dc/Battery/Voltage']
-			except KeyError:
+			except (KeyError, ZeroDivisionError):
 				pass
 
 		# ===== AC IN SOURCE =====
