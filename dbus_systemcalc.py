@@ -188,7 +188,8 @@ class SystemCalc:
 				'/Soc': dummy},
 			'com.victronenergy.dcsystem': {
 				'/Dc/0/Voltage': dummy,
-				'/Dc/0/Power': dummy
+				'/Dc/0/Power': dummy,
+				'/Dc/0/Current': dummy,
 			},
 			'com.victronenergy.alternator': {
 				'/Dc/0/Power': dummy
@@ -334,6 +335,7 @@ class SystemCalc:
 			'/Dc/FuelCell/Power': {'gettext': '%.0F %%'},
 			'/Dc/Alternator/Power': {'gettext': '%.0F W'},
 			'/Dc/System/Power': {'gettext': '%.0F W'},
+			'/Dc/System/Current': {'gettext': '%.1F A'},
 			'/Dc/System/MeasurementType': {'gettext': '%d'},
 			'/Ac/ActiveIn/Source': {'gettext': '%s'},
 			'/Ac/ActiveIn/L1/Power': {'gettext': '%.0F W'},
@@ -764,9 +766,12 @@ class SystemCalc:
 		if dcsystems:
 			newvalues['/Dc/System/MeasurementType'] = 1 # measured
 			newvalues['/Dc/System/Power'] = 0
+			newvalues['/Dc/System/Current'] = 0
 			for meter in dcsystems:
 				newvalues['/Dc/System/Power'] = _safeadd(newvalues['/Dc/System/Power'],
 					self._dbusmonitor.get_value(meter, '/Dc/0/Power'))
+				newvalues['/Dc/System/Current'] = _safeadd(newvalues['/Dc/System/Current'],
+					self._dbusmonitor.get_value(meter, '/Dc/0/Current'))
 		elif self._settings['hasdcsystem'] == 1 and batteryservicetype == 'battery':
 			# Calculate power being generated/consumed by not measured devices in the network.
 			# For MPPTs, take all the power, including power going out of the load output.
@@ -801,12 +806,21 @@ class SystemCalc:
 				# calculated DC power, because it will be individually
 				# displayed. For now, we leave it out so that in the current
 				# version of Venus it does not break user's expectations.
-				#newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + fuelcell_power + vebuspower + inverter_power - battery_power - alternator_power
-				newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + fuelcell_power + vebuspower + inverter_power - battery_power
+				newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + fuelcell_power + alternator_power + vebuspower + inverter_power - battery_power
+				try:
+					newvalues['/Dc/System/Current'] = \
+						newvalues['/Dc/System/Power'] / newvalues['/Dc/Battery/Voltage']
+				except KeyError:
+					pass
 
 		elif self._settings['hasdcsystem'] == 1 and solarchargers_loadoutput_power is not None:
 			newvalues['/Dc/System/MeasurementType'] = 0 # estimated
 			newvalues['/Dc/System/Power'] = solarchargers_loadoutput_power
+			try:
+				newvalues['/Dc/System/Current'] = \
+					solarchargers_loadoutput_power / newvalues['/Dc/Battery/Voltage']
+			except KeyError:
+				pass
 
 		# ===== AC IN SOURCE =====
 		multi_path = getattr(delegates.Multi.instance.multi, 'service', None)

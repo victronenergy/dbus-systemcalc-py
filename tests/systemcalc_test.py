@@ -399,6 +399,7 @@ class TestSystemCalc(TestSystemCalcBase):
 
 		self._check_values({
 			'/Dc/System/Power': 12 * 5 + 12.5 * 5,
+			'/Dc/System/Current': 10,
 			'/Dc/Pv/Power': 12 * (8 + 5) + 12.5 * (10 + 5)})
 
 	def test_rs_smart_pv(self):
@@ -1095,11 +1096,13 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Dc/System/Power':  12.4 * (9.7 + 5) + 12.3 * (10 + 11) + 12.7 * 6.3 + 12.9 * 6 - 12.25 * 8 - 65})
+		self.assertAlmostEqual(self._service['/Dc/System/Current'], 35.4, 1)
 
 		self._monitor.remove_service('com.victronenergy.battery.ttyO2')
 		self._update_values()
 		self._check_values({
 			'/Dc/System/Power': 12.4 * 5 + 12.3 * 11})
+		self.assertAlmostEqual(self._service['/Dc/System/Current'], 16.1, 1)
 
 	def test_dc_system_estimate_with_inverter(self):
 		self._remove_device('com.victronenergy.vebus.ttyO1')
@@ -1115,6 +1118,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Dc/System/Power': 230 })
+		self.assertAlmostEqual(self._service['/Dc/System/Current'], 18.7, 1)
 
 		self._add_device('com.victronenergy.inverter.ttyO1',
 						product_name='inverter',
@@ -1125,6 +1129,7 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Dc/System/Power': 10 })
+		self.assertAlmostEqual(self._service['/Dc/System/Current'], 0.8, 1)
 
 	def test_dc_system_estimate_with_rs_smart(self):
 		self._remove_device('com.victronenergy.vebus.ttyO1')
@@ -1147,6 +1152,29 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Dc/System/Power': 44 }) # 300W minus the 12.8*20A of the inverter
+		self.assertAlmostEqual(self._service['/Dc/System/Current'], 3.577, 3)
+
+	def test_dc_system_estimate_with_alternator(self):
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._set_setting('/Settings/SystemSetup/HasDcSystem', 1)
+		self._add_device('com.victronenergy.battery.ttyO2',
+						product_name='battery',
+						values={
+								'/Dc/0/Voltage': 12.3,
+								'/Dc/0/Current': -18.7,
+								'/Dc/0/Power': -230,
+								'/Soc': 15.3,
+								'/DeviceInstance': 2})
+		self._add_device('com.victronenergy.alternator.ttyO1',
+						product_name='alternator',
+						values={
+								'/Dc/0/Voltage': 12.8,
+								'/Dc/0/Power': 139,
+								'/Dc/0/Current': 11.3 })
+		self._update_values()
+		self._check_values({
+			'/Dc/System/Power': 369,
+			'/Dc/System/Current': 30 })
 
 	def test_battery_state(self):
 		self._check_values({
@@ -1289,20 +1317,24 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Dc/System/Power': None })
 
 		self._add_device('com.victronenergy.dcsystem.ttyO2', {
-			'/Dc/0/Power': 500.0
+			'/Dc/0/Power': 500.0,
+			'/Dc/0/Current': 40.5,
 		})
 		self._update_values()
 		self._check_values({
 			'/Dc/System/Power': 500.0,
+			'/Dc/System/Current': 40.5,
 			'/Dc/System/MeasurementType': 1})
 
 		# Multiple meters are added together
 		self._add_device('com.victronenergy.dcsystem.ttyO4', {
-			'/Dc/0/Power': 300.0
+			'/Dc/0/Power': 300.0,
+			'/Dc/0/Current': 24.4,
 		})
 		self._update_values()
 		self._check_values({
-			'/Dc/System/Power': 800.0 })
+			'/Dc/System/Power': 800.0,
+			'/Dc/System/Current': 64.9 })
 
 	def test_multi_rs_active_ac(self):
 		self._monitor.remove_service('com.victronenergy.vebus.ttyO1')
