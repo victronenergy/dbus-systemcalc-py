@@ -290,6 +290,12 @@ class TestSchedule(TestSystemCalcBase):
 		self.assertEqual(next_schedule_day(date(2018, 6, 9), 8),
 			date(2018, 6, 11))
 
+		# Next month
+		self.assertEqual(next_schedule_day(date(2018, 6, 1), 11),
+			date(2018, 6, 1))
+		self.assertEqual(next_schedule_day(date(2018, 6, 9), 11),
+			date(2018, 7, 1))
+
 	def test_prev_schedule_day(self):
 		from delegates.schedule import prev_schedule_day
 		today = date(2018, 6, 6)
@@ -307,6 +313,13 @@ class TestSchedule(TestSystemCalcBase):
 		# Prev week-day from a Monday is Friday
 		self.assertEqual(prev_schedule_day(date(2018, 6, 11), 8),
 			date(2018, 6, 8))
+
+		# Prev 1st of month month is first of June, if today is the 1st
+		# then another month back
+		self.assertEqual(prev_schedule_day(date(2018, 6, 11), 11),
+			date(2018, 6, 1))
+		self.assertEqual(prev_schedule_day(date(2018, 6, 1), 11),
+			date(2018, 5, 1))
 
 	def test_window_calculation(self):
 		from delegates.schedule import ScheduledCharging, ScheduledWindow
@@ -477,3 +490,15 @@ class TestSchedule(TestSystemCalcBase):
 				'com.victronenergy.hub4': {
 				'/Overrides/ForceCharge': 0,
 		}})
+
+	def test_monthly_window_calculation(self):
+		from delegates.schedule import ScheduledCharging, ScheduledWindow
+		windows = ScheduledCharging._charge_windows(
+			date(2018, 6, 6), [11], [7200],
+			[3595], [100], [False])
+		windows = list(windows)
+		self.assertEqual(len(windows), 2)
+
+		# Previous and next slot
+		self.assertEqual(windows[0], ScheduledWindow(datetime(2018, 6, 1, 2, 0, 0), 3595))
+		self.assertEqual(windows[1], ScheduledWindow(datetime(2018, 7, 1, 2, 0, 0), 3595))

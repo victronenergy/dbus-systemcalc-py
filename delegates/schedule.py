@@ -1,7 +1,7 @@
 from __future__ import division
 import logging
 from gi.repository import GLib
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta, time, date
 
 # Victron packages
 from ve_utils import exit_on_error
@@ -42,11 +42,16 @@ def next_schedule_day(adate, w):
 			if adate.weekday() > 4:
 				return next_week_day(adate, 1) # Monday
 			return adate
+		elif w == 9:
+			# weekend days
+			if adate.weekday() < 5:
+				return next_week_day(adate, 6) # Saturday
+			return adate
 
-		# w >=9, weekend days
-		if adate.weekday() < 5:
-			return next_week_day(adate, 6) # Saturday
-		return adate
+		# w >=10, 11 = monthly
+		if adate.day == 1:
+			return adate
+		return (adate.replace(day=1) + timedelta(days=31)).replace(day=1)
 
 def prev_schedule_day(adate, w):
 		if w < 7:
@@ -60,11 +65,16 @@ def prev_schedule_day(adate, w):
 			if adate.weekday() in (0, 6):
 				return prev_week_day(adate, 5) # Mon,Sun preceded by Friday
 			return adate - timedelta(days=1)
+		elif w == 9:
+			# weekend days
+			if 0 < adate.weekday() < 5:
+				return prev_week_day(adate, 0) # Sunday
+			return adate - timedelta(days=1)
 
-		# w >= 9, weekend days
-		if 0 < adate.weekday() < 5:
-			return prev_week_day(adate, 0) # Sunday
-		return adate - timedelta(days=1)
+		# w >= 10, 11 = monthly
+		if adate.day == 1:
+			return (adate - timedelta(days=1)).replace(day=1)
+		return adate.replace(day=1)
 
 class ScheduledWindow(object):
 	def __init__(self, starttime, duration):
@@ -128,7 +138,7 @@ class ScheduledCharging(SystemCalcDelegate, ChargeControl):
 		# Paths for scheduled charging. We'll allow 5 for now.
 		for i in range(NUM_SCHEDULES):
 			settings.append(("schedule_day_{}".format(i),
-				BLPATH + "/Schedule/Charge/{}/Day".format(i), -7, -10, 9))
+				BLPATH + "/Schedule/Charge/{}/Day".format(i), -7, -11, 11))
 			settings.append(("schedule_start_{}".format(i),
 				BLPATH + "/Schedule/Charge/{}/Start".format(i), 0, 0, 0))
 			settings.append(("schedule_duration_{}".format(i),
