@@ -49,7 +49,8 @@ class SystemState(SystemCalcDelegate):
 			('com.victronenergy.settings', [
 				'/Settings/CGwacs/BatteryLife/State',
 				'/Settings/SystemSetup/MaxChargeCurrent',
-				'/Settings/CGwacs/MaxDischargePower']),
+				'/Settings/CGwacs/MaxDischargePower',
+				'/Settings/CGwacs/Hub4Mode']),
 			('com.victronenergy.vebus', [
 				'/Hub4/AssistantId',
 				'/Hub4/Sustain',
@@ -139,7 +140,13 @@ class SystemState(SystemCalcDelegate):
 
 			return (ss, flags)
 
-		# VEBUS is available. If a managed battery is present, then the
+		# VEBUS is available. First check that we are not externally
+		# controlled.
+		if self._dbusmonitor.get_value(
+				'com.victronenergy.settings', '/Settings/CGwacs/Hub4Mode') == 3:
+			return (SystemState.UNKNOWN, flags)
+
+		# If a managed battery is present, then the
 		# system state is "External Control". Otherwise it is whatever
 		# the Multi's charge state may be.
 		mainstate = self._dbusmonitor.get_value(vebus, '/VebusMainState')
