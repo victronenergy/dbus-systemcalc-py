@@ -349,8 +349,9 @@ class DcGenset(BaseCharger):
 	    attributes. """
 	@property
 	def has_externalcontrol_support(self):
-		""" For now only support Hatz gensets """
-		return self.product_id in [0xB045]
+		# If it has the ChargeVoltage path, we assume it has
+		# external control support
+		return self.monitor.seen(self.service, '/Link/ChargeVoltage')
 
 	@property
 	def maxchargecurrent(self):
