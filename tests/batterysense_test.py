@@ -702,7 +702,7 @@ class VoltageSenseTest(TestSystemCalcBase):
 			self._remove_device('com.victronenergy.battery.ttyO2')
 
 		# Lynx Smart and MeterBoost wants SVS on
-		for product_id in (0xA3E5, 0xA3E6, 0xB02E):
+		for product_id in (0xA3E4, 0xA3E5, 0xA3E6, 0xA3E7, 0xB02E):
 			self._add_device('com.victronenergy.battery.ttyO2',
 				product_name='battery',
 				values={

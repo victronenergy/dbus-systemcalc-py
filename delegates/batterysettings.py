@@ -12,7 +12,9 @@ BATTERY_DISCOVER_AES = 0xB016
 BATTERY_FREEDOMWON = 0xB014
 BATTERY_BLUENOVA = 0xB020
 BATTERY_LYNX_SMART_BMS_500 = 0xA3E5
+BATTERY_LYNX_SMART_BMS_500_NG = 0xA3E4
 BATTERY_LYNX_SMART_BMS_1000 = 0xA3E6
+BATTERY_LYNX_SMART_BMS_1000_NG = 0xA3E7
 BATTERY_BSLBATT = 0xB021
 BATTERY_ETOWER = 0xB024
 BATTERY_CEGASA = 0xB028
@@ -49,7 +51,9 @@ class BatterySettings(SystemCalcDelegate):
 				self._settings['vsense'] &= 1 # Remove setting if it was forced
 			self._settings['tsense'] = 2 # Forced Off
 			self._settings['bol'] = 3 # Forced on
-		elif pid in (BATTERY_LYNX_SMART_BMS_500, BATTERY_LYNX_SMART_BMS_1000, BATTERY_METERBOOST):
+		elif pid in (BATTERY_LYNX_SMART_BMS_500, BATTERY_LYNX_SMART_BMS_1000,
+				BATTERY_LYNX_SMART_BMS_500_NG, BATTERY_LYNX_SMART_BMS_1000_NG,
+				BATTERY_METERBOOST):
 			self._settings['vsense'] = 3 # Forced on
 			self._settings['tsense'] = 2 # Forced Off
 			self._settings['bol'] = 3 # Forced on
