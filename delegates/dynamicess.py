@@ -39,6 +39,184 @@ class Flags(int, Enum):
 	NONE = 0
 	FASTCHARGE = 1
 
+class EssDevice(object):
+	def __init__(self, delegate, monitor, service):
+		self.delegate = delegate
+		self.monitor = monitor
+		self.service = service
+
+	def check_conditions(self):
+		""" Check that the conditions are right to use this device. If not,
+		    return a non-zero error code. """
+		return 0
+
+	def charge(self, flags, restrictions, rate, allow_feedin):
+		raise NotImplementedError("charge")
+
+	def discharge(self, flags, restrictions, rate, allow_feedin):
+		raise NotImplementedError("discharge")
+
+	def idle(self, allow_feedin):
+		raise NotImplementedError("idle")
+
+	def self_consume(self, restrictions, allow_feedin):
+		raise NotImplementedError("self_consume")
+
+	def deactivate(self):
+		raise NotImplementedError("deactivate")
+
+class VebusDevice(EssDevice):
+	@property
+	def hub4mode(self):
+		return self.monitor.get_value('com.victronenergy.settings',
+                '/Settings/CGwacs/Hub4Mode')
+
+	@property
+	def maxfeedinpower(self):
+		l = self.monitor.get_value('com.victronenergy.settings',
+                '/Settings/CGwacs/MaxFeedInPower')
+		return SELLPOWER if l < 0 else max(-l, SELLPOWER)
+
+	@property
+	def minsoc(self):
+		# The BatteryLife delegate puts the active soc limit here.
+		return self.delegate._dbusservice['/Control/ActiveSocLimit']
+
+	@property
+	def pvpower(self):
+		return self.delegate._dbusservice['/Dc/Pv/Power'] or 0
+
+	@property
+	def consumption(self):
+		return max(0, (self.delegate._dbusservice['/Ac/Consumption/L1/Power'] or 0) +
+			(self.delegate._dbusservice['/Ac/Consumption/L2/Power'] or 0) +
+			(self.delegate._dbusservice['/Ac/Consumption/L3/Power'] or 0))
+
+	@property
+	def acpv(self):
+		return (self.delegate._dbusservice['/Ac/PvOnGrid/L1/Power'] or 0) + \
+			(self.delegate._dbusservice['/Ac/PvOnGrid/L2/Power'] or 0) + \
+			(self.delegate._dbusservice['/Ac/PvOnGrid/L3/Power'] or 0) + \
+			(self.delegate._dbusservice['/Ac/PvOnOutput/L1/Power'] or 0) + \
+			(self.delegate._dbusservice['/Ac/PvOnOutput/L2/Power'] or 0) + \
+			(self.delegate._dbusservice['/Ac/PvOnOutput/L3/Power'] or 0)
+
+	def _set_feedin(self, allow_feedin):
+		self.monitor.set_value_async(HUB4_SERVICE,
+			'/Overrides/FeedInExcess', 2 if allow_feedin else 1)
+
+	def _set_charge_power(self, v):
+		Dvcc.instance.internal_maxchargepower = None if v is None else max(v, 50)
+
+	def check_conditions(self):
+		# Can't do anything unless we have an SOC, and the ESS assistant
+		if self.delegate.soc is None or self.minsoc is None:
+			return 4 # SOC low
+
+		if not Dvcc.instance.has_ess_assistant:
+			return 1 # No ESS
+
+		# In Keep-Charged mode or external control, no point in doing anything
+		if BatteryLife.instance.state == BatteryLifeState.KeepCharged or self.hub4mode == 3:
+			return 2 # ESS mode is wrong
+
+		return 0
+
+	def charge(self, flags, restrictions, rate, allow_feedin):
+		batteryimport = not restrictions & 2
+
+		self._set_feedin(allow_feedin)
+
+		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
+		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
+		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
+
+		if flags & Flags.FASTCHARGE or rate is None:
+			self._set_charge_power(None)
+			return None
+		else:
+			# Calculate how fast to buy. Multi is given the remainder
+			# after subtracting PV power.
+			self._set_charge_power(max(0.0, rate - self.pvpower) if batteryimport else 0.9 * self.acpv)
+			return rate
+
+	def discharge(self, flags, restrictions, rate, allow_feedin):
+		batteryexport = not restrictions & 1
+
+		self._set_feedin(allow_feedin)
+		self._set_charge_power(None)
+		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
+
+		if allow_feedin:
+			# Calculate how fast to sell. If exporting the battery to the grid
+			# is allowed, then export rate plus whatever DC-coupled PV is
+			# making. If exporting the battery is not allowed, then limit that
+			# to DC-coupled PV plus local consumption.
+			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
+			if flags & Flags.FASTCHARGE:
+				self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
+				return None
+			else:
+				self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
+					(rate + self.pvpower if rate else 1.0) \
+					if batteryexport \
+					else self.pvpower + self.consumption + 1.0) # 1.0 to allow selling overvoltage
+				return rate
+		else:
+			# If we are not allowed to sell to the grid, then we effectively do
+			# normal ESS here.
+			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', 0) # Normal ESS, no feedin
+			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
+			return rate
+
+	def idle(self, allow_feedin):
+		self._set_feedin(allow_feedin)
+		self._set_charge_power(None)
+		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
+
+		if allow_feedin:
+			# This keeps battery idle by not allowing more power to be taken
+			# from the DC bus than what DC-coupled PV provides.
+			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
+				max(1.0, round(0.9*self.pvpower)))
+			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
+		else:
+			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', 0) # Normal ESS
+			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', max(1.0, self.pvpower))
+
+		return None
+
+	def self_consume(self, restrictions, allow_feedin):
+		batteryexport = not restrictions & 1
+		batteryimport = not restrictions & 2
+
+		self._set_feedin(allow_feedin)
+
+		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None) # Normal ESS
+		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
+
+		# If importing into battery is allowed, then no restriction, let the
+		# setpoint determine that. If disallowed, then only AC-coupled PV may
+		# be imported into battery.
+		self._set_charge_power(None if batteryimport else self.acpv)
+
+		# If exporting battery to grid is restricted, then limit DC-AC
+		# conversion to pvpower plus consumption. Otherwise unrestricted
+		# and even a negative ESS grid setpoint will cause power to go to
+		# the grid.
+		dcp = -1.0 if batteryexport else max(self.pvpower + self.consumption, 1.0)
+		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', dcp)
+
+	def deactivate(self):
+		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
+		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
+		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
+		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 0)
+		self._set_charge_power(None)
+
+class MultiRsDevice(EssDevice):
+	pass
+
 class DynamicEssWindow(ScheduledWindow):
 	def __init__(self, start, duration, soc, allow_feedin, restrictions, strategy, flags):
 		super(DynamicEssWindow, self).__init__(start, duration)
@@ -47,14 +225,6 @@ class DynamicEssWindow(ScheduledWindow):
 		self.restrictions = restrictions
 		self.strategy = strategy
 		self.flags = flags
-
-	@property
-	def batteryexport(self):
-		return not self.restrictions & 1 # Disallow battery export
-
-	@property
-	def batteryimport(self):
-		return not self.restrictions & 2 # Disallow battery import
 
 	def __repr__(self):
 		return "Start: {}, Stop: {}, Soc: {}".format(
@@ -93,6 +263,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 		if self.mode > 0:
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
+
+		# FIXME Interim hackery, this will be determined dynamically later
+		self._device = VebusDevice(self, self._dbusmonitor, '')
 
 	def get_settings(self):
 		# Settings for DynamicEss
@@ -159,24 +332,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					datetime.fromtimestamp(start), duration, soc, discharge, restrict, strategy, flags)
 
 	@property
-	def hub4mode(self):
-		return self._dbusmonitor.get_value('com.victronenergy.settings',
-                '/Settings/CGwacs/Hub4Mode')
-
-	@property
-	def maxfeedinpower(self):
-		l = self._dbusmonitor.get_value('com.victronenergy.settings',
-                '/Settings/CGwacs/MaxFeedInPower')
-		return SELLPOWER if l < 0 else max(-l, SELLPOWER)
-
-	@property
 	def mode(self):
 		return self._settings['dess_mode']
-
-	@property
-	def minsoc(self):
-		# The BatteryLife delegate puts the active soc limit here.
-		return self._dbusservice['/Control/ActiveSocLimit']
 
 	@property
 	def active(self):
@@ -207,39 +364,12 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		return BatterySoc.instance.soc
 
 	@property
-	def pvpower(self):
-		return self._dbusservice['/Dc/Pv/Power'] or 0
-
-	@property
-	def consumption(self):
-		return max(0, (self._dbusservice['/Ac/Consumption/L1/Power'] or 0) +
-			(self._dbusservice['/Ac/Consumption/L2/Power'] or 0) +
-			(self._dbusservice['/Ac/Consumption/L3/Power'] or 0))
-
-	@property
-	def acpv(self):
-		return (self._dbusservice['/Ac/PvOnGrid/L1/Power'] or 0) + \
-			(self._dbusservice['/Ac/PvOnGrid/L2/Power'] or 0) + \
-			(self._dbusservice['/Ac/PvOnGrid/L3/Power'] or 0) + \
-			(self._dbusservice['/Ac/PvOnOutput/L1/Power'] or 0) + \
-			(self._dbusservice['/Ac/PvOnOutput/L2/Power'] or 0) + \
-			(self._dbusservice['/Ac/PvOnOutput/L3/Power'] or 0)
-
-	@property
 	def capacity(self):
 		return self._settings["dess_capacity"]
 
 	@property
 	def restrictions(self):
 		return self._settings["dess_restrictions"]
-
-	@property
-	def batteryexport(self):
-		return not self.restrictions & 1 # Disallow battery export
-
-	@property
-	def batteryimport(self):
-		return not self.restrictions & 2 # Disallow battery import
 
 	def update_chargerate(self, now, end, percentage):
 		""" now is current time, end is end of slot, percentage is amount of battery
@@ -258,29 +388,11 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 		self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate
 
-	def set_charge_power(self, v):
-		Dvcc.instance.internal_maxchargepower = None if v is None else max(v, 50)
-
 	def _on_timer(self):
 		# If DESS was disabled, deactivate and kill timer.
-		if self.mode == 0:
+		if self.mode in (0, 2, 3): # Old buy/sell states now also means off
 			self.deactivate(0) # No error
 			return False
-
-		# Can't do anything unless we have an SOC, and the ESS assistant
-		if self.soc is None or self.minsoc is None:
-			self.release_control()
-			self.active = 0 # Off
-			self.errorcode = 4 # SOC low
-			self.targetsoc = None
-			return True
-
-		if not Dvcc.instance.has_ess_assistant:
-			self.release_control()
-			self.active = 0 # Off
-			self.errorcode = 1 # No ESS
-			self.targetsoc = None
-			return True
 
 		if self.capacity == 0.0:
 			self.release_control()
@@ -289,34 +401,14 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			self.targetsoc = None
 			return True
 
-		# In Keep-Charged mode or external control, no point in doing anything
-		if BatteryLife.instance.state == BatteryLifeState.KeepCharged or self.hub4mode == 3:
+		errorcode = self._device.check_conditions()
+		if errorcode != 0:
 			self.release_control()
 			self.active = 0 # Off
-			self.errorcode = 2 # ESS mode is wrong
+			self.errorcode = errorcode
 			self.targetsoc = None
 			return True
 
-		if self.mode == 2 and self.acquire_control(): # BUY
-			self.active = 2
-			self.errorcode = 0 # No error
-			self.targetsoc = None
-			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 1)
-			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
-			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
-			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
-			return True
-
-		if self.mode == 3 and self.acquire_control(): # SELL
-			self.active = 3
-			self.errorcode = 0 # No error
-			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 2)
-			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
-			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
-			self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
-			return True
-
-		# self.mode == 1 or self.mode == 4 (Auto) below here
 		now = self._get_time()
 		start = None
 		stop = None
@@ -337,33 +429,14 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				self.errorcode = 0 # No error
 
 				# Set some paths on dbus for easier debugging
+				restrictions = w.restrictions | self.restrictions
 				self._dbusservice['/DynamicEss/Strategy'] = w.strategy
-				self._dbusservice['/DynamicEss/Restrictions'] = w.restrictions | self.restrictions
+				self._dbusservice['/DynamicEss/Restrictions'] = restrictions
 				self._dbusservice['/DynamicEss/AllowGridFeedIn'] = int(w.allow_feedin)
-
-				# If schedule allows for feed-in, enable that now.
-				self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess',
-					2 if w.allow_feedin else 1)
 
 				if w.strategy == Strategy.SELFCONSUME:
 					self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
-					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None) # Normal ESS
-					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
-
-					# If importing into battery is allowed, then no restriction, let the
-					# setpoint determine that. If disallowed, then only AC-coupled PV may
-					# be imported into battery.
-					self.set_charge_power(None if (self.batteryimport and w.batteryimport) else self.acpv)
-
-					# If above window SOC, then normal ESS for reaching the
-					# ESS grid setpoint. Unless there are export restrictions,
-					# then limited to the pvpower and the local consumption. So
-					# a negative setpoint cannot cause power to go to the grid.
-					# If below SOC, limit to 90% of PV power only.
-					dcp = -1.0 if (self.batteryexport and w.batteryexport) \
-						else max(self.pvpower + self.consumption, 1.0)
-
-					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', dcp)
+					self._device.self_consume(restrictions, w.allow_feedin)
 					break # Out of FOR loop
 
 				# Below here, strategy is Strategy.TARGETSOC
@@ -375,65 +448,24 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				if self.soc + self.charge_hysteresis < w.soc or w.soc >= 100: # Charge
 					self.charge_hysteresis = 0
 					self.discharge_hysteresis = 1
-					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
-					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
-					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
-
-					if w.flags & Flags.FASTCHARGE:
-						self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
-						self.set_charge_power(None)
-					else:
-						# Calculate how fast to buy. Multi is given the remainder
-						# after subtracting PV power.
-						self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
-						self.set_charge_power(max(0.0, self.chargerate - self.pvpower) if (self.batteryimport and w.batteryimport) else 0.9 * self.acpv)
+					self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
+					self._dbusservice['/DynamicEss/ChargeRate'] = \
+						self._device.charge(w.flags, restrictions,
+						self.chargerate, w.allow_feedin)
 				else: # Discharge or idle
 					self.charge_hysteresis = 1
-					self.set_charge_power(None)
-					self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
-
-					if self.soc - self.discharge_hysteresis > max(w.soc, self.minsoc): # Discharge
+					if self.soc - self.discharge_hysteresis > max(w.soc, self._device.minsoc): # Discharge
 						self.discharge_hysteresis = 0
-
-						if w.allow_feedin:
-							# Calculate how fast to sell. If exporting the battery
-							# to the grid is allowed, then export chargerate plus
-							# whatever DC-coupled PV is making. If exporting the
-							# battery is not allowed, then limit that to DC-coupled
-							# PV plus local consumption.
-							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
-							if w.flags & Flags.FASTCHARGE:
-								self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
-								self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
-							else:
-								self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
-								self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
-									(self.chargerate + self.pvpower
-										if self.chargerate else 1.0) if (self.batteryexport and w.batteryexport) \
-									else self.pvpower + self.consumption + 1.0) # 1.0 to allow selling overvoltage
-						else:
-							# If we are not allowed to sell to the grid, then we
-							# effectively do normal ESS here.
-							self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
-							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', 0) # Normal ESS, no feedin
-							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
-
+						self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
+						self._dbusservice['/DynamicEss/ChargeRate'] = \
+							self._device.discharge(w.flags, restrictions,
+							self.chargerate, w.allow_feedin)
 					else: # battery idle
 						# SOC/target-soc needs to move 1% to move out of idle
 						# zone
 						self.discharge_hysteresis = 1
-						self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
-
-						if w.allow_feedin:
-							# This keeps battery idle by not allowing more power
-							# to be taken from the DC bus than what DC-coupled
-							# PV provides.
-							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
-								max(1.0, round(0.9*self.pvpower)))
-							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
-						else:
-							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', 0) # Normal ESS
-							self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', max(1.0, self.pvpower))
+						self._dbusservice['/DynamicEss/ChargeRate'] = \
+							self._device.idle(w.allow_feedin)
 
 				break # out of for loop
 		else:
@@ -444,11 +476,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		return True
 
 	def deactivate(self, reason):
-		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
-		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
-		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
-		self._dbusmonitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 0)
-		self.set_charge_power(None)
+		try:
+			self._device.deactivate()
+		except AttributeError:
+			pass
 		self.release_control()
 		self.active = 0 # Off
 		self.errorcode = reason
