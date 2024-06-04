@@ -241,6 +241,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self.prevsoc = None
 		self.chargerate = None # How fast to charge/discharge to get to the next target
 		self._timer = None
+		self._devices = {}
+		self._device = None
+
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(DynamicEss, self).set_sources(dbusmonitor, settings, dbusservice)
@@ -263,9 +266,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 		if self.mode > 0:
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
-
-		# FIXME Interim hackery, this will be determined dynamically later
-		self._device = VebusDevice(self, self._dbusmonitor, '')
 
 	def get_settings(self):
 		# Settings for DynamicEss
@@ -304,6 +304,13 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			(HUB4_SERVICE, ['/Overrides/ForceCharge',
 				'/Overrides/MaxDischargePower', '/Overrides/Setpoint',
 				'/Overrides/FeedInExcess']),
+			('com.victronenergy.acsystem', [
+				 '/Ess/AcPowerSetpoint',
+				 '/Ess/InverterPowerSetpoint',
+				 '/Ess/UseInverterPowerSetpoint',
+				 '/Ess/DisableFeedIn',
+				 '/Settings/Ess/Mode',
+				 '/Settings/Ess/MinimumSocLimit']),
 			('com.victronenergy.settings', [
 				'/Settings/CGwacs/Hub4Mode',
 				'/Settings/CGwacs/MaxFeedInPower'])
@@ -311,6 +318,32 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 	def get_output(self):
 		return [('/DynamicEss/Available', {'gettext': '%s'})]
+
+	def _set_device(self):
+		# Use first device in dict, there should be just one
+		for self._device in self._devices.values():
+			break
+		else:
+			self._device = None
+
+	def device_added(self, service, instance, *args):
+		if service.startswith('com.victronenergy.vebus.'):
+			# Only one device, controlled via hub4control
+			if not any(isinstance(s, VebusDevice) for s in self._devices.values()):
+				self._devices[service] = VebusDevice(self, self._dbusmonitor, service)
+				self._set_device()
+		elif service.startswith('com.victronenergy.acsystem.'):
+			self._devices[service] = MultiRsDevice(self, self._dbusmonitor, service)
+			self._set_device()
+
+	def device_removed(self, service, instance):
+		try:
+			del self._devices[service]
+		except KeyError:
+			pass
+		else:
+			self._set_device()
+
 
 	def settings_changed(self, setting, oldvalue, newvalue):
 		if setting == 'dess_mode':
@@ -399,6 +432,13 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			self.active = 0 # Off
 			self.errorcode = 5 # Capacity not set
 			self.targetsoc = None
+			return True
+
+		if self._device is None:
+			self.release_control()
+			self.active = 0 # Off
+			self.targetsoc = None
+			self.errorcode = 1 # No ESS
 			return True
 
 		errorcode = self._device.check_conditions()
