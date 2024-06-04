@@ -65,6 +65,19 @@ class EssDevice(object):
 	def deactivate(self):
 		raise NotImplementedError("deactivate")
 
+	@property
+	def acpv(self):
+		return (self.delegate._dbusservice['/Ac/PvOnGrid/L1/Power'] or 0) + \
+			(self.delegate._dbusservice['/Ac/PvOnGrid/L2/Power'] or 0) + \
+			(self.delegate._dbusservice['/Ac/PvOnGrid/L3/Power'] or 0) + \
+			(self.delegate._dbusservice['/Ac/PvOnOutput/L1/Power'] or 0) + \
+			(self.delegate._dbusservice['/Ac/PvOnOutput/L2/Power'] or 0) + \
+			(self.delegate._dbusservice['/Ac/PvOnOutput/L3/Power'] or 0)
+
+	@property
+	def pvpower(self):
+		return self.delegate._dbusservice['/Dc/Pv/Power'] or 0
+
 class VebusDevice(EssDevice):
 	@property
 	def hub4mode(self):
@@ -83,23 +96,10 @@ class VebusDevice(EssDevice):
 		return self.delegate._dbusservice['/Control/ActiveSocLimit']
 
 	@property
-	def pvpower(self):
-		return self.delegate._dbusservice['/Dc/Pv/Power'] or 0
-
-	@property
 	def consumption(self):
 		return max(0, (self.delegate._dbusservice['/Ac/Consumption/L1/Power'] or 0) +
 			(self.delegate._dbusservice['/Ac/Consumption/L2/Power'] or 0) +
 			(self.delegate._dbusservice['/Ac/Consumption/L3/Power'] or 0))
-
-	@property
-	def acpv(self):
-		return (self.delegate._dbusservice['/Ac/PvOnGrid/L1/Power'] or 0) + \
-			(self.delegate._dbusservice['/Ac/PvOnGrid/L2/Power'] or 0) + \
-			(self.delegate._dbusservice['/Ac/PvOnGrid/L3/Power'] or 0) + \
-			(self.delegate._dbusservice['/Ac/PvOnOutput/L1/Power'] or 0) + \
-			(self.delegate._dbusservice['/Ac/PvOnOutput/L2/Power'] or 0) + \
-			(self.delegate._dbusservice['/Ac/PvOnOutput/L3/Power'] or 0)
 
 	def _set_feedin(self, allow_feedin):
 		self.monitor.set_value_async(HUB4_SERVICE,
@@ -215,7 +215,68 @@ class VebusDevice(EssDevice):
 		self._set_charge_power(None)
 
 class MultiRsDevice(EssDevice):
-	pass
+	@property
+	def minsoc(self):
+		# The minsoc is here on the Multi-RS
+		return self.monitor.get_value(self.service, '/Settings/Ess/MinimumSocLimit')
+
+	@property
+	def mode(self):
+		return self.monitor.get_value(self.service, '/Settings/Ess/Mode')
+
+	def check_conditions(self):
+		# Not in optimised mode, no point in doing anything
+		if self.mode not in (0, 1):
+			return 2 # ESS mode is wrong
+		return 0
+
+	def charge(self, flags, restrictions, rate, allow_feedin):
+		batteryimport = not restrictions & 2
+
+		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin))
+		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
+		if batteryimport:
+			if rate is None or (flags & Flags.FASTCHARGE):
+				self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', 15000)
+			else:
+				self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', max(0, rate))
+		else:
+			# No charging from grid, allow only acpv to be converted.
+			self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', self.acpv)
+
+		return rate
+
+	def discharge(self, flags, restrictions, rate, allow_feedin):
+		batteryexport = not restrictions & 1
+		if batteryexport:
+			self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin))
+			self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
+			if rate is None or (flags & Flags.FASTCHARGE):
+				self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', -15000)
+			else:
+				self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', -max(0, rate+self.pvpower))
+		else:
+			# We can only discharge into loads, therefore simply run
+			# self-consumption
+			self.self_consume(restrictions, allow_feedin)
+
+		return rate
+
+	def idle(self, allow_feedin):
+		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin))
+		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
+		self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', -max(0, self.pvpower))
+
+	def self_consume(self, restrictions, allow_feedin):
+		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin))
+		self.monitor.set_value_async(self.service, '/Ess/AcPowerSetpoint', 0)
+		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 0)
+
+	def deactivate(self):
+		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', 0)
+		self.monitor.set_value_async(self.service, '/Ess/AcPowerSetpoint', 0)
+		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 0)
+		self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', 0)
 
 class DynamicEssWindow(ScheduledWindow):
 	def __init__(self, start, duration, soc, allow_feedin, restrictions, strategy, flags):
