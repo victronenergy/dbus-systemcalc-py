@@ -45,6 +45,10 @@ class EssDevice(object):
 		self.monitor = monitor
 		self.service = service
 
+	@property
+	def available(self):
+		return True
+
 	def check_conditions(self):
 		""" Check that the conditions are right to use this device. If not,
 		    return a non-zero error code. """
@@ -79,6 +83,10 @@ class EssDevice(object):
 		return self.delegate._dbusservice['/Dc/Pv/Power'] or 0
 
 class VebusDevice(EssDevice):
+	@property
+	def available(self):
+		return Dvcc.instance.has_ess_assistant
+
 	@property
 	def hub4mode(self):
 		return self.monitor.get_value('com.victronenergy.settings',
@@ -593,4 +601,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 	def update_values(self, newvalues):
 		# Indicate whether this system has DESS capability. Presently
 		# that means it has ESS capability.
-		newvalues['/DynamicEss/Available'] = int(Dvcc.instance.has_ess_assistant)
+		try:
+			newvalues['/DynamicEss/Available'] = int(self._device.available)
+		except AttributeError:
+			newvalues['/DynamicEss/Available'] = 0
