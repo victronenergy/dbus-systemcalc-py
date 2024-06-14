@@ -343,7 +343,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		settings = [
 			("dess_mode", path + "/Mode", 0, 0, 4),
 			("dess_capacity", path + "/BatteryCapacity", 0.0, 0.0, 1000.0),
-			("dess_efficiency", path + "/SystemEfficiency", 90.0, 0.0, 100.0),
+			("dess_efficiency", path + "/SystemEfficiency", 90.0, 50.0, 100.0),
 			# 0=None, 1=disallow export, 2=disallow import
 			("dess_restrictions", path + "/Restrictions", 0, 0, 3),
 			("dess_fullchargeinterval", path + "/FullChargeInterval", 7, 0, 0),
