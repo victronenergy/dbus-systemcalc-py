@@ -224,6 +224,10 @@ class VebusDevice(EssDevice):
 
 class MultiRsDevice(EssDevice):
 	@property
+	def available(self):
+		return self.monitor.get_value(self.service, '/Capabilities/HasDynamicEssSupport') == 1
+
+	@property
 	def minsoc(self):
 		# The minsoc is here on the Multi-RS
 		return self.monitor.get_value(self.service, '/Settings/Ess/MinimumSocLimit')
@@ -374,6 +378,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				'/Overrides/MaxDischargePower', '/Overrides/Setpoint',
 				'/Overrides/FeedInExcess']),
 			('com.victronenergy.acsystem', [
+				 '/Capabilities/HasDynamicEssSupport',
 				 '/Ess/AcPowerSetpoint',
 				 '/Ess/InverterPowerSetpoint',
 				 '/Ess/UseInverterPowerSetpoint',
