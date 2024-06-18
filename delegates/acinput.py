@@ -16,6 +16,12 @@ class AcSource(object):
 	def device_type(self):
 		return self.monitor.get_value(self.service, '/DeviceType')
 
+class GridMeter(AcSource):
+	@property
+	def device_type(self):
+		# If grid meter has no DeviceType, use 0 as a generic marker.
+		return self.monitor.get_value(self.service, '/DeviceType', 0)
+
 class InverterCharger(AcSource):
 	@property
 	def active_input(self):
@@ -67,7 +73,7 @@ class AcInputs(SystemCalcDelegate):
 	def device_added(self, service, instance, *args):
 		# Look for grid and genset
 		if service.startswith('com.victronenergy.grid.'):
-			self.gridmeters[service] = AcSource(self._dbusmonitor, service, instance)
+			self.gridmeters[service] = GridMeter(self._dbusmonitor, service, instance)
 			self._set_gridmeter()
 		elif service.startswith('com.victronenergy.genset.'):
 			self.gensetmeters[service] = AcSource(self._dbusmonitor, service, instance)
