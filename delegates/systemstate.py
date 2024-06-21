@@ -142,7 +142,8 @@ class SystemState(SystemCalcDelegate):
 
 		# VEBUS is available. First check that we are not externally
 		# controlled.
-		if self._dbusmonitor.get_value(
+		assistant_id  = self._dbusmonitor.get_value(vebus, '/Hub4/AssistantId')
+		if assistant_id is not None and self._dbusmonitor.get_value(
 				'com.victronenergy.settings', '/Settings/CGwacs/Hub4Mode') == 3:
 			return (SystemState.UNKNOWN, flags)
 
@@ -158,7 +159,6 @@ class SystemState(SystemCalcDelegate):
 		else:
 			ss = self._dbusmonitor.get_value(vebus, '/State')
 
-		assistant_id  = self._dbusmonitor.get_value(vebus, '/Hub4/AssistantId')
 		if assistant_id is None:
 			# ESS not installed. Return vebus state
 			return (ss, flags)
