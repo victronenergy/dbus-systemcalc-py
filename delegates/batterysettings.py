@@ -23,6 +23,7 @@ BATTERY_PELIO_L = 0xB029
 BATTERY_WECO = 0xB02A
 BATTERY_FINDREAMS = 0xB02B
 BATTERY_METERBOOST = 0xB02E
+BATTERY_ZYC = 0xB01A
 
 class BatterySettings(SystemCalcDelegate):
 	""" Manages battery settings for known batteries. At present
@@ -42,7 +43,7 @@ class BatterySettings(SystemCalcDelegate):
 		# for some batteries.
 		if pid in (BATTERY_PYLONTECH, BATTERY_BYD, BATTERY_BYD_L, BATTERY_BYD_PREMIUM,
 				BATTERY_DISCOVER_AES, BATTERY_BLUENOVA,
-				BATTERY_BSLBATT, BATTERY_BMZ, BATTERY_CEGASA, BATTERY_PELIO_L):
+				BATTERY_BSLBATT, BATTERY_BMZ, BATTERY_CEGASA, BATTERY_PELIO_L, BATTERY_ZYC):
 			self._settings['vsense'] = 2 # Forced Off
 			self._settings['tsense'] = 2 # Forced Off
 			self._settings['bol'] = 3 # Forced on
