@@ -15,6 +15,7 @@ BATTERY_LYNX_SMART_BMS_500 = 0xA3E5
 BATTERY_LYNX_SMART_BMS_500_NG = 0xA3E4
 BATTERY_LYNX_SMART_BMS_1000 = 0xA3E6
 BATTERY_LYNX_SMART_BMS_1000_NG = 0xA3E7
+BATTERY_PARALLEL_BMS = 0xA3E3
 BATTERY_BSLBATT = 0xB021
 BATTERY_ETOWER = 0xB024
 BATTERY_CEGASA = 0xB028
@@ -55,7 +56,7 @@ class BatterySettings(SystemCalcDelegate):
 			self._settings['bol'] = 3 # Forced on
 		elif pid in (BATTERY_LYNX_SMART_BMS_500, BATTERY_LYNX_SMART_BMS_1000,
 				BATTERY_LYNX_SMART_BMS_500_NG, BATTERY_LYNX_SMART_BMS_1000_NG,
-				BATTERY_METERBOOST):
+				BATTERY_PARALLEL_BMS, BATTERY_METERBOOST):
 			self._settings['vsense'] = 3 # Forced on
 			self._settings['tsense'] = 2 # Forced Off
 			self._settings['bol'] = 3 # Forced on
