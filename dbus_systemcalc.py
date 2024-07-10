@@ -367,6 +367,7 @@ class SystemCalc:
 		self._handleservicechange()
 		self._updatevalues()
 
+		self._dbusservice.register()
 		GLib.timeout_add(1000, exit_on_error, self._handletimertick)
 
 	def _create_dbus_monitor(self, *args, **kwargs):
