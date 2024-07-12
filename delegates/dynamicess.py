@@ -117,8 +117,8 @@ class VebusDevice(EssDevice):
 		Dvcc.instance.internal_maxchargepower = None if v is None else max(v, 50)
 
 	def check_conditions(self):
-		# Can't do anything unless we have an SOC, and the ESS assistant
-		if self.delegate.soc is None or self.minsoc is None:
+		# Can't do anything unless we have a minsoc, and the ESS assistant
+		if self.minsoc is None:
 			return 4 # SOC low
 
 		if not Dvcc.instance.has_ess_assistant:
@@ -240,6 +240,8 @@ class MultiRsDevice(EssDevice):
 		# Not in optimised mode, no point in doing anything
 		if self.mode not in (0, 1):
 			return 2 # ESS mode is wrong
+		if self.minsoc is None:
+			return 4 # SOC low, happens during firmware updates
 		return 0
 
 	def charge(self, flags, restrictions, rate, allow_feedin):
@@ -501,26 +503,27 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			self.deactivate(0) # No error
 			return False
 
-		if self.capacity == 0.0:
+		def bail(code):
 			self.release_control()
 			self.active = 0 # Off
-			self.errorcode = 5 # Capacity not set
+			self.errorcode = code
 			self.targetsoc = None
+
+		if self.capacity == 0.0:
+			bail(5) # Capacity not set
 			return True
 
 		if self._device is None:
-			self.release_control()
-			self.active = 0 # Off
-			self.targetsoc = None
-			self.errorcode = 1 # No ESS
+			bail(1) # No ESS
+			return True
+
+		if self.soc is None:
+			bail(4) # Low SOC, can happen during firmware updates
 			return True
 
 		errorcode = self._device.check_conditions()
 		if errorcode != 0:
-			self.release_control()
-			self.active = 0 # Off
-			self.errorcode = errorcode
-			self.targetsoc = None
+			bail(errorcode)
 			return True
 
 		now = self._get_time()
@@ -557,9 +560,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				if self.targetsoc != w.soc:
 					self.chargerate = None # For recalculation
 				self.targetsoc = w.soc
-
-				if self.soc == None: # Happens during firmware updates of the BMS
-					break
 
 				# When 100% is requested, don't go into idle mode
 				if self.soc + self.charge_hysteresis < w.soc or w.soc >= 100: # Charge
