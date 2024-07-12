@@ -587,7 +587,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				break # out of for loop
 		else:
 			# No matching windows
-			if self.active:
+			if self.active or self.errorcode != 3:
 				self.deactivate(3)
 
 		return True
