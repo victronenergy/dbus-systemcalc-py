@@ -1207,7 +1207,7 @@ class DbusSystemCalc(SystemCalc):
 	def _create_dbus_service(self):
 		venusversion, venusbuildtime = self._get_venus_versioninfo()
 
-		dbusservice = VeDbusService('com.victronenergy.system')
+		dbusservice = VeDbusService('com.victronenergy.system', register=False)
 		dbusservice.add_mandatory_paths(
 			processname=__file__,
 			processversion=softwareVersion,
