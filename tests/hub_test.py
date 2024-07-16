@@ -1210,7 +1210,24 @@ class TestHubSystem(TestSystemCalcBase):
 		})
 		self._check_values({ '/Control/EffectiveChargeVoltage': 52.4 })
 
+		# CCL=0 Quirk, charge current is 25% of one module of 25A.
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeCurrent', 0)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeCurrent': 6
+			}
+		})
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/InstalledCapacity', 200)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeCurrent': 50
+			}
+		})
+
 		# 24V battery is scaled accordingly
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/InstalledCapacity', None)
 		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeVoltage', 28.4)
 		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeCurrent', 55)
 		self._update_values(interval=3000)
@@ -1222,7 +1239,7 @@ class TestHubSystem(TestSystemCalcBase):
 		})
 		self._check_values({ '/Control/EffectiveChargeVoltage': 27.8 })
 
-		# 24V battery has a CCL=0 quirk, replace with 0.25C charge rate. If charge rate is unknown
+		# CCL=0 quirk, replace with 0.25C charge rate. If charge rate is unknown
 		# assume a single module at 55Ah.
 		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeCurrent', 0)
 		self._update_values(interval=3000)

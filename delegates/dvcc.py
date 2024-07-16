@@ -61,18 +61,22 @@ def _pylontech_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed
 	if charge_voltage > 55:
 		# 48V battery (16 cells.) Assume BMS knows what it's doing.
 		return (charge_voltage, charge_current, feedback_allowed, False)
-	if charge_voltage > 30:
-		# 48V battery (15 cells)
-		return (min(charge_voltage, 52.4), charge_current, feedback_allowed, False)
 	if charge_voltage > 20:
-		# 24V battery (8 cells). 24V batteries send CCL=0 when they are full,
-		# whereas the 48V batteries reduce CCL by 50% when the battery is full.
-		# Do the same for 24V batteries. The normal limit is C/2, so put the
-		# limit to C/4. Note that this is just a nicety, the important part is
-		# to clip the charge voltage to 27.8 volts. That fixes the sawtooth
-		# issue.
-		capacity = bms.capacity or 55
-		return (min(charge_voltage, 27.8), max(charge_current, round(capacity/4.0)), feedback_allowed, False)
+		# 48V battery (15 cells) or 24V battery (8 cells). We want to halve
+		# the charge current limit when CCL=0 is sent. Normally the limit is
+		# C/2, so limit to C/4, or assume a single module (25Ah/55Ah) if not
+		# known.  The more important part is clipping the charge voltage to a
+		# lower value. This is to fix the sawtooth voltage issue.
+		if charge_voltage < 30:
+			# 24V
+			capacity = bms.capacity or 55
+			charge_current = max(charge_current, round(capacity/4.0))
+			return (min(charge_voltage, 27.8), charge_current, feedback_allowed, False)
+		else:
+			# 48V
+			capacity = bms.capacity or 25
+			charge_current = max(charge_current, round(capacity/4.0))
+			return (min(charge_voltage, 52.4), charge_current, feedback_allowed, False)
 
 	# Not known, probably a 12V battery.
 	return (charge_voltage, charge_current, feedback_allowed, False)
