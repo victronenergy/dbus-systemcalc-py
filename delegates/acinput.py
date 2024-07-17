@@ -125,7 +125,7 @@ class AcInputs(SystemCalcDelegate):
 	def update_values(self, newvalues):
 		multi = Multi.instance.multi or self.invertercharger
 		number_of_inputs = getattr(multi, 'number_of_inputs', None) or 0
-		source_count = 0
+		input_count = 0
 		for i, t in getattr(multi, 'input_types', ()):
 			if t is None or (not 0 < t < 4): # Input is marked "Not available", or invalid
 				continue
@@ -133,11 +133,11 @@ class AcInputs(SystemCalcDelegate):
 			source = self.gridmeter if t in (1, 3) else self.gensetmeter
 
 			if source is None:
-				# Use vebus
-				newvalues.update(self.input_tree(source_count, multi.service, multi.instance, t, int(multi.active_input == i)))
+				# Use vebus or inverter/charger
+				newvalues.update(self.input_tree(input_count, multi.service, multi.instance, t, int(multi.active_input == i)))
 			else:
 				active = getattr(multi, 'active_input', None) == i
-				newvalues.update(self.input_tree(source_count, source.service, source.instance, t, int(active)))
-			source_count += 1
+				newvalues.update(self.input_tree(input_count, source.service, source.instance, t, int(active)))
+			input_count += 1
 
-		newvalues['/Ac/In/NumberOfAcInputs'] = source_count
+		newvalues['/Ac/In/NumberOfAcInputs'] = input_count
