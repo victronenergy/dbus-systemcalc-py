@@ -50,9 +50,11 @@ class AcInputs(SystemCalcDelegate):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 
 	def get_input(self):
-		return [('com.victronenergy.multi', [
+		return [('com.victronenergy.acsystem', [
 				'/Ac/ActiveIn/ActiveInput',
-				'/Ac/NumberOfAcInputs'])]
+				'/Ac/NumberOfAcInputs',
+				'/Ac/In/1/Type',
+				'/Ac/In/2/Type'])]
 
 	def get_output(self):
 		return [('/Ac/In/0/ServiceName', {'gettext': '%s'}),
@@ -78,7 +80,7 @@ class AcInputs(SystemCalcDelegate):
 		elif service.startswith('com.victronenergy.genset.'):
 			self.gensetmeters[service] = AcSource(self._dbusmonitor, service, instance)
 			self._set_gensetmeter()
-		elif service.startswith('com.victronenergy.multi.'):
+		elif service.startswith('com.victronenergy.acsystem.'):
 			self.inverterchargers[service] = InverterCharger(self._dbusmonitor, service, instance)
 			self._set_invertercharger()
 
@@ -124,7 +126,6 @@ class AcInputs(SystemCalcDelegate):
 
 	def update_values(self, newvalues):
 		multi = Multi.instance.multi or self.invertercharger
-		number_of_inputs = getattr(multi, 'number_of_inputs', None) or 0
 		input_count = 0
 		for i, t in getattr(multi, 'input_types', ()):
 			if t is None or (not 0 < t < 4): # Input is marked "Not available", or invalid
