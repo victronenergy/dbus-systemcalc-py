@@ -127,18 +127,32 @@ class AcInputs(SystemCalcDelegate):
 	def update_values(self, newvalues):
 		multi = Multi.instance.multi or self.invertercharger
 		input_count = 0
-		for i, t in getattr(multi, 'input_types', ()):
-			if t is None or (not 0 < t < 4): # Input is marked "Not available", or invalid
-				continue
+		if multi is None:
+			# This is a system without an inverter/charger. If there is a
+			# grid meter or a genset, we can display that. This works because
+			# the meter itself is powered by the grid/genset, so if it shows
+			# up on dbus, we can assume it is connected. We assume the first
+			# one found is actually active, with grid taking priority.
+			sources = zip(
+				[x for x in (self.gridmeter, self.gensetmeter) if x is not None],
+				(1, 2))
+			for source, t in sources:
+				newvalues.update(self.input_tree(input_count, source.service, source.instance, t, input_count==0))
+				input_count += 1
+			newvalues['/Ac/In/NumberOfAcInputs'] = input_count
+		else:
+			for i, t in getattr(multi, 'input_types', ()):
+				if t is None or (not 0 < t < 4): # Input is marked "Not available", or invalid
+					continue
 
-			source = self.gridmeter if t in (1, 3) else self.gensetmeter
+				source = self.gridmeter if t in (1, 3) else self.gensetmeter
 
-			if source is None:
-				# Use vebus or inverter/charger
-				newvalues.update(self.input_tree(input_count, multi.service, multi.instance, t, int(multi.active_input == i)))
-			else:
-				active = getattr(multi, 'active_input', None) == i
-				newvalues.update(self.input_tree(input_count, source.service, source.instance, t, int(active)))
-			input_count += 1
+				if source is None:
+					# Use vebus or inverter/charger
+					newvalues.update(self.input_tree(input_count, multi.service, multi.instance, t, int(multi.active_input == i)))
+				else:
+					active = getattr(multi, 'active_input', None) == i
+					newvalues.update(self.input_tree(input_count, source.service, source.instance, t, int(active)))
+				input_count += 1
 
-		newvalues['/Ac/In/NumberOfAcInputs'] = input_count
+			newvalues['/Ac/In/NumberOfAcInputs'] = input_count
