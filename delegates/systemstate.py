@@ -61,8 +61,9 @@ class SystemState(SystemCalcDelegate):
 				'/BatteryOperationalLimits/MaxDischargeCurrent',
 				'/Bms/AllowToDischarge',
 				'/Bms/AllowToCharge']),
-			('com.victronenergy.multi', [
-				'/State'
+			('com.victronenergy.acsystem', [
+				'/State',
+				'/Ess/Sustain',
 			]),
 			('com.victronenergy.inverter', [
 				'/State',])]
@@ -127,10 +128,13 @@ class SystemState(SystemCalcDelegate):
 
 			# Look for Multi RS, Inverter RS, or a VE.Direct inverter
 			inverter = next(chain(
-				self._dbusmonitor.get_service_list('com.victronenergy.multi').keys(),
+				self._dbusmonitor.get_service_list('com.victronenergy.acsystem').keys(),
 				self._dbusmonitor.get_service_list('com.victronenergy.inverter').keys()), None)
 			if inverter is not None:
-				ss = self._dbusmonitor.get_value(inverter, '/State')
+				if self._dbusmonitor.get_value(inverter, '/Ess/Sustain') == 1:
+					ss = SystemState.SUSTAIN
+				else:
+					ss = self._dbusmonitor.get_value(inverter, '/State')
 
 			# Check if we can get the bms state from the selected batteryservice
 			if BatteryService.instance.bms is not None:
