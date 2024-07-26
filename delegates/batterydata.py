@@ -46,6 +46,7 @@ class BatteryTracker(object):
 		'/Dc/0/Power',
 		'/Dc/0/Temperature',
 		'/Soc',
+		'/State',
 		'/TimeToGo')
 
 	def __init__(self, service, instance, monitor):
@@ -100,7 +101,8 @@ class BatteryTracker(object):
 			'soc': self._tracked['/Soc'],
 			'timetogo': self._tracked.get('/TimeToGo', None),
 			'name': self.name,
-			'state': None if power is None else (1 if power > 30 else (2 if power < -30 else 0))
+			'state': None if power is None else (1 if power > 30 else (2 if power < -30 else 0)),
+			'bmsstate': self._tracked.get('/State', None)
 		}
 
 	def data(self):
@@ -195,6 +197,10 @@ class BatteryData(SystemCalcDelegate):
 		self._dbusservice.add_path('/Batteries', value=None)
 		self._dbusservice.add_path('/AvailableBatteries', value=None)
 		self._timer = GLib.timeout_add(5000, exit_on_error, self._on_timer)
+
+	def get_input(self):
+		return [('com.victronenergy.battery', [
+			'/State'])]
 
 	def device_added(self, service, instance, do_service_change=True):
 		self.deviceschanged = True
