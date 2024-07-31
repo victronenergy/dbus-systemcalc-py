@@ -137,7 +137,7 @@ class AcInputs(SystemCalcDelegate):
 				[x for x in (self.gridmeter, self.gensetmeter) if x is not None],
 				(1, 2))
 			for source, t in sources:
-				newvalues.update(self.input_tree(input_count, source.service, source.instance, t, input_count==0))
+				newvalues.update(self.input_tree(input_count, source.service, source.instance, t, int(input_count==0)))
 				input_count += 1
 			newvalues['/Ac/In/NumberOfAcInputs'] = input_count
 		else:
