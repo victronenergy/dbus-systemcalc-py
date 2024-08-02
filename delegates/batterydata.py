@@ -199,8 +199,17 @@ class BatteryData(SystemCalcDelegate):
 		self._timer = GLib.timeout_add(5000, exit_on_error, self._on_timer)
 
 	def get_input(self):
-		return [('com.victronenergy.battery', [
-			'/State'])]
+		return [
+			('com.victronenergy.battery', [
+				'/State']),
+			('com.victronenergy.dcgenset', [
+				'/Dc/0/Voltage',
+				'/Dc/0/Current',
+				'/Dc/0/Power',
+				'/StarterVoltage',
+				'/CustomName',
+				'/ProductName'])
+		]
 
 	def device_added(self, service, instance, do_service_change=True):
 		self.deviceschanged = True
@@ -226,6 +235,10 @@ class BatteryData(SystemCalcDelegate):
 					MultiTracker(service, instance, self._dbusservice, self._dbusmonitor))
 		elif service.startswith('com.victronenergy.genset.'):
 			self.add_trackers(service, FischerPandaTracker(service, instance, self._dbusmonitor))
+		elif service.startswith('com.victronenergy.dcgenset.'):
+			self.add_trackers(service,
+				SecondaryBatteryTracker(service, instance, self._dbusmonitor, 0),
+				FischerPandaTracker(service, instance, self._dbusmonitor))
 		elif service == 'com.victronenergy.settings':
 			for cb in self.configured_batteries.values():
 				cb.bind_settings()
