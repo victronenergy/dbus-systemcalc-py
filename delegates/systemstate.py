@@ -123,8 +123,8 @@ class SystemState(SystemCalcDelegate):
 		flags = sc_utils.SmartDict(dict.fromkeys(['LowSoc', 'BatteryLife',
 		'DischargeDisabled', 'ChargeDisabled', 'SlowCharge', 'UserChargeLimited', 'UserDischargeLimited'], 0))
 
+		ss = SystemState.UNKNOWN
 		if vebus is None:
-			ss = SystemState.UNKNOWN
 
 			# Look for Multi RS, Inverter RS, or a VE.Direct inverter
 			inverter = next(chain(
