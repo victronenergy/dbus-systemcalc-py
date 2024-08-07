@@ -35,6 +35,7 @@ class SystemState(SystemCalcDelegate):
 	SUSTAIN = 0x101
 	RECHARGE = 0x102
 	SCHEDULEDCHARGE = 0x103
+	BATTERYPROTECT = 0x105
 
 	def __init__(self, sc):
 		super(SystemState, self).__init__()
@@ -54,6 +55,7 @@ class SystemState(SystemCalcDelegate):
 			('com.victronenergy.vebus', [
 				'/Hub4/AssistantId',
 				'/Hub4/Sustain',
+				'/Hub4/BatteryOvervoltageProtectionActivated',
 				'/State',
 				'/VebusMainState',
 				'/BatteryOperationalLimits/MaxChargeVoltage',
@@ -212,6 +214,8 @@ class SystemState(SystemCalcDelegate):
 			elif self._dbusmonitor.get_value(vebus, '/Hub4/Sustain'):
 				# Sustain flag
 				ss = SystemState.SUSTAIN
+			elif self._dbusmonitor.get_value(vebus, '/Hub4/BatteryOvervoltageProtectionActivated'):
+				ss = SystemState.BATTERYPROTECT
 
 		return (ss, flags)
 
