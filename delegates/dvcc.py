@@ -70,13 +70,19 @@ def _pylontech_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed
 		if charge_voltage < 30:
 			# 24V
 			capacity = bms.capacity or 55
+			# Lower charge voltage more if CCL is zero
+			charge_voltage = min(charge_voltage, 27.6) if charge_current < 0.1 \
+				else min(charge_voltage, 27.8)
 			charge_current = max(charge_current, round(capacity/4.0))
-			return (min(charge_voltage, 27.8), charge_current, feedback_allowed, False)
 		else:
 			# 48V
 			capacity = bms.capacity or 25
+			# Lower charge voltage more if CCL is zero
+			charge_voltage = min(charge_voltage, 51.75) if charge_current < 0.1 \
+				else min(charge_voltage, 52.4)
 			charge_current = max(charge_current, round(capacity/4.0))
-			return (min(charge_voltage, 52.4), charge_current, feedback_allowed, False)
+
+		return (charge_voltage, charge_current, feedback_allowed, False)
 
 	# Not known, probably a 12V battery.
 	return (charge_voltage, charge_current, feedback_allowed, False)
@@ -89,7 +95,9 @@ def _pylontech_pelio_quirk(dvcc, bms, charge_voltage, charge_current, feedback_a
 	    itself imposes at around 98% SOC.
 	"""
 	capacity = bms.capacity or 100.0
-	return (min(charge_voltage, 56.0), max(charge_current, round(capacity/5.0)), feedback_allowed, False)
+	charge_voltage = min(charge_voltage, 55.2) if charge_current < 0.1 \
+		else min(charge_voltage, 56.0)
+	return (charge_voltage, max(charge_current, round(capacity/5.0)), feedback_allowed, False)
 
 def _lynx_smart_bms_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
 	""" When the Lynx Smart BMS sends CCL=0, it wants all chargers to stop. """
