@@ -930,6 +930,7 @@ class Dvcc(SystemCalcDelegate):
 		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/SolarVoltageOffset', value=0, writeable=True)
 		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/VebusVoltageOffset', value=0, writeable=True)
 		self._dbusservice.add_path('/Debug/BatteryOperationalLimits/CurrentOffset', value=0, writeable=True)
+		self._dbusservice.add_path('/Debug/BatteryProtect', value=0, writeable=True)
 		self._dbusservice.add_path('/Dvcc/Alarms/FirmwareInsufficient', value=0)
 		self._dbusservice.add_path('/Dvcc/Alarms/MultipleBatteries', value=0)
 
@@ -1190,7 +1191,7 @@ class Dvcc(SystemCalcDelegate):
 				self._multi.maxchargecurrent = max_charge_current if max_charge_current > 1 else 0
 		else:
 			bms_parameters_written = self._update_battery_operational_limits(bms_service, charge_voltage, max_charge_current)
-			self._multi.batteryprotect = battery_protect
+			self._multi.batteryprotect = battery_protect or self._dbusservice['/Debug/BatteryProtect']
 		self._dbusservice['/Control/BmsParameters'] = int(bms_parameters_written or (bms_service is not None and voltage_written))
 
 		return True
