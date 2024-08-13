@@ -894,6 +894,7 @@ class Dvcc(SystemCalcDelegate):
 		self._dbusservice.add_path('/Control/SolarChargeVoltage', value=0)
 		self._dbusservice.add_path('/Control/SolarChargeCurrent', value=0)
 		self._dbusservice.add_path('/Control/EffectiveChargeVoltage', value=None)
+		self._dbusservice.add_path('/Dc/Battery/ChargeVoltage', value=None)
 		self._dbusservice.add_path('/Control/BmsParameters', value=0)
 		self._dbusservice.add_path('/Control/MaxChargeCurrent', value=0)
 		self._dbusservice.add_path('/Control/Dvcc', value=self.has_dvcc)
@@ -1018,6 +1019,7 @@ class Dvcc(SystemCalcDelegate):
 			self._dbusservice['/Control/Dvcc'] = 0
 			self._dbusservice['/Dvcc/Alarms/FirmwareInsufficient'] = 0
 			self._dbusservice['/Dvcc/Alarms/MultipleBatteries'] = 0
+			self._dbusservice['/Dc/Battery/ChargeVoltage'] = None
 			return True
 
 
@@ -1045,6 +1047,7 @@ class Dvcc(SystemCalcDelegate):
 		if self.bms_seen and bms_service is None and not self._multi.has_vebus_bmsv2:
 			# BMS is lost
 			update_solarcharger_control_flags(0, 0, None)
+			self._dbusservice['/Dc/Battery/ChargeVoltage'] = None
 			return True
 
 		# Get the user current limit, if set
@@ -1083,6 +1086,9 @@ class Dvcc(SystemCalcDelegate):
 			user_charge_voltage = self._settings['maxchargevoltage']
 			if user_charge_voltage > 0:
 				charge_voltage = min(charge_voltage, user_charge_voltage)
+
+		# Publish the charge voltage from the BMS (after quirks) to dbus
+		self._dbusservice['/Dc/Battery/ChargeVoltage'] = charge_voltage
 
 		# @todo EV What if ESS + OvervoltageFeedIn? In that case there is no
 		# charge current control on the MPPTs, but we'll still indicate that
