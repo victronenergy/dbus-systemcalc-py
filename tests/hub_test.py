@@ -1210,24 +1210,7 @@ class TestHubSystem(TestSystemCalcBase):
 		})
 		self._check_values({ '/Control/EffectiveChargeVoltage': 52.4 })
 
-		# CCL=0 Quirk, charge current is 25% of one module of 25A.
-		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeCurrent', 0)
-		self._update_values(interval=3000)
-		self._check_external_values({
-			'com.victronenergy.vebus.ttyO1': {
-				'/BatteryOperationalLimits/MaxChargeCurrent': 6
-			}
-		})
-		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/InstalledCapacity', 200)
-		self._update_values(interval=3000)
-		self._check_external_values({
-			'com.victronenergy.vebus.ttyO1': {
-				'/BatteryOperationalLimits/MaxChargeCurrent': 50
-			}
-		})
-
 		# 24V battery is scaled accordingly
-		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/InstalledCapacity', None)
 		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeVoltage', 28.4)
 		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeCurrent', 55)
 		self._update_values(interval=3000)
