@@ -80,12 +80,23 @@ def _pylontech_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed
 			charge_current = max(charge_current, round(capacity/4.0))
 		else:
 			# 48V
-			# Lower charge voltage more if CCL is zero
-			if charge_current < 0.1:
+			capacity = bms.capacity or 25.0
+			# Lower charge voltage more if CCL is below C/4. Assume one
+			# cell is jumping out, and set charge voltage to 14 times lowest
+			# cell plus the highest cell.
+			if charge_current < capacity/5.0:
 				battery_protect = True
-				charge_voltage = min(charge_voltage, 51.75)
+				try:
+					charge_voltage = round(
+						max(min(14 * bms.mincellvoltage + bms.maxcellvoltage, 52.4), 51.75), 2)
+				except TypeError:
+					charge_voltage = min(charge_voltage, 51.75)
 			else:
-				charge_voltage = min(charge_voltage, 52.4)
+				try:
+					charge_voltage = round(
+						max(min(14*bms.maxcellvoltage + bms.mincellvoltage, 52.4), 51.75), 2)
+				except TypeError:
+					charge_voltage = min(charge_voltage, 52.4)
 
 		return (charge_voltage, charge_current, feedback_allowed, False, battery_protect)
 

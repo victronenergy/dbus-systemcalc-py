@@ -78,6 +78,14 @@ class Battery(object):
 		""" Capacity of battery, if defined. """
 		return self.monitor.get_value(self.service, '/InstalledCapacity')
 
+	@property
+	def mincellvoltage(self):
+		return self.monitor.get_value(self.service, '/System/MinCellVoltage')
+
+	@property
+	def maxcellvoltage(self):
+		return self.monitor.get_value(self.service, '/System/MaxCellVoltage')
+
 class BatteryService(SystemCalcDelegate):
 	""" Keeps track of the (auto-)selected bms service. """
 	BMSSERVICE_DEFAULT = -1
@@ -111,7 +119,9 @@ class BatteryService(SystemCalcDelegate):
 				'/ProductName',
 				'/CustomName',
 				'/InstalledCapacity',
-				'/Soc']),
+				'/Soc',
+				'/System/MinCellVoltage',
+				'/System/MaxCellVoltage']),
 		]
 
 	def get_settings(self):
