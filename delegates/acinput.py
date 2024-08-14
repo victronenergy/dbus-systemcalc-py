@@ -51,10 +51,15 @@ class AcInputs(SystemCalcDelegate):
 
 	def get_input(self):
 		return [('com.victronenergy.acsystem', [
-				'/Ac/ActiveIn/ActiveInput',
-				'/Ac/NumberOfAcInputs',
-				'/Ac/In/1/Type',
-				'/Ac/In/2/Type'])]
+					'/Ac/ActiveIn/ActiveInput',
+					'/Ac/NumberOfAcInputs',
+					'/Ac/In/1/Type',
+					'/Ac/In/2/Type']),
+				('com.victronenergy.grid', [
+					'/ProductId',
+					'/DeviceType', 
+				])
+		]
 
 	def get_output(self):
 		return [('/Ac/In/0/ServiceName', {'gettext': '%s'}),
