@@ -36,6 +36,11 @@ class InverterCharger(AcSource):
 		return [(i, self.monitor.get_value(self.service,
 			'/Ac/In/{}/Type'.format(i+1))) for i in range(self.number_of_inputs or 0)]
 
+	@property
+	def gridparallel(self):
+		# Multi-RS units can run grid-parallel
+		return True
+
 class AcInputs(SystemCalcDelegate):
 	def __init__(self):
 		super(AcInputs, self).__init__()
@@ -75,6 +80,7 @@ class AcInputs(SystemCalcDelegate):
 				('/Ac/In/1/Source', {'gettext': '%d'}),
 				('/Ac/In/1/Connected', {'gettext': '%d'}),
 				('/Ac/In/NumberOfAcInputs', {'gettext': '%d'}),
+				('/Ac/ActiveIn/GridParallel', {'gettext': '%d'}),
 		]
 
 	def device_added(self, service, instance, *args):
@@ -132,6 +138,7 @@ class AcInputs(SystemCalcDelegate):
 	def update_values(self, newvalues):
 		multi = Multi.instance.multi or self.invertercharger
 		input_count = 0
+		newvalues['/Ac/ActiveIn/GridParallel'] = 0
 		if multi is None:
 			# This is a system without an inverter/charger. If there is a
 			# grid meter or a genset, we can display that. This works because
@@ -152,11 +159,13 @@ class AcInputs(SystemCalcDelegate):
 
 				source = self.gridmeter if t in (1, 3) else self.gensetmeter
 
+				active = multi.active_input == i
+				if active and t in (1, 3) and multi.gridparallel:
+					newvalues['/Ac/ActiveIn/GridParallel'] = 1
 				if source is None:
 					# Use vebus or inverter/charger
-					newvalues.update(self.input_tree(input_count, multi.service, multi.instance, t, int(multi.active_input == i)))
+					newvalues.update(self.input_tree(input_count, multi.service, multi.instance, t, int(active)))
 				else:
-					active = getattr(multi, 'active_input', None) == i
 					newvalues.update(self.input_tree(input_count, source.service, source.instance, t, int(active)))
 				input_count += 1
 

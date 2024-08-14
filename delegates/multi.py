@@ -41,6 +41,10 @@ class Service(object):
 	def has_ess_assistant(self):
 		return self.monitor.get_value(self.service, '/Hub4/AssistantId') == 5
 
+	@property
+	def gridparallel(self):
+		return self.has_ess_assistant
+
 	def set_ignore_ac(self, inp, ignore):
 		if inp not in (0, 1):
 			raise ValueError(inp)
