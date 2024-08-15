@@ -41,6 +41,11 @@ class InverterCharger(AcSource):
 		# Multi-RS units can run grid-parallel
 		return True
 
+	@property
+	def feedback_enabled(self):
+		# Multi-RS always feeds excess PV into grid
+		return True
+
 class AcInputs(SystemCalcDelegate):
 	def __init__(self):
 		super(AcInputs, self).__init__()
@@ -63,7 +68,10 @@ class AcInputs(SystemCalcDelegate):
 				('com.victronenergy.grid', [
 					'/ProductId',
 					'/DeviceType', 
-				])
+				]),
+				('com.victronenergy.settings', [
+					'/Settings/CGwacs/PreventFeedback'
+				]),
 		]
 
 	def get_output(self):
@@ -81,6 +89,7 @@ class AcInputs(SystemCalcDelegate):
 				('/Ac/In/1/Connected', {'gettext': '%d'}),
 				('/Ac/In/NumberOfAcInputs', {'gettext': '%d'}),
 				('/Ac/ActiveIn/GridParallel', {'gettext': '%d'}),
+				('/Ac/ActiveIn/FeedbackEnabled', {'gettext': '%d'}),
 		]
 
 	def device_added(self, service, instance, *args):
@@ -120,6 +129,10 @@ class AcInputs(SystemCalcDelegate):
 	def _set_invertercharger(self):
 		self.invertercharger = self._get_meter(self.inverterchargers)
 
+	def ac_feedin_enabled(self):
+		return self._dbusmonitor.get_value('com.victronenergy.settings',
+			'/Settings/CGwacs/PreventFeedback') == 0
+
 	def input_tree(self, inp, service, instance, typ, active):
 		# Historical hackery requires the device instance of vebus
 		# on ttyO1 (ie a CCGX) to be zero. Reflect that here even
@@ -139,6 +152,7 @@ class AcInputs(SystemCalcDelegate):
 		multi = Multi.instance.multi or self.invertercharger
 		input_count = 0
 		newvalues['/Ac/ActiveIn/GridParallel'] = 0
+		newvalues['/Ac/ActiveIn/FeedbackEnabled'] = 0
 		if multi is None:
 			# This is a system without an inverter/charger. If there is a
 			# grid meter or a genset, we can display that. This works because
@@ -162,6 +176,8 @@ class AcInputs(SystemCalcDelegate):
 				active = multi.active_input == i
 				if active and t in (1, 3) and multi.gridparallel:
 					newvalues['/Ac/ActiveIn/GridParallel'] = 1
+					newvalues['/Ac/ActiveIn/FeedbackEnabled'] = int(
+						multi.feedback_enabled or self.ac_feedin_enabled())
 				if source is None:
 					# Use vebus or inverter/charger
 					newvalues.update(self.input_tree(input_count, multi.service, multi.instance, t, int(active)))

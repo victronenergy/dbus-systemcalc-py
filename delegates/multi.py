@@ -45,6 +45,12 @@ class Service(object):
 	def gridparallel(self):
 		return self.has_ess_assistant
 
+	@property
+	def feedback_enabled(self):
+		# This path does not exist on systems with no ESS assistant and will
+		# return False
+		return self.monitor.get_value(self.service, '/Hub4/DoNotFeedInOvervoltage') == 0
+
 	def set_ignore_ac(self, inp, ignore):
 		if inp not in (0, 1):
 			raise ValueError(inp)
@@ -82,7 +88,8 @@ class Multi(SystemCalcDelegate):
 				'/Ac/Control/IgnoreAcIn2',
 				'/Ac/State/AcIn1Available',
 				'/Ac/State/AcIn2Available',
-				'/Hub4/AssistantId'])]
+				'/Hub4/AssistantId',
+				'/Hub4/DoNotFeedInOvervoltage'])]
 
 	def get_output(self):
 		return [
