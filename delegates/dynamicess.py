@@ -553,6 +553,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 				if w.strategy == Strategy.SELFCONSUME:
 					self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
+					self.targetsoc = None
 					self._device.self_consume(restrictions, w.allow_feedin)
 					break # Out of FOR loop
 
