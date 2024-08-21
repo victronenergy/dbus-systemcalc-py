@@ -90,6 +90,7 @@ class AcInputs(SystemCalcDelegate):
 				('/Ac/In/NumberOfAcInputs', {'gettext': '%d'}),
 				('/Ac/ActiveIn/GridParallel', {'gettext': '%d'}),
 				('/Ac/ActiveIn/FeedbackEnabled', {'gettext': '%d'}),
+				('/Ac/ActiveIn/ServiceType', {'gettext': '%s'}),
 		]
 
 	def device_added(self, service, instance, *args):
@@ -163,7 +164,10 @@ class AcInputs(SystemCalcDelegate):
 				[x for x in (self.gridmeter, self.gensetmeter) if x is not None],
 				(1, 2))
 			for source, t in sources:
-				newvalues.update(self.input_tree(input_count, source.service, source.instance, t, int(input_count==0)))
+				active = input_count == 0
+				newvalues.update(self.input_tree(input_count, source.service, source.instance, t, int(active)))
+				if active:
+					newvalues['/Ac/ActiveIn/ServiceType'] = source.service.split(".")[2]
 				input_count += 1
 			newvalues['/Ac/In/NumberOfAcInputs'] = input_count
 		else:
@@ -181,8 +185,12 @@ class AcInputs(SystemCalcDelegate):
 				if source is None:
 					# Use vebus or inverter/charger
 					newvalues.update(self.input_tree(input_count, multi.service, multi.instance, t, int(active)))
+					if active:
+						newvalues['/Ac/ActiveIn/ServiceType'] = multi.service.split(".")[2]
 				else:
 					newvalues.update(self.input_tree(input_count, source.service, source.instance, t, int(active)))
+					if active:
+						newvalues['/Ac/ActiveIn/ServiceType'] = source.service.split(".")[2]
 				input_count += 1
 
 			newvalues['/Ac/In/NumberOfAcInputs'] = input_count
