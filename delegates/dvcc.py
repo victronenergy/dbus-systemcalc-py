@@ -438,6 +438,7 @@ class ChargerSubsystem(object):
 	def __init__(self, monitor):
 		self.monitor = monitor
 		self._solarchargers = {}
+		self._inverterchargers = {}
 		self._otherchargers = {}
 
 	def add_solar_charger(self, service):
@@ -453,30 +454,31 @@ class ChargerSubsystem(object):
 		return dcgenset
 
 	def add_invertercharger(self, service):
-		self._solarchargers[service] = inverter = InverterCharger(self.monitor, service)
+		self._inverterchargers[service] = inverter = InverterCharger(self.monitor, service)
 		return inverter
 
 	def remove_charger(self, service):
-		for di in (self._solarchargers, self._otherchargers):
+		for di in (self._solarchargers, self._inverterchargers, self._otherchargers):
 			try:
 				del di[service]
 			except KeyError:
 				pass
 
 	def __iter__(self):
-		return iter(chain(self._solarchargers.values(), self._otherchargers.values()))
+		return iter(chain(self._solarchargers.values(), self._inverterchargers.values(), self._otherchargers.values()))
 
 	def __len__(self):
-		return len(self._solarchargers) + len(self._otherchargers)
+		return len(self._solarchargers) + len(self._otherchargers) + len(self._inverterchargers)
 
 	def __contains__(self, k):
-		return k in self._solarchargers or k in self._otherchargers
+		return k in self._solarchargers or k in self._inverterchargers or k in self._otherchargers
 
 	@property
 	def has_externalcontrol_support(self):
 		# Only consider solarchargers. This is used for firmware warning
 		# above, and we only care about the solar chargers there.
-		return all(s.has_externalcontrol_support for s in self._solarchargers.values())
+		return all(s.has_externalcontrol_support for s in self._solarchargers.values()) and \
+			all(s.has_externalcontrol_support for s in self._inverterchargers.values())
 
 	@property
 	def has_vecan_chargers(self):
@@ -504,7 +506,8 @@ class ChargerSubsystem(object):
 
 	@property
 	def solar_current(self):
-		return safeadd(*(c.smoothed_current for c in self._solarchargers.values())) or 0
+		return safeadd(*(c.smoothed_current for c in chain(
+			self._solarchargers.values(), self._inverterchargers.values()))) or 0
 
 	def maximize_charge_current(self):
 		""" Max out all chargers. """
@@ -539,7 +542,8 @@ class ChargerSubsystem(object):
 		voltage_written = 0
 		if charge_voltage is not None:
 			voltage_written = int(len(self)>0)
-			for charger in self._solarchargers.values():
+			for charger in chain(self._solarchargers.values(),
+					self._inverterchargers.values()):
 				charger.chargevoltage = charge_voltage
 
 		# Distribute the original BMS voltage setpoint, if there is one,
@@ -557,7 +561,8 @@ class ChargerSubsystem(object):
 		# current.
 		#
 		# Additionally, don't bother with chargers that are disconnected.
-		chargers = [x for x in self._solarchargers.values() if x.active and x.maxchargecurrent is not None and x.n2k_device_instance in (0, None)]
+		chargers = [x for x in chain(self._solarchargers.values(),
+			self._inverterchargers.values()) if x.active and x.maxchargecurrent is not None and x.n2k_device_instance in (0, None)]
 		if len(chargers) > 0:
 			if stop_on_mcc0 and max_charge_current == 0:
 				self.shutdown_chargers()
@@ -1266,8 +1271,9 @@ class Dvcc(SystemCalcDelegate):
 				'/Settings/CGwacs/OvervoltageFeedIn') == 1
 
 	def _update_solarchargers_and_vecan(self, has_bms, bms_charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0):
-		""" This function updates the solar chargers only. Parameters
-		    related to the Multi are handled elsewhere. """
+		""" This function updates the solar chargers and VE.Can connected
+		    devices such as Multi-RS. Parameters related to the Multi are
+		    handled elsewhere. """
 
 		# If the vebus service does not provide a charge voltage setpoint (so
 		# no ESS/Hub-1/Hub-4), we use the max charge voltage provided by the
