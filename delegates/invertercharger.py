@@ -17,7 +17,8 @@ class InverterCharger(SystemCalcDelegate):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 
 	def get_input(self):
-		return [('com.victronenergy.inverter', [
+		return [
+		('com.victronenergy.inverter', [
 				'/Dc/0/Voltage',
 				'/Dc/0/Current',
 				'/Dc/0/Power',
@@ -29,8 +30,21 @@ class InverterCharger(SystemCalcDelegate):
 				'/Ac/Out/L3/V',
 				'/Ac/Out/L1/I'
 				'/Ac/Out/L2/I'
-				'/Ac/Out/L3/I'
-		])]
+				'/Ac/Out/L3/I']),
+		('com.victronenergy.multi', [
+				'/Dc/0/Voltage',
+				'/Dc/0/Current',
+				'/Dc/0/Power',
+				'/Ac/Out/L1/P',
+				'/Ac/Out/L2/P',
+				'/Ac/Out/L3/P',
+				'/Ac/Out/L1/V',
+				'/Ac/Out/L2/V',
+				'/Ac/Out/L3/V',
+				'/Ac/Out/L1/I'
+				'/Ac/Out/L2/I'
+				'/Ac/Out/L3/I'])
+		]
 
 	def get_output(self):
 		return [
