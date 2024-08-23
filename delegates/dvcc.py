@@ -189,6 +189,7 @@ class BaseCharger(object):
 	def __init__(self, monitor, service):
 		self.monitor = monitor
 		self.service = service
+		self.is_vecan = self.connection == 'VE.Can'
 
 	def _get_path(self, path):
 		return self.monitor.get_value(self.service, path)
@@ -485,7 +486,7 @@ class ChargerSubsystem(object):
 		""" Returns true if we have any VE.Can chargers in the system. This is
 		    used elsewhere to enable broadcasting charge voltages on the relevant
 		    can device. """
-		return any((s.connection == 'VE.Can' for s in self))
+		return any((s.is_vecan for s in self))
 
 	@property
 	def want_bms(self):
@@ -544,7 +545,9 @@ class ChargerSubsystem(object):
 			voltage_written = int(len(self)>0)
 			for charger in chain(self._solarchargers.values(),
 					self._inverterchargers.values()):
-				charger.chargevoltage = charge_voltage
+				# VE.Can chargers get their voltage from the VE.Can interface
+				if not charger.is_vecan:
+					charger.chargevoltage = charge_voltage
 
 		# Distribute the original BMS voltage setpoint, if there is one,
 		# to the other chargers
