@@ -376,6 +376,14 @@ class InverterCharger(SolarCharger):
 		return (self.monitor.get_value(self.service,
 			'/Settings/ChargeCurrentLimit') or 0) > 0
 
+	@property
+	def chargevoltagesetpoint(self):
+		return self._get_path('/Link/ChargeVoltageSetpoint')
+
+	@property
+	def solaroffset(self):
+		return self._get_path('/Link/ChargeVoltageSolarOffset')
+
 class DcGenset(BaseCharger):
 	""" Encapsulates a DC genset on dbus. Exposes dbus paths as convenient
 	    attributes. """
@@ -430,6 +438,30 @@ class InverterSubsystem(object):
 		# it to all.
 		for inverter in self:
 			inverter.set_maxdischargecurrent(limit)
+
+	@property
+	def chargevoltagesetpoint(self):
+		""" Returns total chargevoltagesetpoint (including solar offset)
+		    from the relevant inverter (N2kDeviceInstance==0). """
+		setpoints = (safeadd(ob.chargevoltagesetpoint, ob.solaroffset) \
+			for ob in self._inverters.values() if ob.n2k_device_instance == 0)
+		try:
+			return min(v for v in setpoints if v is not None)
+		except ValueError:
+			pass
+
+		return None
+
+	@property
+	def solaroffset(self):
+		""" Returns only the solar offset from the relevant inverter. """
+		offsets = (ob.solaroffset for ob in self._inverters.values() if ob.n2k_device_instance == 0)
+		try:
+			return min(v for v in offsets if v is not None)
+		except ValueError:
+			pass
+
+		return None
 
 class ChargerSubsystem(object):
 	""" Encapsulates a collection of chargers or devices that incorporate a
@@ -912,6 +944,8 @@ class Dvcc(SystemCalcDelegate):
 				'/IsInverterCharger',
 				'/Link/ChargeCurrent',
 				'/Link/DischargeCurrent',
+				'/Link/ChargeVoltageSetpoint',
+				'/Link/ChargeVoltageSolarOffset',
 				'/Settings/ChargeCurrentLimit',
 				'/State',
 				'/N2kDeviceInstance',
@@ -1282,14 +1316,29 @@ class Dvcc(SystemCalcDelegate):
 		# no ESS/Hub-1/Hub-4), we use the max charge voltage provided by the
 		# BMS (if any). This will probably prevent feedback, but that is
 		# probably not allowed anyway.
-		charge_voltage = None
+		charge_voltage = vecan_voltage = None
 		if self._multi.active:
-			charge_voltage = self._multi.hub_voltage
+			charge_voltage = vecan_voltage = self._multi.hub_voltage
+
+		# Next try a voltage from an inverter/charger
+		if charge_voltage is None:
+			if bms_charge_voltage is None:
+				charge_voltage = self._inverters.chargevoltagesetpoint
+				# vecan_voltage = None
+			else:
+				# Add solar offset to BMS voltage
+				charge_voltage = safeadd(bms_charge_voltage, self._inverters.solaroffset)
+				vecan_voltage = bms_charge_voltage # VE.Can chargers adds own offset
+
+		# Use BMS charge voltage as is
 		if charge_voltage is None and bms_charge_voltage is not None:
-			charge_voltage = bms_charge_voltage
+			charge_voltage = vecan_voltage = bms_charge_voltage
+
+		# Add the debug solar offset
 		if charge_voltage is not None:
 			try:
 				charge_voltage += self.solarvoltageoffset
+				vecan_voltage += self.solarvoltageoffset
 			except (ValueError, TypeError):
 				pass
 
@@ -1300,8 +1349,17 @@ class Dvcc(SystemCalcDelegate):
 			has_bms, bms_charge_voltage, charge_voltage,
 			max_charge_current, feedback_allowed, stop_on_mcc0)
 
-		# Write the voltage to VE.Can. Also update the networkmode.
-		if charge_voltage is not None:
+		# Write the voltage to VE.Can. Also update the networkmode. If there is
+		# no voltage to write to VE.Can, then still set the networkmode so that
+		# RS devices will send us their Charge Voltage.
+		if vecan_voltage is None:
+			for service in self._vecan_services:
+				try:
+					self._dbusmonitor.set_value_async(service, '/Link/NetworkMode',
+						1 | (0 if max_charge_current is None else 4))
+				except DBusException:
+					pass
+		else:
 			for service in self._vecan_services:
 				try:
 					# In case there is no path at all, the set_value below will
@@ -1309,7 +1367,7 @@ class Dvcc(SystemCalcDelegate):
 					# cannot set the NetworkMode there is no point in setting the
 					# ChargeVoltage.
 					self._dbusmonitor.set_value_async(service, '/Link/NetworkMode', network_mode)
-					self._dbusmonitor.set_value_async(service, '/Link/ChargeVoltage', charge_voltage)
+					self._dbusmonitor.set_value_async(service, '/Link/ChargeVoltage', vecan_voltage)
 					voltage_written = 1
 				except DBusException:
 					pass
