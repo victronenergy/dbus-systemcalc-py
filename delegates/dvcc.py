@@ -44,64 +44,62 @@ def _lg_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
 	# Make room for a potential 0.4V at the top
 	return (min(charge_voltage, 57.3), charge_current, feedback_allowed, False, False)
 
-def _pylontech_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
-	""" Quirk for Pylontech. Make a bit of room at the top. Pylontech says that
-	    at 51.8V the battery is 95% full, and that balancing starts at 90%.
-	    53.2V is normally considered 100% full, and 54V raises an alarm. By
-		running the battery at 52.4V it will be 99%-100% full, balancing should
-		be active, and we should avoid high voltage alarms.
+class _pylontech_quirk(object):
+	def __init__(self):
+		self._chargevoltage = 52.5
 
-	    Identify 24-V batteries by the lower charge voltage, and do the same
-	    thing with an 8-to-15 cell ratio, +-3.48V per cell.
-	"""
-	# Use 3.48V per cell plus a little, 52.4V for 15 cell 48V batteries.
-	# Use 3.46V per cell plus a little, 27.8V for 24V batteries testing shows that's 100% SOC.
-	# That leaves 1.6V margin for 48V batteries and 1.0V for 24V.
-	# See https://github.com/victronenergy/venus/issues/536
-	if charge_voltage > 55:
-		# 48V battery (16 cells.) Assume BMS knows what it's doing.
-		return (charge_voltage, charge_current, feedback_allowed, False, False)
-	if charge_voltage > 20:
-		# 48V battery (15 cells) or 24V battery (8 cells). We want to halve
-		# the charge current limit when CCL=0 is sent. Normally the limit is
-		# C/2, so limit to C/4, or assume a single module (25Ah/55Ah) if not
-		# known.  The more important part is clipping the charge voltage to a
-		# lower value. This is to fix the sawtooth voltage issue.
-		battery_protect = False
-		if charge_voltage < 30:
-			# 24V
-			capacity = bms.capacity or 55
-			# Lower charge voltage more if CCL is zero
-			if charge_current < 0.1:
-				battery_protect = True
-				charge_voltage = min(charge_voltage, 27.6)
+	def __call__(self, dvcc, bms, charge_voltage, charge_current, feedback_allowed):
+		""" Quirk for Pylontech. Make a bit of room at the top. Pylontech says that
+			at 51.8V the battery is 95% full, and that balancing starts at 90%.
+			53.2V is normally considered 100% full, and 54V raises an alarm. By
+			running the battery at 52.4V it will be 99%-100% full, balancing should
+			be active, and we should avoid high voltage alarms.
+
+			Identify 24-V batteries by the lower charge voltage, and do the same
+			thing with an 8-to-15 cell ratio, +-3.48V per cell.
+		"""
+		# Use 3.48V per cell plus a little, 52.4V for 15 cell 48V batteries.
+		# Use 3.46V per cell plus a little, 27.8V for 24V batteries testing shows that's 100% SOC.
+		# That leaves 1.6V margin for 48V batteries and 1.0V for 24V.
+		# See https://github.com/victronenergy/venus/issues/536
+		if charge_voltage > 55:
+			# 48V battery (16 cells.) Assume BMS knows what it's doing.
+			return (charge_voltage, charge_current, feedback_allowed, False, False)
+		if charge_voltage > 20:
+			# 48V battery (15 cells) or 24V battery (8 cells). We want to halve
+			# the charge current limit when CCL=0 is sent. Normally the limit is
+			# C/2, so limit to C/4, or assume a single module (25Ah/55Ah) if not
+			# known.  The more important part is clipping the charge voltage to a
+			# lower value. This is to fix the sawtooth voltage issue.
+			battery_protect = False
+			if charge_voltage < 30:
+				# 24V
+				capacity = bms.capacity or 55
+				# Lower charge voltage more if CCL is zero
+				if charge_current < 0.1:
+					battery_protect = True
+					charge_voltage = min(charge_voltage, 27.6)
+				else:
+					charge_voltage = min(charge_voltage, 27.8)
+				charge_current = max(charge_current, round(capacity/4.0))
 			else:
-				charge_voltage = min(charge_voltage, 27.8)
-			charge_current = max(charge_current, round(capacity/4.0))
-		else:
-			# 48V
-			capacity = bms.capacity or 25.0
-			# Lower charge voltage more if CCL is below C/4. Assume one
-			# cell is jumping out, and set charge voltage to 14 times lowest
-			# cell plus the highest cell.
-			if charge_current < capacity/5.0:
-				battery_protect = True
+				# 48V
+				capacity = bms.capacity or 25.0
+				# Aim for 52.5V, but somewhat aggressively penalise the charge
+				# voltage if the highest cell goes over 3.485V. Filter this
+				# to keep it somewhat stable.
+				battery_protect = charge_current < capacity/5.0
 				try:
-					charge_voltage = round(
-						max(min(14 * bms.mincellvoltage + bms.maxcellvoltage, 52.4), 51.75), 2)
-				except TypeError:
-					charge_voltage = min(charge_voltage, 51.75)
-			else:
-				try:
-					charge_voltage = round(
-						max(min(14*bms.maxcellvoltage + bms.mincellvoltage, 52.4), 51.75), 2)
+					charge_voltage = 52.5 - 30 * max(0, bms.maxcellvoltage-3.485)
+					charge_voltage = self._chargevoltage = 0.95 * self._chargevoltage + 0.05 * charge_voltage
+					charge_voltage = round(charge_voltage, 2)
 				except TypeError:
 					charge_voltage = min(charge_voltage, 52.4)
 
-		return (charge_voltage, charge_current, feedback_allowed, False, battery_protect)
+			return (charge_voltage, charge_current, feedback_allowed, False, battery_protect)
 
-	# Not known, probably a 12V battery.
-	return (charge_voltage, charge_current, feedback_allowed, False)
+		# Not known, probably a 12V battery.
+		return (charge_voltage, charge_current, feedback_allowed, False)
 
 def _pylontech_pelio_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
 	""" Quirk for Pelio-L batteries. This is a 16-cell battery. 56V is 3.5V per
@@ -122,7 +120,7 @@ def _lynx_smart_bms_quirk(dvcc, bms, charge_voltage, charge_current, feedback_al
 
 QUIRKS = {
 	0xB004: _lg_quirk,
-	0xB009: _pylontech_quirk,
+	0xB009: _pylontech_quirk(),
 	0xB00A: _byd_quirk,
 	0xB015: _byd_quirk,
 	0xB019: _byd_quirk,
