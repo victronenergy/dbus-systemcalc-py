@@ -1239,6 +1239,18 @@ class TestHubSystem(TestSystemCalcBase):
 			}
 		})
 
+		# 12V battery is just passed through
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeVoltage', 14.2)
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeCurrent', 100)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeVoltage': 14.2,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 100
+			}
+		})
+		self._check_values({ '/Control/EffectiveChargeVoltage': 14.2 })
+
 
 	def test_no_bms_max_charge_current_setting(self):
 		# Test that with no BMS but a user limit, /Dc/0/MaxChargeCurrent is correctly set.

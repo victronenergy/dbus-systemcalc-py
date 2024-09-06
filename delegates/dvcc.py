@@ -99,7 +99,7 @@ class _pylontech_quirk(object):
 			return (charge_voltage, charge_current, feedback_allowed, False, battery_protect)
 
 		# Not known, probably a 12V battery.
-		return (charge_voltage, charge_current, feedback_allowed, False)
+		return (charge_voltage, charge_current, feedback_allowed, False, False)
 
 def _pylontech_pelio_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
 	""" Quirk for Pelio-L batteries. This is a 16-cell battery. 56V is 3.5V per
