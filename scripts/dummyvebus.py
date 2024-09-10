@@ -37,6 +37,7 @@ s = DbusDummyService(servicename=args.name, deviceinstance=args.instance, paths=
 		'/Ac/Out/L1/P': {'initial': 0},
 		'/Ac/NumberOfPhases': {'initial': 1},
 		'/Ac/NumberOfAcInputs': {'initial': 2},
+		'/Ac/Control/IgnoreAcIn1': {'initial': 0},
 		'/Ac/State/IgnoreAcIn1': {'initial': 0},
 		'/Ac/State/IgnoreAcIn2': {'initial': 0},
 		'/Alarms/HighTemperature': {'initial': 0},
@@ -78,7 +79,8 @@ s = DbusDummyService(servicename=args.name, deviceinstance=args.instance, paths=
 		'/BatteryOperationalLimits/MaxChargeVoltage': {'initial': None},
 		'/BatteryOperationalLimits/MaxChargeCurrent': {'initial': None},
 		'/BatteryOperationalLimits/MaxDischargeCurrent': {'initial': None},
-		'/BatteryOperationalLimits/BatteryLowVoltage': {'initial': None}},
+		'/BatteryOperationalLimits/BatteryLowVoltage': {'initial': None},
+		'/Ac/Control/RemoteGeneratorSelected': {'initial': 0}},
 	productname='Multi 12/3000',
 	connection='CCGX-VE.Bus port')
 

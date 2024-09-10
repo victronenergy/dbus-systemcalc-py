@@ -63,6 +63,13 @@ s = DbusDummyService(
         '/System/NrOfModulesBlockingDischarge': {'initial': 0},
         '/System/NrOfModulesOffline': {'initial': 0},
         '/System/NrOfModulesOnline': {'initial': 2},
+
+        '/Diagnostics/Module0/Id': {'initial': 'a'},
+        '/Diagnostics/Module1/Id': {'initial': 'b'},
+        '/Diagnostics/Module2/Id': {'initial': 'c'},
+        '/Diagnostics/Module3/Id': {'initial': 'd'},
+
+        '/History/DeepestDischarge': {'initial': 300},
     },
     productname='ACME BMS battery {}'.format(args.instance),
     connection='CAN-bus')
