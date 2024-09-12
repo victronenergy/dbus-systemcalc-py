@@ -1548,5 +1548,20 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Ac/Consumption/NumberOfPhases': 3
 			})
 
+	def test_no_input_acloads_in_system(self):
+		self._set_setting('/Settings/SystemSetup/HasAcInSystem', 0)
+		self._add_device('com.victronenergy.grid.ttyUSB1', {'/Ac/L1/Power': 1230, '/Ac/L1/Current': 5.1})
+		self._update_values()
+		self._check_values({
+			'/Ac/Grid/L1/Power': 1230,
+			'/Ac/Grid/NumberOfPhases': 1,
+			'/Ac/Consumption/L1/Power': 1230 - 123 + 100,
+			'/Ac/Consumption/L1/Current': 5.1 - 0.6 + 0.4,
+			'/Ac/ConsumptionOnOutput/L1/Power': 100,
+			'/Ac/ConsumptionOnOutput/L1/Current': 0.4,
+			'/Ac/ConsumptionOnInput/L1/Power': None,
+			'/Ac/ConsumptionOnInput/L1/Current': None
+		})
+
 if __name__ == '__main__':
 	unittest.main()
