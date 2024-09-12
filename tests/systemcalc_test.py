@@ -1549,7 +1549,7 @@ class TestSystemCalc(TestSystemCalcBase):
 			})
 
 	def test_no_input_acloads_in_system(self):
-		self._set_setting('/Settings/SystemSetup/HasAcInSystem', 0)
+		self._set_setting('/Settings/SystemSetup/HasAcInLoads', 0)
 		self._add_device('com.victronenergy.grid.ttyUSB1', {'/Ac/L1/Power': 1230, '/Ac/L1/Current': 5.1})
 		self._update_values()
 		self._check_values({

@@ -238,7 +238,7 @@ class SystemCalc:
 			'batteryservice': ['/Settings/SystemSetup/BatteryService', self.BATSERVICE_DEFAULT, 0, 0],
 			'hasdcsystem': ['/Settings/SystemSetup/HasDcSystem', 0, 0, 1],
 			'useacout': ['/Settings/SystemSetup/HasAcOutSystem', 1, 0, 1],
-			'hasacinsys': ['/Settings/SystemSetup/HasAcInSystem', 1, 0, 1],
+			'hasacinloads': ['/Settings/SystemSetup/HasAcInLoads', 1, 0, 1],
 			'gaugeautomax': ['/Settings/Gui/Gauges/AutoMax', 1, 0, 1],
 			'acin0min': ['/Settings/Gui/Gauges/Ac/In/0/Current/Min', float(0), -float("inf"), 0],
 			'acin1min': ['/Settings/Gui/Gauges/Ac/In/1/Current/Min', float(0), -float("inf"), 0],
@@ -952,7 +952,7 @@ class SystemCalc:
 		# If a system has no loads/generation on the input side, we can
 		# assume ConsumptionOnInput to be invalid. This also implies that
 		# everything must be on AC-out then.
-		has_ac_in_system = self._settings['hasacinsys'] == 1
+		has_ac_in_system = self._settings['hasacinloads'] == 1
 
 		# If we have an ESS system and RunWithoutGridMeter is set, there cannot be load on the AC-In, so it
 		# must be on AC-Out. Hence we do calculate AC-Out consumption even if 'useacout' is disabled.
