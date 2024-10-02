@@ -1,6 +1,5 @@
 from dbus.exceptions import DBusException
 from delegates.base import SystemCalcDelegate
-from sc_utils import reify
 
 class Battery(object):
 	def __init__(self, monitor, service, instance):
@@ -13,7 +12,7 @@ class Battery(object):
 		return self.monitor.get_value(self.service,
 			'/Info/MaxChargeVoltage') is not None
 
-	@reify
+	@property
 	def device_instance(self):
 		""" Returns the DeviceInstance of this device. """
 		return self.monitor.get_value(self.service, '/DeviceInstance')
@@ -58,20 +57,15 @@ class Battery(object):
 		""" Returns battery SOC. """
 		return self.monitor.get_value(self.service, '/Soc')
 
-	@reify
+	@property
 	def product_id(self):
 		""" Returns Product ID of battery. """
 		return self.monitor.get_value(self.service, '/ProductId')
 
-	@reify
-	def product_name(self):
-		""" Return product name. """
-		return self.monitor.get_value(self.service, '/ProductName')
-
 	@property
-	def custom_name(self):
-		""" Return product name. """
-		return self.monitor.get_value(self.service, '/CustomName')
+	def name(self):
+		return self.monitor.get_value(self.service, '/CustomName') or \
+			self.monitor.get_value(self.service, '/ProductName')
 
 	@property
 	def capacity(self):
@@ -182,9 +176,9 @@ class BatteryService(SystemCalcDelegate):
 		if bmses:
 			self._dbusservice['/AvailableBmsServices'] = [
 				{
-					'name': b.custom_name or b.product_name,
+					'name': b.name,
 					'instance': b.device_instance
-				} for b in bmses
+				} for b in bmses if isinstance(b.name, str) and isinstance(b.device_instance, int)
 			]
 		else:
 			self._dbusservice['/AvailableBmsServices'] = None
