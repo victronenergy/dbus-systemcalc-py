@@ -151,7 +151,7 @@ class SystemState(SystemCalcDelegate):
 		assistant_id  = self._dbusmonitor.get_value(vebus, '/Hub4/AssistantId')
 		if assistant_id is not None and self._dbusmonitor.get_value(
 				'com.victronenergy.settings', '/Settings/CGwacs/Hub4Mode') == 3:
-			return (SystemState.UNKNOWN, flags)
+			return (SystemState.EXTERNALCONTROL, flags)
 
 		# If a managed battery is present, then the
 		# system state is "External Control". Otherwise it is whatever
