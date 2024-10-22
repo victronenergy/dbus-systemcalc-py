@@ -28,6 +28,7 @@ BATTERY_ZYC = 0xB01A
 BATTERY_PYTES = 0xB01B
 BATTERY_LEOCH = 0xB01D
 BATTERY_LBSA = 0xB01E
+BATTERY_BATRIUM_D = 0xB038
 
 class BatterySettings(SystemCalcDelegate):
 	""" Manages battery settings for known batteries. At present
@@ -58,7 +59,7 @@ class BatterySettings(SystemCalcDelegate):
 			self._settings['bol'] = 3 # Forced on
 		elif pid in (BATTERY_LYNX_SMART_BMS_500, BATTERY_LYNX_SMART_BMS_1000,
 				BATTERY_LYNX_SMART_BMS_500_NG, BATTERY_LYNX_SMART_BMS_1000_NG,
-				BATTERY_PARALLEL_BMS, BATTERY_METERBOOST):
+				BATTERY_PARALLEL_BMS, BATTERY_METERBOOST, BATTERY_BATRIUM_D):
 			self._settings['vsense'] = 3 # Forced on
 			self._settings['tsense'] = 2 # Forced Off
 			self._settings['bol'] = 3 # Forced on
