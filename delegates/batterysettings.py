@@ -27,6 +27,7 @@ BATTERY_METERBOOST = 0xB02E
 BATTERY_ZYC = 0xB01A
 BATTERY_PYTES = 0xB01B
 BATTERY_LEOCH = 0xB01D
+BATTERY_LBSA = 0xB01E
 
 class BatterySettings(SystemCalcDelegate):
 	""" Manages battery settings for known batteries. At present
@@ -45,7 +46,7 @@ class BatterySettings(SystemCalcDelegate):
 		# Set good settings for known batteries. Force SVS off and DVCC on
 		# for some batteries.
 		if pid in (BATTERY_PYLONTECH, BATTERY_BYD, BATTERY_BYD_L, BATTERY_BYD_PREMIUM,
-				BATTERY_DISCOVER_AES, BATTERY_BLUENOVA, BATTERY_PYTES, BATTERY_LEOCH,
+				BATTERY_DISCOVER_AES, BATTERY_BLUENOVA, BATTERY_PYTES, BATTERY_LEOCH, BATTERY_LBSA,
 				BATTERY_BSLBATT, BATTERY_BMZ, BATTERY_CEGASA, BATTERY_PELIO_L, BATTERY_ZYC):
 			self._settings['vsense'] = 2 # Forced Off
 			self._settings['tsense'] = 2 # Forced Off
