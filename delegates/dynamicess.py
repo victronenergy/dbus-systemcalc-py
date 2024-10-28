@@ -13,6 +13,7 @@ NUM_SCHEDULES = 12
 INTERVAL = 5
 SELLPOWER = -32000
 HUB4_SERVICE = 'com.victronenergy.hub4'
+ERROR_TIMEOUT = 12 # 60 seconds
 
 MODES = {
        0: 'Off',
@@ -318,6 +319,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._timer = None
 		self._devices = {}
 		self._device = None
+		self._errorcode = 0
+		self._errortimer = ERROR_TIMEOUT
 
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
@@ -454,11 +457,22 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 	@property
 	def errorcode(self):
-		return self._dbusservice['/DynamicEss/ErrorCode']
+		return self._errorcode
 
 	@errorcode.setter
 	def errorcode(self, v):
-		self._dbusservice['/DynamicEss/ErrorCode'] = v
+		self._errorcode = v
+		if v == 0:
+			# Errors clear immediately
+			self._dbusservice['/DynamicEss/ErrorCode'] = 0
+			self._errortimer = ERROR_TIMEOUT
+		elif self._errortimer == 0:
+			# Set the error after it has been non-zero for more than
+			# ERROR_TIMEOUT
+			self._dbusservice['/DynamicEss/ErrorCode'] = v
+		else:
+			# Count down
+			self._errortimer = max(self._errortimer - 1, 0)
 
 	@property
 	def targetsoc(self):
