@@ -119,11 +119,11 @@ class VebusDevice(EssDevice):
 
 	def check_conditions(self):
 		# Can't do anything unless we have a minsoc, and the ESS assistant
-		if self.minsoc is None:
-			return 4 # SOC low
-
 		if not Dvcc.instance.has_ess_assistant:
 			return 1 # No ESS
+
+		if self.minsoc is None:
+			return 4 # SOC low
 
 		# In Keep-Charged mode or external control, no point in doing anything
 		if BatteryLife.instance.state == BatteryLifeState.KeepCharged or self.hub4mode == 3:
