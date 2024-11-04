@@ -37,5 +37,7 @@ class HubTypeSelect(SystemCalcDelegate):
 				newvalues.get('/Ac/PvOnGenset/NumberOfPhases') is not None:
 				hub = 3
 				system_type = 'Hub-3'
+		elif self._dbusmonitor.get_service_list('com.victronenergy.acsystem'):
+			system_type = 'AC System'
 		newvalues['/Hub'] = hub
 		newvalues['/SystemType'] = system_type
