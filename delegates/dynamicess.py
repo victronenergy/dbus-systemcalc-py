@@ -322,6 +322,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._errorcode = 0
 		self._errortimer = ERROR_TIMEOUT
 
+		self.devDebugOutput = True #flag to generate some verbose debug output. Should be False for production.
+
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(DynamicEss, self).set_sources(dbusmonitor, settings, dbusservice)
@@ -341,6 +343,21 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice.add_path('/DynamicEss/Strategy', value=None)
 		self._dbusservice.add_path('/DynamicEss/Restrictions', value=None)
 		self._dbusservice.add_path('/DynamicEss/AllowGridFeedIn', value=None)
+		#Green Mode may override the DESS-Schedule with a more localized strategy.
+		self._dbusservice.add_path('/DynamicEss/FinalStrategy', value=None)
+
+		if (self.devDebugOutput):
+			self._dbusservice.add_path('/DynamicEss/Debug/acpv', value=None)
+			self._dbusservice.add_path('/DynamicEss/Debug/dcpv', value=None)
+			self._dbusservice.add_path('/DynamicEss/Debug/soc', value=None)
+			self._dbusservice.add_path('/DynamicEss/Debug/targetSoc', value=None)
+			self._dbusservice.add_path('/DynamicEss/Debug/consumption', value=None)
+			self._dbusservice.add_path('/DynamicEss/Debug/availableOverhead', value=None)
+			self._dbusservice.add_path('/DynamicEss/Debug/vrmChargeRate', value=None)
+			self._dbusservice.add_path('/DynamicEss/Debug/actualChargeRate', value=None)
+			self._dbusservice.add_path('/DynamicEss/Debug/overrideChargeRate', value=None)
+			self._dbusservice.add_path('/DynamicEss/Debug/FinalStrategy', value=None)
+			self._dbusservice.add_path('/DynamicEss/Debug/acin', value=None)
 
 		if self.mode > 0:
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
@@ -506,9 +523,16 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				chargerate = round(1.1 * (percentage * self.capacity * 36000) / abs((end - now).total_seconds()))
 				self.chargerate = chargerate if self.chargerate is None else max(self.chargerate, chargerate)
 				self.prevsoc = self.soc
+
+				if (self.devDebugOutput):
+					self._dbusservice['/DynamicEss/Debug/vrmChargeRate'] = self.chargerate	
+
 			except ZeroDivisionError:
 				self.chargerate = None
 
+				if (self.devDebugOutput):
+					self._dbusservice['/DynamicEss/Debug/vrmChargeRate'] = None
+		
 		self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate
 
 	def _on_timer(self):
@@ -545,6 +569,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		stop = None
 		windows = list(self.windows())
 
+		if (self.devDebugOutput):
+			self.overrideChargeRate = None
+
 		for w in windows:
 			# Keep track of maximum available schedule
 			if start is None or w.start > start:
@@ -554,6 +581,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice['/DynamicEss/LastScheduledStart'] = None if start is None else int(datetime.timestamp(start))
 		self._dbusservice['/DynamicEss/LastScheduledEnd'] = None if stop is None else int(datetime.timestamp(stop))
 
+		finalStrategy = "NO_WINDOW"
 		for w in windows:
 			if now in w and self.acquire_control():
 				self.active = 1 # Auto
@@ -565,39 +593,13 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				self._dbusservice['/DynamicEss/Restrictions'] = restrictions
 				self._dbusservice['/DynamicEss/AllowGridFeedIn'] = int(w.allow_feedin)
 
-				if w.strategy == Strategy.SELFCONSUME:
-					self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
-					self.targetsoc = None
-					self._device.self_consume(restrictions, w.allow_feedin)
-					break # Out of FOR loop
+				#TODO: implement, as soon as mode-switch is ready. 
+				mode = "GREEN"
+				if (mode == "TRADE"):
+					finalStrategy = self._handle_trade_mode(w, restrictions, now)
 
-				# Below here, strategy is Strategy.TARGETSOC
-				if self.targetsoc != w.soc:
-					self.chargerate = None # For recalculation
-				self.targetsoc = w.soc
-
-				# When 100% is requested, don't go into idle mode
-				if self.soc + self.charge_hysteresis < w.soc or w.soc >= 100: # Charge
-					self.charge_hysteresis = 0
-					self.discharge_hysteresis = 1
-					self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
-					self._dbusservice['/DynamicEss/ChargeRate'] = \
-						self._device.charge(w.flags, restrictions,
-						self.chargerate, w.allow_feedin)
-				else: # Discharge or idle
-					self.charge_hysteresis = 1
-					if self.soc - self.discharge_hysteresis > max(w.soc, self._device.minsoc): # Discharge
-						self.discharge_hysteresis = 0
-						self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
-						self._dbusservice['/DynamicEss/ChargeRate'] = \
-							self._device.discharge(w.flags, restrictions,
-							self.chargerate, w.allow_feedin)
-					else: # battery idle
-						# SOC/target-soc needs to move 1% to move out of idle
-						# zone
-						self.discharge_hysteresis = 1
-						self._dbusservice['/DynamicEss/ChargeRate'] = \
-							self._device.idle(w.allow_feedin)
+				elif (mode == "GREEN"):
+					finalStrategy = self._handle_green_mode(w, restrictions, now)
 
 				break # out of for loop
 		else:
@@ -605,7 +607,132 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			if self.active or self.errorcode != 3:
 				self.deactivate(3)
 
+		#write out current override strategy to determine if the local system behaves "out of schedule" on purpose.
+		self._dbusservice['/DynamicEss/FinalStrategy'] = finalStrategy
+
+		if (self.devDebugOutput):
+			self._dbusservice['/DynamicEss/Debug/soc'] = self.soc
+			self._dbusservice['/DynamicEss/Debug/targetSoc'] = self.targetsoc
+			self._dbusservice['/DynamicEss/Debug/FinalStrategy'] = finalStrategy
+			self._dbusservice['/DynamicEss/Debug/overrideChargeRate'] = self.overrideChargeRate
+			self._dbusservice['/DynamicEss/Debug/actualChargeRate'] = self._dbusservice["/Dc/Battery/Power"] or 0
+			self._dbusservice['/DynamicEss/Debug/acin'] = self._dbusservice["/Ac/Grid/L1/Power"] or 0 + self._dbusservice["/Ac/Grid/L2/Power"] or 0 + self._dbusservice["/Ac/Grid/L3/Power"] or 0
+		
 		return True
+
+	def _handle_trade_mode(self, w: DynamicEssWindow, restrictions, now) -> str:
+		if w.strategy == Strategy.SELFCONSUME:
+			self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
+			self.targetsoc = None
+			self._device.self_consume(restrictions, w.allow_feedin)
+			return "SCHEDULED_SELFCONSUME"
+
+		# Below here, strategy is Strategy.TARGETSOC
+		if self.targetsoc != w.soc:
+			self.chargerate = None # For recalculation
+		self.targetsoc = w.soc
+
+		# When 100% is requested, don't go into idle mode
+		if self.soc + self.charge_hysteresis < w.soc or w.soc >= 100: # Charge
+			self.charge_hysteresis = 0
+			self.discharge_hysteresis = 1
+			self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
+			self._dbusservice['/DynamicEss/ChargeRate'] = \
+				self._device.charge(w.flags, restrictions,
+				self.chargerate, w.allow_feedin)
+			return "SCHEDULED_CHARGE"
+		else: # Discharge or idle
+			self.charge_hysteresis = 1
+			if self.soc - self.discharge_hysteresis > max(w.soc, self._device.minsoc): # Discharge
+				self.discharge_hysteresis = 0
+				self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
+				self._dbusservice['/DynamicEss/ChargeRate'] = \
+					self._device.discharge(w.flags, restrictions,
+					self.chargerate, w.allow_feedin)
+				return "SCHEDULED_DISCHARGE"
+			else: # battery idle
+				# SOC/target-soc needs to move 1% to move out of idle
+				# zone
+				self.discharge_hysteresis = 1
+				self._dbusservice['/DynamicEss/ChargeRate'] = \
+					self._device.idle(w.allow_feedin)
+				return "SCHEDULED_IDLE"
+				
+	def _handle_green_mode(self, w: DynamicEssWindow, restrictions, now) -> str:
+		
+		availableSolarPlus = (self._device.pvpower or 0) + (self._device.acpv or 0) * 0.9 - self._device.consumption
+
+		if (self.devDebugOutput):
+			self._dbusservice['/DynamicEss/Debug/consumption'] = self._device.consumption
+			self._dbusservice['/DynamicEss/Debug/acpv'] = self._device.acpv
+			self._dbusservice['/DynamicEss/Debug/dcpv'] = self._device.pvpower
+			self._dbusservice['/DynamicEss/Debug/availableOverhead'] = availableSolarPlus
+		
+		if w.strategy == Strategy.SELFCONSUME:
+			self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
+			self.targetsoc = None
+			self._device.self_consume(restrictions, w.allow_feedin)
+			return "SCHEDULED_SELFCONSUME"
+		
+		# Below here, strategy is Strategy.TARGETSOC
+		if self.targetsoc != w.soc:
+			self.chargerate = None # For recalculation
+		self.targetsoc = w.soc
+
+		# Improved Green Mode:
+		#
+		# When the current strategy is set to TARGET_SOC, there are two major issues
+		# when trying to stick to schedule "to hard":
+		# 1) The system may go idle, leading to undesired feedin of available solar power.
+		# 2) The system may even feedin power from the battery to reach a (lower) target soc.
+		#
+		# The improved version therefore completly avoids discharging the battery, and only
+		# enters idle mode IF currentSoc is equal or bellow target soc, in order to keep up with
+		# the DESS schedule. 
+		#
+		# If there is solar overhead available, the system will enter SELF_CONSUME mode to absorb the surplus.
+		# This may bring the soc ahead of schedule, but is what users would expect the system to do.
+		#  
+		# If there is a solar shortage, but currentSoc > targetsoc, system will stay in SELF_CONSUME to 
+		# sustain loads from the battery. (it is ahead of schedule, can spare some energy)
+
+		if self.soc + self.charge_hysteresis < w.soc or w.soc >= 100:
+			self.charge_hysteresis = 0
+			self.discharge_hysteresis = 1
+			self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
+			
+			#Able to charge more than schedule expects?
+			if availableSolarPlus < self._dbusservice['/DynamicEss/ChargeRate']: 
+				#regular charge as requested
+				self._dbusservice['/DynamicEss/ChargeRate'] = self._device.charge(w.flags, restrictions, self.chargerate, w.allow_feedin)	
+				return "SCHEDULED_CHARGE"
+			else:
+				#allow exceeded chargerate by setting what we got as availableSolarPlus.
+				self._dbusservice['/DynamicEss/ChargeRate'] = self._device.charge(w.flags, restrictions, availableSolarPlus, w.allow_feedin)
+				if (self.devDebugOutput):
+					self.overrideChargeRate = availableSolarPlus
+				return "SCHEDULED_CHARGE_ENHANCED_RATE"
+		else: 
+			self.charge_hysteresis = 1
+			
+			if (availableSolarPlus > 0):
+				# Case 1: solar surplus available
+				self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
+				self._device.self_consume(restrictions, w.allow_feedin)
+				return 'SELFCONSUME_ACCEPT_CHARGE'
+			else:
+				if (self.targetsoc < self.soc):
+					# Case 2: solar shortage, but soc is ahead of schedule.
+					self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
+					self._device.self_consume(restrictions, w.allow_feedin)
+					return 'SELFCONSUME_ACCEPT_DISCHARGE'
+				else:
+					# Case 3: Try to keep up with target soc, temporary pull from grid.
+					#         TargetSoc is there for a schedule-reason, we should not fall behind,
+					#         hence idling is the best choice here (maybe even desired due to grid prices)
+					self._dbusservice['/DynamicEss/ChargeRate'] = self._device.idle(w.allow_feedin)
+					
+					return 'IDLE_MAINTAIN_TARGET_SOC'
 
 	def deactivate(self, reason):
 		try:
