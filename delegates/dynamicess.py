@@ -88,6 +88,7 @@ class EssDevice(object):
 	def pvpower(self):
 		return self.delegate._dbusservice['/Dc/Pv/Power'] or 0
 
+
 class VebusDevice(EssDevice):
 	@property
 	def available(self):
@@ -428,7 +429,14 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			break
 		else:
 			self._device = None
-
+	
+	@property
+	def oneway_efficency(self):
+		''' When charging from AC, only half of the efficency-losses have to be considered
+			So, with an overall system efficency of 0.8, the charging efficency would be 0.9 and so on.
+		'''
+		return ((1 - self._settings["dess_efficiency"]) / -2) + 1
+	
 	def device_added(self, service, instance, *args):
 		if service.startswith('com.victronenergy.vebus.'):
 			# Only one device, controlled via hub4control
@@ -670,7 +678,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				
 	def _handle_green_mode(self, w: DynamicEssWindow, restrictions, now) -> str:
 		
-		availableSolarPlus = (self._device.pvpower or 0) + (self._device.acpv or 0) * 0.9 - self._device.consumption
+		availableSolarPlus = (self._device.pvpower or 0) + (self._device.acpv or 0) * self.oneway_efficency - self._device.consumption
 
 		if (self.devDebugOutput):
 			self._dbusservice['/DynamicEss/Debug/consumption'] = self._device.consumption
