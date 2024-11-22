@@ -23,6 +23,11 @@ MODES = {
        4: 'Local'
 }
 
+OPERATINGMODES = {
+       0: 'TradeMode',
+       1: 'GreenMode'
+}
+
 ERRORS = {
 	0: 'No error',
 	1: 'No ESS',
@@ -349,6 +354,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		if (self.devDebugOutput):
 			self._dbusservice.add_path('/DynamicEss/Debug/acpv', value=None)
 			self._dbusservice.add_path('/DynamicEss/Debug/dcpv', value=None)
+			self._dbusservice.add_path('/DynamicEss/Debug/OperatingMode', value=None)
 			self._dbusservice.add_path('/DynamicEss/Debug/soc', value=None)
 			self._dbusservice.add_path('/DynamicEss/Debug/targetSoc', value=None)
 			self._dbusservice.add_path('/DynamicEss/Debug/consumption', value=None)
@@ -368,6 +374,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 		settings = [
 			("dess_mode", path + "/Mode", 0, 0, 4),
+			("dess_operatingmode", path + "/OperatingMode", 0, 0, 1),
 			("dess_capacity", path + "/BatteryCapacity", 0.0, 0.0, 1000.0),
 			("dess_efficiency", path + "/SystemEfficiency", 90.0, 50.0, 100.0),
 			# 0=None, 1=disallow export, 2=disallow import
@@ -506,6 +513,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 	@property
 	def capacity(self):
 		return self._settings["dess_capacity"]
+	
+	@property
+	def operating_mode(self):
+		return self._settings["dess_operatingmode"]
 
 	@property
 	def restrictions(self):
@@ -593,12 +604,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				self._dbusservice['/DynamicEss/Restrictions'] = restrictions
 				self._dbusservice['/DynamicEss/AllowGridFeedIn'] = int(w.allow_feedin)
 
-				#TODO: implement, as soon as mode-switch is ready. 
-				mode = "GREEN"
-				if (mode == "TRADE"):
+				if (self.operating_mode == 0):
 					finalStrategy = self._handle_trade_mode(w, restrictions, now)
 
-				elif (mode == "GREEN"):
+				elif (self.operating_mode == 1):
 					finalStrategy = self._handle_green_mode(w, restrictions, now)
 
 				break # out of for loop
@@ -611,6 +620,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice['/DynamicEss/FinalStrategy'] = finalStrategy
 
 		if (self.devDebugOutput):
+			self._dbusservice['/DynamicEss/Debug/OperatingMode'] = self.operating_mode
 			self._dbusservice['/DynamicEss/Debug/soc'] = self.soc
 			self._dbusservice['/DynamicEss/Debug/targetSoc'] = self.targetsoc
 			self._dbusservice['/DynamicEss/Debug/FinalStrategy'] = finalStrategy
@@ -714,6 +724,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				return "SCHEDULED_CHARGE_ENHANCED_RATE"
 		else: 
 			self.charge_hysteresis = 1
+
+			if (self.devDebugOutput):
+				self._dbusservice['/DynamicEss/Debug/vrmChargeRate'] = None
 			
 			if (availableSolarPlus > 0):
 				# Case 1: solar surplus available
