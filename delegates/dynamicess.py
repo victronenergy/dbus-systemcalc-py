@@ -328,7 +328,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# Capabilities, 1 = supports charge/discharge restrictions
 		#               2 = supports self-consumption strategy
 		#               4 = supports fast-charge strategy
-		self._dbusservice.add_path('/DynamicEss/Capabilities', value=7)
+		#               8 = values set on Venus (Battery balancing, capacity, operation mode)
+		self._dbusservice.add_path('/DynamicEss/Capabilities', value=15)
 		self._dbusservice.add_path('/DynamicEss/Active', value=0,
 			gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
 		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=None,
@@ -355,8 +356,13 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			("dess_efficiency", path + "/SystemEfficiency", 90.0, 50.0, 100.0),
 			# 0=None, 1=disallow export, 2=disallow import
 			("dess_restrictions", path + "/Restrictions", 0, 0, 3),
-			("dess_fullchargeinterval", path + "/FullChargeInterval", 14, 0, 0),
-			("dess_fullchargeduration", path + "/FullChargeDuration", 2, 0, 0),
+			("dess_fullchargeinterval", path + "/FullChargeInterval", 14, -1, 99),
+			("dess_fullchargeduration", path + "/FullChargeDuration", 2, -1, 12),
+			("dess_operatingmode", path + '/OperatingMode', -1, -1, 2),
+			("dess_batterychargelimit", path + '/BatteryChargeLimit', -1, -1, 9999),
+			("dess_batterydischargelimit", path + '/BatteryDischargeLimit', -1, -1, 9999),
+			("dess_gridimportlimit", path + '/GridImportLimit', -1, -1, 9999),
+			("dess_gridexportlimit", path + '/GridExportLimit', -1, -1, 9999),
 		]
 
 		for i in range(NUM_SCHEDULES):
