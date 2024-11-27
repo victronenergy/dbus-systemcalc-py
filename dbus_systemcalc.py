@@ -247,9 +247,9 @@ class SystemCalc:
 			'dcinmax': ['/Settings/Gui/Gauges/Dc/Input/Power/Max', float(0), 0, float("inf")],
 			'dcsysmax': ['/Settings/Gui/Gauges/Dc/System/Power/Max', float(0), 0, float("inf")],
 			'pvmax': ['/Settings/Gui/Gauges/Pv/Power/Max', float(0), 0, float("inf")],
-			'noacinmax': ['/Settings/Gui/Gauges/Ac/NoAcIn/Consumption/Current/Max', float(0), 0, float("inf")],
-			'acin1max': ['/Settings/Gui/Gauges/Ac/AcIn1/Consumption/Current/Max', float(0), 0, float("inf")],
-			'acin2max': ['/Settings/Gui/Gauges/Ac/AcIn2/Consumption/Current/Max', float(0), 0, float("inf")],
+			'noacinconnmax': ['/Settings/Gui/Gauges/Ac/NoAcIn/Consumption/Current/Max', float(0), 0, float("inf")],
+			'acin1connmax': ['/Settings/Gui/Gauges/Ac/AcIn1/Consumption/Current/Max', float(0), 0, float("inf")],
+			'acin2connmax': ['/Settings/Gui/Gauges/Ac/AcIn2/Consumption/Current/Max', float(0), 0, float("inf")],
 			}
 
 		for m in self._modules:
@@ -1047,7 +1047,7 @@ class SystemCalc:
 																	newvalues.get('/Ac/ActiveIn/L2/Current') or 0,
 																	newvalues.get('/Ac/ActiveIn/L3/Current') or 0)
 
-			self._settings['%smax' % activeIn] = max(self._settings['%smax' % activeIn],
+			self._settings['%sconnmax' % activeIn] = max(self._settings['%sconnmax' % activeIn],
 																newvalues.get('/Ac/Consumption/L1/Current') or 0,
 																newvalues.get('/Ac/Consumption/L2/Current') or 0,
 																newvalues.get('/Ac/Consumption/L3/Current') or 0)
