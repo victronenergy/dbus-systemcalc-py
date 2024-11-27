@@ -328,7 +328,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# Capabilities, 1 = supports charge/discharge restrictions
 		#               2 = supports self-consumption strategy
 		#               4 = supports fast-charge strategy
-		self._dbusservice.add_path('/DynamicEss/Capabilities', value=7)
+		#               8 = values set on Venus (Battery balancing, capacity, operation mode)
+		self._dbusservice.add_path('/DynamicEss/Capabilities', value=15)
 		self._dbusservice.add_path('/DynamicEss/Active', value=0,
 			gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
 		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=None,
@@ -341,6 +342,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice.add_path('/DynamicEss/Strategy', value=None)
 		self._dbusservice.add_path('/DynamicEss/Restrictions', value=None)
 		self._dbusservice.add_path('/DynamicEss/AllowGridFeedIn', value=None)
+		self._dbusservice.add_path('/DynamicEss/OperatingMode', value=None)
 
 		if self.mode > 0:
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
