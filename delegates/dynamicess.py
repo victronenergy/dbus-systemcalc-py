@@ -23,11 +23,6 @@ MODES = {
        4: 'Local'
 }
 
-OPERATINGMODES = {
-       0: 'TradeMode',
-       1: 'GreenMode'
-}
-
 ERRORS = {
 	0: 'No error',
 	1: 'No ESS',
@@ -40,6 +35,10 @@ ERRORS = {
 class Strategy(int, Enum):
 	TARGETSOC = 0
 	SELFCONSUME = 1
+
+class OperatingMode(int, Enum):
+	TRADEMODE = 0
+	GREENMODE = 1
 
 class Flags(int, Enum):
 	NONE = 0
@@ -435,7 +434,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		''' When charging from AC, only half of the efficency-losses have to be considered
 			So, with an overall system efficency of 0.8, the charging efficency would be 0.9 and so on.
 		'''
-		return ((1 - self._settings["dess_efficiency"]) / -2) + 1
+		return min(1.0, ((1 - self._settings["dess_efficiency"] / 100.0) / -2.0) + 1)
 	
 	def device_added(self, service, instance, *args):
 		if service.startswith('com.victronenergy.vebus.'):
@@ -523,8 +522,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		return self._settings["dess_capacity"]
 	
 	@property
-	def operating_mode(self):
-		return self._settings["dess_operatingmode"]
+	def operating_mode(self) -> OperatingMode:
+		return OperatingMode(self._settings["dess_operatingmode"])
 
 	@property
 	def restrictions(self):
@@ -612,10 +611,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				self._dbusservice['/DynamicEss/Restrictions'] = restrictions
 				self._dbusservice['/DynamicEss/AllowGridFeedIn'] = int(w.allow_feedin)
 
-				if (self.operating_mode == 0):
+				if (self.operating_mode == OperatingMode.TRADEMODE):
 					finalStrategy = self._handle_trade_mode(w, restrictions, now)
 
-				elif (self.operating_mode == 1):
+				elif (self.operating_mode == OperatingMode.GREENMODE):
 					finalStrategy = self._handle_green_mode(w, restrictions, now)
 
 				break # out of for loop
@@ -628,7 +627,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice['/DynamicEss/FinalStrategy'] = finalStrategy
 
 		if (self.devDebugOutput):
-			self._dbusservice['/DynamicEss/Debug/OperatingMode'] = self.operating_mode
+			self._dbusservice['/DynamicEss/Debug/OperatingMode'] = self.operating_mode.name
 			self._dbusservice['/DynamicEss/Debug/soc'] = self.soc
 			self._dbusservice['/DynamicEss/Debug/targetSoc'] = self.targetsoc
 			self._dbusservice['/DynamicEss/Debug/FinalStrategy'] = finalStrategy
