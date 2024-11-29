@@ -342,7 +342,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice.add_path('/DynamicEss/Strategy', value=None)
 		self._dbusservice.add_path('/DynamicEss/Restrictions', value=None)
 		self._dbusservice.add_path('/DynamicEss/AllowGridFeedIn', value=None)
-		self._dbusservice.add_path('/DynamicEss/OperatingMode', value=None)
 
 		if self.mode > 0:
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
@@ -359,6 +358,11 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			("dess_restrictions", path + "/Restrictions", 0, 0, 3),
 			("dess_fullchargeinterval", path + "/FullChargeInterval", 14, 0, 0),
 			("dess_fullchargeduration", path + "/FullChargeDuration", 2, 0, 0),
+			("dess_operatingmode", path + '/OperatingMode', -1, 0, 2),
+			("dess_batterychargelimit", path + '/BatteryChargeLimit', -1, 0, 0),
+			("dess_batterydischargelimit", path + '/BatteryDischargeLimit', -1, 0, 0),
+			("dess_gridimportlimit", path + '/GridImportLimit', -1, 0, 0),
+			("dess_gridexportlimit", path + '/GridExportLimit', -1, 0, 0),
 		]
 
 		for i in range(NUM_SCHEDULES):
@@ -627,6 +631,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# Indicate whether this system has DESS capability. Presently
 		# that means it has ESS capability.
 		try:
-			newvalues['/DynamicEss/Available'] = int(self._device.available)
+			newvalues['/DynamicEss/Available'] = 1 # int(self._device.available)
 		except AttributeError:
 			newvalues['/DynamicEss/Available'] = 0
