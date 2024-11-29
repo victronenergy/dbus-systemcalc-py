@@ -839,6 +839,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# Indicate whether this system has DESS capability. Presently
 		# that means it has ESS capability.
 		try:
-			newvalues['/DynamicEss/Available'] = 1 # int(self._device.available)
+			newvalues['/DynamicEss/Available'] = int(self._device.available)
 		except AttributeError:
 			newvalues['/DynamicEss/Available'] = 0
