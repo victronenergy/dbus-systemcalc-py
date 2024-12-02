@@ -46,10 +46,14 @@ class Flags(int, Enum):
 	PREFERGRID = 2 #absence means: PREFERBATTERY
 
 class EssDevice(object):
-	def __init__(self, delegate, monitor, service):
+	def __init__(self, delegate, monitor, service, maximport, maxexport, maxcharge, maxdischarge):
 		self.delegate = delegate
 		self.monitor = monitor
 		self.service = service
+		self.maximport = maximport
+		self.maxexport = maxexport
+		self.maxcharge = maxcharge
+		self.maxdischarge = maxdischarge
 
 	@property
 	def available(self):
@@ -146,15 +150,22 @@ class VebusDevice(EssDevice):
 		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
 		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
 
-		#TODO: Why is FastCharge causing ChargeRate None?
+		#TODO: Question: Why is FastCharge causing ChargeRate None?
 		if flags & Flags.FASTCHARGE or rate is None:
 			self._set_charge_power(None)
 			return None
 		else:
-			# Calculate how fast to buy. Multi is given the remainder
-			# after subtracting PV power.
-			# TODO: Shall the 0.9 stay hardcoded, or use one way efficency?
-			self._set_charge_power(max(0.0, rate - self.pvpower) if batteryimport else 0.9 * self.acpv)
+			# rate is requested, as it would be desired to achieve target soc. 
+			# validate against user configured limits, so we don't break limits.
+			# TODO: Question: Shall the 0.9 stay hardcoded, or use one way efficency?
+			maxchargeopportunity = ((self.maximport if batteryimport else 0) - self.consumption + self.acpv) * 0.9 + self.pvpower
+			rate = min(rate, maxchargeopportunity)
+
+			# validate against battery limit.
+			rate = min(rate, self.maxcharge) 
+
+			# finally deduct dcpv again, as it is not flowing through the vebus device
+			self._set_charge_power(max(0.0, rate-self.pvpower))
 			return rate
 
 	def discharge(self, flags, restrictions, rate, allow_feedin):
@@ -169,6 +180,7 @@ class VebusDevice(EssDevice):
 			# is allowed, then export rate plus whatever DC-coupled PV is
 			# making. If exporting the battery is not allowed, then limit that
 			# to DC-coupled PV plus local consumption.
+			# TODO: Discharge needs to obey maxexport
 			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
 			if flags & Flags.FASTCHARGE:
 				self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
@@ -195,7 +207,7 @@ class VebusDevice(EssDevice):
 		if allow_feedin:
 			# This keeps battery idle by not allowing more power to be taken
 			# from the DC bus than what DC-coupled PV provides.
-			# TODO: Shall the 0.9 stay hardcoded, or use one way efficency?
+			# TODO: Question: Shall the 0.9 stay hardcoded, or use one way efficency?
 			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
 				max(1.0, round(0.9*self.pvpower)))
 			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
@@ -257,7 +269,7 @@ class MultiRsDevice(EssDevice):
 
 	def charge(self, flags, restrictions, rate, allow_feedin):
 		batteryimport = not restrictions & 2
-
+		#TODO: MultiRS needs to obey charge/discharge limits
 		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin))
 		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
 		if batteryimport:
@@ -273,6 +285,7 @@ class MultiRsDevice(EssDevice):
 
 	def discharge(self, flags, restrictions, rate, allow_feedin):
 		batteryexport = not restrictions & 1
+		#TODO: MultiRS needs to obey charge/discharge limits
 		if batteryexport:
 			self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin))
 			self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
@@ -448,17 +461,17 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		''' When charging from AC, only half of the efficency-losses have to be considered
 			So, with an overall system efficency of 0.8, the charging efficency would be 0.9 and so on.
 		'''
-		#TODO: Should we start to use the oneway_efficency figure?
+		#TODO: Question: Should we start to use the oneway_efficency figure?
 		return min(1.0, ((1 - self._settings["dess_efficiency"] / 100.0) / -2.0) + 1)
 	
 	def device_added(self, service, instance, *args):
 		if service.startswith('com.victronenergy.vebus.'):
 			# Only one device, controlled via hub4control
 			if not any(isinstance(s, VebusDevice) for s in self._devices.values()):
-				self._devices[service] = VebusDevice(self, self._dbusmonitor, service)
+				self._devices[service] = VebusDevice(self, self._dbusmonitor, service, self.grid_import_limit, self.grid_export_limit, self.battery_charge_limit, self.battery_discharge_limit)
 				self._set_device()
 		elif service.startswith('com.victronenergy.acsystem.'):
-			self._devices[service] = MultiRsDevice(self, self._dbusmonitor, service)
+			self._devices[service] = MultiRsDevice(self, self._dbusmonitor, service, self.grid_import_limit, self.grid_export_limit, self.battery_charge_limit, self.battery_discharge_limit)
 			self._set_device()
 
 	def device_removed(self, service, instance):
@@ -471,9 +484,11 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 
 	def settings_changed(self, setting, oldvalue, newvalue):
+		#TODO: if any of the limmits are changed, we need to update _device with new values.
 		if setting == 'dess_mode':
 			if oldvalue == 0 and newvalue > 0:
 				self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
+
 
 	def windows(self):
 		starttimes = (self._settings['dess_start_{}'.format(i)] for i in range(NUM_SCHEDULES))
@@ -492,6 +507,26 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 	@property
 	def mode(self):
 		return self._settings['dess_mode']
+	
+	@property
+	def grid_import_limit(self) -> float:
+		''' Grid import limit as configured by the user for DESS. In W, positive.'''
+		return self._settings['dess_gridimportlimit']
+	
+	@property
+	def grid_export_limit(self)-> float:
+		''' Grid export limit as configured by the user for DESS. In W, positive.'''
+		return self._settings['dess_gridexportlimit']
+	
+	@property
+	def battery_charge_limit(self)-> float:
+		''' Battery charge limit as configured by the user for DESS. In W, positive.'''
+		return self._settings['dess_batterychargelimit']
+	
+	@property
+	def battery_discharge_limit(self)-> float:
+		''' Battery discharge limit as configured by the user for DESS. In W, positive.'''
+		return self._settings['dess_batterydischargelimit']
 
 	@property
 	def active(self):
@@ -553,8 +588,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			try:
 				# a Watt is a Joule-second, a Wh is 3600 joules.
 				# Capacity is kWh, so multiply by 100, percentage needs division by 100, therefore 36000.
-				# FIXME: Once Max Chargerate is available, validate calculation against it.
 				chargerate = round(1.1 * (percentage * self.capacity * 36000) / abs((end - now).total_seconds()))
+
+				# TODO: Question: Why the max here? that wouldn't a chargerate allow to go "down", if required?
 				self.chargerate = chargerate if self.chargerate is None else max(self.chargerate, chargerate)
 				self.prevsoc = self.soc
 
