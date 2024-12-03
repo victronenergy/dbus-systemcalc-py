@@ -164,6 +164,43 @@ class VebusDevice(EssDevice):
 		return self.monitor.set_value_async(HUB4_SERVICE,
 			'/Overrides/MaxDischargePower', -1 if v is None else v)
 
+class MultiRsDevice(EssDevice):
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+		self.charge = False
+
+	@property
+	def mode(self):
+		return self.monitor.get_value(self.service, '/Settings/Ess/Mode')
+
+	def check_conditions(self):
+		if self.mode not in (0, 1):
+			return Reasons.ESS_MODE
+		return 0
+
+	def _forcecharge(self):
+		return self.charge
+
+	def _set_forcecharge(self, v):
+		self.charge = bool(v)
+
+	def _maxdischargepower(self):
+		return None # We only ever set this
+
+	def _set_maxdischargepower(self, v):
+		# Setting the maxdischargepower always happens last, so we can
+		# include charging decisions here
+		if self.charge:
+			self.monitor.set_value_async(self.service,
+				'/Ess/UseInverterPowerSetpoint', 1)
+			self.monitor.set_value_async(self.service,
+				'/Ess/InverterPowerSetpoint', 15000)
+		elif v is not None:
+			self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
+			self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', -v)
+		else:
+			self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 0)
+
 class Reasons(IntEnum):
 	OK = 0
 	NO_ESS = 1
@@ -205,8 +242,23 @@ class ScheduledCharging(SystemCalcDelegate, ChargeControl):
 
 	def get_input(self):
 		return [
-			(HUB4_SERVICE, ['/Overrides/ForceCharge', '/Overrides/MaxDischargePower'])
+			(HUB4_SERVICE, [
+				'/Overrides/ForceCharge',
+				'/Overrides/MaxDischargePower']),
+			('com.victronenergy.acsystem', [
+				 '/Ess/InverterPowerSetpoint',
+				 '/Ess/UseInverterPowerSetpoint',
+				 '/Settings/Ess/Mode']),
 		]
+
+	def device_added(self, service, instance, *args):
+		if service.startswith('com.victronenergy.acsystem.'):
+			self.device_removed(service, instance) # Avoid duplicates
+			self.devices.append(MultiRsDevice(self, self._dbusmonitor, service))
+
+	def device_removed(self, service, instance):
+		# Just rebuild the list and drop the one that went away
+		self.devices = [d for d in self.devices if d.service != service]
 
 	def settings_changed(self, setting, oldvalue, newvalue):
 		if setting.startswith("schedule_soc_"):
@@ -254,6 +306,13 @@ class ScheduledCharging(SystemCalcDelegate, ChargeControl):
 		return self._charge_windows(today, days, starttimes, durations, stopsocs, discharges)
 
 	def _on_timer(self):
+		# Another delegate controls charging
+		if not self.can_acquire_control:
+			self._dbusservice['/Control/ScheduledChargeStatus'] = Reasons.BLOCKED
+			self._dbusservice['/Control/ScheduledCharge'] = 0
+			self._dbusservice['/Control/ScheduledSoc'] = None
+			return True
+
 		if self.soc is None:
 			self._dbusservice['/Control/ScheduledChargeStatus'] = Reasons.NO_SOC
 			self._dbusservice['/Control/ScheduledCharge'] = 0
@@ -266,13 +325,6 @@ class ScheduledCharging(SystemCalcDelegate, ChargeControl):
 				break
 		else:
 			self._dbusservice['/Control/ScheduledChargeStatus'] = condition
-			self._dbusservice['/Control/ScheduledCharge'] = 0
-			self._dbusservice['/Control/ScheduledSoc'] = None
-			return True
-
-		# Another delegate controls charging
-		if not self.can_acquire_control:
-			self._dbusservice['/Control/ScheduledChargeStatus'] = Reasons.BLOCKED
 			self._dbusservice['/Control/ScheduledCharge'] = 0
 			self._dbusservice['/Control/ScheduledSoc'] = None
 			return True
