@@ -442,7 +442,9 @@ class InverterSubsystem(object):
 		""" Returns total chargevoltagesetpoint (including solar offset)
 		    from the relevant inverter (N2kDeviceInstance==0). """
 		setpoints = (safeadd(ob.chargevoltagesetpoint, ob.solaroffset) \
-			for ob in self._inverters.values() if ob.n2k_device_instance == 0)
+			for ob in self._inverters.values() \
+			if ob.n2k_device_instance == 0 and \
+			ob.chargevoltagesetpoint is not None)
 		try:
 			return min(v for v in setpoints if v is not None)
 		except ValueError:
