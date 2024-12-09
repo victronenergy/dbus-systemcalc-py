@@ -74,7 +74,8 @@ class Multi(SystemCalcDelegate):
 
 		# Determine if this platform has a built-in MK2/3. Maxi-GX
 		# and generic (Raspberry Pi) does not.
-		self.has_onboard_mkx = get_product_id() not in ('C009', 'C003', 'C008')
+		self.has_onboard_mkx = get_product_id() not in (
+			'C009', 'C003', 'C008', 'C012')
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
