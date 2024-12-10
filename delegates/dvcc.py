@@ -947,7 +947,8 @@ class Dvcc(SystemCalcDelegate):
 		return [
 			('maxchargecurrent', '/Settings/SystemSetup/MaxChargeCurrent', -1, -1, 10000),
 			('maxchargevoltage', '/Settings/SystemSetup/MaxChargeVoltage', 0.0, 0.0, 80.0),
-			('bol', '/Settings/Services/Bol', 0, 0, 7)
+			('bol', '/Settings/Services/Bol', 0, 0, 7),
+			('bolsecondary', '/Settings/SystemSetup/DvccControlAllMultis', 0, 0, 1)
 		]
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
@@ -1273,12 +1274,26 @@ class Dvcc(SystemCalcDelegate):
 			self._multi.bol.batterylowvoltage = bms_service.batterylowvoltage
 			written = 1
 
+		# Control secondary Multis (systems with more than one) if configured
+		if self._settings['bolsecondary']:
+			self._update_secondary_multis(cv, bms_service.maxdischargecurrent)
+
 		# Also control inverters if BMS stops discharge
 		if len(self._inverters):
 			self._inverters.set_maxdischargecurrent(bms_service.maxdischargecurrent)
 			written = 1
 
 		return written
+
+	def _update_secondary_multis(self, cv, dcl):
+		if cv is not None:
+			for m in MultiService.instance.othermultis:
+				self._dbusmonitor.set_value_async(m.service,
+					'/BatteryOperationalLimits/MaxChargeVoltage', cv)
+		if dcl is not None:
+			for m in MultiService.instance.othermultis:
+				self._dbusmonitor.set_value_async(m.service,
+					'/BatteryOperationalLimits/MaxDischargeCurrent', dcl)
 
 	@property
 	def feedback_allowed(self):

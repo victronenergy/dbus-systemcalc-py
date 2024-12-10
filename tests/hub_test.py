@@ -54,7 +54,8 @@ class TestHubSystem(TestSystemCalcBase):
 				'/FirmwareFeatures/BolUBatAndTBatSense': 1,
 				'/FirmwareVersion': 0x456,
 				'/Hub4/L1/DoNotFeedInOvervoltage': 1,
-				'/Interfaces/Mk2/ProductName': 'MK2'
+				'/Interfaces/Mk2/ProductName': 'MK2',
+				'/Interfaces/Mk2/Connection': '/dev/ttyO2'
 			})
 		self._add_device('com.victronenergy.settings',
 			values={
@@ -2289,4 +2290,163 @@ class TestHubSystem(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/SystemType': 'AC System'
+		})
+
+	def test_dvcc_with_multiple_multis_1(self):
+		from delegates.multi import Multi
+		Multi.instance.has_onboard_mkx = True # Force it true
+
+		# Add another Multi
+		self._add_device('com.victronenergy.vebus.ttyUSB0',
+			product_name='Multi',
+			values={
+				'/Ac/ActiveIn/L1/P': 123,
+				'/Ac/ActiveIn/ActiveInput': 0,
+				'/Ac/ActiveIn/Connected': 1,
+				'/Ac/Out/L1/P': 100,
+				'/Dc/0/Voltage': 12.25,
+				'/Dc/0/Current': -8,
+				'/Dc/0/Temperature': 24,
+				'/DeviceInstance': 0,
+				'/Devices/0/Assistants': [0x55, 0x1] + (26 * [0]),  # Hub-4 assistant
+				'/Devices/Bms/Version': None,
+				'/ExtraBatteryCurrent': 0,
+				'/Soc': 53.2,
+				'/State': 3,
+				'/BatteryOperationalLimits/MaxChargeVoltage': None,
+				'/BatteryOperationalLimits/MaxChargeCurrent': None,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': None,
+				'/BatteryOperationalLimits/BatteryLowVoltage': None,
+				'/BatterySense/Voltage': None,
+				'/Bms/AllowToCharge': 1,
+				'/Bms/AllowToDischarge': 1,
+				'/Bms/BmsType': 0,
+				'/FirmwareFeatures/BolFrame': 1,
+				'/FirmwareFeatures/BolUBatAndTBatSense': 1,
+				'/FirmwareVersion': 0x456,
+				'/Hub4/L1/DoNotFeedInOvervoltage': 1,
+				'/Interfaces/Mk2/ProductName': 'MK2'
+			})
+
+		# Add managed battery
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 58.1,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 45,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
+		self._update_values(interval=3000)
+
+		# First Multi got the BOL values, second did not.
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 45,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': 50 },
+			'com.victronenergy.vebus.ttyUSB0': {
+				'/BatteryOperationalLimits/BatteryLowVoltage': None,
+				'/BatteryOperationalLimits/MaxChargeCurrent': None,
+				'/BatteryOperationalLimits/MaxChargeVoltage': None,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': None },
+		})
+
+		# Now turn on the setting for passing DVCC params to all units.
+		# Test that CVL and DCL was copied.
+		self._set_setting('/Settings/SystemSetup/DvccControlAllMultis', 1)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 45,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': 50 },
+			'com.victronenergy.vebus.ttyUSB0': {
+				'/BatteryOperationalLimits/BatteryLowVoltage': None,
+				'/BatteryOperationalLimits/MaxChargeCurrent': None,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': 50 },
+		})
+
+	def test_dvcc_with_multiple_multis_2(self):
+		from delegates.multi import Multi
+		Multi.instance.has_onboard_mkx = True # Force it true
+
+		# Remove primary Multi
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+
+		# Add another Multi
+		self._add_device('com.victronenergy.vebus.ttyUSB0',
+			product_name='Multi',
+			values={
+				'/Ac/ActiveIn/L1/P': 123,
+				'/Ac/ActiveIn/ActiveInput': 0,
+				'/Ac/ActiveIn/Connected': 1,
+				'/Ac/Out/L1/P': 100,
+				'/Dc/0/Voltage': 12.25,
+				'/Dc/0/Current': -8,
+				'/Dc/0/Temperature': 24,
+				'/DeviceInstance': 0,
+				'/Devices/0/Assistants': [0x55, 0x1] + (26 * [0]),  # Hub-4 assistant
+				'/Devices/Bms/Version': None,
+				'/ExtraBatteryCurrent': 0,
+				'/Soc': 53.2,
+				'/State': 3,
+				'/BatteryOperationalLimits/MaxChargeVoltage': None,
+				'/BatteryOperationalLimits/MaxChargeCurrent': None,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': None,
+				'/BatteryOperationalLimits/BatteryLowVoltage': None,
+				'/BatterySense/Voltage': None,
+				'/Bms/AllowToCharge': 1,
+				'/Bms/AllowToDischarge': 1,
+				'/Bms/BmsType': 0,
+				'/FirmwareFeatures/BolFrame': 1,
+				'/FirmwareFeatures/BolUBatAndTBatSense': 1,
+				'/FirmwareVersion': 0x456,
+				'/Hub4/L1/DoNotFeedInOvervoltage': 1,
+				'/Interfaces/Mk2/ProductName': 'MK2',
+				'/Interfaces/Mk2/Connection': '/dev/ttyUSB0'
+			})
+
+		# Add managed battery
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 58.1,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 45,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
+		self._update_values(interval=3000)
+
+		# The only Multi in the system doesn't get params, since it is not
+		# on the built-in port.
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyUSB0': {
+				'/BatteryOperationalLimits/BatteryLowVoltage': None,
+				'/BatteryOperationalLimits/MaxChargeCurrent': None,
+				'/BatteryOperationalLimits/MaxChargeVoltage': None,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': None },
+		})
+
+		# But turning on the setting for passing DVCC params to all units
+		# allows the Multi on USB to get a CVL and a DCL.
+		self._set_setting('/Settings/SystemSetup/DvccControlAllMultis', 1)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyUSB0': {
+				'/BatteryOperationalLimits/BatteryLowVoltage': None,
+				'/BatteryOperationalLimits/MaxChargeCurrent': None,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': 50 },
 		})
