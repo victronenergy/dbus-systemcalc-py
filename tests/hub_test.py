@@ -2278,3 +2278,15 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_values({
 			'/SystemType': 'ESS'
 		})
+
+	def test_acsystem_systemtype(self):
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._add_device('com.victronenergy.acsystem.socketcan_can0_sys0',
+			product_name='Multi RS',
+			values={
+				'/State': 252,
+			})
+		self._update_values()
+		self._check_values({
+			'/SystemType': 'AC System'
+		})
