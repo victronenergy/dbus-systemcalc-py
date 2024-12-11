@@ -56,7 +56,8 @@ class ReactiveStrategy(int, Enum):
 	SELFCONSUME_ACCEPT_DISCHARGE = 7		#We are above target soc, have a solar shortage, flag PREFERGRID is absent and the next window doesn't indicate a higher target soc. 
 	IDLE_MAINTAIN_SURPLUS = 8				#We are above targetsoc, have a solar shortage, but the next window indicates a higher target soc. (no need to temporary ACCEPT_DISCHARGE)
 	IDLE_MAINTAIN_TARGETSOC = 9				#We are at targetsoc, but have a solar shortage.
-	
+	SCHEDULED_CHARGE_SMOOTH_TRANSITION = 10 #During a scheduled charge, we may reach soc=targetsoc early. If this is the case, and the NEXT window outlines a higher targetsoc, keep up the current charge rate. 
+
 	NO_WINDOW = 99							#No window could be found, matching the current time.
 
 class EssDevice(object):
@@ -625,9 +626,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice['/DynamicEss/LastScheduledStart'] = None if start is None else int(datetime.timestamp(start))
 		self._dbusservice['/DynamicEss/LastScheduledEnd'] = None if stop is None else int(datetime.timestamp(stop))
 
-		finalStrategy = "NO_WINDOW"
-		currentWindow = None
-		nextWindow = None
+		final_strategy = "NO_WINDOW"
+		current_window = None
+		next_window = None
 
 		#iterate through windows, find the current one. Usually it should be first,
 		#but in case of update issues may not. Also grab the next window, to perform
@@ -641,7 +642,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				#       Absence of that flag would mean PREFERBATTERY
 				#w.flags |= Flags.PREFERGRID
 
-				currentWindow = w
+				current_window = w
 				# Set some paths on dbus for easier debugging
 				restrictions = w.restrictions | self.restrictions
 
@@ -650,21 +651,21 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				self._dbusservice['/DynamicEss/AllowGridFeedIn'] = int(w.allow_feedin)
 				break # out of for loop
 		
-		if currentWindow is not None:
+		if current_window is not None:
 			#found current window, now we need nextWindow to do some look aheads as well. 
 			#next window is the one containing current.start + current.duration + 1.
 			#finding next window is not required to enter the control loop, can be None.
-			nextWindowStart = currentWindow.stop + timedelta(seconds = 1)
+			next_window_save_start = current_window.stop + timedelta(seconds = 1)
 			for w in windows:
-				if (nextWindowStart in w):
-					nextWindow = w
+				if (next_window_save_start in w):
+					next_window = w
 					break # out of for loop
 
 			if (self.operating_mode == OperatingMode.TRADEMODE):
-				finalStrategy = self._handle_trade_mode(currentWindow, nextWindow, restrictions, now)
+				final_strategy = self._handle_trade_mode(current_window, next_window, restrictions, now)
 
 			elif (self.operating_mode == OperatingMode.GREENMODE):
-				finalStrategy = self._handle_green_mode(currentWindow, nextWindow, restrictions, now)
+				final_strategy = self._handle_green_mode(current_window, next_window, restrictions, now)
 
 		else:
 			# No matching windows
@@ -672,16 +673,16 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				self.deactivate(3)
 	
 		#write out current override strategy to determine if the local system behaves "out of schedule" on purpose.
-		self._dbusservice['/DynamicEss/ReactiveStrategy'] = finalStrategy.value
+		self._dbusservice['/DynamicEss/ReactiveStrategy'] = final_strategy.value
 
 		if (self.devDebugOutput):
 			self._dbusservice['/DynamicEss/Debug/OperatingMode'] = self.operating_mode.name
 			self._dbusservice['/DynamicEss/Debug/soc'] = self.soc
 			self._dbusservice['/DynamicEss/Debug/targetSoc'] = self.targetsoc
-			self._dbusservice['/DynamicEss/Debug/nwTargetSoc'] = nextWindow.soc if nextWindow is not None and nextWindow.strategy == Strategy.TARGETSOC else None
-			self._dbusservice['/DynamicEss/Debug/wStart'] = currentWindow.start.strftime("%Y-%m-%dT%H:%M:%SZ") if currentWindow is not None else None
-			self._dbusservice['/DynamicEss/Debug/nwStart'] = nextWindow.start.strftime("%Y-%m-%dT%H:%M:%SZ") if nextWindow is not None else None
-			self._dbusservice['/DynamicEss/Debug/FinalStrategy'] = finalStrategy.name
+			self._dbusservice['/DynamicEss/Debug/nwTargetSoc'] = next_window.soc if next_window is not None and next_window.strategy == Strategy.TARGETSOC else None
+			self._dbusservice['/DynamicEss/Debug/wStart'] = current_window.start.strftime("%Y-%m-%dT%H:%M:%SZ") if current_window is not None else None
+			self._dbusservice['/DynamicEss/Debug/nwStart'] = next_window.start.strftime("%Y-%m-%dT%H:%M:%SZ") if next_window is not None else None
+			self._dbusservice['/DynamicEss/Debug/FinalStrategy'] = final_strategy.name
 			self._dbusservice['/DynamicEss/Debug/overrideChargeRate'] = self.overrideChargeRate
 			self._dbusservice['/DynamicEss/Debug/actualChargeRate'] = self._dbusservice["/Dc/Battery/Power"] or 0
 			self._dbusservice['/DynamicEss/Debug/acin'] = (self._dbusservice["/Ac/Grid/L1/Power"] or 0) + (self._dbusservice["/Ac/Grid/L2/Power"] or 0) + (self._dbusservice["/Ac/Grid/L3/Power"] or 0)
@@ -754,6 +755,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			self.chargerate = None # For recalculation
 		self.targetsoc = w.soc
 
+		next_window_higher_target_soc = nw is not None and (nw.soc > w.soc) and nw.strategy == Strategy.TARGETSOC
+
 		# Improved Green Mode:
 		#
 		# Bellow Code performs some micro strategies to optimize behaviour.
@@ -784,6 +787,15 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		else:
 			# we are ahead or spot on plan, or the charge histeresis has not yet kicked in from
 			# a prior state.
+
+			# if we are currently in any SCHEDULED_CHARGE_* State and our next window outlines an even higher target soc, 
+			# don't switch to idle, but keep current charge rate. (Else chargerate will drop to 0, when reaching target soc early)
+			charge_states = (ReactiveStrategy.SCHEDULED_CHARGE, ReactiveStrategy.SCHEDULED_CHARGE_ENHANCED_RATE, ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION)
+			if self._dbusservice["/DynamicEss/ReactiveStrategy"] in charge_states and next_window_higher_target_soc:
+				#keep up current charge rate until window ends, and we no longer have a soc==target_soc condition.
+				self._dbusservice['/DynamicEss/ChargeRate'] = self._device.charge(w.flags, restrictions, self.chargerate, w.allow_feedin)	
+				return ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION
+
 			self.charge_hysteresis = 1
 
 			if (self.devDebugOutput):
@@ -814,8 +826,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				# If we are above target soc, we could allow discharge / selfconsume. However, look at the next window as well: 
 				#   If our next window has a smaller, equal or no target soc, we can allow discharge to minimize grid pull. 
 				#   If our next window has a targetSoc > current windows target, we stay idle, not wasting surplus we eventually worked out.
-				nextWindowHigherSoc = nw is not None and (nw.soc > w.soc) and nw.strategy == Strategy.TARGETSOC
-				if (self.soc > self.targetsoc and not nextWindowHigherSoc):
+				if (self.soc > self.targetsoc and not next_window_higher_target_soc):
 					# Okay to discharge, we are ahead of plan and next window is equal or lower.
 					self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
 					self._device.self_consume(restrictions, w.allow_feedin)
@@ -829,7 +840,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					# All 3 cases should lead to idle, just determine which we have, for debug purpose.
 					self._dbusservice['/DynamicEss/ChargeRate'] = self._device.idle(w.allow_feedin)
 					
-					if (self.soc > self.targetsoc and nextWindowHigherSoc and not w.flags & Flags.PREFERGRID):
+					if (self.soc > self.targetsoc and next_window_higher_target_soc and not w.flags & Flags.PREFERGRID):
 						# next window has a higher target soc than the current window, so idle to maintin advantage.
 						# if a discharge would have been enforced by the schedule, we would already be in SCHEDULED_DISCHARGE case.
 						return ReactiveStrategy.IDLE_MAINTAIN_SURPLUS
