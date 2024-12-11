@@ -98,7 +98,8 @@ class Multi(SystemCalcDelegate):
 			('/VebusService', {'gettext': '%s'}),
 			('/VebusInstance', {'gettext': '%s'}),
 			('/Dc/Vebus/Current', {'gettext': '%.1F A'}),
-			('/Dc/Vebus/Power', {'gettext': '%.0F W'})]
+			('/Dc/Vebus/Power', {'gettext': '%.0F W'}),
+			('/Devices/NumberOfVebusDevices', {'gettext': '%s'})]
 
 	def device_added(self, service, instance, *args):
 		if service.startswith('com.victronenergy.vebus.'):
@@ -149,6 +150,7 @@ class Multi(SystemCalcDelegate):
 		service = getattr(self.multi, 'service', None)
 		newvalues['/VebusService'] = service
 		newvalues['/VebusInstance'] = getattr(self.multi, 'instance', None)
+		newvalues['/Devices/NumberOfVebusDevices'] = len(self.multis)
 
 		if service is not None:
 			dc_current = self._dbusmonitor.get_value(service, '/Dc/0/Current')
