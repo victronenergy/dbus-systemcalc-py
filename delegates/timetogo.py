@@ -11,12 +11,12 @@ class TimeToGo(SystemCalcDelegate):
         SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
         
         #determine battery capacity
-        #TODO: first local setting?
-        #for now DESS only
+        #TODO: DM: For now DESS only, until battery capacity has a centralized place.
+        #If we don't have the capacity available from dess, the Delegate will do nothing in update_values
         self.capacity = dbusmonitor.get_value("com.victronenergy.settings", '/Settings/DynamicEss/BatteryCapacity')
         if self.capacity is not None:
             self.capacity *= 1000
-          
+  
     def get_output(self):
         return [('/Dc/Battery/TimeToGo', {'gettext': '%.0F s'})]
 
@@ -26,6 +26,7 @@ class TimeToGo(SystemCalcDelegate):
 
     def update_values(self, newvalues):
         if self.capacity is None:
+            #No dess capacity, return nothing.
             return
         
         ttg = None
