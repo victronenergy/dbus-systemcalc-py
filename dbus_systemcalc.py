@@ -29,6 +29,7 @@ class SystemCalc:
 	STATE_DISCHARGING = 2
 	BATSERVICE_DEFAULT = 'default'
 	BATSERVICE_NOBATTERY = 'nobattery'
+	calculate_time_to_go = True
 	def __init__(self):
 		# Why this dummy? Because DbusMonitor expects these values to be there, even though we don't
 		# need them. So just add some dummy data. This can go away when DbusMonitor is more generic.
@@ -127,7 +128,8 @@ class SystemCalc:
 				'/Settings/SystemSetup/AcInput1' : dummy,
 				'/Settings/SystemSetup/AcInput2' : dummy,
 				'/Settings/CGwacs/RunWithoutGridMeter' : dummy,
-				'/Settings/System/TimeZone' : dummy},
+				'/Settings/System/TimeZone' : dummy,
+				'/Settings/DynamicEss/BatteryCapacity' : dummy},
 			'com.victronenergy.temperature': {
 				'/Connected': dummy,
 				'/ProductName': dummy,
@@ -1074,6 +1076,41 @@ class SystemCalc:
 													self._dbusservice['/Ac/PvOnOutput/L1/Power'],
 													self._dbusservice['/Ac/PvOnOutput/L2/Power'],
 													self._dbusservice['/Ac/PvOnOutput/L3/Power']))
+
+		#Some BMS and unmanaged batteries do not create the TimeToGo value. 
+		#calculating this however is quite easy, let's add that information.
+		#(Only possible, if we can take battery capacity form DESS)
+		if self.calculate_time_to_go:
+			if newvalues['/Dc/Battery/TimeToGo'] is None:
+				try:
+					#get the values we need for that.
+					ttg_capactiy = self._dbusmonitor.get_value("com.victronenergy.settings", '/Settings/DynamicEss/BatteryCapacity')
+
+					if ttg_capactiy is not None:
+						ttg_capactiy *= 1000 #dess capacity is in kWh
+						ttg_battery_power = self._dbusservice['/Dc/Battery/Power']
+						ttg_battery_soc = self._dbusservice['/Dc/Battery/Soc']
+						ttg_active_soc_limit = self._dbusservice['/Control/ActiveSocLimit']
+
+						if ttg_battery_power is not None and ttg_battery_soc is not None and ttg_active_soc_limit is not None:
+							ttg_remaining_capacity = (ttg_active_soc_limit/100.0) * ttg_capactiy
+							ttg_missing_capacity = (1 - ttg_battery_soc/100.0) * ttg_capactiy 
+							ttg_current_capacity = (ttg_battery_soc/100.0) * ttg_capactiy 
+							ttg_usable_capacity = ttg_current_capacity - ttg_remaining_capacity
+
+							ttg = None
+
+							if (ttg_battery_power < 0):
+								ttg = (ttg_usable_capacity / ttg_battery_power) * 60 * 60 * - 1
+							elif (ttg_battery_power > 0):
+								ttg = (ttg_missing_capacity / ttg_battery_power) * 60 * 60
+							
+							newvalues['/Dc/Battery/TimeToGo'] = ttg
+				except Exception as e:
+					#failed to calculate ttg. ignore it, but log once and disable calculation attempt.
+					self.calculate_time_to_go = False
+					logger.warning("Failed to calculate ttg:", exc_info=e)
+					newvalues['/Dc/Battery/TimeToGo'] = None
 
 		# ==== UPDATE DBUS ITEMS ====
 		with self._dbusservice as sss:
