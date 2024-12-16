@@ -735,7 +735,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			is called to minimize repetition of functional code.
 		'''
 		# required variables to make some improvement decissions
-		available_solar_plus = (self._device.pvpower or 0) + (self._device.acpv or 0) * 0.9 - self._device.consumption
+		# consumption is FIRST backed by acpv. That means, after calculating the overall available solar plus,
+		# we need to addback the amount of direct-consumption * 0.1, cause that basically has been wrongly considered with the 0.9 penalty.
+		available_solar_plus = (self._device.pvpower or 0) + (self._device.acpv or 0) * 0.9 - self._device.consumption + min(self._device.acpv or 0, self._device.consumption) * 0.1
 		self._dbusservice["/DynamicEss/AvailableOverhead"] = max(0, available_solar_plus)
 		next_window_higher_target_soc = nw is not None and (nw.soc > w.soc) and nw.strategy == Strategy.TARGETSOC
 
