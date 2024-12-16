@@ -754,8 +754,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 		# some preparations
 		# round targetsoc due to "minute refresh hack"
+		end_smooth_transition = False
 		if self.targetsoc != w.soc:
 			self.chargerate = None # For recalculation
+			end_smooth_transition = True #Exit smooth transition state, if any.
 		
 		self.targetsoc = w.soc #+ (datetime.now().minute / 10000.0) #FIXME: Experimental. Add a fraction depending on the current minute to targetsoc
 		self._dbusservice['/DynamicEss/Flags'] = w.flags
@@ -802,7 +804,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		else:
 			# if we are currently in any SCHEDULED_CHARGE_* State and our next window outlines an even higher target soc, 
 			# don't switch to idle, but keep current charge rate. (Else chargerate will drop to 0, when reaching target soc early)
-			if self._dbusservice["/DynamicEss/ReactiveStrategy"] in self.charge_states and next_window_higher_target_soc:
+			if self._dbusservice["/DynamicEss/ReactiveStrategy"] in self.charge_states and next_window_higher_target_soc and not end_smooth_transition:
 				#keep up current charge rate until window ends, and we no longer have a soc==target_soc condition.
 				#FIXME This is currently working as long as we don't progress 2 soc percent before window end. If we do, self.chargerate will become None and can't be used anymore.
 				#      So, would be saver to recalculate a chargerate matching the next windows end already over reusing any stored one.
