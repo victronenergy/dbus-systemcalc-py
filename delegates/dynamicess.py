@@ -355,6 +355,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._devices = {}
 		self._device = None
 		self._errorcode = 0
+		self.override_chargerate = None
 		self._errortimer = ERROR_TIMEOUT
 
 		#define the four kind of deterministic states we have. 
