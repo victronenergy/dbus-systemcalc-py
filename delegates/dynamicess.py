@@ -757,6 +757,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# some preparations
 		# round targetsoc due to "minute refresh hack"
 		end_smooth_transition = False
+		self.overrideCharerate = None #if a override to chargerate can be found, it is set here.
 		if self.targetsoc != w.soc:
 			self.chargerate = None # For recalculation
 			end_smooth_transition = True #Exit smooth transition state, if any.
@@ -783,7 +784,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			# 1) There is more solar than expected and we are EXCESSTOBAT -> charge enhanced.
 			#    This state also needs to be enforced, when feedin is restricted
 			if available_solar_plus > self._dbusservice['/DynamicEss/ChargeRate'] and excess_to_bat or not w.allow_feedin:
-				self.chargerate = available_solar_plus
+				self.overrideCharerate = available_solar_plus
 				reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_ENHANCED
 			
 			# 2) There is more solar than expected and we are EXCESSTOGRID -> charge at calculated charge rate, accept feedin happening.
@@ -800,7 +801,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			# 4) There isn't enough solar and we are flagged MISSINGTOBAT -> only use solar power that is availble.
 			#    In case there is Grid2Bat restriction, this is our only option, even if the flag would indicate MISSINGTOGRID
 			elif available_solar_plus <= self._dbusservice['/DynamicEss/ChargeRate'] and (missing_to_bat or (w.restrictions & Restrictions.GRID2BAT)): 
-				self.chargerate = available_solar_plus
+				self.overrideCharerate = available_solar_plus
 				reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_NO_GRID
 		
 		else:
@@ -838,7 +839,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					# not allowed with bat2grid restriction
 					elif self.soc - self.discharge_hysteresis > max(w.soc, self._device.minsoc) and excess_to_grid and missing_to_bat \
 						and not self.restrictions & Restrictions.BAT2GRID:
-						self.chargerate = max(self.chargerate, self._device.consumption)
+						self.overrideCharerate = max(self.chargerate, self._device.consumption)
 						reactive_strategy =  ReactiveStrategy.SCHEDULED_MINIMUM_DISCHARGE
 
 					# left over discharge cases:
@@ -882,8 +883,11 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		else:
 			#depending on the reactive strategy choosen, system behaviour may be the same - just different value set
 			#and/or different reasoning.
+
+			final_chargerate = self.overrideCharerate if not None else self.chargerate
+
 			if reactive_strategy in self.charge_states:
-					self._dbusservice['/DynamicEss/ChargeRate'] = self._device.charge(w.flags, restrictions, self.chargerate, w.allow_feedin)
+					self._dbusservice['/DynamicEss/ChargeRate'] = self._device.charge(w.flags, restrictions, final_chargerate, w.allow_feedin)
 
 			elif reactive_strategy in self.selfconsume_states:
 				self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
@@ -893,7 +897,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				self._dbusservice['/DynamicEss/ChargeRate'] = self._device.idle(w.allow_feedin)
 
 			elif reactive_strategy in self.discharge_states:	
-				self._dbusservice['/DynamicEss/ChargeRate'] = self._device.discharge(w.flags, restrictions, self.chargerate, w.allow_feedin)
+				self._dbusservice['/DynamicEss/ChargeRate'] = self._device.discharge(w.flags, restrictions, final_chargerate, w.allow_feedin)
 
 			else:
 				#This should never happen, it means that there is a state that is not mapped to a reaction. 
