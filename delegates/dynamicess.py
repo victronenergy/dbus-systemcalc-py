@@ -736,10 +736,23 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			is called to minimize repetition of functional code.
 		'''
 		# required variables to make some improvement decissions
-		# consumption is FIRST backed by acpv. That means, after calculating the overall available solar plus,
-		# we need to addback the amount of direct-consumption * 0.1, cause that basically has been wrongly considered with the 0.9 penalty.
-		available_solar_plus = (self._device.pvpower or 0) + (self._device.acpv or 0) * 0.9 - self._device.consumption + min(self._device.acpv or 0, self._device.consumption) * 0.1
-		self._dbusservice["/DynamicEss/AvailableOverhead"] = max(0, available_solar_plus)
+		# Generally, solar_plus is PV - Consumption
+		# It needs to take efficency into account, legacy equation did this by multiplying acpv with 0.9
+		# However it will be more precice to only consider the "available ac pv" with 0.9. Direct Consumption will basically
+		# lower the available acpv without conversion losses.
+		available_solar_plus = 0
+		direct_acpv_consume = min(self._device.acpv or 0, self._device.consumption)
+		remaining_ac_pv = max(0, (self._device.acpv or 0) - direct_acpv_consume)
+		if remaining_ac_pv > 0:
+			#dc can be used for charging 100%, ac is penalized with 10% conversion losses.
+			available_solar_plus = (self._device.pvpower or 0) + remaining_ac_pv * 0.9
+		else:
+			#not enough ac pv. so, the part flowing from DC to remaining AC loads will lower the budget.
+			#ac doesn't have to be considered, it's 100% consumed. Hower, dc consume is penalized by 10% conversion
+			direct_dcpv_consume = self._device.consumption - direct_acpv_consume
+			available_solar_plus = (self._device.pvpower or 0) - direct_dcpv_consume * 1.1
+
+		self._dbusservice["/DynamicEss/AvailableOverhead"] = available_solar_plus
 		next_window_higher_target_soc = nw is not None and (nw.soc > w.soc) and nw.strategy == Strategy.TARGETSOC
 
 		# When we have a Scheduled-Selfconsume, we can ommit to walk through the decission tree. 
@@ -763,7 +776,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			self.chargerate = None # For recalculation
 			end_smooth_transition = True #Exit smooth transition state, if any.
 		
-		self.targetsoc = w.soc #+ (datetime.now().minute / 10000.0) #FIXME: Experimental. Add a fraction depending on the current minute to targetsoc
+		self.targetsoc = w.soc 
 		self._dbusservice['/DynamicEss/Flags'] = w.flags
 		
 		excess_to_grid = bool((w.flags & Flags.EXCESSTOGRID) > 0)
@@ -809,9 +822,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			# if we are currently in any SCHEDULED_CHARGE_* State and our next window outlines an even higher target soc, 
 			# don't switch to idle, but keep current charge rate. (Else chargerate will drop to 0, when reaching target soc early)
 			if self._dbusservice["/DynamicEss/ReactiveStrategy"] in self.charge_states and next_window_higher_target_soc and not end_smooth_transition:
-				#keep up current charge rate until window ends, and we no longer have a soc==target_soc condition.
-				#FIXME This is currently working as long as we don't progress 2 soc percent before window end. If we do, self.chargerate will become None and can't be used anymore.
-				#      So, would be saver to recalculate a chargerate matching the next windows end already over reusing any stored one.
+				# calculate a chargerate that already targets the end of next window, as self.chargerate will be reseted, when there is a targetsoc change
+				self.update_chargerate(now, nw.stop, abs(self.soc - nw.soc))
 				reactive_strategy =  ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION
 			else:
 				# we are above or equal to target soc, or the charge histeresis has not yet kicked in from a prior state.
