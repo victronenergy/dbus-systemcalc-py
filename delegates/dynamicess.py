@@ -839,20 +839,20 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					# so, now we have: (availableSolarPlus <= 0 or solaroverhaed, but excess_to_grid) and (equal or above targetSoc).
 					# so, most likely any of the discharge-variants is required (or ultimately idle)
 					self.discharge_hysteresis = 0
-					self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
 
 					# if we are flagged EXESSTOGRID and MISSINGTOGRID, perform a strict discharge, based on soc difference.
 					# Any imprecission shall be handled by the grid
 					# not allowed with bat2grid restriction
 					if self.soc - self.discharge_hysteresis > max(w.soc, self._device.minsoc) and excess_to_grid and missing_to_grid \
 						and not self.restrictions & Restrictions.BAT2GRID:
+						self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
 						reactive_strategy = ReactiveStrategy.SCHEDULED_DISCHARGE
 
 					# if flags are EXCESSTOGRID and MISSINGTOBAT, that means: keep a MINIMUM dischargerate, but allow to discharge more, if consumption is higher.
 					# not allowed with bat2grid restriction
 					elif self.soc - self.discharge_hysteresis > max(w.soc, self._device.minsoc) and excess_to_grid and missing_to_bat \
 						and not self.restrictions & Restrictions.BAT2GRID:
-						self.override_chargerate = max(self.chargerate, self._device.consumption)
+						self.override_chargerate = max(self.chargerate, self._device.consumption * 1.1)
 						reactive_strategy =  ReactiveStrategy.SCHEDULED_MINIMUM_DISCHARGE
 
 					# left over discharge cases:
@@ -897,10 +897,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			#depending on the reactive strategy choosen, system behaviour may be the same - just different value set
 			#and/or different reasoning.
 
-			final_chargerate = self.override_chargerate if not None else self.chargerate
+			final_chargerate = self.override_chargerate if self.override_chargerate is not None else self.chargerate
 
 			if reactive_strategy in self.charge_states:
-					self._dbusservice['/DynamicEss/ChargeRate'] = self._device.charge(w.flags, restrictions, final_chargerate, w.allow_feedin)
+				self._dbusservice['/DynamicEss/ChargeRate'] = self._device.charge(w.flags, restrictions, final_chargerate, w.allow_feedin)
 
 			elif reactive_strategy in self.selfconsume_states:
 				self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
