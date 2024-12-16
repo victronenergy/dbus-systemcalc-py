@@ -10,13 +10,6 @@ class TimeToGo(SystemCalcDelegate):
     def set_sources(self, dbusmonitor, settings, dbusservice):
         SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
         
-        #determine battery capacity
-        #TODO: DM: For now DESS only, until battery capacity has a centralized place.
-        #If we don't have the capacity available from dess, the Delegate will do nothing in update_values
-        self.capacity = dbusmonitor.get_value("com.victronenergy.settings", '/Settings/DynamicEss/BatteryCapacity')
-        if self.capacity is not None:
-            self.capacity *= 1000
-  
     def get_output(self):
         return [('/Dc/Battery/TimeToGo', {'gettext': '%.0F s'})]
 
@@ -25,11 +18,16 @@ class TimeToGo(SystemCalcDelegate):
 				'/Settings/DynamicEss/BatteryCapacity'])]
 
     def update_values(self, newvalues):
-        if self.capacity is None:
-            #No dess capacity, return nothing.
+        #TODO: DM: For now DESS only, until battery capacity has a centralized place.
+        #If we don't have the capacity available from dess, the Delegate will do nothing in update_values
+        self.capacity = self._dbusmonitor.get_value("com.victronenergy.settings", '/Settings/DynamicEss/BatteryCapacity')
+        if self.capacity is not None:
+            self.capacity *= 1000
+        else:
+            #No dess capacity, do nothing.
             return
         
-        ttg = None
+        ttg = None #for recalculation
         try:
             #get the values we need for that.
             battery_power = self._dbusservice['/Dc/Battery/Power']
@@ -41,8 +39,6 @@ class TimeToGo(SystemCalcDelegate):
                 missing_capacity = (1 - battery_soc/100.0) * self.capacity 
                 current_capacity = (battery_soc/100.0) * self.capacity 
                 usable_capacity = current_capacity - remaining_capacity
-
-                ttg = None
 
                 if (battery_power < 0):
                     ttg = round((usable_capacity / battery_power) * 60 * 60 * - 1)
