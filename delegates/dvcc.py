@@ -33,7 +33,7 @@ def _byd_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
 	""" Quirk for the BYD batteries. When the battery sends CCL=0, float it at
 	   55V. """
 	if charge_current == 0:
-		return (55, 40, feedback_allowed, False)
+		return (min(55.0, charge_voltage), 40, feedback_allowed, False)
 	return (charge_voltage, charge_current, feedback_allowed, False)
 
 def _lg_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
