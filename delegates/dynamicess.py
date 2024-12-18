@@ -855,7 +855,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			# don't switch to idle, but keep current charge rate. (Else chargerate will drop to 0, when reaching target soc early)
 			if self._dbusservice["/DynamicEss/ReactiveStrategy"] in self.charge_states and next_window_higher_target_soc and not end_smooth_transition:
 				# calculate a chargerate that already targets the end of next window, as self.chargerate will be reseted, when there is a targetsoc change
-				self.update_chargerate(now, w.stop, self.soc, nw.soc)
+				self.update_chargerate(now, nw.stop, self.soc, nw.soc)
 				reactive_strategy =  ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION
 			else:
 				# we are above or equal to target soc, or the charge histeresis has not yet kicked in from a prior state.
