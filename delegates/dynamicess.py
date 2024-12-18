@@ -180,6 +180,7 @@ class VebusDevice(EssDevice):
 		else:
 			# Calculate how fast to buy. Multi is given the remainder
 			# after subtracting PV power.
+			# FIXME: Fallback to 0.9 acpv need review. Seems wrong. 
 			self._set_charge_power(max(0.0, rate - self.pvpower) if batteryimport else 0.9 * self.acpv)
 			return rate
 
@@ -292,6 +293,7 @@ class MultiRsDevice(EssDevice):
 				self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', max(0, rate))
 		else:
 			# No charging from grid, allow only acpv to be converted.
+			# FIXME: only acpv is wrong, this does not allow to charge amounts BELLOW acpv, when import is restricted.
 			self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', self.acpv)
 
 		return rate
@@ -390,6 +392,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice.add_path('/DynamicEss/Flags', value=None)
 		self._dbusservice.add_path('/DynamicEss/AvailableOverhead', value=None)
 		self._dbusservice.add_path('/DynamicEss/CorDataSet', value=None)
+
 		if self.mode > 0:
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
 
@@ -509,6 +512,26 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		return self._settings['dess_mode']
 
 	@property
+	def grid_import_limit(self) -> float:
+		''' Grid import limit as configured by the user for DESS. In kW, positive, None if not set'''
+		return self._settings['dess_gridimportlimit'] if self._settings['dess_gridimportlimit'] >= 0 else None
+    
+	@property
+	def grid_export_limit(self)-> float:
+		''' Grid export limit as configured by the user for DESS. In kW, positive, None if not set'''
+		return self._settings['dess_gridexportlimit'] if self._settings['dess_gridexportlimit'] >= 0 else None
+    
+	@property
+	def battery_charge_limit(self)-> float:
+		''' Battery charge limit as configured by the user for DESS. In kW, positive, None if not set'''
+		return self._settings['dess_batterychargelimit'] if self._settings['dess_batterychargelimit'] >= 0 else None
+    
+	@property
+	def battery_discharge_limit(self)-> float:
+		''' Battery discharge limit as configured by the user for DESS. In kW, positive, None if not set'''
+		return self._settings['dess_batterydischargelimit'] if self._settings['dess_batterydischargelimit'] >= 0 else None
+
+	@property
 	def active(self):
 		return self._dbusservice['/DynamicEss/Active']
 
@@ -559,16 +582,24 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 	def restrictions(self):
 		return self._settings["dess_restrictions"]
 
-	def update_chargerate(self, now, end, percentage):
-		""" now is current time, end is end of slot, percentage is amount of battery
-		    we want to dump/charge before then. """
+	def update_chargerate(self, now, end, start_soc, end_soc):
+		""" now is current time, end is end of slot, start_soc and end_soc determine the amount of intended soc change """
 
 		# Only update the charge rate if a new soc value has to be considered
 		if self.chargerate is None or self.soc != self.prevsoc:
 			try:
 				# a Watt is a Joule-second, a Wh is 3600 joules.
 				# Capacity is kWh, so multiply by 100, percentage needs division by 100, therefore 36000.
+				percentage = abs(start_soc - end_soc)
 				chargerate = round(1.1 * (percentage * self.capacity * 36000) / abs((end - now).total_seconds()))
+
+				#Discharge and charge has two different limits for calculation. these limits are added in update_chargerate
+				#rather than charge/discharge method, so data logging clearly shows the exact computed chargerate.
+				if start_soc <= end_soc:
+					chargerate = chargerate if self.battery_charge_limit is None else min(chargerate, self.battery_charge_limit * 1000)
+				elif start_soc > end_soc:
+					chargerate = chargerate if self.battery_discharge_limit is None else min(chargerate, self.battery_discharge_limit * 1000)
+
 				self.chargerate = chargerate if self.chargerate is None else max(self.chargerate, chargerate)
 				self.prevsoc = self.soc
 
@@ -707,7 +738,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		if self.soc + self.charge_hysteresis < w.soc or w.soc >= 100: # Charge
 			self.charge_hysteresis = 0
 			self.discharge_hysteresis = 1
-			self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
+			self.update_chargerate(now, w.stop, self.soc, w.soc)
 			self._dbusservice['/DynamicEss/ChargeRate'] = \
 				self._device.charge(w.flags, restrictions,
 				self.chargerate, w.allow_feedin)
@@ -716,7 +747,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			self.charge_hysteresis = 1
 			if self.soc - self.discharge_hysteresis > max(w.soc, self._device.minsoc): # Discharge
 				self.discharge_hysteresis = 0
-				self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
+				self.update_chargerate(now, w.stop, self.soc, w.soc)
 				self._dbusservice['/DynamicEss/ChargeRate'] = \
 					self._device.discharge(w.flags, restrictions,
 					self.chargerate, w.allow_feedin)
@@ -741,16 +772,17 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# However it will be more precice to only consider the "available ac pv" with 0.9. Direct Consumption will basically
 		# lower the available acpv without conversion losses.
 		available_solar_plus = 0
+		
 		direct_acpv_consume = min(self._device.acpv or 0, self._device.consumption)
 		remaining_ac_pv = max(0, (self._device.acpv or 0) - direct_acpv_consume)
 		if remaining_ac_pv > 0:
 			#dc can be used for charging 100%, ac is penalized with 10% conversion losses.
-			available_solar_plus = (self._device.pvpower or 0) + remaining_ac_pv * 0.9
+			available_solar_plus = (self._device.pvpower or 0) + remaining_ac_pv * self.oneway_efficency
 		else:
 			#not enough ac pv. so, the part flowing from DC to remaining AC loads will lower the budget.
 			#ac doesn't have to be considered, it's 100% consumed. Hower, dc consume is penalized by 10% conversion
 			direct_dcpv_consume = self._device.consumption - direct_acpv_consume
-			available_solar_plus = (self._device.pvpower or 0) - direct_dcpv_consume * 1.1
+			available_solar_plus = (self._device.pvpower or 0) - direct_dcpv_consume / self.oneway_efficency
 
 		self._dbusservice["/DynamicEss/AvailableOverhead"] = available_solar_plus
 		next_window_higher_target_soc = nw is not None and (nw.soc > w.soc) and nw.strategy == Strategy.TARGETSOC
@@ -791,14 +823,14 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			# we are behind plan. Charging is required.
 			self.charge_hysteresis = 0
 			self.discharge_hysteresis = 1
-			self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
+			self.update_chargerate(now, w.stop, self.soc, w.soc)
 			
 			# Based on the coping flags, charging has 4 options
 			# Also restrictions may be applied (grid2bat). 
 			# 1) There is more solar than expected and we are EXCESSTOBAT -> charge enhanced.
 			#    This state also needs to be enforced, when feedin is restricted
-			if available_solar_plus > self._dbusservice['/DynamicEss/ChargeRate'] and excess_to_bat or not w.allow_feedin:
-				self.override_chargerate = available_solar_plus
+			if available_solar_plus > self._dbusservice['/DynamicEss/ChargeRate'] and excess_to_bat or not w.allow_feedin: 
+				self.override_chargerate = available_solar_plus 
 				reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_ENHANCED
 			
 			# 2) There is more solar than expected and we are EXCESSTOGRID -> charge at calculated charge rate, accept feedin happening.
@@ -823,7 +855,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			# don't switch to idle, but keep current charge rate. (Else chargerate will drop to 0, when reaching target soc early)
 			if self._dbusservice["/DynamicEss/ReactiveStrategy"] in self.charge_states and next_window_higher_target_soc and not end_smooth_transition:
 				# calculate a chargerate that already targets the end of next window, as self.chargerate will be reseted, when there is a targetsoc change
-				self.update_chargerate(now, nw.stop, abs(self.soc - nw.soc))
+				self.update_chargerate(now, w.stop, self.soc, nw.soc)
 				reactive_strategy =  ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION
 			else:
 				# we are above or equal to target soc, or the charge histeresis has not yet kicked in from a prior state.
@@ -845,7 +877,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					# not allowed with bat2grid restriction
 					if self.soc - self.discharge_hysteresis > max(w.soc, self._device.minsoc) and excess_to_grid and missing_to_grid \
 						and not self.restrictions & Restrictions.BAT2GRID:
-						self.update_chargerate(now, w.stop, abs(self.soc - w.soc))
+						self.update_chargerate(now, w.stop, self.soc, w.soc)
 						reactive_strategy = ReactiveStrategy.SCHEDULED_DISCHARGE
 
 					# if flags are EXCESSTOGRID and MISSINGTOBAT, that means: keep a MINIMUM dischargerate, but allow to discharge more, if consumption is higher.
@@ -907,7 +939,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				self._device.self_consume(restrictions, w.allow_feedin)
 
 			elif reactive_strategy in self.idle_states:
-				self._dbusservice['/DynamicEss/ChargeRate'] = self._device.idle(w.allow_feedin)
+				self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
+				self._device.idle(w.allow_feedin)
 
 			elif reactive_strategy in self.discharge_states:	
 				self._dbusservice['/DynamicEss/ChargeRate'] = self._device.discharge(w.flags, restrictions, final_chargerate, w.allow_feedin)
@@ -915,6 +948,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			else:
 				#This should never happen, it means that there is a state that is not mapped to a reaction. 
 				#We enter self consume and use a own state for that :P 
+				#Doing at least self consume will make the system leave this unmapped state sooner or later for sure and not get stuck.
 				self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
 				self._device.self_consume(restrictions, w.allow_feedin)
 				return ReactiveStrategy.SELFCONSUME_UNMAPPED_STATE
