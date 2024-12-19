@@ -68,6 +68,8 @@ class ReactiveStrategy(int, Enum):
 	SCHEDULED_CHARGE_FEEDIN = 11            
 	SCHEDULED_CHARGE_NO_GRID = 12           
 	SCHEDULED_MINIMUM_DISCHARGE = 13
+	SELFCONSUME_NO_GRID = 14
+	IDLE_NO_OPPORTUNITY = 15
 
 	ESS_LOW_SOC = 96						
 	SELFCONSUME_UNMAPPED_STATE = 97         
@@ -166,8 +168,6 @@ class VebusDevice(EssDevice):
 		return 0
 
 	def charge(self, flags, restrictions, rate, allow_feedin):
-		batteryimport = not restrictions & int(Restrictions.GRID2BAT)
-
 		self._set_feedin(allow_feedin)
 
 		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
@@ -178,10 +178,13 @@ class VebusDevice(EssDevice):
 			self._set_charge_power(None)
 			return None
 		else:
-			# Calculate how fast to buy. Multi is given the remainder
-			# after subtracting PV power.
-			# FIXME: Fallback to 0.9 acpv need review. Seems wrong. 
-			self._set_charge_power(max(0.0, rate - self.pvpower) if batteryimport else 0.9 * self.acpv)
+			# Upon first call of charge(), the input charge-rate eventually has some DC-AC losses considered. 
+			# (Originating from ac consumers currently beeing driven with dcsolar, reducing anticipated solar overhead)
+			# As soon, as we start charging, there can't be a flow from dc to ac, so these losses will vanish
+			# and the updated chargerate will be a little bit higher, if nothing else changes. This is fine and neglectable. 
+			# this only happens in certain charge-situations, scheduled charging from grid only changes the chargerate on soc change.
+			# rate will already be adjusted for obeying batteryimport limitation, so these check can be omited.
+			self._set_charge_power(max(0.0, rate - self.pvpower))
 			return rate
 
 	def discharge(self, flags, restrictions, rate, allow_feedin):
@@ -365,8 +368,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self.charge_states = (ReactiveStrategy.SCHEDULED_CHARGE_ALLOW_GRID, ReactiveStrategy.SCHEDULED_CHARGE_ENHANCED, 
 					ReactiveStrategy.SCHEDULED_CHARGE_NO_GRID, ReactiveStrategy.SCHEDULED_CHARGE_FEEDIN, 
 					ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION)
-		self.selfconsume_states = (ReactiveStrategy.SELFCONSUME_ACCEPT_CHARGE, ReactiveStrategy.SELFCONSUME_ACCEPT_DISCHARGE)
-		self.idle_states = (ReactiveStrategy.IDLE_SCHEDULED_FEEDIN, ReactiveStrategy.IDLE_MAINTAIN_SURPLUS, ReactiveStrategy.IDLE_MAINTAIN_TARGETSOC)
+		self.selfconsume_states = (ReactiveStrategy.SELFCONSUME_ACCEPT_CHARGE, ReactiveStrategy.SELFCONSUME_ACCEPT_DISCHARGE, ReactiveStrategy.SELFCONSUME_NO_GRID)
+		self.idle_states = (ReactiveStrategy.IDLE_SCHEDULED_FEEDIN, ReactiveStrategy.IDLE_MAINTAIN_SURPLUS, ReactiveStrategy.IDLE_MAINTAIN_TARGETSOC, ReactiveStrategy.IDLE_NO_OPPORTUNITY)
 		self.discharge_states = (ReactiveStrategy.SCHEDULED_DISCHARGE, ReactiveStrategy.SCHEDULED_MINIMUM_DISCHARGE)
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
@@ -710,7 +713,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			self._dbusservice['/DynamicEss/ReactiveStrategy'] = final_strategy.value
 		
 		#Publish the correleated DataSet. This is for making sure remote-tools get data that really correletes.
-		self._dbusservice['/DynamicEss/CorDataSet'] = "{{\"ts\":{0}, \"s\":{1}, \"chr\":{2}, \"ochr\":{3}}}".format(self.targetsoc or "null", self.soc or "null", self.chargerate or "null", self.override_chargerate or "null")
+		self._dbusservice['/DynamicEss/CorDataSet'] = "{{\"ts\":{0}, \"s\":{1}, \"chr\":{2}, \"ochr\":{3}}}".format(self.targetsoc or "null", self.soc or "null", self.chargerate or "null",self.override_chargerate or "null")
 
 		return True
 
@@ -772,7 +775,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# However it will be more precice to only consider the "available ac pv" with 0.9. Direct Consumption will basically
 		# lower the available acpv without conversion losses.
 		available_solar_plus = 0
-		
 		direct_acpv_consume = min(self._device.acpv or 0, self._device.consumption)
 		remaining_ac_pv = max(0, (self._device.acpv or 0) - direct_acpv_consume)
 		if remaining_ac_pv > 0:
@@ -827,28 +829,34 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			
 			# Based on the coping flags, charging has 4 options
 			# Also restrictions may be applied (grid2bat). 
-			# 1) There is more solar than expected and we are EXCESSTOBAT -> charge enhanced.
-			#    This state also needs to be enforced, when feedin is restricted
-			if available_solar_plus > self._dbusservice['/DynamicEss/ChargeRate'] and excess_to_bat or not w.allow_feedin: 
-				self.override_chargerate = available_solar_plus 
-				reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_ENHANCED
-			
-			# 2) There is more solar than expected and we are EXCESSTOGRID -> charge at calculated charge rate, accept feedin happening.
-			#    This state is dissallowed, when feedin is restricted, but then we already entered situation 1.
-			elif available_solar_plus > self._dbusservice['/DynamicEss/ChargeRate'] and excess_to_grid: 
-				reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_FEEDIN
+			if available_solar_plus > self.chargerate:
+				# 1) There is more solar than expected and we are EXCESSTOBAT -> charge enhanced.
+				#    This state also needs to be enforced, when feedin is restricted
+				if excess_to_bat or not w.allow_feedin: 
+					self.override_chargerate = available_solar_plus 
+					reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_ENHANCED
+				
+				# 2) There is more solar than expected and we are EXCESSTOGRID -> charge at calculated charge rate, accept feedin happening.
+				#    This state is dissallowed, when feedin is restricted, but then we already entered situation 1.
+				elif excess_to_grid: 
+					reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_FEEDIN
+			else:
+				#available_solar_plus <= self.chargerate
+				# 3) There isn't enough solar and we are flagged MISSINGTOGRID -> use calculated charge rate.
+				#    (Wording note: Missing2Grid describes the punishment of missing energy to the grid - so TAKING energy from the grid ;-))
+				#    But, this state is dissallowed, if a Grid2Bat Restriction is active.
+				if missing_to_grid and not (w.restrictions & Restrictions.GRID2BAT): 
+					reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_ALLOW_GRID
+				
+				# 4) There isn't enough solar and we are flagged MISSINGTOBAT -> only use solar power that is availble.
+				#    This is self consume, until condition changes.
+				#    In case there is Grid2Bat restriction, this is our only option, even if the flag would indicate MISSINGTOGRID
+				elif available_solar_plus > 0 and (missing_to_bat or (w.restrictions & Restrictions.GRID2BAT)): 
+					reactive_strategy = ReactiveStrategy.SELFCONSUME_NO_GRID
 
-			# 3) There isn't enough solar and we are flagged MISSINGTOGRID -> use calculated charge rate.
-			#    (Wording note: Missing2Grid describes the punishment of missing energy to the grid - so TAKING energy from the grid ;-))
-			#    But, this state is dissallowed, if a Grid2Bat Restriction is active.
-			elif available_solar_plus <= self._dbusservice['/DynamicEss/ChargeRate'] and missing_to_grid and not (w.restrictions & Restrictions.GRID2BAT): 
-				reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_ALLOW_GRID
-			
-			# 4) There isn't enough solar and we are flagged MISSINGTOBAT -> only use solar power that is availble.
-			#    In case there is Grid2Bat restriction, this is our only option, even if the flag would indicate MISSINGTOGRID
-			elif available_solar_plus <= self._dbusservice['/DynamicEss/ChargeRate'] and (missing_to_bat or (w.restrictions & Restrictions.GRID2BAT)): 
-				self.override_chargerate = available_solar_plus
-				reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_NO_GRID
+				# 5.) Ultimate case: No Grid charge possible, no solar. We can't charge. Therefore, the strategy best is to go idle. 
+				elif available_solar_plus <= 0 and (missing_to_bat or (w.restrictions & Restrictions.GRID2BAT)):
+					reactive_strategy = ReactiveStrategy.IDLE_NO_OPPORTUNITY
 		
 		else:
 			# if we are currently in any SCHEDULED_CHARGE_* State and our next window outlines an even higher target soc, 
@@ -863,8 +871,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				
 				if (available_solar_plus > 0 and not excess_to_grid):
 					# If surplus is available, always attempt to charge, unless we are flagged EXCESSTOGRID
-					self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
-					self._device.self_consume(restrictions, w.allow_feedin)
 					reactive_strategy = ReactiveStrategy.SELFCONSUME_ACCEPT_CHARGE
 
 				else:
