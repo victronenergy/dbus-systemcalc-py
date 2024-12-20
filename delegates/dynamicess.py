@@ -10,6 +10,8 @@ from delegates.batterylife import State as BatteryLifeState
 from delegates.chargecontrol import ChargeControl
 from enum import Enum
 from time import time
+import logging
+logger = logging.getLogger(__name__)
 
 NUM_SCHEDULES = 12
 INTERVAL = 5
@@ -53,6 +55,11 @@ class Restrictions(int, Enum):
 	BAT2GRID = 1
 	GRID2BAT = 2
 
+class ChangeIndicator(int, Enum):
+	NONE = 0
+	RISING = 1
+	FALLING = 2
+
 class ReactiveStrategy(int, Enum):
 	#do not re-number, external applications rely on this mapping.
 	SCHEDULED_SELFCONSUME = 1				
@@ -77,6 +84,48 @@ class ReactiveStrategy(int, Enum):
 	SELFCONSUME_UNPREDICTED = 98			
 	NO_WINDOW = 99							
 
+class IterationChangeTracker(object):
+	'''
+		The iteration change tracker analyzes changes occuring between iterations, if the actual strategy may depend on the triggering factor.
+	'''
+	def __init__(self):
+		self._current_soc = None
+		self._current_target_soc = None
+
+		self._previous_soc = None
+		self._previous_target_soc = None
+		self._previous_reactive_strategy = None
+		
+	def input(self, soc, target_soc):
+		self._current_soc = soc
+		self._current_target_soc = target_soc
+
+	def soc_change(self) -> ChangeIndicator:
+		if self._current_soc is None or self._current_soc == self._previous_soc:
+			return ChangeIndicator.NONE
+		
+		if self._previous_soc is None or self._current_soc > self._previous_soc:
+			return ChangeIndicator.RISING
+		elif self._current_soc < self._previous_soc:
+			return ChangeIndicator.FALLING
+
+	def target_soc_change(self) -> ChangeIndicator:
+		if self._current_target_soc is None or self._current_target_soc == self._previous_target_soc:
+			return ChangeIndicator.NONE
+		
+		if self._previous_target_soc is None or self._current_target_soc > self._previous_target_soc:
+			return ChangeIndicator.RISING
+		elif self._current_target_soc < self._previous_target_soc:
+			return ChangeIndicator.FALLING
+
+	def done(self, reactive_strategy):
+		self._previous_soc = self._current_soc
+		self._previous_target_soc = self._current_target_soc
+		self._current_soc = None
+		self._current_target_soc = None
+		self._previous_reactive_strategy = reactive_strategy
+		
+		
 class EssDevice(object):
 	def __init__(self, delegate, monitor, service):
 		self.delegate = delegate
@@ -363,12 +412,13 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._errorcode = 0
 		self.override_chargerate = None
 		self._errortimer = ERROR_TIMEOUT
+		self.iteration_change_tracker = IterationChangeTracker()
 
 		#define the four kind of deterministic states we have. 
 		#SCHEDULED_SELFCONSUME is left out, it isn't part of the overall deterministic strategy tree, but a quick escape before entering. 
 		self.charge_states = (ReactiveStrategy.SCHEDULED_CHARGE_ALLOW_GRID, ReactiveStrategy.SCHEDULED_CHARGE_ENHANCED, 
 					ReactiveStrategy.SCHEDULED_CHARGE_NO_GRID, ReactiveStrategy.SCHEDULED_CHARGE_FEEDIN, 
-					ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION)
+					ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION, ReactiveStrategy.UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC)
 		self.selfconsume_states = (ReactiveStrategy.SELFCONSUME_ACCEPT_CHARGE, ReactiveStrategy.SELFCONSUME_ACCEPT_DISCHARGE, ReactiveStrategy.SELFCONSUME_NO_GRID)
 		self.idle_states = (ReactiveStrategy.IDLE_SCHEDULED_FEEDIN, ReactiveStrategy.IDLE_MAINTAIN_SURPLUS, ReactiveStrategy.IDLE_MAINTAIN_TARGETSOC, ReactiveStrategy.IDLE_NO_OPPORTUNITY)
 		self.discharge_states = (ReactiveStrategy.SCHEDULED_DISCHARGE, ReactiveStrategy.SCHEDULED_MINIMUM_DISCHARGE)
@@ -693,12 +743,18 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					next_window = w
 					break # out of for loop
 
+			#pass new values to iteration change tracker. 
+			self.iteration_change_tracker.input(self.soc, self.targetsoc)
+
 			if (self.operating_mode == OperatingMode.TRADEMODE):
 				#FIXME: Experimental: Most recent version of the handle-method should be 100% suitable for trademode, with correct copping flags.
 				final_strategy = self._handle_green_mode(current_window, next_window, restrictions, now)
 
 			elif (self.operating_mode == OperatingMode.GREENMODE):
 				final_strategy = self._handle_green_mode(current_window, next_window, restrictions, now)
+
+			#done, reset iteration_change_tracker
+			self.iteration_change_tracker.done(final_strategy)
 
 		else:
 			# No matching windows
@@ -773,6 +829,17 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# It needs to take efficency into account, legacy equation did this by multiplying acpv with 0.9
 		# However it will be more precice to only consider the "available ac pv" with 0.9. Direct Consumption will basically
 		# lower the available acpv without conversion losses.
+
+		# FIXME: Debug log changes detected. 
+		soc_change = self.iteration_change_tracker.soc_change()
+		target_soc_change = self.iteration_change_tracker.target_soc_change()
+
+		if (soc_change != ChangeIndicator.NONE):
+			logger.log(logging.INFO, "Detected a soc change from {0} to {1} identified as: {2}".format(self.iteration_change_tracker._previous_soc, self.iteration_change_tracker._current_soc, soc_change.name))
+
+		if (target_soc_change != ChangeIndicator.NONE):
+			logger.log(logging.INFO, "Detected a target soc change from {0} to {1} identified as: {2}".format(self.iteration_change_tracker._previous_target_soc, self.iteration_change_tracker._current_target_soc, target_soc_change.name))
+
 		available_solar_plus = 0
 		direct_acpv_consume = min(self._device.acpv or 0, self._device.consumption)
 		remaining_ac_pv = max(0, (self._device.acpv or 0) - direct_acpv_consume)
@@ -802,12 +869,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# current parameters based on the choosen strategy. 
 
 		# some preparations
-		# round targetsoc due to "minute refresh hack"
-		end_smooth_transition = False
 		self.override_chargerate = None #if a override to chargerate can be found, it is set here.
 		if self.targetsoc != w.soc:
 			self.chargerate = None # For recalculation
-			end_smooth_transition = True #Exit smooth transition state, if any.
 		
 		self.targetsoc = w.soc 
 		self._dbusservice['/DynamicEss/Flags'] = w.flags
@@ -821,56 +885,69 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		reactive_strategy = None 
 
 		if self.soc + self.charge_hysteresis < w.soc or w.soc >= 100:
-			# we are behind plan. Charging is required.
-			self.charge_hysteresis = 0
-			self.discharge_hysteresis = 1
-			self.update_chargerate(now, w.stop, self.soc, w.soc)
-			
-			# Based on the coping flags, charging has 4 options
-			# Also restrictions may be applied (grid2bat). 
-			if available_solar_plus > self.chargerate:
-				# 1) There is more solar than expected and we are EXCESSTOBAT -> charge enhanced.
-				#    This state also needs to be enforced, when feedin is restricted
-				if excess_to_bat or not w.allow_feedin: 
-					self.override_chargerate = available_solar_plus 
-					reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_ENHANCED
-				
-				# 2) There is more solar than expected and we are EXCESSTOGRID -> charge at calculated charge rate, accept feedin happening.
-				#    This state is dissallowed, when feedin is restricted, but then we already entered situation 1.
-				elif excess_to_grid: 
-					reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_FEEDIN
-			else:
-				#available_solar_plus <= self.chargerate
-				# 3) There isn't enough solar and we are flagged MISSINGTOGRID -> use calculated charge rate.
-				#    (Wording note: Missing2Grid describes the punishment of missing energy to the grid - so TAKING energy from the grid ;-))
-				#    But, this state is dissallowed, if a Grid2Bat Restriction is active.
-				if missing_to_grid and not (w.restrictions & Restrictions.GRID2BAT): 
-					#FIXME SocDropIssue: When soc drops 2%, charging happens. if it's end of window, CHR spikes up. not nice.
-					#      Detect this happening, then use a dedicated chargestate with 10% of chargerate limit.
-					reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_ALLOW_GRID
-				
-				# 4) There isn't enough solar and we are flagged MISSINGTOBAT -> only use solar power that is availble.
-				#    This is self consume, until condition changes.
-				#    In case there is Grid2Bat restriction, this is our only option, even if the flag would indicate MISSINGTOGRID
-				elif available_solar_plus > 0 and (missing_to_bat or (w.restrictions & Restrictions.GRID2BAT)): 
-					reactive_strategy = ReactiveStrategy.SELFCONSUME_NO_GRID
+			# we are behind plan. Charging is required. 
+			# 
+			# First exception case here is : 
+			# When we directly hit self.soc + self.charge_hysteris == w.soc, we need to check, if this happened with or falling
+			# soc. If the soc was FALLING, it means we have most likely been idling and dropped bellow target_soc. In that case, we want to 
+			# avoid spiky charge peaks (can happen close to window end) but rather catch up to target soc at 10% of chargelimit.
+			# as soon as target_soc changes, this state has to be left. Cannot be done with grid2bat restriction.
+			if ((self.iteration_change_tracker.soc_change() == ChangeIndicator.FALLING and
+	   			 self.iteration_change_tracker.target_soc_change() == ChangeIndicator.NONE and
+				 self.soc + self.charge_hysteresis == w.soc and 
+				 not (w.restrictions & Restrictions.GRID2BAT)) or
+	   		    (self.iteration_change_tracker._previous_reactive_strategy == ReactiveStrategy.UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC and 
+		  		self.iteration_change_tracker.target_soc_change() == ChangeIndicator.NONE)):
+				# Yes, this turned into a charge-window by a dropping soc. (limit is in kW, therefore * 1000 / 10) 
+				self.override_chargerate = self.battery_charge_limit * 100
+				reactive_strategy = ReactiveStrategy.UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC
 
-				# 5.) Ultimate case: No Grid charge possible, no solar. We can't charge. Therefore, the strategy best is to go idle. 
-				elif available_solar_plus <= 0 and (missing_to_bat or (w.restrictions & Restrictions.GRID2BAT)):
-					reactive_strategy = ReactiveStrategy.IDLE_NO_OPPORTUNITY
+			else:
+				self.charge_hysteresis = 0
+				self.discharge_hysteresis = 1
+				self.update_chargerate(now, w.stop, self.soc, w.soc)
+				
+				# Based on the coping flags, charging has 4 options
+				# Also restrictions may be applied (grid2bat). 
+				if available_solar_plus > self.chargerate:
+					# 1) There is more solar than expected and we are EXCESSTOBAT -> charge enhanced.
+					#    This state also needs to be enforced, when feedin is restricted
+					if excess_to_bat or not w.allow_feedin: 
+						self.override_chargerate = available_solar_plus 
+						reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_ENHANCED
+					
+					# 2) There is more solar than expected and we are EXCESSTOGRID -> charge at calculated charge rate, accept feedin happening.
+					#    This state is dissallowed, when feedin is restricted, but then we already entered situation 1.
+					elif excess_to_grid: 
+						reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_FEEDIN
+				else:
+					#available_solar_plus <= self.chargerate
+					# 3) There isn't enough solar and we are flagged MISSINGTOGRID -> use calculated charge rate.
+					#    (Wording note: Missing2Grid describes the punishment of missing energy to the grid - so TAKING energy from the grid ;-))
+					#    But, this state is dissallowed, if a Grid2Bat Restriction is active.
+					if missing_to_grid and not (w.restrictions & Restrictions.GRID2BAT): 
+						#FIXME SocDropIssue: When soc drops 2%, charging happens. if it's end of window, CHR spikes up. not nice.
+						#      Detect this happening, then use a dedicated chargestate with 10% of chargerate limit.
+						reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_ALLOW_GRID
+					
+					# 4) There isn't enough solar and we are flagged MISSINGTOBAT -> only use solar power that is availble.
+					#    This is self consume, until condition changes.
+					#    In case there is Grid2Bat restriction, this is our only option, even if the flag would indicate MISSINGTOGRID
+					elif available_solar_plus > 0 and (missing_to_bat or (w.restrictions & Restrictions.GRID2BAT)): 
+						reactive_strategy = ReactiveStrategy.SELFCONSUME_NO_GRID
+
+					# 5.) Ultimate case: No Grid charge possible, no solar. We can't charge. Therefore, the strategy best is to go idle. 
+					elif available_solar_plus <= 0 and (missing_to_bat or (w.restrictions & Restrictions.GRID2BAT)):
+						reactive_strategy = ReactiveStrategy.IDLE_NO_OPPORTUNITY
 		
 		else:
 			# if we are currently in any SCHEDULED_CHARGE_* State and our next window outlines an even higher target soc, 
-			# don't switch to idle, but keep a certain chargerate.
-			# FIXME: check Boskdobbe at 20.12 4am. It followed the "old" implementation of keeping the prior charge rate. 
-			#        using NEXT charge rate would have reduced the cr already.
-			#        window-transition hickup caused issues as well, having a 1 minute dump down to a low chargerate. 
-			#        So, apparently the best approach would be to keep current chargerate, but to fix the transition issues. 
-			if self._dbusservice["/DynamicEss/ReactiveStrategy"] in self.charge_states and next_window_higher_target_soc and not end_smooth_transition:
+			# don't switch to idle, but keep a certain chargerate. As soon as target_soc changes, this state has to be left.
+			if (self.iteration_change_tracker._previous_reactive_strategy in self.charge_states and next_window_higher_target_soc 
+	   			and self.iteration_change_tracker.target_soc_change == ChangeIndicator.NONE):
 				# keep current charge rate untouched.
 				# already targeting the new soc target of "next" window will cause a not smooth transition, if next window in slot 1 is outdated
 				# and the next window beeing pushed to slot 0 indicates another target soc.
-				# end_smooth_transition will be true, as soon as a new targetsoc is becoming effective.
 				reactive_strategy =  ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION
 			else:
 				# we are above or equal to target soc, or the charge histeresis has not yet kicked in from a prior state.
