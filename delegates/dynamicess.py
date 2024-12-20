@@ -70,6 +70,7 @@ class ReactiveStrategy(int, Enum):
 	SCHEDULED_MINIMUM_DISCHARGE = 13
 	SELFCONSUME_NO_GRID = 14
 	IDLE_NO_OPPORTUNITY = 15
+	UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC = 16 #FIXME Implement
 
 	ESS_LOW_SOC = 96						
 	SELFCONSUME_UNMAPPED_STATE = 97         
@@ -666,9 +667,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				self.active = 1 # Auto
 				self.errorcode = 0 # No error
 
-				#FIXME: Experimental: Set the OverheadTreatmentFlag, so roadmap will be more strict.
-				#       Absence of that flag would mean PREFERBATTERY
-				
+				#FIXME: Hardcoded Coping Flags for debugging				
 				# Excess Coping, required for trademode forced discharge, to be set by VRM later.
 				if (self.operating_mode == OperatingMode.TRADEMODE):
 					w.flags |= int(Flags.EXCESSTOGRID)
@@ -745,7 +744,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			self._dbusservice['/DynamicEss/ChargeRate'] = \
 				self._device.charge(w.flags, restrictions,
 				self.chargerate, w.allow_feedin)
-			return ReactiveStrategy.SCHEDULED_CHARGE_ALLOW_GRID #TODO Own state?
+			return ReactiveStrategy.SCHEDULED_CHARGE_ALLOW_GRID
 		else: # Discharge or idle
 			self.charge_hysteresis = 1
 			if self.soc - self.discharge_hysteresis > max(w.soc, self._device.minsoc): # Discharge
@@ -846,6 +845,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				#    (Wording note: Missing2Grid describes the punishment of missing energy to the grid - so TAKING energy from the grid ;-))
 				#    But, this state is dissallowed, if a Grid2Bat Restriction is active.
 				if missing_to_grid and not (w.restrictions & Restrictions.GRID2BAT): 
+					#FIXME SocDropIssue: When soc drops 2%, charging happens. if it's end of window, CHR spikes up. not nice.
+					#      Detect this happening, then use a dedicated chargestate with 10% of chargerate limit.
 					reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_ALLOW_GRID
 				
 				# 4) There isn't enough solar and we are flagged MISSINGTOBAT -> only use solar power that is availble.
@@ -860,10 +861,16 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		
 		else:
 			# if we are currently in any SCHEDULED_CHARGE_* State and our next window outlines an even higher target soc, 
-			# don't switch to idle, but keep current charge rate. (Else chargerate will drop to 0, when reaching target soc early)
+			# don't switch to idle, but keep a certain chargerate.
+			# FIXME: check Boskdobbe at 20.12 4am. It followed the "old" implementation of keeping the prior charge rate. 
+			#        using NEXT charge rate would have reduced the cr already.
+			#        window-transition hickup caused issues as well, having a 1 minute dump down to a low chargerate. 
+			#        So, apparently the best approach would be to keep current chargerate, but to fix the transition issues. 
 			if self._dbusservice["/DynamicEss/ReactiveStrategy"] in self.charge_states and next_window_higher_target_soc and not end_smooth_transition:
-				# calculate a chargerate that already targets the end of next window, as self.chargerate will be reseted, when there is a targetsoc change
-				self.update_chargerate(now, nw.stop, self.soc, nw.soc)
+				# keep current charge rate untouched.
+				# already targeting the new soc target of "next" window will cause a not smooth transition, if next window in slot 1 is outdated
+				# and the next window beeing pushed to slot 0 indicates another target soc.
+				# end_smooth_transition will be true, as soon as a new targetsoc is becoming effective.
 				reactive_strategy =  ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION
 			else:
 				# we are above or equal to target soc, or the charge histeresis has not yet kicked in from a prior state.
