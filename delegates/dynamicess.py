@@ -938,7 +938,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			# as soon as target_soc changes, this state has to be left. Cannot be done with grid2bat restriction.
 			if ((soc_change == ChangeIndicator.FALLING and
 	   			 target_soc_change == ChangeIndicator.NONE and
-				 self.soc + self.charge_hysteresis == w.soc and 
+				 self.soc + self.charge_hysteresis == w.soc - 1 and 
 				 not (w.restrictions & Restrictions.GRID2BAT)) or
 	   		    (self.iteration_change_tracker._previous_reactive_strategy == ReactiveStrategy.UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC and 
 		  		target_soc_change == ChangeIndicator.NONE)):
