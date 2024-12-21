@@ -800,9 +800,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			elif (self.operating_mode == OperatingMode.GREENMODE):
 				final_strategy = self._handle_green_mode(current_window, next_window, restrictions, now)
 
-			#done, reset iteration_change_tracker
-			self.iteration_change_tracker.done(final_strategy)
-
 		else:
 			# No matching windows
 			if self.active or self.errorcode != 3:
@@ -810,11 +807,12 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 	
 		#write out current override strategy to determine if the local system behaves "out of schedule" on purpose.
 		if self._dbusservice["/SystemState/LowSoc"] == 1:
-			self._dbusservice['/DynamicEss/ReactiveStrategy'] = ReactiveStrategy.ESS_LOW_SOC.value
-			self.iteration_change_tracker.done(ReactiveStrategy.ESS_LOW_SOC.value)
-		else:
-			self._dbusservice['/DynamicEss/ReactiveStrategy'] = final_strategy.value
-		
+			final_strategy= ReactiveStrategy.ESS_LOW_SOC
+			
+		#done, reset iteration_change_tracker
+		self._dbusservice['/DynamicEss/ReactiveStrategy'] = final_strategy.value
+		self.iteration_change_tracker.done(final_strategy)
+
 		#Publish the correleated DataSet. This is for making sure remote-tools get data that really correletes.
 		self._dbusservice['/DynamicEss/CorDataSet'] = "{{\"ts\":{0}, \"s\":{1}, \"chr\":{2}, \"ochr\":{3}}}".format(self.targetsoc or "null", self.soc or "null", self.chargerate or "null",self.override_chargerate or "null")
 
