@@ -59,6 +59,9 @@ class ChangeIndicator(int, Enum):
 	NONE = 0
 	RISING = 1
 	FALLING = 2
+	BECAME_TRUE = 3
+	BECAME_FALSE = 4
+	CHANGED = 5
 
 class ReactiveStrategy(int, Enum):
 	#do not re-number, external applications rely on this mapping.
@@ -91,14 +94,43 @@ class IterationChangeTracker(object):
 	def __init__(self):
 		self._current_soc = None
 		self._current_target_soc = None
+		self._current_nw_tsoc_higher = None
 
+		self._previous_reactive_strategy = None
 		self._previous_soc = None
 		self._previous_target_soc = None
-		self._previous_reactive_strategy = None
+		self._previous_nw_tsoc_higher = None
 		
-	def input(self, soc, target_soc):
+	def input(self, soc, target_soc, nw_tsoc_higher):
 		self._current_soc = soc
 		self._current_target_soc = target_soc
+		self._current_nw_tsoc_higher = nw_tsoc_higher
+
+		#log changes as well.
+		tme = datetime.today().strftime('%H:%M:%S')
+		if self.soc_change() != ChangeIndicator.NONE:
+			logger.log(logging.INFO, "{0}: detected soc change from {1} to {2}, identifiedas: {3}".format(
+				tme,
+				self._previous_soc if self._previous_soc is not None else "None",
+				self._current_soc,
+				self.soc_change().name
+			))
+
+		if self.target_soc_change() != ChangeIndicator.NONE:
+			logger.log(logging.INFO, "{0}: detected target soc change from {1} to {2}, identifiedas: {3}".format(
+				tme,
+				self._previous_target_soc if self._previous_target_soc is not None else "None",
+				self._current_target_soc,
+				self.target_soc_change().name
+			))
+		
+		if self.nw_tsoc_higher_change() != ChangeIndicator.NONE:
+			logger.log(logging.INFO, "{0}: detected nw higher tsoc change from {1} to {2}, identifiedas: {3}".format(
+				tme,
+				self._previous_nw_tsoc_higher if self._previous_nw_tsoc_higher is not None else "None",
+				self._current_nw_tsoc_higher,
+				self.nw_tsoc_higher_change().name
+			))
 
 	def soc_change(self) -> ChangeIndicator:
 		if self._current_soc is None or self._current_soc == self._previous_soc:
@@ -117,12 +149,31 @@ class IterationChangeTracker(object):
 			return ChangeIndicator.RISING
 		elif self._current_target_soc < self._previous_target_soc:
 			return ChangeIndicator.FALLING
+	
+	def nw_tsoc_higher_change(self) -> ChangeIndicator:
+		if self._current_nw_tsoc_higher is None or self._current_nw_tsoc_higher == self._previous_nw_tsoc_higher:
+			return ChangeIndicator.NONE
+		
+		if self._current_nw_tsoc_higher and (self._previous_nw_tsoc_higher is None or not self._previous_nw_tsoc_higher):
+			return ChangeIndicator.BECAME_TRUE
+		elif not self._current_nw_tsoc_higher and (self._previous_nw_tsoc_higher is None or self._previous_nw_tsoc_higher):
+			return ChangeIndicator.BECAME_FALSE
 
 	def done(self, reactive_strategy):
 		self._previous_soc = self._current_soc
 		self._previous_target_soc = self._current_target_soc
+		self._previous_nw_tsoc_higher = self._current_nw_tsoc_higher
 		self._current_soc = None
 		self._current_target_soc = None
+		self._current_nw_tsoc_higher = None
+
+		if (self._previous_reactive_strategy != reactive_strategy):
+			tme = datetime.today().strftime('%H:%M:%S')
+			logger.log(logging.INFO, "{0}: Strategy switch from {1} to {2}".format(
+				tme,
+				self._previous_reactive_strategy.name if self._previous_reactive_strategy is not None else "None", 
+				reactive_strategy.name))
+
 		self._previous_reactive_strategy = reactive_strategy
 		
 		
@@ -743,9 +794,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					next_window = w
 					break # out of for loop
 
-			#pass new values to iteration change tracker. 
-			self.iteration_change_tracker.input(self.soc, self.targetsoc)
-
 			if (self.operating_mode == OperatingMode.TRADEMODE):
 				#FIXME: Experimental: Most recent version of the handle-method should be 100% suitable for trademode, with correct copping flags.
 				final_strategy = self._handle_green_mode(current_window, next_window, restrictions, now)
@@ -764,6 +812,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		#write out current override strategy to determine if the local system behaves "out of schedule" on purpose.
 		if self._dbusservice["/SystemState/LowSoc"] == 1:
 			self._dbusservice['/DynamicEss/ReactiveStrategy'] = ReactiveStrategy.ESS_LOW_SOC.value
+			self.iteration_change_tracker.done(ReactiveStrategy.ESS_LOW_SOC.value)
 		else:
 			self._dbusservice['/DynamicEss/ReactiveStrategy'] = final_strategy.value
 		
@@ -831,14 +880,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# lower the available acpv without conversion losses.
 
 		# FIXME: Debug log changes detected. 
-		soc_change = self.iteration_change_tracker.soc_change()
-		target_soc_change = self.iteration_change_tracker.target_soc_change()
-
-		if (soc_change != ChangeIndicator.NONE):
-			logger.log(logging.INFO, "Detected a soc change from {0} to {1} identified as: {2}".format(self.iteration_change_tracker._previous_soc, self.iteration_change_tracker._current_soc, soc_change.name))
-
-		if (target_soc_change != ChangeIndicator.NONE):
-			logger.log(logging.INFO, "Detected a target soc change from {0} to {1} identified as: {2}".format(self.iteration_change_tracker._previous_target_soc, self.iteration_change_tracker._current_target_soc, target_soc_change.name))
+		
 
 		available_solar_plus = 0
 		direct_acpv_consume = min(self._device.acpv or 0, self._device.consumption)
@@ -854,6 +896,11 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 		self._dbusservice["/DynamicEss/AvailableOverhead"] = available_solar_plus
 		next_window_higher_target_soc = nw is not None and (nw.soc > w.soc) and nw.strategy == Strategy.TARGETSOC
+
+		#pass new values to iteration change tracker. 
+		self.iteration_change_tracker.input(self.soc, self.targetsoc, next_window_higher_target_soc)
+		soc_change = self.iteration_change_tracker.soc_change()
+		target_soc_change = self.iteration_change_tracker.target_soc_change()
 
 		# When we have a Scheduled-Selfconsume, we can ommit to walk through the decission tree. 
 		if w.strategy == Strategy.SELFCONSUME:
@@ -892,12 +939,12 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			# soc. If the soc was FALLING, it means we have most likely been idling and dropped bellow target_soc. In that case, we want to 
 			# avoid spiky charge peaks (can happen close to window end) but rather catch up to target soc at 10% of chargelimit.
 			# as soon as target_soc changes, this state has to be left. Cannot be done with grid2bat restriction.
-			if ((self.iteration_change_tracker.soc_change() == ChangeIndicator.FALLING and
-	   			 self.iteration_change_tracker.target_soc_change() == ChangeIndicator.NONE and
+			if ((soc_change == ChangeIndicator.FALLING and
+	   			 target_soc_change == ChangeIndicator.NONE and
 				 self.soc + self.charge_hysteresis == w.soc and 
 				 not (w.restrictions & Restrictions.GRID2BAT)) or
 	   		    (self.iteration_change_tracker._previous_reactive_strategy == ReactiveStrategy.UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC and 
-		  		self.iteration_change_tracker.target_soc_change() == ChangeIndicator.NONE)):
+		  		target_soc_change == ChangeIndicator.NONE)):
 				# Yes, this turned into a charge-window by a dropping soc. (limit is in kW, therefore * 1000 / 10) 
 				self.override_chargerate = self.battery_charge_limit * 100
 				reactive_strategy = ReactiveStrategy.UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC
@@ -943,12 +990,13 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		else:
 			# if we are currently in any SCHEDULED_CHARGE_* State and our next window outlines an even higher target soc, 
 			# don't switch to idle, but keep a certain chargerate. As soon as target_soc changes, this state has to be left.
-			if (self.iteration_change_tracker._previous_reactive_strategy in self.charge_states and next_window_higher_target_soc 
-	   			and self.iteration_change_tracker.target_soc_change == ChangeIndicator.NONE):
+			if (self.iteration_change_tracker._previous_reactive_strategy in self.charge_states and 
+	   			next_window_higher_target_soc and
+	   			target_soc_change == ChangeIndicator.NONE):
 				# keep current charge rate untouched.
 				# already targeting the new soc target of "next" window will cause a not smooth transition, if next window in slot 1 is outdated
 				# and the next window beeing pushed to slot 0 indicates another target soc.
-				reactive_strategy =  ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION
+				reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION
 			else:
 				# we are above or equal to target soc, or the charge histeresis has not yet kicked in from a prior state.
 				self.charge_hysteresis = 1
