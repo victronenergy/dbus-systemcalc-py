@@ -120,7 +120,7 @@ class IterationChangeTracker(object):
 			logger.log(logging.INFO, "{0}: detected target soc change from {1} to {2}, identifiedas: {3}".format(
 				tme,
 				self._previous_target_soc if self._previous_target_soc is not None else "None",
-				self._current_target_soc,
+				self._current_target_soc if self._current_target_soc is not None else "None",
 				self.target_soc_change().name
 			))
 		
@@ -142,13 +142,16 @@ class IterationChangeTracker(object):
 			return ChangeIndicator.FALLING
 
 	def target_soc_change(self) -> ChangeIndicator:
-		if self._current_target_soc is None or self._current_target_soc == self._previous_target_soc:
-			return ChangeIndicator.NONE
+		#handle None as 0 for indication
+		ps = self._previous_target_soc or 0
+		cs = self._current_target_soc or 0
 		
-		if self._previous_target_soc is None or self._current_target_soc > self._previous_target_soc:
+		if ps < cs:
 			return ChangeIndicator.RISING
-		elif self._current_target_soc < self._previous_target_soc:
+		elif ps > cs:
 			return ChangeIndicator.FALLING
+	
+		return ChangeIndicator.NONE
 	
 	def nw_tsoc_higher_change(self) -> ChangeIndicator:
 		if self._current_nw_tsoc_higher is None or self._current_nw_tsoc_higher == self._previous_nw_tsoc_higher:
