@@ -278,7 +278,8 @@ class VebusDevice(EssDevice):
 		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
 		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
 
-		if flags & Flags.FASTCHARGE or rate is None:
+		# #FIXME Fast charge should bee obsolete. discuss.
+		if rate is None:
 			self._set_charge_power(None)
 			return None
 		else:
@@ -389,20 +390,15 @@ class MultiRsDevice(EssDevice):
 		return 0
 
 	def charge(self, flags, restrictions, rate, allow_feedin):
-		batteryimport = not restrictions & 2
-
 		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin))
 		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
-		if batteryimport:
-			if rate is None or (flags & Flags.FASTCHARGE):
-				self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', 15000)
-			else:
-				self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', max(0, rate))
+		
+		#FIXME Fast charge should bee obsolete. discuss.
+		if rate is None:
+			self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', 15000)
 		else:
-			# No charging from grid, allow only acpv to be converted.
-			# FIXME: only acpv is wrong, this does not allow to charge amounts BELLOW acpv, when import is restricted.
-			self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', self.acpv)
-
+			self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', max(0, rate))
+	
 		return rate
 
 	def discharge(self, flags, restrictions, rate, allow_feedin):
@@ -976,8 +972,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					#    (Wording note: Missing2Grid describes the punishment of missing energy to the grid - so TAKING energy from the grid ;-))
 					#    But, this state is dissallowed, if a Grid2Bat Restriction is active.
 					if missing_to_grid and not (w.restrictions & Restrictions.GRID2BAT): 
-						#FIXME SocDropIssue: When soc drops 2%, charging happens. if it's end of window, CHR spikes up. not nice.
-						#      Detect this happening, then use a dedicated chargestate with 10% of chargerate limit.
 						reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_ALLOW_GRID
 					
 					# 4) There isn't enough solar and we are flagged MISSINGTOBAT -> only use solar power that is availble.
