@@ -755,7 +755,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice['/DynamicEss/LastScheduledStart'] = None if start is None else int(datetime.timestamp(start))
 		self._dbusservice['/DynamicEss/LastScheduledEnd'] = None if stop is None else int(datetime.timestamp(stop))
 
-		final_strategy = "NO_WINDOW"
+		final_strategy = ReactiveStrategy.NO_WINDOW
 		current_window = None
 		next_window = None
 
@@ -877,8 +877,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# lower the available acpv without conversion losses.
 
 		# FIXME: Debug log changes detected. 
-		
-
 		available_solar_plus = 0
 		direct_acpv_consume = min(self._device.acpv or 0, self._device.consumption)
 		remaining_ac_pv = max(0, (self._device.acpv or 0) - direct_acpv_consume)
