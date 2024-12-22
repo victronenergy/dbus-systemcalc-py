@@ -515,11 +515,11 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			("dess_restrictions", path + "/Restrictions", 0, 0, 3),
 			("dess_fullchargeinterval", path + "/FullChargeInterval", 14, 0, 0),
 			("dess_fullchargeduration", path + "/FullChargeDuration", 2, 0, 0),
-			("dess_operatingmode", path + '/OperatingMode', -1, 0, 2),
-			("dess_batterychargelimit", path + '/BatteryChargeLimit', -1, 0, 0),
-			("dess_batterydischargelimit", path + '/BatteryDischargeLimit', -1, 0, 0),
-			("dess_gridimportlimit", path + '/GridImportLimit', -1, 0, 0),
-			("dess_gridexportlimit", path + '/GridExportLimit', -1, 0, 0),
+			("dess_operatingmode", path + '/OperatingMode', -1, -1, 2),
+			("dess_batterychargelimit", path + '/BatteryChargeLimit', -1, -1, 9999),
+			("dess_batterydischargelimit", path + '/BatteryDischargeLimit', -1, -1, 9999),
+			("dess_gridimportlimit", path + '/GridImportLimit', -1, -1, 9999),
+			("dess_gridexportlimit", path + '/GridExportLimit', -1, -1, 9999),
 		]
 
 		for i in range(NUM_SCHEDULES):
@@ -850,6 +850,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self.targetsoc = w.soc
 
 		# When 100% is requested, don't go into idle mode
+		# FIXME: If we stick with own handler for trade-mode, it should have clear reactive_strategies to respond with.
 		if self.soc + self.charge_hysteresis < w.soc or w.soc >= 100: # Charge
 			self.charge_hysteresis = 0
 			self.discharge_hysteresis = 1
