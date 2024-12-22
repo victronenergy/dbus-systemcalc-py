@@ -41,6 +41,7 @@ class Strategy(int, Enum):
 	SELFCONSUME = 1
 
 class OperatingMode(int, Enum):
+	UNKNOWN = -1
 	TRADEMODE = 0
 	GREENMODE = 1
 
@@ -82,6 +83,7 @@ class ReactiveStrategy(int, Enum):
 	IDLE_NO_OPPORTUNITY = 15
 	UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC = 16 #FIXME Implement
 
+	UNKNOWN_OPERATING_MODE = 95
 	ESS_LOW_SOC = 96						
 	SELFCONSUME_UNMAPPED_STATE = 97         
 	SELFCONSUME_UNPREDICTED = 98			
@@ -472,6 +474,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self.selfconsume_states = (ReactiveStrategy.SELFCONSUME_ACCEPT_CHARGE, ReactiveStrategy.SELFCONSUME_ACCEPT_DISCHARGE, ReactiveStrategy.SELFCONSUME_NO_GRID)
 		self.idle_states = (ReactiveStrategy.IDLE_SCHEDULED_FEEDIN, ReactiveStrategy.IDLE_MAINTAIN_SURPLUS, ReactiveStrategy.IDLE_MAINTAIN_TARGETSOC, ReactiveStrategy.IDLE_NO_OPPORTUNITY)
 		self.discharge_states = (ReactiveStrategy.SCHEDULED_DISCHARGE, ReactiveStrategy.SCHEDULED_MINIMUM_DISCHARGE)
+		self.error_selfconsume_states = (ReactiveStrategy.NO_WINDOW, ReactiveStrategy.UNKNOWN_OPERATING_MODE, ReactiveStrategy.SELFCONSUME_UNPREDICTED, ReactiveStrategy.SELFCONSUME_UNMAPPED_STATE)
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(DynamicEss, self).set_sources(dbusmonitor, settings, dbusservice)
@@ -800,6 +803,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			elif (self.operating_mode == OperatingMode.GREENMODE):
 				final_strategy = self._handle_green_mode(current_window, next_window, restrictions, now)
 
+			elif (self.operating_mode == OperatingMode.UNKNOWN):
+				final_strategy = ReactiveStrategy.UNKNOWN_OPERATING_MODE
+
 		else:
 			# No matching windows
 			if self.active or self.errorcode != 3:
@@ -815,6 +821,11 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 		#Publish the correleated DataSet. This is for making sure remote-tools get data that really correletes.
 		self._dbusservice['/DynamicEss/CorDataSet'] = "{{\"ts\":{0}, \"s\":{1}, \"chr\":{2}, \"ochr\":{3}}}".format(self.targetsoc or "null", self.soc or "null", self.chargerate or "null",self.override_chargerate or "null")
+
+		if final_strategy.value in self.error_selfconsume_states:
+			#Do at least regular ESS.
+			self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
+			self._device.self_consume(restrictions, w.allow_feedin)
 
 		return True
 
@@ -1053,8 +1064,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		#Enter self consume, as conditions may change and situation will resolve. 
 		#(This would need to be resolved, there shouldn't be any unpredicted combination of parameters)
 		if reactive_strategy is None:
-			self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
-			self._device.self_consume(restrictions, w.allow_feedin)
 			return ReactiveStrategy.SELFCONSUME_UNPREDICTED
 		else:
 			#depending on the reactive strategy choosen, system behaviour may be the same - just different value set
@@ -1080,8 +1089,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				#This should never happen, it means that there is a state that is not mapped to a reaction. 
 				#We enter self consume and use a own state for that :P 
 				#Doing at least self consume will make the system leave this unmapped state sooner or later for sure and not get stuck.
-				self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
-				self._device.self_consume(restrictions, w.allow_feedin)
 				return ReactiveStrategy.SELFCONSUME_UNMAPPED_STATE
 
 			return reactive_strategy
