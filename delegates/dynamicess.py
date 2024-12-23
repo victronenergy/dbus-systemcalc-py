@@ -399,7 +399,7 @@ class MultiRsDevice(EssDevice):
 		if rate is None:
 			self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', 15000)
 		else:
-			self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', max(0, rate))
+			self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', max(0.0, rate - self.pvpower))
 	
 		return rate
 
