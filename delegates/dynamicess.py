@@ -10,6 +10,7 @@ from delegates.batterylife import State as BatteryLifeState
 from delegates.chargecontrol import ChargeControl
 from enum import Enum
 from time import time
+import json
 import logging
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,7 @@ class ReactiveStrategy(int, Enum):
 	SCHEDULED_MINIMUM_DISCHARGE = 13
 	SELFCONSUME_NO_GRID = 14
 	IDLE_NO_OPPORTUNITY = 15
-	UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC = 16 #FIXME Implement
+	UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC = 16 
 
 	UNKNOWN_OPERATING_MODE = 95
 	ESS_LOW_SOC = 96						
@@ -257,6 +258,7 @@ class VebusDevice(EssDevice):
 			'/Overrides/FeedInExcess', 2 if allow_feedin else 1)
 
 	def _set_charge_power(self, v):
+		#FIXME: Why 50 here?
 		Dvcc.instance.internal_maxchargepower = None if v is None else max(v, 50)
 
 	def check_conditions(self):
@@ -575,7 +577,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		'''
 		#TODO: Method implememented, usage defered. We agreed to first start to see, how the dess_efficiency will look like for various systems, 
 		#      before starting to actively use it as source.
-		return min(1.0, ((1 - self._settings["dess_efficiency"] / 100.0) / -2.0) + 1)
+		return min(1.0, ((1 - self._settings["dess_efficiency"] / 100.0) / -2.0) + 1.0)
 	
 	def device_added(self, service, instance, *args):
 		if service.startswith('com.victronenergy.vebus.'):
@@ -820,7 +822,14 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self.iteration_change_tracker.done(final_strategy)
 
 		#Publish the correleated DataSet. This is for making sure remote-tools get data that really correletes.
-		self._dbusservice['/DynamicEss/CorDataSet'] = "{{\"ts\":{0}, \"s\":{1}, \"chr\":{2}, \"ochr\":{3}}}".format(self.targetsoc or "null", self.soc or "null", self.chargerate or "null",self.override_chargerate or "null")
+		cor_data_set = {}
+		cor_data_set["ts"] = self.targetsoc
+		cor_data_set["s"] = self.soc
+		cor_data_set["chr"] = self.chargerate
+		cor_data_set["ochr"] = self.override_chargerate
+		cor_data_set["rs"] = final_strategy.value if final_strategy is not None else None
+
+		self._dbusservice['/DynamicEss/CorDataSet'] = json.dumps(cor_data_set)
 
 		if final_strategy.value in self.error_selfconsume_states:
 			#Do at least regular ESS.
@@ -888,7 +897,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# However it will be more precice to only consider the "available ac pv" with 0.9. Direct Consumption will basically
 		# lower the available acpv without conversion losses.
 
-		# FIXME: Debug log changes detected. 
 		available_solar_plus = 0
 		direct_acpv_consume = min(self._device.acpv or 0, self._device.consumption)
 		remaining_ac_pv = max(0, (self._device.acpv or 0) - direct_acpv_consume)
@@ -913,6 +921,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		if w.strategy == Strategy.SELFCONSUME:
 			self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
 			self.targetsoc = None
+
 			#self consume is implicit All2Bat, no matter what window is eventually requesting.
 			self._dbusservice['/DynamicEss/Flags'] = ((int(w.flags) & ~int(Flags.EXCESSTOGRID)) & ~int(Flags.MISSINGTOGRID)) 
 			self._device.self_consume(restrictions, w.allow_feedin)
