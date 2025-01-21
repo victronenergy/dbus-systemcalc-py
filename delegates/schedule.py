@@ -385,8 +385,9 @@ class ScheduledCharging(SystemCalcDelegate, ChargeControl):
 					device.maxdischargepower = max(1, round(self.pvpower*scale))
 				break
 		else:
-			device.forcecharge = False
-			device.maxdischargepower = None
+			if self.has_control():
+				device.forcecharge = False
+				device.maxdischargepower = None
 			self.active = False
 			self.release_control()
 			self._dbusservice['/Control/ScheduledSoc'] = None
