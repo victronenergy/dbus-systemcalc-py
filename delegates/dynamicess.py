@@ -38,8 +38,10 @@ ERRORS = {
 }
 
 class Strategy(int, Enum):
-	TARGETSOC = 0
-	SELFCONSUME = 1
+	TARGETSOC = 0		#ME-Coping: grid / grid
+	SELFCONSUME = 1     #ME-Coping: bat  / bat
+	PROBATTERY = 2      #ME-Coping: grid / bat
+	PROGRID = 3         #ME-Coping: bat  / grid
 
 class OperatingMode(int, Enum):
 	UNKNOWN = -1
@@ -49,8 +51,6 @@ class OperatingMode(int, Enum):
 class Flags(int, Enum):
 	NONE = 0
 	FASTCHARGE = 1
-	EXCESSTOGRID = 2 #send excess to grid, if we have any.
-	MISSINGTOGRID = 4 #get missing from grid, if we need any.
 
 class Restrictions(int, Enum):
 	NONE = 0
@@ -282,8 +282,15 @@ class VebusDevice(EssDevice):
 		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
 		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
 
-		# #FIXME Fast charge should bee obsolete. discuss.
-		if rate is None:
+		# Fast charge, or controlled charge? 
+		fast_charge_requested = flags & int(Flags.FASTCHARGE)
+		fast_charge_clearence = True #Defaults to true, if we have no limit or can't determine technical limits, we just go for it (legacy behaviour). 
+
+		if fast_charge_requested and self.delegate.battery_charge_limit is not None and self.delegate.get_charge_power_capability() is not None:
+			# limits and technical capabilities are known. So, only apply fast charge, if limit would be implicit obeyed.
+			fast_charge_clearence = self.delegate.get_charge_power_capability() <= self.delegate.battery_charge_limit * 1000
+
+		if rate is None or (fast_charge_requested and fast_charge_clearence):
 			self._set_charge_power(None)
 			return None
 		else:
@@ -484,7 +491,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		#               2 = supports self-consumption strategy
 		#               4 = supports fast-charge strategy
 		#               8 = values set on Venus (Battery balancing, capacity, operation mode)
-		self._dbusservice.add_path('/DynamicEss/Capabilities', value=15)
+		#              16 = system is able to handle split-coping flags. 
+		self._dbusservice.add_path('/DynamicEss/Capabilities', value=31)
 		self._dbusservice.add_path('/DynamicEss/Active', value=0,
 			gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
 		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=None,
@@ -569,14 +577,38 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			break
 		else:
 			self._device = None
+
+	def get_charge_power_capability(self) -> float:
+		'''
+		  Determines the systems maximum battery charge capability in Watts.
+		  If the ccl and cvl fails to be determined, then None is returned.
+		  None is to be distinguished from 0 (which means no charging allowed by the bms)
+		'''
+
+		vebus = self._dbusservice["/VebusService"]
+		battery = self._dbusservice["/ActiveBmsService"]
+
+		logger.log(logging.INFO, "Vebus Service: {}, Battery Service: {}".format(vebus, battery))
+
+		# first, try to obtain values from the bms service.
+		if battery is not None and battery != "":
+			ccl = self._dbusmonitor.get_value(battery, '/Info/MaxChargeCurrent')
+			cvl = self._dbusmonitor.get_value(battery, '/Info/MaxChargeVoltage')
+
+		# TODO determine for unmanaged batteries? 
+		logger.log(logging.INFO, "CCL: {}, CVL: {}".format(ccl, cvl))
+
+		if (ccl is not None and cvl is not None):
+			logger.log(logging.INFO, "=> That's {} Watts".format(ccl * cvl))
+			return ccl * cvl
+		
+		return None
 	
 	@property
 	def oneway_efficency(self):
 		''' When charging from AC, only half of the efficency-losses have to be considered
 			So, with an overall system efficency of 0.8, the charging efficency would be 0.9 and so on.
 		'''
-		#TODO: Method implememented, usage defered. We agreed to first start to see, how the dess_efficiency will look like for various systems, 
-		#      before starting to actively use it as source.
 		return min(1.0, ((1 - self._settings["dess_efficiency"] / 100.0) / -2.0) + 1.0)
 	
 	def device_added(self, service, instance, *args):
@@ -774,12 +806,16 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 				#FIXME: Hardcoded Coping Flags for debugging				
 				# Excess Coping, required for trademode forced discharge, to be set by VRM later.
-				if (self.operating_mode == OperatingMode.TRADEMODE):
-					w.flags |= int(Flags.EXCESSTOGRID)
+				logger.log(logging.INFO, "Detected Window Strategy: {}".format(w.strategy))
+				if (w.strategy != int(Strategy.SELFCONSUME)):
+					#override strategy with the required one. (temp)
+					if (self.operating_mode == int(OperatingMode.TRADEMODE)):
+						w.strategy = int(Strategy.TARGETSOC)
+					else:
+						w.strategy = int(Strategy.PROBATTERY)
+						
 
-				# Missing Coping, required for forced grid charge, to be set by VRM later.
-				w.flags |= int(Flags.MISSINGTOGRID)
-
+				logger.log(logging.INFO, "Override Window Strategy: {}".format(w.strategy))
 				current_window = w
 				restrictions = w.restrictions | self.restrictions
 				
@@ -798,12 +834,12 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					next_window = w
 					break # out of for loop
 
+		    #proably only one common handler (_determine_reactive_strategy) needed for either operating mode. 
 			if (self.operating_mode == OperatingMode.TRADEMODE):
-				#FIXME: Experimental: Most recent version of the handle-method should be 100% suitable for trademode, with correct copping flags.
-				final_strategy = self._handle_green_mode(current_window, next_window, restrictions, now)
+				final_strategy = self._determine_reactive_strategy(current_window, next_window, restrictions, now)
 
 			elif (self.operating_mode == OperatingMode.GREENMODE):
-				final_strategy = self._handle_green_mode(current_window, next_window, restrictions, now)
+				final_strategy = self._determine_reactive_strategy(current_window, next_window, restrictions, now)
 
 			elif (self.operating_mode == OperatingMode.UNKNOWN):
 				final_strategy = ReactiveStrategy.UNKNOWN_OPERATING_MODE
@@ -837,55 +873,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			self._device.self_consume(restrictions, w.allow_feedin)
 
 		return True
-
-	def _handle_trade_mode(self, w: DynamicEssWindow, nw: DynamicEssWindow, restrictions, now) -> ReactiveStrategy:
-		'''
-			Logic to be applied in Trademode. It is strictly soc based. Returns the choosen strategy as string.
-		'''
-		
-		if w.strategy == Strategy.SELFCONSUME:
-			self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
-			self.targetsoc = None
-			self._dbusservice['/DynamicEss/Flags'] = ((w.flags & ~int(Flags.EXCESSTOGRID)) & ~int(Flags.MISSINGTOGRID)) #self consume is implicit All2Bat
-			self._device.self_consume(restrictions, w.allow_feedin)
-			return ReactiveStrategy.SCHEDULED_SELFCONSUME
-
-		# Below here, strategy is Strategy.TARGETSOC
-		# round targetsoc.
-		if self.targetsoc  != w.soc:
-			self.chargerate = None # For recalculation
-		
-		self._dbusservice['/DynamicEss/Flags'] = w.flags
-		self.targetsoc = w.soc
-
-		# When 100% is requested, don't go into idle mode
-		# FIXME: If we stick with own handler for trade-mode, it should have clear reactive_strategies to respond with.
-		if self.soc + self.charge_hysteresis < w.soc or w.soc >= 100: # Charge
-			self.charge_hysteresis = 0
-			self.discharge_hysteresis = 1
-			self.update_chargerate(now, w.stop, self.soc, w.soc)
-			self._dbusservice['/DynamicEss/ChargeRate'] = \
-				self._device.charge(w.flags, restrictions,
-				self.chargerate, w.allow_feedin)
-			return ReactiveStrategy.SCHEDULED_CHARGE_ALLOW_GRID
-		else: # Discharge or idle
-			self.charge_hysteresis = 1
-			if self.soc - self.discharge_hysteresis > max(w.soc, self._device.minsoc): # Discharge
-				self.discharge_hysteresis = 0
-				self.update_chargerate(now, w.stop, self.soc, w.soc)
-				self._dbusservice['/DynamicEss/ChargeRate'] = \
-					self._device.discharge(w.flags, restrictions,
-					self.chargerate, w.allow_feedin)
-				return ReactiveStrategy.SCHEDULED_DISCHARGE
-			else: # battery idle
-				# SOC/target-soc needs to move 1% to move out of idle
-				# zone
-				self.discharge_hysteresis = 1
-				self._dbusservice['/DynamicEss/ChargeRate'] = \
-					self._device.idle(w.allow_feedin)
-				return ReactiveStrategy.IDLE_MAINTAIN_TARGETSOC
 				
-	def _handle_green_mode(self, w: DynamicEssWindow, nw: DynamicEssWindow, restrictions, now) -> ReactiveStrategy:
+	def _determine_reactive_strategy(self, w: DynamicEssWindow, nw: DynamicEssWindow, restrictions, now) -> ReactiveStrategy:
 		'''
 			Logic to be applied in Greenmode. Micro changes in strategy are applied to optimize solar gain / minimize grid pull. Returns the choosen strategy.
 			Strategy has to be determined in a 100% deterministic way. After it has been determined the proper system reaction with different variable sets
@@ -910,7 +899,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			available_solar_plus = (self._device.pvpower or 0) - direct_dcpv_consume / self.oneway_efficency
 
 		self._dbusservice["/DynamicEss/AvailableOverhead"] = available_solar_plus
-		next_window_higher_target_soc = nw is not None and (nw.soc > w.soc) and nw.strategy == Strategy.TARGETSOC
+		next_window_higher_target_soc = nw is not None and (nw.soc > w.soc) and nw.strategy != Strategy.SELFCONSUME
 
 		#pass new values to iteration change tracker. 
 		self.iteration_change_tracker.input(self.soc, self.targetsoc, next_window_higher_target_soc)
@@ -922,8 +911,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
 			self.targetsoc = None
 
-			#self consume is implicit All2Bat, no matter what window is eventually requesting.
-			self._dbusservice['/DynamicEss/Flags'] = ((int(w.flags) & ~int(Flags.EXCESSTOGRID)) & ~int(Flags.MISSINGTOGRID)) 
 			self._device.self_consume(restrictions, w.allow_feedin)
 			return ReactiveStrategy.SCHEDULED_SELFCONSUME
 
@@ -939,8 +926,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self.targetsoc = w.soc 
 		self._dbusservice['/DynamicEss/Flags'] = w.flags
 		
-		excess_to_grid = bool((w.flags & Flags.EXCESSTOGRID) > 0)
-		missing_to_grid = bool((w.flags & Flags.MISSINGTOGRID) > 0)
+		excess_to_grid = (w.strategy == Strategy.PROGRID) or (w.strategy == Strategy.TARGETSOC)
+		missing_to_grid = (w.strategy == Strategy.TARGETSOC) or (w.strategy == Strategy.PROBATTERY)
 		excess_to_bat = not excess_to_grid
 		missing_to_bat = not missing_to_grid
 
