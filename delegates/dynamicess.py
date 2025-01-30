@@ -804,18 +804,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				self.active = 1 # Auto
 				self.errorcode = 0 # No error
 
-				#FIXME: Hardcoded Coping Flags for debugging				
-				# Excess Coping, required for trademode forced discharge, to be set by VRM later.
-				logger.log(logging.INFO, "Detected Window Strategy: {}".format(w.strategy))
-				if (w.strategy != int(Strategy.SELFCONSUME)):
-					#override strategy with the required one. (temp)
-					if (self.operating_mode == int(OperatingMode.TRADEMODE)):
-						w.strategy = int(Strategy.TARGETSOC)
-					else:
-						w.strategy = int(Strategy.PROBATTERY)
-						
-
-				logger.log(logging.INFO, "Override Window Strategy: {}".format(w.strategy))
 				current_window = w
 				restrictions = w.restrictions | self.restrictions
 				
