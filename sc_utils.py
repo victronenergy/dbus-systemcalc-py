@@ -1,5 +1,5 @@
 from functools import update_wrapper
-from collections import Mapping
+from collections.abc import Mapping
 
 VictronServicePrefix = 'com.victronenergy'
 
