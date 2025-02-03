@@ -304,7 +304,7 @@ class VebusDevice(EssDevice):
 			return rate
 
 	def discharge(self, flags, restrictions, rate, allow_feedin):
-		batteryexport = not restrictions & int(Restrictions.BAT2GRID)
+		batteryexport = not (restrictions & int(Restrictions.BAT2GRID))
 
 		self._set_feedin(allow_feedin)
 		self._set_charge_power(None)
@@ -320,10 +320,13 @@ class VebusDevice(EssDevice):
 				self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
 				return None
 			else:
-				self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
-					(rate + self.pvpower if rate else 1.0) \
-					if batteryexport \
-					else self.pvpower + self.consumption + 1.0) # 1.0 to allow selling overvoltage
+				if (batteryexport):
+					self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
+						((rate + self.pvpower) if rate else 1.0)) # 1.0 to allow selling overvoltage
+				else:
+					# this may lead to feedin anyway, but it then is "feedin of solar", while battery is only backing loads. 
+					self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
+						(self.pvpower + self.consumption + 1.0)) # 1.0 to allow selling overvoltage
 				return rate
 			
 		else:
@@ -741,11 +744,16 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				elif start_soc > end_soc:
 					chargerate = chargerate if self.battery_discharge_limit is None else min(chargerate, self.battery_discharge_limit * 1000)
 
-				self.chargerate = chargerate if self.chargerate is None else max(self.chargerate, chargerate)
+				self.chargerate = chargerate if self.chargerate is None else max(abs(self.chargerate), chargerate)
 				self.prevsoc = self.soc
 
 			except ZeroDivisionError:
 				self.chargerate = None
+		
+		#chargerate should be negative, if discharge-case to fit into maths elsewhere.
+		#discharge_method then has to handle accordingly.
+		if (end_soc < start_soc and self.chargerate is not None):
+			self.chargerate = abs(self.chargerate) * -1
 		
 		self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate
 
@@ -1002,16 +1010,19 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					# if we are flagged EXESSTOGRID and MISSINGTOGRID, perform a strict discharge, based on soc difference.
 					# Any imprecission shall be handled by the grid
 					# not allowed with bat2grid restriction
+					#FIXME: Discharge logic is not yet 100%. Restrictions do not apply as expected in excess_to_grid case. 
+					#       When we have a bat2grid restriction, we should discharge at full consumption, feeding in 100% of solar production. 
 					if self.soc - self.discharge_hysteresis > max(w.soc, self._device.minsoc) and excess_to_grid and missing_to_grid \
-						and not self.restrictions & Restrictions.BAT2GRID:
+						and not (int(restrictions) & int(Restrictions.BAT2GRID)):
 						self.update_chargerate(now, w.stop, self.soc, w.soc)
 						reactive_strategy = ReactiveStrategy.SCHEDULED_DISCHARGE
 
 					# if flags are EXCESSTOGRID and MISSINGTOBAT, that means: keep a MINIMUM dischargerate, but allow to discharge more, if consumption is higher.
 					# not allowed with bat2grid restriction
 					elif self.soc - self.discharge_hysteresis > max(w.soc, self._device.minsoc) and excess_to_grid and missing_to_bat \
-						and not self.restrictions & Restrictions.BAT2GRID:
-						self.override_chargerate = max(self.chargerate, self._device.consumption * 1.1)
+						and not (int(restrictions) & int(Restrictions.BAT2GRID)):
+						self.update_chargerate(now, w.stop, self.soc, w.soc)
+						self.override_chargerate = max(abs(self.chargerate), self._device.consumption * 1.1) * -1
 						reactive_strategy =  ReactiveStrategy.SCHEDULED_MINIMUM_DISCHARGE
 
 					# left over discharge cases:
@@ -1057,7 +1068,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			final_chargerate = self.override_chargerate if self.override_chargerate is not None else self.chargerate
 
 			if reactive_strategy in self.charge_states:
-				self._dbusservice['/DynamicEss/ChargeRate'] = self._device.charge(w.flags, restrictions, final_chargerate, w.allow_feedin)
+				self._dbusservice['/DynamicEss/ChargeRate'] = self._device.charge(w.flags, restrictions, abs(final_chargerate), w.allow_feedin)
 
 			elif reactive_strategy in self.selfconsume_states:
 				self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
@@ -1068,7 +1079,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				self._device.idle(w.allow_feedin)
 
 			elif reactive_strategy in self.discharge_states:	
-				self._dbusservice['/DynamicEss/ChargeRate'] = self._device.discharge(w.flags, restrictions, final_chargerate, w.allow_feedin)
+				#chargerate to be send to discharge method has to be always positive.
+				self._dbusservice['/DynamicEss/ChargeRate'] = self._device.discharge(w.flags, restrictions, abs(final_chargerate), w.allow_feedin)
 
 			else:
 				#This should never happen, it means that there is a state that is not mapped to a reaction. 
