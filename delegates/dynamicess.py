@@ -511,7 +511,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value=None)
 		self._dbusservice.add_path('/DynamicEss/Flags', value=None)
 		self._dbusservice.add_path('/DynamicEss/AvailableOverhead', value=None)
-		self._dbusservice.add_path('/DynamicEss/CorDataSet', value=None)
+		self._dbusservice.add_path('/DynamicEss/OverrideChargeRate', value=None)
 
 		if self.mode > 0:
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
@@ -704,11 +704,11 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 	@property
 	def targetsoc(self):
-		return self._dbusservice['/DynamicEss/TargetSoc']
+		return self._dbusservice['/DynamicEss/TargetSoc'] if self._dbusservice['/DynamicEss/TargetSoc'] is not None and  self._dbusservice['/DynamicEss/TargetSoc'] > 0 else None
 
 	@targetsoc.setter
 	def targetsoc(self, v):
-		self._dbusservice['/DynamicEss/TargetSoc'] = v
+		self._dbusservice['/DynamicEss/TargetSoc'] = v or 0
 
 	@property
 	def soc(self):
@@ -755,7 +755,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		if (end_soc < start_soc and self.chargerate is not None):
 			self.chargerate = abs(self.chargerate) * -1
 		
-		self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate
+		self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate or 0
 
 	def _on_timer(self):
 		# If DESS was disabled, deactivate and kill timer.
@@ -853,19 +853,13 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice['/DynamicEss/ReactiveStrategy'] = final_strategy.value
 		self.iteration_change_tracker.done(final_strategy)
 
-		#Publish the correleated DataSet. This is for making sure remote-tools get data that really correletes.
-		cor_data_set = {}
-		cor_data_set["ts"] = self.targetsoc
-		cor_data_set["s"] = self.soc
-		cor_data_set["chr"] = self.chargerate
-		cor_data_set["ochr"] = self.override_chargerate
-		cor_data_set["rs"] = final_strategy.value if final_strategy is not None else None
-
-		self._dbusservice['/DynamicEss/CorDataSet'] = json.dumps(cor_data_set)
+		self._dbusservice['/DynamicEss/OverrideChargeRate'] = self.override_chargerate or 0
 
 		if final_strategy.value in self.error_selfconsume_states:
 			#Do at least regular ESS.
-			self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
+			self.chargerate = None
+			self._dbusservice['/DynamicEss/ChargeRate'] = 0
+			self._dbusservice['/DynamicEss/OverrideChargeRate'] = 0
 			self._device.self_consume(restrictions, w.allow_feedin)
 
 		return True
@@ -904,7 +898,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 		# When we have a Scheduled-Selfconsume, we can ommit to walk through the decission tree. 
 		if w.strategy == Strategy.SELFCONSUME:
-			self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
+			self.chargerate = None
+			self._dbusservice['/DynamicEss/ChargeRate'] = 0
 			self.targetsoc = None
 
 			self._device.self_consume(restrictions, w.allow_feedin)
@@ -1068,19 +1063,21 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			final_chargerate = self.override_chargerate if self.override_chargerate is not None else self.chargerate
 
 			if reactive_strategy in self.charge_states:
-				self._dbusservice['/DynamicEss/ChargeRate'] = self._device.charge(w.flags, restrictions, abs(final_chargerate), w.allow_feedin)
+				self._dbusservice['/DynamicEss/ChargeRate'] = self._device.charge(w.flags, restrictions, abs(final_chargerate), w.allow_feedin) or 0
 
 			elif reactive_strategy in self.selfconsume_states:
-				self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
+				self.chargerate = None
+				self._dbusservice['/DynamicEss/ChargeRate'] = 0
 				self._device.self_consume(restrictions, w.allow_feedin)
 
 			elif reactive_strategy in self.idle_states:
-				self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
+				self.chargerate = None
+				self._dbusservice['/DynamicEss/ChargeRate'] = 0
 				self._device.idle(w.allow_feedin)
 
 			elif reactive_strategy in self.discharge_states:	
 				#chargerate to be send to discharge method has to be always positive.
-				self._dbusservice['/DynamicEss/ChargeRate'] = self._device.discharge(w.flags, restrictions, abs(final_chargerate), w.allow_feedin)
+				self._dbusservice['/DynamicEss/ChargeRate'] = self._device.discharge(w.flags, restrictions, abs(final_chargerate), w.allow_feedin) or 0
 
 			else:
 				#This should never happen, it means that there is a state that is not mapped to a reaction. 
