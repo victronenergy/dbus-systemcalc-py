@@ -21,3 +21,6 @@ class ChargeControl(object):
 	def release_control(self):
 		if ChargeControl.controller is self.__class__:
 			ChargeControl.controller = None
+
+	def has_control(self):
+		return ChargeControl.controller is self.__class__

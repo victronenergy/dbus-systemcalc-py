@@ -12,9 +12,10 @@ from ve_utils import exit_on_error
 class BatteryConfiguration(object):
 	""" Holds custom mapping information about a service that corresponds to a
 	    battery. """
-	def __init__(self, parent, service):
+	def __init__(self, parent, service, default_visibility=False):
 		self.parent = parent
 		self.service = str(service)
+		self.default_visibility = default_visibility
 		self.name = None
 		self.enabled = False
 		self.bind_settings()
@@ -29,7 +30,7 @@ class BatteryConfiguration(object):
 			"", 0, 0, callback=partial(self.on_setting_change, "name", str))
 		self.enabled_item = self.parent._settings.addSetting(
 			"/Settings/SystemSetup/Batteries/Configuration/{}/Enabled".format(config_id),
-			0, 0, 1, callback=partial(self.on_setting_change, "enabled", bool))
+			self.default_visibility, 0, 1, callback=partial(self.on_setting_change, "enabled", bool))
 		self.service_item.set_value(self.service)
 		self.enabled = bool(self.enabled_item.get_value())
 		self.name = str(self.name_item.get_value())
@@ -253,7 +254,8 @@ class BatteryData(SystemCalcDelegate):
 		self.batteries[service].extend(args)
 		for t in args:
 			if t.service_id not in self.configured_batteries:
-				self.add_configured_battery(t.service_id)
+				# Set dedicated battery monitors visible by default.
+				self.add_configured_battery(t.service_id, type(t) is BatteryTracker)
 
 	def is_enabled(self, tracker):
 		return tracker.service_id in self.configured_batteries and \
@@ -269,9 +271,9 @@ class BatteryData(SystemCalcDelegate):
 		self.changed = any([tracker.update() for tracker in chain.from_iterable(
 			self.batteries.values())]) or self.changed
 
-	def add_configured_battery(self, service):
+	def add_configured_battery(self, service, default_visibility):
 		self.configured_batteries[service] = BatteryConfiguration(
-			self, service)
+			self, service, default_visibility)
 
 	def _on_timer(self):
 		active = self._dbusservice['/ActiveBatteryService']

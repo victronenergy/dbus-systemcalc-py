@@ -179,6 +179,8 @@ class SystemState(SystemCalcDelegate):
 			# BatteryLife state
 			hubstate = self._dbusmonitor.get_value('com.victronenergy.settings',
 				'/Settings/CGwacs/BatteryLife/State')
+			minsoc = self._dbusmonitor.get_value('com.victronenergy.settings',
+				'/Settings/CGwacs/BatteryLife/MinimumSocLimit', 0.0)
 
 			# User limit
 			user_discharge_limit = self._dbusmonitor.get_value(
@@ -187,7 +189,7 @@ class SystemState(SystemCalcDelegate):
 			user_charge_limit = self._dbusmonitor.get_value(
 				'com.victronenergy.settings',
 				'/Settings/SystemSetup/MaxChargeCurrent')
-			flags.UserDischargeLimited = int(user_discharge_limit == 0 and hubstate != SOCG.KeepCharged)
+			flags.UserDischargeLimited = int(user_discharge_limit == 0 and hubstate != SOCG.KeepCharged and minsoc < 100.0)
 			flags.UserChargeLimited = int(user_charge_limit == 0)
 
 			# ESS state

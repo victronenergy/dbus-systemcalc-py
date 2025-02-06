@@ -71,10 +71,12 @@ class Multi(SystemCalcDelegate):
 		self.multis = {}
 		self.multi = None # The actual Multi that is connected and working
 		self.vebus_service = None # The VE.Bus service, Multi could be offline
+		self.othermultis = [] # Second and third devices
 
 		# Determine if this platform has a built-in MK2/3. Maxi-GX
 		# and generic (Raspberry Pi) does not.
-		self.has_onboard_mkx = get_product_id() not in ('C009', 'C003', 'C008')
+		self.has_onboard_mkx = get_product_id() not in (
+			'C009', 'C00D', 'C010', 'C003')
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
@@ -96,7 +98,8 @@ class Multi(SystemCalcDelegate):
 			('/VebusService', {'gettext': '%s'}),
 			('/VebusInstance', {'gettext': '%s'}),
 			('/Dc/Vebus/Current', {'gettext': '%.1F A'}),
-			('/Dc/Vebus/Power', {'gettext': '%.0F W'})]
+			('/Dc/Vebus/Power', {'gettext': '%.0F W'}),
+			('/Devices/NumberOfVebusDevices', {'gettext': '%s'})]
 
 	def device_added(self, service, instance, *args):
 		if service.startswith('com.victronenergy.vebus.'):
@@ -112,21 +115,30 @@ class Multi(SystemCalcDelegate):
 	def _set_multi(self, *args, **kwargs):
 		# If platform has an onboard mkx, use only that as VE.Bus service.
 		# On other platforms, use the Multi with the lowest DeviceInstance.
-		if self.has_onboard_mkx:
-			multis = [m for m in self.multis.values() if m.onboard]
-		else:
-			multis = self.multis.values()
+		# List of all VE.Bus interfaces, onboard ones first.
+		multis = sorted(self.multis.values(),
+			key=lambda x: (not x.onboard, x.instance))
 
-		multis = sorted(multis, key=lambda x: x.instance)
-		if multis and multis[0].connected:
-			self.multi = multis[0]
-		else:
-			self.multi = None
+		main = multis[0] if multis else None
 
-		if multis:
-			self.vebus_service = multis[0]
+		if main is None:
+			self.multi = self.vebus_service = None
+			self.othermultis.clear()
 		else:
-			self.vebus_service = None
+			# If this platform has an onboard mkx, the main multi must be
+			# onboard
+			if self.has_onboard_mkx:
+				if main.onboard:
+					self.multi = main if main.connected else None
+					self.vebus_service = main
+					self.othermultis = multis[1:]
+				else:
+					self.multi = self.vebus_service = None
+					self.othermultis = multis[:]
+			else:
+				self.multi = main if main.connected else None
+				self.vebus_service = main
+				self.othermultis = multis[1:]
 
 	def update_values(self, newvalues):
 		# If there are multis connected, but for some reason none is selected
@@ -138,6 +150,7 @@ class Multi(SystemCalcDelegate):
 		service = getattr(self.multi, 'service', None)
 		newvalues['/VebusService'] = service
 		newvalues['/VebusInstance'] = getattr(self.multi, 'instance', None)
+		newvalues['/Devices/NumberOfVebusDevices'] = len(self.multis)
 
 		if service is not None:
 			dc_current = self._dbusmonitor.get_value(service, '/Dc/0/Current')
