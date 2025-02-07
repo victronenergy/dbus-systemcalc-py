@@ -547,7 +547,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			settings.append(("dess_restrictions_{}".format(i),
 				path + "/Schedule/{}/Restrictions".format(i), 0, 0, 3))
 			settings.append(("dess_strategy_{}".format(i),
-				path + "/Schedule/{}/Strategy".format(i), 0, 0, 1))
+				path + "/Schedule/{}/Strategy".format(i), 0, 0, 3))
 			settings.append(("dess_flags_{}".format(i),
 				path + "/Schedule/{}/Flags".format(i), 0, 0, 1))
 
