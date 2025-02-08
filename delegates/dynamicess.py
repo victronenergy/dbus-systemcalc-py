@@ -84,6 +84,7 @@ class ReactiveStrategy(int, Enum):
 	IDLE_NO_OPPORTUNITY = 15
 	UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC = 16 
 
+	SELFCONSUME_FAULTY_CHARGERATE = 94
 	UNKNOWN_OPERATING_MODE = 95
 	ESS_LOW_SOC = 96						
 	SELFCONSUME_UNMAPPED_STATE = 97         
@@ -483,7 +484,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self.charge_states = (ReactiveStrategy.SCHEDULED_CHARGE_ALLOW_GRID, ReactiveStrategy.SCHEDULED_CHARGE_ENHANCED, 
 					ReactiveStrategy.SCHEDULED_CHARGE_NO_GRID, ReactiveStrategy.SCHEDULED_CHARGE_FEEDIN, 
 					ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION, ReactiveStrategy.UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC)
-		self.selfconsume_states = (ReactiveStrategy.SELFCONSUME_ACCEPT_CHARGE, ReactiveStrategy.SELFCONSUME_ACCEPT_DISCHARGE, ReactiveStrategy.SELFCONSUME_NO_GRID)
+		self.selfconsume_states = (ReactiveStrategy.SELFCONSUME_ACCEPT_CHARGE, ReactiveStrategy.SELFCONSUME_ACCEPT_DISCHARGE, ReactiveStrategy.SELFCONSUME_NO_GRID, ReactiveStrategy.SELFCONSUME_FAULTY_CHARGERATE)
 		self.idle_states = (ReactiveStrategy.IDLE_SCHEDULED_FEEDIN, ReactiveStrategy.IDLE_MAINTAIN_SURPLUS, ReactiveStrategy.IDLE_MAINTAIN_TARGETSOC, ReactiveStrategy.IDLE_NO_OPPORTUNITY)
 		self.discharge_states = (ReactiveStrategy.SCHEDULED_DISCHARGE, ReactiveStrategy.SCHEDULED_MINIMUM_DISCHARGE)
 		self.error_selfconsume_states = (ReactiveStrategy.NO_WINDOW, ReactiveStrategy.UNKNOWN_OPERATING_MODE, ReactiveStrategy.SELFCONSUME_UNPREDICTED, ReactiveStrategy.SELFCONSUME_UNMAPPED_STATE)
@@ -748,6 +749,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				self.prevsoc = self.soc
 
 			except ZeroDivisionError:
+				logger.log(logging.WARNING, "Catched ZeroDivisionError in update_chargerate() for end='{}', now='{}'".format(end, now))
 				self.chargerate = None
 		
 		#chargerate should be negative, if discharge-case to fit into maths elsewhere.
@@ -1059,8 +1061,13 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		else:
 			#depending on the reactive strategy choosen, system behaviour may be the same - just different value set
 			#and/or different reasoning.
-
 			final_chargerate = self.override_chargerate if self.override_chargerate is not None else self.chargerate
+
+			if final_chargerate is None and (reactive_strategy in self.charge_states or reactive_strategy in self.discharge_states):
+				# failed to calculate a chargerate. This however is required for charge/discharge.
+				# Temporary enter self-consume to keep the system moving, changed conditions may allow for successfull recalculation and
+				# getting back on track.
+				reactive_strategy = ReactiveStrategy.SELFCONSUME_FAULTY_CHARGERATE
 
 			if reactive_strategy in self.charge_states:
 				self._dbusservice['/DynamicEss/ChargeRate'] = self._device.charge(w.flags, restrictions, abs(final_chargerate), w.allow_feedin) or 0
