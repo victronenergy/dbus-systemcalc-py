@@ -757,10 +757,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		if (end_soc < start_soc and self.chargerate is not None):
 			self.chargerate = abs(self.chargerate) * -1
 		
-                if self.chargerate is None:
-                        self.chargerate = 0
-                self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate
-		
+		self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate or 0
+
 	def _on_timer(self):
 		# If DESS was disabled, deactivate and kill timer.
 		if self.mode in (0, 2, 3): # Old buy/sell states now also means off
