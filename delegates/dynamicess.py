@@ -84,6 +84,7 @@ class ReactiveStrategy(int, Enum):
 	IDLE_NO_OPPORTUNITY = 15
 	UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC = 16 
 
+	SELFCONSUME_UNEXPECTED_EXCEPTION = 93
 	SELFCONSUME_FAULTY_CHARGERATE = 94
 	UNKNOWN_OPERATING_MODE = 95
 	ESS_LOW_SOC = 96						
@@ -484,10 +485,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self.charge_states = (ReactiveStrategy.SCHEDULED_CHARGE_ALLOW_GRID, ReactiveStrategy.SCHEDULED_CHARGE_ENHANCED, 
 					ReactiveStrategy.SCHEDULED_CHARGE_NO_GRID, ReactiveStrategy.SCHEDULED_CHARGE_FEEDIN, 
 					ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION, ReactiveStrategy.UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC)
-		self.selfconsume_states = (ReactiveStrategy.SELFCONSUME_ACCEPT_CHARGE, ReactiveStrategy.SELFCONSUME_ACCEPT_DISCHARGE, ReactiveStrategy.SELFCONSUME_NO_GRID, ReactiveStrategy.SELFCONSUME_FAULTY_CHARGERATE)
+		self.selfconsume_states = (ReactiveStrategy.SELFCONSUME_ACCEPT_CHARGE, ReactiveStrategy.SELFCONSUME_ACCEPT_DISCHARGE, ReactiveStrategy.SELFCONSUME_NO_GRID)
 		self.idle_states = (ReactiveStrategy.IDLE_SCHEDULED_FEEDIN, ReactiveStrategy.IDLE_MAINTAIN_SURPLUS, ReactiveStrategy.IDLE_MAINTAIN_TARGETSOC, ReactiveStrategy.IDLE_NO_OPPORTUNITY)
 		self.discharge_states = (ReactiveStrategy.SCHEDULED_DISCHARGE, ReactiveStrategy.SCHEDULED_MINIMUM_DISCHARGE)
-		self.error_selfconsume_states = (ReactiveStrategy.NO_WINDOW, ReactiveStrategy.UNKNOWN_OPERATING_MODE, ReactiveStrategy.SELFCONSUME_UNPREDICTED, ReactiveStrategy.SELFCONSUME_UNMAPPED_STATE)
+		self.error_selfconsume_states = (ReactiveStrategy.NO_WINDOW, ReactiveStrategy.UNKNOWN_OPERATING_MODE, ReactiveStrategy.SELFCONSUME_UNPREDICTED, ReactiveStrategy.SELFCONSUME_UNMAPPED_STATE, ReactiveStrategy.SELFCONSUME_FAULTY_CHARGERATE, ReactiveStrategy.SELFCONSUME_UNEXPECTED_EXCEPTION)
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(DynamicEss, self).set_sources(dbusmonitor, settings, dbusservice)
@@ -793,69 +794,76 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		stop = None
 		windows = list(self.windows())
 
-		for w in windows:
-			# Keep track of maximum available schedule
-			if start is None or w.start > start:
-				start = w.start
-				stop = w.stop
-
-		self._dbusservice['/DynamicEss/LastScheduledStart'] = None if start is None else int(datetime.timestamp(start))
-		self._dbusservice['/DynamicEss/LastScheduledEnd'] = None if stop is None else int(datetime.timestamp(stop))
-
-		final_strategy = ReactiveStrategy.NO_WINDOW
-		current_window = None
-		next_window = None
-
-		#iterate through windows, find the current one. Usually it should be first,
-		#but in case of update issues may not. Also grab the next window, to perform
-		#some "look aheads" for optimizations.
-		for w in windows:
-			if self.acquire_control() and now in w:
-				self.active = 1 # Auto
-				self.errorcode = 0 # No error
-
-				current_window = w
-				restrictions = w.restrictions | self.restrictions
-				
-				self._dbusservice['/DynamicEss/Strategy'] = w.strategy
-				self._dbusservice['/DynamicEss/Restrictions'] = restrictions
-				self._dbusservice['/DynamicEss/AllowGridFeedIn'] = int(w.allow_feedin)
-				break # out of for loop
-		
-		if current_window is not None:
-			#found current window, now we need nextWindow to do some look aheads as well. 
-			#next window is the one containing current.start + current.duration + 1.
-			#finding next window is not required to enter the control loop, can be None.
-			next_window_save_start = current_window.stop + timedelta(seconds = 1)
+		#Whenever an error occurs that is totally unexpected, the delegate
+		#should enter self consume and not die.(try/catch around the control loop logic)
+		try:
 			for w in windows:
-				if (next_window_save_start in w):
-					next_window = w
+				# Keep track of maximum available schedule
+				if start is None or w.start > start:
+					start = w.start
+					stop = w.stop
+
+			self._dbusservice['/DynamicEss/LastScheduledStart'] = None if start is None else int(datetime.timestamp(start))
+			self._dbusservice['/DynamicEss/LastScheduledEnd'] = None if stop is None else int(datetime.timestamp(stop))
+
+			final_strategy = ReactiveStrategy.NO_WINDOW
+			current_window = None
+			next_window = None
+
+			#iterate through windows, find the current one. Usually it should be first,
+			#but in case of update issues may not. Also grab the next window, to perform
+			#some "look aheads" for optimizations.
+			for w in windows:
+				if self.acquire_control() and now in w:
+					self.active = 1 # Auto
+					self.errorcode = 0 # No error
+
+					current_window = w
+					restrictions = w.restrictions | self.restrictions
+					
+					self._dbusservice['/DynamicEss/Strategy'] = w.strategy
+					self._dbusservice['/DynamicEss/Restrictions'] = restrictions
+					self._dbusservice['/DynamicEss/AllowGridFeedIn'] = int(w.allow_feedin)
 					break # out of for loop
-
-		    #proably only one common handler (_determine_reactive_strategy) needed for either operating mode. 
-			if (self.operating_mode == OperatingMode.TRADEMODE):
-				final_strategy = self._determine_reactive_strategy(current_window, next_window, restrictions, now)
-
-			elif (self.operating_mode == OperatingMode.GREENMODE):
-				final_strategy = self._determine_reactive_strategy(current_window, next_window, restrictions, now)
-
-			elif (self.operating_mode == OperatingMode.UNKNOWN):
-				final_strategy = ReactiveStrategy.UNKNOWN_OPERATING_MODE
-
-		else:
-			# No matching windows
-			if self.active or self.errorcode != 3:
-				self.deactivate(3)
-	
-		#write out current override strategy to determine if the local system behaves "out of schedule" on purpose.
-		if self._dbusservice["/SystemState/LowSoc"] == 1:
-			final_strategy= ReactiveStrategy.ESS_LOW_SOC
 			
-		#done, reset iteration_change_tracker
-		self._dbusservice['/DynamicEss/ReactiveStrategy'] = final_strategy.value
-		self.iteration_change_tracker.done(final_strategy)
+			if current_window is not None:
+				#found current window, now we need nextWindow to do some look aheads as well. 
+				#next window is the one containing current.start + current.duration + 1.
+				#finding next window is not required to enter the control loop, can be None.
+				next_window_save_start = current_window.stop + timedelta(seconds = 1)
+				for w in windows:
+					if (next_window_save_start in w):
+						next_window = w
+						break # out of for loop
 
-		self._dbusservice['/DynamicEss/OverrideChargeRate'] = self.override_chargerate or 0
+				#proably only one common handler (_determine_reactive_strategy) needed for either operating mode. 
+				if (self.operating_mode == OperatingMode.TRADEMODE):
+					final_strategy = self._determine_reactive_strategy(current_window, next_window, restrictions, now)
+
+				elif (self.operating_mode == OperatingMode.GREENMODE):
+					final_strategy = self._determine_reactive_strategy(current_window, next_window, restrictions, now)
+
+				elif (self.operating_mode == OperatingMode.UNKNOWN):
+					final_strategy = ReactiveStrategy.UNKNOWN_OPERATING_MODE
+
+			else:
+				# No matching windows
+				if self.active or self.errorcode != 3:
+					self.deactivate(3)
+		
+			#write out current override strategy to determine if the local system behaves "out of schedule" on purpose.
+			if self._dbusservice["/SystemState/LowSoc"] == 1:
+				final_strategy= ReactiveStrategy.ESS_LOW_SOC
+				
+			#done, reset iteration_change_tracker
+			self._dbusservice['/DynamicEss/ReactiveStrategy'] = final_strategy.value
+			self.iteration_change_tracker.done(final_strategy)
+
+			self._dbusservice['/DynamicEss/OverrideChargeRate'] = self.override_chargerate or 0
+
+		except Exception as ex:
+			logger.log(logging.FATAL, "Unexpected exception inside Control Loop.", exc_info = ex)
+			final_strategy = ReactiveStrategy.SELFCONSUME_UNEXPECTED_EXCEPTION
 
 		if final_strategy.value in self.error_selfconsume_states:
 			#Do at least regular ESS.
@@ -1085,6 +1093,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			elif reactive_strategy in self.discharge_states:	
 				#chargerate to be send to discharge method has to be always positive.
 				self._dbusservice['/DynamicEss/ChargeRate'] = self._device.discharge(w.flags, restrictions, abs(final_chargerate), w.allow_feedin) or 0
+
+			elif reactive_strategy in self.error_selfconsume_states:
+				#errorstates are handled outside this method. Seperate return to avoid else-case.
+				return reactive_strategy
 
 			else:
 				#This should never happen, it means that there is a state that is not mapped to a reaction. 
