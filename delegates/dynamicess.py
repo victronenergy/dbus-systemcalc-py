@@ -47,6 +47,10 @@ class EssDevice(object):
 		self.service = service
 
 	@property
+	def connected(self):
+		return self.monitor.get_value(self.service, "/Connected") == 1
+
+	@property
 	def available(self):
 		return True
 
@@ -389,6 +393,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				'/Overrides/MaxDischargePower', '/Overrides/Setpoint',
 				'/Overrides/FeedInExcess']),
 			('com.victronenergy.acsystem', [
+				 '/Connected',
 				 '/Capabilities/HasDynamicEssSupport',
 				 '/Ess/AcPowerSetpoint',
 				 '/Ess/InverterPowerSetpoint',
@@ -404,10 +409,11 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 	def get_output(self):
 		return [('/DynamicEss/Available', {'gettext': '%s'})]
 
-	def _set_device(self):
-		# Use first device in dict, there should be just one
+	def _set_device(self, *args, **kwargs):
+		# Use first connected device in dict, there should be just one
 		for self._device in self._devices.values():
-			break
+			if self._device.connected:
+				break
 		else:
 			self._device = None
 
@@ -416,6 +422,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			# Only one device, controlled via hub4control
 			if not any(isinstance(s, VebusDevice) for s in self._devices.values()):
 				self._devices[service] = VebusDevice(self, self._dbusmonitor, service)
+				self._dbusmonitor.track_value(service, "/Connected", self._set_device)
 				self._set_device()
 		elif service.startswith('com.victronenergy.acsystem.'):
 			self._devices[service] = MultiRsDevice(self, self._dbusmonitor, service)
