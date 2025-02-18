@@ -49,12 +49,12 @@ class BatterySettings(SystemCalcDelegate):
 		# Set good settings for known batteries. Force SVS off and DVCC on
 		# for some batteries.
 		if pid in (BATTERY_PYLONTECH, BATTERY_BYD, BATTERY_BYD_L, BATTERY_BYD_PREMIUM,
-				BATTERY_DISCOVER_AES, BATTERY_BLUENOVA, BATTERY_PYTES, BATTERY_LEOCH, BATTERY_LBSA,
+				BATTERY_DISCOVER_AES, BATTERY_PYTES, BATTERY_LEOCH, BATTERY_LBSA,
 				BATTERY_BSLBATT, BATTERY_BMZ, BATTERY_CEGASA, BATTERY_PELIO_L, BATTERY_ZYC, BATTERY_SUNWODA):
 			self._settings['vsense'] = 2 # Forced Off
 			self._settings['tsense'] = 2 # Forced Off
 			self._settings['bol'] = 3 # Forced on
-		elif pid in (BATTERY_FREEDOMWON, BATTERY_ETOWER, BATTERY_HUBBLE, BATTERY_FINDREAMS, BATTERY_WECO):
+		elif pid in (BATTERY_FREEDOMWON, BATTERY_ETOWER, BATTERY_HUBBLE, BATTERY_FINDREAMS, BATTERY_WECO, BATTERY_BLUENOVA):
 			if self._settings['vsense'] & 2:
 				self._settings['vsense'] &= 1 # Remove setting if it was forced
 			self._settings['tsense'] = 2 # Forced Off
