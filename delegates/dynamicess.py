@@ -260,7 +260,6 @@ class VebusDevice(EssDevice):
 			'/Overrides/FeedInExcess', 2 if allow_feedin else 1)
 
 	def _set_charge_power(self, v):
-		#FIXME: Why 50 here?
 		Dvcc.instance.internal_maxchargepower = None if v is None else max(v, 50)
 
 	def check_conditions(self):
@@ -280,12 +279,24 @@ class VebusDevice(EssDevice):
 	def charge(self, flags, restrictions, rate, allow_feedin):
 		self._set_feedin(allow_feedin)
 
+		#if the desired rate is lower than dcpv, this would come down to NOT charging from AC,
+		#but 100% of dcpv. To really achieve an overall charge-rate of what's requested, we need
+		#to enter discharge mode instead. Discharge needs to be called with the desired discharge rate (positive)
+		#minus once more dcpv, as the discharge-method will internally add dcpv again.
+		# that'll be self.pvpower - rate - self.pvpower, hence comes down to rate * -1
+		# or in other words: we leave the portion of rate * -1 from dcpv available for the battery.
+		fast_charge_requested = flags & int(Flags.FASTCHARGE)
+
+		#don't forward fastcharge. That means "max power", so no forced discharge. 
+		if rate < self.pvpower and not fast_charge_requested:
+			self.discharge(flags, restrictions, rate * -1, allow_feedin)
+			return rate
+
 		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
 		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 1)
 		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
 
 		# Fast charge, or controlled charge? 
-		fast_charge_requested = flags & int(Flags.FASTCHARGE)
 		fast_charge_clearence = True #Defaults to true, if we have no limit or can't determine technical limits, we just go for it (legacy behaviour). 
 
 		if fast_charge_requested and self.delegate.battery_charge_limit is not None and self.delegate.get_charge_power_capability() is not None:
@@ -294,7 +305,7 @@ class VebusDevice(EssDevice):
 
 		if rate is None or (fast_charge_requested and fast_charge_clearence):
 			self._set_charge_power(None)
-			return None
+			return rate #return the original requested rate either way. 
 		else:
 			# Upon first call of charge(), the input charge-rate eventually has some DC-AC losses considered. 
 			# (Originating from ac consumers currently beeing driven with dcsolar, reducing anticipated solar overhead)
@@ -318,17 +329,21 @@ class VebusDevice(EssDevice):
 			# making. If exporting the battery is not allowed, then limit that
 			# to DC-coupled PV plus local consumption.
 			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
+
 			if flags & Flags.FASTCHARGE:
 				self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
 				return None
 			else:
+				srate = max(1.0, (rate or 0) + self.pvpower) # 1.0 to allow selling overvoltage
+
 				if (batteryexport):
-					self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
-						((rate + self.pvpower) if rate else 1.0)) # 1.0 to allow selling overvoltage
+					#discharging the battery by rate requires to discharge all available dcpv as well.
+					self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', srate)
 				else:
 					# this may lead to feedin anyway, but it then is "feedin of solar", while battery is only backing loads. 
 					self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
-						(self.pvpower + self.consumption + 1.0)) # 1.0 to allow selling overvoltage
+						(min (srate, self.pvpower + self.consumption + 1.0))) # +1.0 to allow selling overvoltage
+					
 				return rate
 			
 		else:
@@ -407,10 +422,30 @@ class MultiRsDevice(EssDevice):
 
 	def charge(self, flags, restrictions, rate, allow_feedin):
 		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin))
+
+		#if the desired rate is lower than dcpv, this would come down to NOT charging from AC,
+		#but 100% of dcpv. To really achieve an overall charge-rate of what's requested, we need
+		#to enter discharge mode instead. Discharge needs to be called with the desired discharge rate (positive)
+		#minus once more dcpv, as the discharge-method will internally add dcpv again.
+		# that'll be self.pvpower - rate - self.pvpower, hence comes down to rate * -1
+		# or in other words: we leave the portion of rate * -1 from dcpv available for the battery.
+		fast_charge_requested = flags & int(Flags.FASTCHARGE)
+
+		#don't forward fastcharge. That means "max power", so no forced discharge. 
+		if rate < self.pvpower and not fast_charge_requested:
+			self.discharge(flags, restrictions, rate * -1, allow_feedin)
+			return rate
+
 		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
 		
-		#FIXME Fast charge should bee obsolete. discuss.
-		if rate is None:
+		# Fast charge, or controlled charge? 
+		fast_charge_clearence = True #Defaults to true, if we have no limit or can't determine technical limits, we just go for it (legacy behaviour). 
+
+		if fast_charge_requested and self.delegate.battery_charge_limit is not None and self.delegate.get_charge_power_capability() is not None:
+			# limits and technical capabilities are known. So, only apply fast charge, if limit would be implicit obeyed.
+			fast_charge_clearence = self.delegate.get_charge_power_capability() <= self.delegate.battery_charge_limit * 1000
+
+		if rate is None or (fast_charge_requested and fast_charge_clearence):
 			self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', 15000)
 		else:
 			self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', max(0.0, rate - self.pvpower))
@@ -418,20 +453,37 @@ class MultiRsDevice(EssDevice):
 		return rate
 
 	def discharge(self, flags, restrictions, rate, allow_feedin):
-		batteryexport = not restrictions & 1
-		if batteryexport:
-			self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin))
-			self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
-			if rate is None or (flags & Flags.FASTCHARGE):
+		batteryexport = not (restrictions & int(Restrictions.BAT2GRID))
+
+		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin))
+		if allow_feedin:
+			# Calculate how fast to sell. If exporting the battery to the grid
+			# is allowed, then export rate plus whatever DC-coupled PV is
+			# making. If exporting the battery is not allowed, then limit that
+			# to DC-coupled PV plus local consumption.
+
+			if flags & Flags.FASTCHARGE:
 				self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', -15000)
+				return None
 			else:
-				self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', -max(0, rate+self.pvpower))
+				srate = max(1.0, (rate or 0) + self.pvpower) # 1.0 to allow selling overvoltage
+
+				self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
+				if (batteryexport):
+					#discharging the battery by rate requires to discharge all available dcpv as well.
+					self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', srate)
+				else:
+					# this may lead to feedin anyway, but it then is "feedin of solar", while battery is only backing loads. 
+					self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', 
+						(min (srate, self.pvpower + self.consumption + 1.0))) # +1.0 to allow selling overvoltage
+				
+				return rate
+					
 		else:
 			# We can only discharge into loads, therefore simply run
 			# self-consumption
 			self.self_consume(restrictions, allow_feedin)
-
-		return rate
+			return rate
 
 	def idle(self, allow_feedin):
 		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin))
@@ -513,7 +565,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value=None)
 		self._dbusservice.add_path('/DynamicEss/Flags', value=None)
 		self._dbusservice.add_path('/DynamicEss/AvailableOverhead', value=None)
-		self._dbusservice.add_path('/DynamicEss/OverrideChargeRate', value=None)
 
 		if self.mode > 0:
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
@@ -590,21 +641,14 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		  None is to be distinguished from 0 (which means no charging allowed by the bms)
 		'''
 
-		vebus = self._dbusservice["/VebusService"]
 		battery = self._dbusservice["/ActiveBmsService"]
-
-		logger.log(logging.INFO, "Vebus Service: {}, Battery Service: {}".format(vebus, battery))
 
 		# first, try to obtain values from the bms service.
 		if battery is not None and battery != "":
 			ccl = self._dbusmonitor.get_value(battery, '/Info/MaxChargeCurrent')
 			cvl = self._dbusmonitor.get_value(battery, '/Info/MaxChargeVoltage')
 
-		# TODO determine for unmanaged batteries? 
-		logger.log(logging.INFO, "CCL: {}, CVL: {}".format(ccl, cvl))
-
 		if (ccl is not None and cvl is not None):
-			logger.log(logging.INFO, "=> That's {} Watts".format(ccl * cvl))
 			return ccl * cvl
 		
 		return None
@@ -859,8 +903,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			self._dbusservice['/DynamicEss/ReactiveStrategy'] = final_strategy.value
 			self.iteration_change_tracker.done(final_strategy)
 
-			self._dbusservice['/DynamicEss/OverrideChargeRate'] = self.override_chargerate or 0
-
 		except Exception as ex:
 			logger.log(logging.FATAL, "Unexpected exception inside Control Loop.", exc_info = ex)
 			final_strategy = ReactiveStrategy.SELFCONSUME_UNEXPECTED_EXCEPTION
@@ -869,7 +911,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			#Do at least regular ESS.
 			self.chargerate = None
 			self._dbusservice['/DynamicEss/ChargeRate'] = 0
-			self._dbusservice['/DynamicEss/OverrideChargeRate'] = 0
 			self._device.self_consume(restrictions, w.allow_feedin)
 
 		return True
@@ -1015,7 +1056,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					# if we are flagged EXESSTOGRID and MISSINGTOGRID, perform a strict discharge, based on soc difference.
 					# Any imprecission shall be handled by the grid
 					# not allowed with bat2grid restriction
-					#FIXME: Discharge logic is not yet 100%. Restrictions do not apply as expected in excess_to_grid case. 
 					#       When we have a bat2grid restriction, we should discharge at full consumption, feeding in 100% of solar production. 
 					if self.soc - self.discharge_hysteresis > max(w.soc, self._device.minsoc) and excess_to_grid and missing_to_grid \
 						and not (int(restrictions) & int(Restrictions.BAT2GRID)):
@@ -1070,7 +1110,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			#depending on the reactive strategy choosen, system behaviour may be the same - just different value set
 			#and/or different reasoning.
 			final_chargerate = self.override_chargerate if self.override_chargerate is not None else self.chargerate
-
+			
 			if final_chargerate is None and (reactive_strategy in self.charge_states or reactive_strategy in self.discharge_states):
 				# failed to calculate a chargerate. This however is required for charge/discharge.
 				# Temporary enter self-consume to keep the system moving, changed conditions may allow for successfull recalculation and
