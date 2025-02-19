@@ -114,7 +114,7 @@ class IterationChangeTracker(object):
 		#log changes as well.
 		tme = datetime.today().strftime('%H:%M:%S')
 		if self.soc_change() != ChangeIndicator.NONE:
-			logger.log(logging.INFO, "{0}: detected soc change from {1} to {2}, identifiedas: {3}".format(
+			logger.log(logging.INFO, "{0}: detected soc change from {1} to {2}, identified as: {3}".format(
 				tme,
 				self._previous_soc if self._previous_soc is not None else "None",
 				self._current_soc,
@@ -122,7 +122,7 @@ class IterationChangeTracker(object):
 			))
 
 		if self.target_soc_change() != ChangeIndicator.NONE:
-			logger.log(logging.INFO, "{0}: detected target soc change from {1} to {2}, identifiedas: {3}".format(
+			logger.log(logging.INFO, "{0}: detected target soc change from {1} to {2}, identified as: {3}".format(
 				tme,
 				self._previous_target_soc if self._previous_target_soc is not None else "None",
 				self._current_target_soc if self._current_target_soc is not None else "None",
@@ -130,7 +130,7 @@ class IterationChangeTracker(object):
 			))
 		
 		if self.nw_tsoc_higher_change() != ChangeIndicator.NONE:
-			logger.log(logging.INFO, "{0}: detected nw higher tsoc change from {1} to {2}, identifiedas: {3}".format(
+			logger.log(logging.INFO, "{0}: detected nw higher tsoc change from {1} to {2}, identified as: {3}".format(
 				tme,
 				self._previous_nw_tsoc_higher if self._previous_nw_tsoc_higher is not None else "None",
 				self._current_nw_tsoc_higher,
@@ -297,13 +297,13 @@ class VebusDevice(EssDevice):
 		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
 
 		# Fast charge, or controlled charge? 
-		fast_charge_clearence = True #Defaults to true, if we have no limit or can't determine technical limits, we just go for it (legacy behaviour). 
+		fast_charge_clearance = True #Defaults to true, if we have no limit or can't determine technical limits, we just go for it (legacy behaviour). 
 
 		if fast_charge_requested and self.delegate.battery_charge_limit is not None and self.delegate.get_charge_power_capability() is not None:
 			# limits and technical capabilities are known. So, only apply fast charge, if limit would be implicit obeyed.
-			fast_charge_clearence = self.delegate.get_charge_power_capability() <= self.delegate.battery_charge_limit * 1000
+			fast_charge_clearance = self.delegate.get_charge_power_capability() <= self.delegate.battery_charge_limit * 1000
 
-		if rate is None or (fast_charge_requested and fast_charge_clearence):
+		if rate is None or (fast_charge_requested and fast_charge_clearance):
 			self._set_charge_power(None)
 			return rate #return the original requested rate either way. 
 		else:
@@ -439,13 +439,13 @@ class MultiRsDevice(EssDevice):
 		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
 		
 		# Fast charge, or controlled charge? 
-		fast_charge_clearence = True #Defaults to true, if we have no limit or can't determine technical limits, we just go for it (legacy behaviour). 
+		fast_charge_clearance = True #Defaults to true, if we have no limit or can't determine technical limits, we just go for it (legacy behaviour). 
 
 		if fast_charge_requested and self.delegate.battery_charge_limit is not None and self.delegate.get_charge_power_capability() is not None:
 			# limits and technical capabilities are known. So, only apply fast charge, if limit would be implicit obeyed.
-			fast_charge_clearence = self.delegate.get_charge_power_capability() <= self.delegate.battery_charge_limit * 1000
+			fast_charge_clearance = self.delegate.get_charge_power_capability() <= self.delegate.battery_charge_limit * 1000
 
-		if rate is None or (fast_charge_requested and fast_charge_clearence):
+		if rate is None or (fast_charge_requested and fast_charge_clearance):
 			self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', 15000)
 		else:
 			self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', max(0.0, rate - self.pvpower))
