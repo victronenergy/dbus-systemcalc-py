@@ -880,15 +880,17 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 						next_window = w
 						break # out of for loop
 
-				#proably only one common handler (_determine_reactive_strategy) needed for either operating mode. 
-				if (self.operating_mode == OperatingMode.TRADEMODE):
-					final_strategy = self._determine_reactive_strategy(current_window, next_window, restrictions, now)
+				#As of now, one common handler is enough. Hence, we don't need to validate the operation mode 
+				final_strategy = self._determine_reactive_strategy(current_window, next_window, restrictions, now)
+				
+				#if (self.operating_mode == OperatingMode.TRADEMODE):
+				#	final_strategy = self._determine_reactive_strategy(current_window, next_window, restrictions, now)
 
-				elif (self.operating_mode == OperatingMode.GREENMODE):
-					final_strategy = self._determine_reactive_strategy(current_window, next_window, restrictions, now)
+				#elif (self.operating_mode == OperatingMode.GREENMODE):
+				#	final_strategy = self._determine_reactive_strategy(current_window, next_window, restrictions, now)
 
-				elif (self.operating_mode == OperatingMode.UNKNOWN):
-					final_strategy = ReactiveStrategy.UNKNOWN_OPERATING_MODE
+				#elif (self.operating_mode == OperatingMode.UNKNOWN):
+				#	final_strategy = ReactiveStrategy.UNKNOWN_OPERATING_MODE
 
 			else:
 				# No matching windows
