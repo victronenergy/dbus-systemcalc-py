@@ -307,6 +307,11 @@ class VebusDevice(EssDevice):
 			self._set_charge_power(None)
 			return rate #return the original requested rate either way. 
 		else:
+			# if fast charge is requested, but not yet cleared, use the configured battery charge limit as charge rate. 
+			# this way the limit is obeyed, but the desired "maximum charge" is achieved. 
+			if (fast_charge_requested and not fast_charge_clearance and self.delegate.battery_charge_limit is not None):
+				rate = self.delegate.battery_charge_limit * 1000
+				
 			# Upon first call of charge(), the input charge-rate eventually has some DC-AC losses considered. 
 			# (Originating from ac consumers currently beeing driven with dcsolar, reducing anticipated solar overhead)
 			# As soon, as we start charging, there can't be a flow from dc to ac, so these losses will vanish
@@ -448,6 +453,11 @@ class MultiRsDevice(EssDevice):
 		if rate is None or (fast_charge_requested and fast_charge_clearance):
 			self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', 15000)
 		else:
+			# if fast charge is requested, but not yet cleared, use the configured battery charge limit as charge rate. 
+			# this way the limit is obeyed, but the desired "maximum charge" is achieved. 
+			if (fast_charge_requested and not fast_charge_clearance and self.delegate.battery_charge_limit is not None):
+				rate = self.delegate.battery_charge_limit * 1000
+
 			self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', max(0.0, rate - self.pvpower))
 	
 		return rate
