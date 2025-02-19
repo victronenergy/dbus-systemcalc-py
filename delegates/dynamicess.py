@@ -461,14 +461,13 @@ class MultiRsDevice(EssDevice):
 			# is allowed, then export rate plus whatever DC-coupled PV is
 			# making. If exporting the battery is not allowed, then limit that
 			# to DC-coupled PV plus local consumption.
-
+			self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
 			if flags & Flags.FASTCHARGE:
 				self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', -15000)
 				return None
 			else:
 				srate = max(1.0, (rate or 0) + self.pvpower) # 1.0 to allow selling overvoltage
-
-				self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
+	
 				if (batteryexport):
 					#discharging the battery by rate requires to discharge all available dcpv as well.
 					self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', srate)
