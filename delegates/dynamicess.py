@@ -470,11 +470,11 @@ class MultiRsDevice(EssDevice):
 	
 				if (batteryexport):
 					#discharging the battery by rate requires to discharge all available dcpv as well.
-					self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', srate)
+					self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', -srate)
 				else:
 					# this may lead to feedin anyway, but it then is "feedin of solar", while battery is only backing loads. 
 					self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', 
-						(min (srate, self.pvpower + self.consumption + 1.0))) # +1.0 to allow selling overvoltage
+						(-min (srate, self.pvpower + self.consumption + 1.0))) # +1.0 to allow selling overvoltage
 				
 				return rate
 					
