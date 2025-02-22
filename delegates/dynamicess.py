@@ -311,7 +311,7 @@ class VebusDevice(EssDevice):
 			# this way the limit is obeyed, but the desired "maximum charge" is achieved. 
 			if (fast_charge_requested and not fast_charge_clearance and self.delegate.battery_charge_limit is not None):
 				rate = self.delegate.battery_charge_limit * 1000
-				
+
 			# Upon first call of charge(), the input charge-rate eventually has some DC-AC losses considered. 
 			# (Originating from ac consumers currently beeing driven with dcsolar, reducing anticipated solar overhead)
 			# As soon, as we start charging, there can't be a flow from dc to ac, so these losses will vanish
@@ -1000,7 +1000,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				 self.soc + self.charge_hysteresis == w.soc - 1 and 
 				 not (w.restrictions & Restrictions.GRID2BAT)) or
 	   		    (self.iteration_change_tracker._previous_reactive_strategy == ReactiveStrategy.UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC and 
-		  		target_soc_change == ChangeIndicator.NONE)):
+		  		target_soc_change == ChangeIndicator.NONE and self.soc < w.soc)):
 				# Yes, this turned into a charge-window by a dropping soc. (limit is in kW, therefore * 1000 / 10) 
 				self.override_chargerate = self.battery_charge_limit * 100
 				reactive_strategy = ReactiveStrategy.UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC
@@ -1143,8 +1143,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 			elif reactive_strategy in self.discharge_states:	
 				#chargerate to be send to discharge method has to be always positive.
-				self._dbusservice['/DynamicEss/ChargeRate'] = self._device.discharge(w.flags, restrictions, abs(final_chargerate), w.allow_feedin) or 0
-
+				dc_response = self._device.discharge(w.flags, restrictions, abs(final_chargerate), w.allow_feedin)
+				self._dbusservice['/DynamicEss/ChargeRate'] = dc_response * -1 if dc_response is not None else 0
+				
 			elif reactive_strategy in self.error_selfconsume_states:
 				#errorstates are handled outside this method. Seperate return to avoid else-case.
 				return reactive_strategy
