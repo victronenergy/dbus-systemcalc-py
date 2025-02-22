@@ -84,6 +84,7 @@ class ReactiveStrategy(int, Enum):
 	IDLE_NO_OPPORTUNITY = 15
 	UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC = 16 
 
+	DESS_DISABLED = 92
 	SELFCONSUME_UNEXPECTED_EXCEPTION = 93
 	SELFCONSUME_FAULTY_CHARGERATE = 94
 	UNKNOWN_OPERATING_MODE = 95
@@ -546,10 +547,14 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self.charge_states = (ReactiveStrategy.SCHEDULED_CHARGE_ALLOW_GRID, ReactiveStrategy.SCHEDULED_CHARGE_ENHANCED, 
 					ReactiveStrategy.SCHEDULED_CHARGE_NO_GRID, ReactiveStrategy.SCHEDULED_CHARGE_FEEDIN, 
 					ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION, ReactiveStrategy.UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC)
-		self.selfconsume_states = (ReactiveStrategy.SELFCONSUME_ACCEPT_CHARGE, ReactiveStrategy.SELFCONSUME_ACCEPT_DISCHARGE, ReactiveStrategy.SELFCONSUME_NO_GRID)
-		self.idle_states = (ReactiveStrategy.IDLE_SCHEDULED_FEEDIN, ReactiveStrategy.IDLE_MAINTAIN_SURPLUS, ReactiveStrategy.IDLE_MAINTAIN_TARGETSOC, ReactiveStrategy.IDLE_NO_OPPORTUNITY)
+		self.selfconsume_states = (ReactiveStrategy.SELFCONSUME_ACCEPT_CHARGE, ReactiveStrategy.SELFCONSUME_ACCEPT_DISCHARGE, 
+							 ReactiveStrategy.SELFCONSUME_NO_GRID)
+		self.idle_states = (ReactiveStrategy.IDLE_SCHEDULED_FEEDIN, ReactiveStrategy.IDLE_MAINTAIN_SURPLUS, ReactiveStrategy.IDLE_MAINTAIN_TARGETSOC, 
+					  ReactiveStrategy.IDLE_NO_OPPORTUNITY)
 		self.discharge_states = (ReactiveStrategy.SCHEDULED_DISCHARGE, ReactiveStrategy.SCHEDULED_MINIMUM_DISCHARGE)
-		self.error_selfconsume_states = (ReactiveStrategy.NO_WINDOW, ReactiveStrategy.UNKNOWN_OPERATING_MODE, ReactiveStrategy.SELFCONSUME_UNPREDICTED, ReactiveStrategy.SELFCONSUME_UNMAPPED_STATE, ReactiveStrategy.SELFCONSUME_FAULTY_CHARGERATE, ReactiveStrategy.SELFCONSUME_UNEXPECTED_EXCEPTION)
+		self.error_selfconsume_states = (ReactiveStrategy.NO_WINDOW, ReactiveStrategy.UNKNOWN_OPERATING_MODE, ReactiveStrategy.SELFCONSUME_UNPREDICTED,
+								    ReactiveStrategy.SELFCONSUME_UNMAPPED_STATE, ReactiveStrategy.SELFCONSUME_FAULTY_CHARGERATE, 
+									ReactiveStrategy.SELFCONSUME_UNEXPECTED_EXCEPTION)
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(DynamicEss, self).set_sources(dbusmonitor, settings, dbusservice)
@@ -571,12 +576,14 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice.add_path('/DynamicEss/Strategy', value=None)
 		self._dbusservice.add_path('/DynamicEss/Restrictions', value=None)
 		self._dbusservice.add_path('/DynamicEss/AllowGridFeedIn', value=None)
-		self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value=None)
 		self._dbusservice.add_path('/DynamicEss/Flags', value=None)
 		self._dbusservice.add_path('/DynamicEss/AvailableOverhead', value=None)
 
 		if self.mode > 0:
+			self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value=None)
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
+		else:
+			self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value = ReactiveStrategy.DESS_DISABLED.value)
 
 	def get_settings(self):
 		# Settings for DynamicEss
@@ -691,6 +698,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		if setting == 'dess_mode':
 			if oldvalue == 0 and newvalue > 0:
 				self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
+			if newvalue == 0:
+				self._dbusservice['/DynamicEss/ReactiveStrategy'] = ReactiveStrategy.DESS_DISABLED.value
 
 	def windows(self):
 		starttimes = (self._settings['dess_start_{}'.format(i)] for i in range(NUM_SCHEDULES))
@@ -817,6 +826,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# If DESS was disabled, deactivate and kill timer.
 		if self.mode in (0, 2, 3): # Old buy/sell states now also means off
 			self.deactivate(0) # No error
+			self._dbusservice['/DynamicEss/ReactiveStrategy'] = ReactiveStrategy.DESS_DISABLED.value
 			return False
 
 		def bail(code):
@@ -1145,7 +1155,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				#chargerate to be send to discharge method has to be always positive.
 				dc_response = self._device.discharge(w.flags, restrictions, abs(final_chargerate), w.allow_feedin)
 				self._dbusservice['/DynamicEss/ChargeRate'] = dc_response * -1 if dc_response is not None else 0
-				
+
 			elif reactive_strategy in self.error_selfconsume_states:
 				#errorstates are handled outside this method. Seperate return to avoid else-case.
 				return reactive_strategy
