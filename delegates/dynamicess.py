@@ -591,10 +591,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			("dess_fullchargeinterval", path + "/FullChargeInterval", 14, -1, 99),
 			("dess_fullchargeduration", path + "/FullChargeDuration", 2, -1, 12),
 			("dess_operatingmode", path + '/OperatingMode', -1, -1, 2),
-			("dess_batterychargelimit", path + '/BatteryChargeLimit', -1, -1, 9999),
-			("dess_batterydischargelimit", path + '/BatteryDischargeLimit', -1, -1, 9999),
-			("dess_gridimportlimit", path + '/GridImportLimit', -1, -1, 9999),
-			("dess_gridexportlimit", path + '/GridExportLimit', -1, -1, 9999),
+			("dess_batterychargelimit", path + '/BatteryChargeLimit', -1.0, -1.0, 9999.9),
+			("dess_batterydischargelimit", path + '/BatteryDischargeLimit', -1.0, -1.0, 9999.9),
+			("dess_gridimportlimit", path + '/GridImportLimit', -1.0, -1.0, 9999.9),
+			("dess_gridexportlimit", path + '/GridExportLimit', -1.0, -1.0, 9999.9),
 		]
 
 		for i in range(NUM_SCHEDULES):
