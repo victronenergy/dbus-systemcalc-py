@@ -566,13 +566,13 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice.add_path('/DynamicEss/Capabilities', value=31)
 		self._dbusservice.add_path('/DynamicEss/Active', value=0,
 			gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
-		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=None,
+		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=0,
 			gettextcallback=lambda p, v: '{}%'.format(v))
 		self._dbusservice.add_path('/DynamicEss/ErrorCode', value=0,
 			gettextcallback=lambda p, v: ERRORS.get(v, 'Unknown'))
 		self._dbusservice.add_path('/DynamicEss/LastScheduledStart', value=None)
 		self._dbusservice.add_path('/DynamicEss/LastScheduledEnd', value=None)
-		self._dbusservice.add_path('/DynamicEss/ChargeRate', value=None)
+		self._dbusservice.add_path('/DynamicEss/ChargeRate', value=0)
 		self._dbusservice.add_path('/DynamicEss/Strategy', value=None)
 		self._dbusservice.add_path('/DynamicEss/Restrictions', value=None)
 		self._dbusservice.add_path('/DynamicEss/AllowGridFeedIn', value=None)
@@ -927,12 +927,15 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		except Exception as ex:
 			logger.log(logging.FATAL, "Unexpected exception inside Control Loop.", exc_info = ex)
 			final_strategy = ReactiveStrategy.SELFCONSUME_UNEXPECTED_EXCEPTION
+			self._dbusservice['/DynamicEss/ReactiveStrategy'] = final_strategy.value
 
 		if final_strategy.value in self.error_selfconsume_states:
 			#Do at least regular ESS.
 			self.chargerate = None
 			self._dbusservice['/DynamicEss/ChargeRate'] = 0
 			self._device.self_consume(restrictions, w.allow_feedin)
+
+		
 
 		return True
 				
