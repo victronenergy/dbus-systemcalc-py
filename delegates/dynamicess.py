@@ -1101,7 +1101,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					#     So, the more logical way is to accept ANY discharge, but simple stop when reaching target soc - and punish the remaining
 					#     load during that window to the grid. -> also self consume
 					# BUT: we are only doing this, If our next window has a smaller, equal or no target soc
-					elif self.soc - self.discharge_hysteresis > max(w.soc, self._device.minsoc) and not next_window_higher_target_soc:
+					elif self.soc - self.discharge_hysteresis > max(w.soc, self._device.minsoc):
 						reactive_strategy = ReactiveStrategy.SELFCONSUME_ACCEPT_DISCHARGE
 
 					else:
@@ -1110,11 +1110,11 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 						# - Spot on target soc, so idling is imminent / bellow targetSoc by charge_hysteresis %.
 						# - available solar plus, but intended feedin.
 						# All cases should lead to idle, just determine which we have, for debug purpose
-						if (self.soc > self.targetsoc and next_window_higher_target_soc):
+						#if (self.soc > self.targetsoc and next_window_higher_target_soc):
 							# next window has a higher target soc than the current window, so idle to maintin advantage.
 							# if a discharge would have been enforced by the schedule, we would already be in SCHEDULED_DISCHARGE case.
-							reactive_strategy = ReactiveStrategy.IDLE_MAINTAIN_SURPLUS
-						elif available_solar_plus > 0 and excess_to_grid:
+							#reactive_strategy = ReactiveStrategy.IDLE_MAINTAIN_SURPLUS
+						if available_solar_plus > 0 and excess_to_grid:
 							# We have solar surplus, but VRM wants an explicit feedin.
 							# since we are above or equal to target soc, we are going idle to achieve that.
 							reactive_strategy = ReactiveStrategy.IDLE_SCHEDULED_FEEDIN
