@@ -9,6 +9,7 @@ import os
 import json
 import time
 import re
+import itertools
 from gi.repository import GLib
 
 # Victron packages
@@ -656,7 +657,9 @@ class SystemCalc:
 			non_vebus_inverter = non_vebus_inverters[0]
 
 			# For RS Smart and Multi RS, add PV to the yield
-			for i in non_vebus_inverters:
+			for i in itertools.chain(
+					self._dbusmonitor.get_service_list('com.victronenergy.multi').keys(),
+					self._dbusmonitor.get_service_list('com.victronenergy.inverter').keys()):
 				if (pv_yield := self._dbusmonitor.get_value(i, "/Yield/Power")) is not None:
 					newvalues['/Dc/Pv/Power'] = newvalues.get('/Dc/Pv/Power', 0) + pv_yield
 
