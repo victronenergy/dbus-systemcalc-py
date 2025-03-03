@@ -624,7 +624,12 @@ class ChargerSubsystem(object):
 			capacity = safeadd(*(c.currentlimit for c in controllable)) or 0
 			if capacity > 0:
 				for c in controllable:
-					c.maxchargecurrent = remainder * c.currentlimit / capacity
+					try:
+						c.maxchargecurrent = remainder * c.currentlimit / capacity
+					except TypeError:
+						# happens if for some reason
+						# /Settings/ChargeCurrentLimit is not defined
+						pass
 
 		# Return flags of what we did
 		return voltage_written, int(network_mode_written and max_charge_current is not None), network_mode
