@@ -671,8 +671,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			ccl = self._dbusmonitor.get_value(battery, '/Info/MaxChargeCurrent')
 			cvl = self._dbusmonitor.get_value(battery, '/Info/MaxChargeVoltage')
 
-		if (ccl is not None and cvl is not None):
-			return ccl * cvl
+			if (ccl is not None and cvl is not None):
+				return ccl * cvl
 		
 		return None
 	
