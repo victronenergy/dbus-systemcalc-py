@@ -10,7 +10,7 @@ from delegates.chargecontrol import ChargeControl
 from enum import Enum
 
 NUM_SCHEDULES = 12
-INTERVAL = 5
+INTERVAL = 2
 SELLPOWER = -32000
 HUB4_SERVICE = 'com.victronenergy.hub4'
 ERROR_TIMEOUT = 60
@@ -65,7 +65,7 @@ class EssDevice(object):
 	def discharge(self, flags, restrictions, rate, allow_feedin):
 		raise NotImplementedError("discharge")
 
-	def idle(self, allow_feedin):
+	def idle(self, restrictions, allow_feedin):
 		raise NotImplementedError("idle")
 
 	def self_consume(self, restrictions, allow_feedin):
@@ -182,21 +182,21 @@ class VebusDevice(EssDevice):
 			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
 			return rate
 
-	def idle(self, allow_feedin):
+	def idle(self, restrictions, allow_feedin):
 		self._set_feedin(allow_feedin)
 		self._set_charge_power(None)
 		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/ForceCharge', 0)
 
-		if allow_feedin:
+		# When idle only configure setpoint and maxDischarge overrides if consumption < pv.  Otherwise, use standard ESS
+		# (which is also quicker to react) to avoid importing when pv is lower, or consumption higher, than forecast.
+		if allow_feedin and self.consumption < self.acpv + self.pvpower:
 			# This keeps battery idle by not allowing more power to be taken
 			# from the DC bus than what DC-coupled PV provides.
 			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
 				max(1.0, round(0.9*self.pvpower)))
 			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
 		else:
-			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', 0) # Normal ESS
-			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', max(1.0, self.pvpower))
-
+			self.self_consume(restrictions, allow_feedin)
 		return None
 
 	def self_consume(self, restrictions, allow_feedin):
@@ -281,7 +281,7 @@ class MultiRsDevice(EssDevice):
 
 		return rate
 
-	def idle(self, allow_feedin):
+	def idle(self, restrictions, allow_feedin):
 		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin))
 		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
 		self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', -max(0, self.pvpower))
@@ -610,7 +610,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 						# zone
 						self.discharge_hysteresis = 1
 						self._dbusservice['/DynamicEss/ChargeRate'] = \
-							self._device.idle(w.allow_feedin)
+							self._device.idle(restrictions, w.allow_feedin)
 
 				break # out of for loop
 		else:
