@@ -944,6 +944,8 @@ class Dvcc(SystemCalcDelegate):
 			('com.victronenergy.vecan',	[
 				'/Link/ChargeVoltage',
 				'/Link/NetworkMode']),
+			('com.victronenergy.hub4', [
+				'/Overrides/FeedInExcess']),
 			('com.victronenergy.settings', [
 				 '/Settings/CGwacs/OvervoltageFeedIn',
 				 '/Settings/Services/Bol'])]
@@ -1306,7 +1308,9 @@ class Dvcc(SystemCalcDelegate):
 		# enabled'. This ignores other setups which allow feedback: hub-1.
 		return self.has_ess_assistant and self._multi.ac_connected and \
 			self._dbusmonitor.get_value('com.victronenergy.settings',
-				'/Settings/CGwacs/OvervoltageFeedIn') == 1
+				'/Settings/CGwacs/OvervoltageFeedIn') == 1 and \
+			self._dbusmonitor.get_value('com.victronenergy.hub4',
+				'/Overrides/FeedInExcess') != 1
 
 	def _update_solarchargers_and_vecan(self, has_bms, bms_charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0):
 		""" This function updates the solar chargers and VE.Can connected
