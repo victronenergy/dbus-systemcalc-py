@@ -84,6 +84,8 @@ class ReactiveStrategy(int, Enum):
 	IDLE_NO_OPPORTUNITY = 15
 	UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC = 16 
 	SELFCONSUME_INCREASED_DISCHARGE = 17
+	KEEP_BATTERY_CHARGED = 18
+	SCHEDULED_DISCHARGE_SMOOTH_TRANSITION = 19
 
 	DESS_DISABLED = 92
 	SELFCONSUME_UNEXPECTED_EXCEPTION = 93
@@ -102,16 +104,19 @@ class IterationChangeTracker(object):
 		self._current_soc = None
 		self._current_target_soc = None
 		self._current_nw_tsoc_higher = None
+		self._current_nw_tsoc_lower = None
 
 		self._previous_reactive_strategy = None
 		self._previous_soc = None
 		self._previous_target_soc = None
 		self._previous_nw_tsoc_higher = None
+		self._previous_nw_tsoc_lower = None
 		
-	def input(self, soc, target_soc, nw_tsoc_higher):
+	def input(self, soc, target_soc, nw_tsoc_higher, nw_tsoc_lower):
 		self._current_soc = soc
 		self._current_target_soc = target_soc
 		self._current_nw_tsoc_higher = nw_tsoc_higher
+		self._current_nw_tsoc_lower = nw_tsoc_lower
 
 		#log changes as well.
 		tme = datetime.today().strftime('%H:%M:%S')
@@ -137,6 +142,14 @@ class IterationChangeTracker(object):
 				self._previous_nw_tsoc_higher if self._previous_nw_tsoc_higher is not None else "None",
 				self._current_nw_tsoc_higher,
 				self.nw_tsoc_higher_change().name
+			))
+		
+		if self.nw_tsoc_lower_change() != ChangeIndicator.NONE:
+			logger.log(logging.INFO, "{0}: detected nw lower tsoc change from {1} to {2}, identified as: {3}".format(
+				tme,
+				self._previous_nw_tsoc_lower if self._previous_nw_tsoc_lower is not None else "None",
+				self._current_nw_tsoc_lower,
+				self.nw_tsoc_lower_change().name
 			))
 
 	def soc_change(self) -> ChangeIndicator:
@@ -168,14 +181,25 @@ class IterationChangeTracker(object):
 			return ChangeIndicator.BECAME_TRUE
 		elif not self._current_nw_tsoc_higher and (self._previous_nw_tsoc_higher is None or self._previous_nw_tsoc_higher):
 			return ChangeIndicator.BECAME_FALSE
+	
+	def nw_tsoc_lower_change(self) -> ChangeIndicator:
+		if self._current_nw_tsoc_lower is None or self._current_nw_tsoc_lower == self._previous_nw_tsoc_lower:
+			return ChangeIndicator.NONE
+		
+		if self._current_nw_tsoc_lower and (self._previous_nw_tsoc_lower is None or not self._previous_nw_tsoc_lower):
+			return ChangeIndicator.BECAME_TRUE
+		elif not self._current_nw_tsoc_lower and (self._previous_nw_tsoc_lower is None or self._previous_nw_tsoc_lower):
+			return ChangeIndicator.BECAME_FALSE
 
 	def done(self, reactive_strategy):
 		self._previous_soc = self._current_soc
 		self._previous_target_soc = self._current_target_soc
 		self._previous_nw_tsoc_higher = self._current_nw_tsoc_higher
+		self._previous_nw_tsoc_lower = self._current_nw_tsoc_lower
 		self._current_soc = None
 		self._current_target_soc = None
 		self._current_nw_tsoc_higher = None
+		self._current_nw_tsoc_lower = None
 
 		if (self._previous_reactive_strategy != reactive_strategy):
 			tme = datetime.today().strftime('%H:%M:%S')
@@ -551,12 +575,13 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		#SCHEDULED_SELFCONSUME is left out, it isn't part of the overall deterministic strategy tree, but a quick escape before entering. 
 		self.charge_states = (ReactiveStrategy.SCHEDULED_CHARGE_ALLOW_GRID, ReactiveStrategy.SCHEDULED_CHARGE_ENHANCED, 
 					ReactiveStrategy.SCHEDULED_CHARGE_NO_GRID, ReactiveStrategy.SCHEDULED_CHARGE_FEEDIN, 
-					ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION, ReactiveStrategy.UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC)
+					ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION, ReactiveStrategy.UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC,
+					ReactiveStrategy.KEEP_BATTERY_CHARGED)
 		self.selfconsume_states = (ReactiveStrategy.SELFCONSUME_ACCEPT_CHARGE, ReactiveStrategy.SELFCONSUME_ACCEPT_DISCHARGE, 
 							 ReactiveStrategy.SELFCONSUME_NO_GRID, ReactiveStrategy.SELFCONSUME_INCREASED_DISCHARGE)
 		self.idle_states = (ReactiveStrategy.IDLE_SCHEDULED_FEEDIN, ReactiveStrategy.IDLE_MAINTAIN_SURPLUS, ReactiveStrategy.IDLE_MAINTAIN_TARGETSOC, 
 					  ReactiveStrategy.IDLE_NO_OPPORTUNITY)
-		self.discharge_states = (ReactiveStrategy.SCHEDULED_DISCHARGE, ReactiveStrategy.SCHEDULED_MINIMUM_DISCHARGE)
+		self.discharge_states = (ReactiveStrategy.SCHEDULED_DISCHARGE, ReactiveStrategy.SCHEDULED_MINIMUM_DISCHARGE, ReactiveStrategy.SCHEDULED_DISCHARGE_SMOOTH_TRANSITION)
 		self.error_selfconsume_states = (ReactiveStrategy.NO_WINDOW, ReactiveStrategy.UNKNOWN_OPERATING_MODE, ReactiveStrategy.SELFCONSUME_UNPREDICTED,
 								    ReactiveStrategy.SELFCONSUME_UNMAPPED_STATE, ReactiveStrategy.SELFCONSUME_FAULTY_CHARGERATE, 
 									ReactiveStrategy.SELFCONSUME_UNEXPECTED_EXCEPTION)
@@ -966,9 +991,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 		self._dbusservice["/DynamicEss/AvailableOverhead"] = available_solar_plus
 		next_window_higher_target_soc = nw is not None and (nw.soc > w.soc) and nw.strategy != Strategy.SELFCONSUME
+		next_window_lower_target_soc = nw is not None and (nw.soc < w.soc) and nw.strategy != Strategy.SELFCONSUME
 
 		#pass new values to iteration change tracker. 
-		self.iteration_change_tracker.input(self.soc, self.targetsoc, next_window_higher_target_soc)
+		self.iteration_change_tracker.input(self.soc, self.targetsoc, next_window_higher_target_soc, next_window_lower_target_soc)
 		soc_change = self.iteration_change_tracker.soc_change()
 		target_soc_change = self.iteration_change_tracker.target_soc_change()
 
@@ -1000,6 +1026,11 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		reactive_strategy = None 
 
 		if self.soc + self.charge_hysteresis < w.soc or w.soc >= 100:
+			# if 100% is reached, keep batteries charged.
+			if w.soc == 100 and self.soc == 100:
+				self.chargerate = 250
+				reactive_strategy = ReactiveStrategy.KEEP_BATTERY_CHARGED
+
 			# we are behind plan. Charging is required. 
 			# 
 			# First exception case here is : 
@@ -1007,7 +1038,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			# soc. If the soc was FALLING, it means we have most likely been idling and dropped bellow target_soc. In that case, we want to 
 			# avoid spiky charge peaks (can happen close to window end) but rather catch up to target soc at 10% of chargelimit.
 			# as soon as target_soc changes, this state has to be left. Cannot be done with grid2bat restriction.
-			if ((soc_change == ChangeIndicator.FALLING and
+			elif ((soc_change == ChangeIndicator.FALLING and
 	   			 target_soc_change == ChangeIndicator.NONE and
 				 self.soc + self.charge_hysteresis == w.soc - 1 and 
 				 not (w.restrictions & Restrictions.GRID2BAT)) or
@@ -1130,8 +1161,16 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 							# since we are above or equal to target soc, we are going idle to achieve that.
 							reactive_strategy = ReactiveStrategy.IDLE_SCHEDULED_FEEDIN
 						else:
-							# else, it's idle due to soc==targetsoc, or soc + charge_hystersis == targetsoc.
-							reactive_strategy = ReactiveStrategy.IDLE_MAINTAIN_TARGETSOC
+							if (self.iteration_change_tracker._previous_reactive_strategy in self.discharge_states and 
+								next_window_lower_target_soc and
+								target_soc_change == ChangeIndicator.NONE):
+								# keep current charge rate untouched.
+								# already targeting the new soc target of "next" window will cause a not smooth transition, if next window in slot 1 is outdated
+								# and the next window beeing pushed to slot 0 indicates another target soc.
+								reactive_strategy = ReactiveStrategy.SCHEDULED_DISCHARGE_SMOOTH_TRANSITION
+							else:	
+								# else, it's idle due to soc==targetsoc, or soc + charge_hystersis == targetsoc.
+								reactive_strategy = ReactiveStrategy.IDLE_MAINTAIN_TARGETSOC
 	
 		#bellow here, ReactiveStrategy should be determined. As well as chargerate, if required. If it isn't
 		#Enter self consume, as conditions may change and situation will resolve. 
