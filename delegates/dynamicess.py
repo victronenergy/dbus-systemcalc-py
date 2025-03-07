@@ -338,6 +338,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
 		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=None,
 			gettextcallback=lambda p, v: '{}%'.format(v))
+		self._dbusservice.add_path('/DynamicEss/MinimumSoc', value=None,
+			gettextcallback=lambda p, v: '{}%'.format(v))
 		self._dbusservice.add_path('/DynamicEss/ErrorCode', value=0,
 			gettextcallback=lambda p, v: ERRORS.get(v, 'Unknown'))
 		self._dbusservice.add_path('/DynamicEss/LastScheduledStart', value=None)
@@ -535,6 +537,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			self.active = 0 # Off
 			self.errorcode = code
 			self.targetsoc = None
+			self._dbusservice['/DynamicEss/MinimumSoc'] = None
 
 		if self.capacity == 0.0:
 			bail(5) # Capacity not set
@@ -566,6 +569,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 		self._dbusservice['/DynamicEss/LastScheduledStart'] = None if start is None else int(datetime.timestamp(start))
 		self._dbusservice['/DynamicEss/LastScheduledEnd'] = None if stop is None else int(datetime.timestamp(stop))
+
+		# This is the ESS minsoc of the selected device
+		self._dbusservice['/DynamicEss/MinimumSoc'] = None if self._device is None else self._device.minsoc
 
 		for w in windows:
 			if now in w and self.acquire_control():
@@ -633,6 +639,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice['/DynamicEss/Strategy'] = None
 		self._dbusservice['/DynamicEss/Restrictions'] = None
 		self._dbusservice['/DynamicEss/AllowGridFeedIn'] = None
+		self._dbusservice['/DynamicEss/MinimumSoc'] = None
 
 	def update_values(self, newvalues):
 		# Indicate whether this system has DESS capability. Presently
