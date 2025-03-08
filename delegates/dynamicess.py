@@ -961,8 +961,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			self._dbusservice['/DynamicEss/ChargeRate'] = 0
 			self._device.self_consume(restrictions, w.allow_feedin)
 
-		
-
 		return True
 				
 	def _determine_reactive_strategy(self, w: DynamicEssWindow, nw: DynamicEssWindow, restrictions, now) -> ReactiveStrategy:
@@ -1026,8 +1024,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		reactive_strategy = None 
 
 		if self.soc + self.charge_hysteresis < w.soc or w.soc >= 100:
-			# if 100% is reached, keep batteries charged.
-			if w.soc == 100 and self.soc == 100:
+			# if 100% is reached, keep batteries charged. 
+			# Mind we need to leave this, if missing2bat copping is selected and the ME-indicator is negative. 
+			# (To be more precice, as soon as the 250 Watt requested couldnt't be served by solar, fall back to default behaviour)
+			if w.soc >= 100 and self.soc >= 100 and (missing_to_grid or (missing_to_bat and available_solar_plus > 250)):
 				self.chargerate = 250
 				reactive_strategy = ReactiveStrategy.KEEP_BATTERY_CHARGED
 
