@@ -841,7 +841,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				elif start_soc > end_soc:
 					chargerate = chargerate if self.battery_discharge_limit is None else min(chargerate, self.battery_discharge_limit * 1000)
 
-				self.chargerate = chargerate if self.chargerate is None else max(abs(self.chargerate), chargerate)
+				# keeping up prior chargerate is no longer required at this point.
+				self.chargerate = chargerate
+				#self.chargerate = chargerate if self.chargerate is None else max(abs(self.chargerate), chargerate)
 				self.prevsoc = self.soc
 
 			except ZeroDivisionError:
@@ -961,8 +963,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			self._dbusservice['/DynamicEss/ChargeRate'] = 0
 			self._device.self_consume(restrictions, w.allow_feedin)
 
-		
-
 		return True
 				
 	def _determine_reactive_strategy(self, w: DynamicEssWindow, nw: DynamicEssWindow, restrictions, now) -> ReactiveStrategy:
@@ -1026,8 +1026,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		reactive_strategy = None 
 
 		if self.soc + self.charge_hysteresis < w.soc or w.soc >= 100:
-			# if 100% is reached, keep batteries charged.
-			if w.soc == 100 and self.soc == 100:
+			# if 100% is reached, keep batteries charged. 
+			# Mind we need to leave this, if missing2bat copping is selected and the ME-indicator is negative. 
+			# (To be more precice, as soon as the 250 Watt requested couldnt't be served by solar, fall back to default behaviour)
+			if w.soc >= 100 and self.soc >= 100 and (missing_to_grid or (missing_to_bat and available_solar_plus > 250)):
 				self.chargerate = 250
 				reactive_strategy = ReactiveStrategy.KEEP_BATTERY_CHARGED
 
@@ -1189,7 +1191,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				reactive_strategy = ReactiveStrategy.SELFCONSUME_FAULTY_CHARGERATE
 
 			if reactive_strategy in self.charge_states:
-				self._device.charge(w.flags, restrictions, abs(final_chargerate), w.allow_feedin) or 0
+				self._device.charge(w.flags, restrictions, abs(final_chargerate), w.allow_feedin)
 
 			elif reactive_strategy in self.selfconsume_states:
 				self._device.self_consume(restrictions, w.allow_feedin)
