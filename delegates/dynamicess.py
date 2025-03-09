@@ -841,7 +841,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				elif start_soc > end_soc:
 					chargerate = chargerate if self.battery_discharge_limit is None else min(chargerate, self.battery_discharge_limit * 1000)
 
-				self.chargerate = chargerate if self.chargerate is None else max(abs(self.chargerate), chargerate)
+				# keeping up prior chargerate is no longer required at this point.
+				self.chargerate = chargerate
+				#self.chargerate = chargerate if self.chargerate is None else max(abs(self.chargerate), chargerate)
 				self.prevsoc = self.soc
 
 			except ZeroDivisionError:
@@ -1189,7 +1191,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				reactive_strategy = ReactiveStrategy.SELFCONSUME_FAULTY_CHARGERATE
 
 			if reactive_strategy in self.charge_states:
-				self._device.charge(w.flags, restrictions, abs(final_chargerate), w.allow_feedin) or 0
+				self._device.charge(w.flags, restrictions, abs(final_chargerate), w.allow_feedin)
 
 			elif reactive_strategy in self.selfconsume_states:
 				self._device.self_consume(restrictions, w.allow_feedin)
