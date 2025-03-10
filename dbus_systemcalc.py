@@ -1237,7 +1237,7 @@ class DbusSystemCalc(SystemCalc):
 		try:
 			with open("/opt/victronenergy/version", "r") as fp:
 				version, software, buildtime = fp.read().split('\n')[:3]
-			major, minor, _, rev = re.compile('v([0-9]*)\.([0-9]*)(~([0-9]*))?').match(version).groups()
+			major, minor, _, rev = re.compile(r'v(\d+)\.(\d+)(~(\d+))?').match(version).groups()
 			return (int(major, 16)<<16)+(int(minor, 16)<<8)+(0 if rev is None else int(rev, 16)), buildtime
 		except Exception:
 			pass
