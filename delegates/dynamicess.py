@@ -121,7 +121,7 @@ class IterationChangeTracker(object):
 		#log changes as well.
 		tme = datetime.today().strftime('%H:%M:%S')
 		if self.soc_change() != ChangeIndicator.NONE:
-			logger.log(logging.INFO, "{0}: detected soc change from {1} to {2}, identified as: {3}".format(
+			logger.log(logging.DEBUG, "{0}: detected soc change from {1} to {2}, identified as: {3}".format(
 				tme,
 				self._previous_soc if self._previous_soc is not None else "None",
 				self._current_soc,
@@ -129,7 +129,7 @@ class IterationChangeTracker(object):
 			))
 
 		if self.target_soc_change() != ChangeIndicator.NONE:
-			logger.log(logging.INFO, "{0}: detected target soc change from {1} to {2}, identified as: {3}".format(
+			logger.log(logging.DEBUG, "{0}: detected target soc change from {1} to {2}, identified as: {3}".format(
 				tme,
 				self._previous_target_soc if self._previous_target_soc is not None else "None",
 				self._current_target_soc if self._current_target_soc is not None else "None",
@@ -137,7 +137,7 @@ class IterationChangeTracker(object):
 			))
 
 		if self.nw_tsoc_higher_change() != ChangeIndicator.NONE:
-			logger.log(logging.INFO, "{0}: detected nw higher tsoc change from {1} to {2}, identified as: {3}".format(
+			logger.log(logging.DEBUG, "{0}: detected nw higher tsoc change from {1} to {2}, identified as: {3}".format(
 				tme,
 				self._previous_nw_tsoc_higher if self._previous_nw_tsoc_higher is not None else "None",
 				self._current_nw_tsoc_higher,
@@ -145,7 +145,7 @@ class IterationChangeTracker(object):
 			))
 
 		if self.nw_tsoc_lower_change() != ChangeIndicator.NONE:
-			logger.log(logging.INFO, "{0}: detected nw lower tsoc change from {1} to {2}, identified as: {3}".format(
+			logger.log(logging.DEBUG, "{0}: detected nw lower tsoc change from {1} to {2}, identified as: {3}".format(
 				tme,
 				self._previous_nw_tsoc_lower if self._previous_nw_tsoc_lower is not None else "None",
 				self._current_nw_tsoc_lower,
@@ -203,7 +203,7 @@ class IterationChangeTracker(object):
 
 		if (self._previous_reactive_strategy != reactive_strategy):
 			tme = datetime.today().strftime('%H:%M:%S')
-			logger.log(logging.INFO, "{0}: Strategy switch from {1} to {2}".format(
+			logger.log(logging.DEBUG, "{0}: Strategy switch from {1} to {2}".format(
 				tme,
 				self._previous_reactive_strategy.name if self._previous_reactive_strategy is not None else "None",
 				reactive_strategy.name))
@@ -943,7 +943,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				final_strategy = self._determine_reactive_strategy(current_window, next_window, restrictions, now)
 				
 				if (self.chargerate or 0) != self._dbusservice['/DynamicEss/ChargeRate']:
-					logger.log(logging.INFO, "Anticipated chargerate is now: {}".format(self.chargerate or 0))
+					logger.log(logging.DEBUG, "Anticipated chargerate is now: {}".format(self.chargerate or 0))
 
 				self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate or 0 #Always set the anticipated chargerate on dbus.
 			else:
