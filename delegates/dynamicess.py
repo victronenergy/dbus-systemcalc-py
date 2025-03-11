@@ -559,10 +559,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			("dess_fullchargeinterval", path + "/FullChargeInterval", 14, -1, 99),
 			("dess_fullchargeduration", path + "/FullChargeDuration", 2, -1, 12),
 			("dess_operatingmode", path + '/OperatingMode', -1, -1, 2),
-			("dess_batterychargelimit", path + '/BatteryChargeLimit', -1, -1, 9999),
-			("dess_batterydischargelimit", path + '/BatteryDischargeLimit', -1, -1, 9999),
-			("dess_gridimportlimit", path + '/GridImportLimit', -1, -1, 9999),
-			("dess_gridexportlimit", path + '/GridExportLimit', -1, -1, 9999),
+			("dess_batterychargelimit", path + '/BatteryChargeLimit', -1.0, -1.0, 9999.9),
+			("dess_batterydischargelimit", path + '/BatteryDischargeLimit', -1.0, -1.0, 9999.9),
+			("dess_gridimportlimit", path + '/GridImportLimit', -1.0, -1.0, 9999.9),
+			("dess_gridexportlimit", path + '/GridExportLimit', -1.0, -1.0, 9999.9),
 		]
 
 		for i in range(NUM_SCHEDULES):
@@ -682,6 +682,26 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 	@property
 	def mode(self):
 		return self._settings['dess_mode']
+
+	@property
+	def grid_import_limit(self) -> float:
+		''' Grid import limit as configured by the user for DESS. In kW, positive, None if not set'''
+		return self._settings['dess_gridimportlimit'] if self._settings['dess_gridimportlimit'] >= 0 else None
+    
+	@property
+	def grid_export_limit(self)-> float:
+		''' Grid export limit as configured by the user for DESS. In kW, positive, None if not set'''
+		return self._settings['dess_gridexportlimit'] if self._settings['dess_gridexportlimit'] >= 0 else None
+    
+	@property
+	def battery_charge_limit(self)-> float:
+		''' Battery charge limit as configured by the user for DESS. In kW, positive, None if not set'''
+		return self._settings['dess_batterychargelimit'] if self._settings['dess_batterychargelimit'] >= 0 else None
+    
+	@property
+	def battery_discharge_limit(self)-> float:
+		''' Battery discharge limit as configured by the user for DESS. In kW, positive, None if not set'''
+		return self._settings['dess_batterydischargelimit'] if self._settings['dess_batterydischargelimit'] >= 0 else None
 
 	@property
 	def active(self):
