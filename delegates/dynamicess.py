@@ -258,6 +258,12 @@ class EssDevice(object):
 	def pvpower(self):
 		return self.delegate._dbusservice['/Dc/Pv/Power'] or 0
 
+	@property
+	def consumption(self):
+		return max(0, (self.delegate._dbusservice['/Ac/Consumption/L1/Power'] or 0) +
+			(self.delegate._dbusservice['/Ac/Consumption/L2/Power'] or 0) +
+			(self.delegate._dbusservice['/Ac/Consumption/L3/Power'] or 0))
+
 class VebusDevice(EssDevice):
 	@property
 	def available(self):
@@ -277,13 +283,7 @@ class VebusDevice(EssDevice):
 	@property
 	def minsoc(self):
 		# The BatteryLife delegate puts the active soc limit here.
-		return self.delegate._dbusservice['/Control/ActiveSocLimit']
-
-	@property
-	def consumption(self):
-		return max(0, (self.delegate._dbusservice['/Ac/Consumption/L1/Power'] or 0) +
-			(self.delegate._dbusservice['/Ac/Consumption/L2/Power'] or 0) +
-			(self.delegate._dbusservice['/Ac/Consumption/L3/Power'] or 0))
+		return self.delegate._dbusservice['/Control/ActiveSocLimit']	
 
 	def _set_feedin(self, allow_feedin):
 		self.monitor.set_value_async(HUB4_SERVICE,
