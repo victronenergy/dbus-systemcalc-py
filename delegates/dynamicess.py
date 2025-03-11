@@ -9,7 +9,7 @@ from delegates.batterylife import State as BatteryLifeState
 from delegates.chargecontrol import ChargeControl
 from enum import Enum
 
-NUM_SCHEDULES = 12
+NUM_SCHEDULES = 48
 INTERVAL = 5
 SELLPOWER = -32000
 HUB4_SERVICE = 'com.victronenergy.hub4'
@@ -333,7 +333,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		#               2 = supports self-consumption strategy
 		#               4 = supports fast-charge strategy
 		#               8 = values set on Venus (Battery balancing, capacity, operation mode)
-		self._dbusservice.add_path('/DynamicEss/Capabilities', value=15)
+		#              32 = supports 48 schedule slots
+		self._dbusservice.add_path('/DynamicEss/Capabilities', value=47)
 		self._dbusservice.add_path('/DynamicEss/Active', value=0,
 			gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
 		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=None,
