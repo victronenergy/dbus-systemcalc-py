@@ -9,7 +9,7 @@ from delegates.batterylife import State as BatteryLifeState
 from delegates.chargecontrol import ChargeControl
 from enum import Enum
 
-NUM_SCHEDULES = 12
+NUM_SCHEDULES = 48
 INTERVAL = 5
 SELLPOWER = -32000
 HUB4_SERVICE = 'com.victronenergy.hub4'
