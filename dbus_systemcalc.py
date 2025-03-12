@@ -223,7 +223,8 @@ class SystemCalc:
 			delegates.CanBatterySense(),
 			delegates.InverterCharger(),
 			delegates.DynamicEss(),
-			delegates.LoadShedding()]
+			delegates.LoadShedding(),
+			delegates.MotorDrive()]
 
 		for m in self._modules:
 			for service, paths in m.get_input():
@@ -251,6 +252,10 @@ class SystemCalc:
 			'noacinconnmax': ['/Settings/Gui/Gauges/Ac/NoAcIn/Consumption/Current/Max', float(0), 0, float("inf")],
 			'acin1connmax': ['/Settings/Gui/Gauges/Ac/AcIn1/Consumption/Current/Max', float(0), 0, float("inf")],
 			'acin2connmax': ['/Settings/Gui/Gauges/Ac/AcIn2/Consumption/Current/Max', float(0), 0, float("inf")],
+			'motordrivepowermax': ['/Settings/Gui/Gauges/MotorDrive/Power/Max', float(0), 0, float("inf")],
+			'motordriverpmmax': ['/Settings/Gui/Gauges/MotorDrive/Rpm/Max', float(0), 0, float("inf")],
+			'gpsspeedmax': ['/Settings/Gui/Gauges/Speed/Max', float(0), 0, float("inf")],
+			'electricpropulsionenabled': ['/Settings/Gui/ElectricPropulsionUI/Enabled', 0, 0, 1],
 			}
 
 		for m in self._modules:
@@ -1077,6 +1082,15 @@ class SystemCalc:
 													self._dbusservice['/Ac/PvOnOutput/L1/Power'],
 													self._dbusservice['/Ac/PvOnOutput/L2/Power'],
 													self._dbusservice['/Ac/PvOnOutput/L3/Power']))
+
+			# Electric propulsion
+			if self._settings['electricpropulsionenabled'] == 1:
+				self._settings['motordrivepowermax'] = max(self._settings['motordrivepowermax'] or 0,
+																newvalues.get('/MotorDrive/Power') or 0)
+				self._settings['motordriverpmmax'] = max(self._settings['motordriverpmmax'] or 0,
+															newvalues.get('/MotorDrive/Rpm') or 0)
+				self._settings['gpsspeedmax'] = max(self._settings['gpsspeedmax'] or 0,
+													newvalues.get('/GpsSpeed') or 0)
 
 		# ==== UPDATE DBUS ITEMS ====
 		with self._dbusservice as sss:
