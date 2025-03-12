@@ -5,6 +5,9 @@ class Gps(SystemCalcDelegate):
 		super(Gps, self).__init__()
 		self.gpses = set()
 
+	def get_output(self):
+		return [('/GpsSpeed', {'gettext': '%dm/s'})]
+
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(Gps, self).set_sources(dbusmonitor, settings, dbusservice)
 		self._dbusservice.add_path('/GpsService', value=None)
@@ -22,7 +25,8 @@ class Gps(SystemCalcDelegate):
 	def get_input(self):
 		return [('com.victronenergy.gps', [
 				'/DeviceInstance',
-				'/Fix'])]
+				'/Fix',
+				'/Speed'])]
 
 	def update(self, *args):
 		for instance, service in sorted(self.gpses):
@@ -32,3 +36,8 @@ class Gps(SystemCalcDelegate):
 				break
 		else:
 			self._dbusservice['/GpsService'] = None
+
+	def update_values(self, newvalues):
+		if self._dbusservice['/GpsService'] is not None:
+			newvalues['/GpsSpeed'] = self._dbusmonitor.get_value(
+				self._dbusservice['/GpsService'], '/Speed')
