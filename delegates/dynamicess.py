@@ -334,6 +334,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		#               4 = supports fast-charge strategy
 		#               8 = values set on Venus (Battery balancing, capacity, operation mode)
 		self._dbusservice.add_path('/DynamicEss/Capabilities', value=15)
+		self._dbusservice.add_path('/DynamicEss/NumberOfSchedules', value=NUM_SCHEDULES)
 		self._dbusservice.add_path('/DynamicEss/Active', value=0,
 			gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
 		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=None,
