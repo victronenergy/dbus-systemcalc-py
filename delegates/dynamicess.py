@@ -671,7 +671,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				 '/Settings/Ess/MinimumSocLimit']),
 			('com.victronenergy.settings', [
 				'/Settings/CGwacs/Hub4Mode',
-				'/Settings/CGwacs/MaxFeedInPower'])
+				'/Settings/CGwacs/MaxFeedInPower',
+				'/Settings/CGwacs/PreventFeedback'])
 		]
 
 	def get_output(self):
@@ -893,7 +894,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		start = None
 		stop = None
 		windows = list(self.windows())
-
+		restrictions = self.restrictions
+		
 		#Whenever an error occurs that is totally unexpected, the delegate
 		#should enter self consume and not die.(try/catch around the control loop logic)
 		try:
@@ -965,10 +967,12 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			self._dbusservice['/DynamicEss/ReactiveStrategy'] = final_strategy.value
 
 		if final_strategy.value in self.error_selfconsume_states:
-			#Do at least regular ESS.
+			#Do at least regular ESS. 
 			self.chargerate = None
 			self._dbusservice['/DynamicEss/ChargeRate'] = 0
-			self._device.self_consume(restrictions, w.allow_feedin)
+			prevent_feedback = (self._dbusmonitor.get_value("com.victronenergy.settings'", '/Settings/CGwacs/PreventFeedback') or 1) == 1
+			logger.log(logging.DEBUG, "PreventFeedback is {} => {}".format(self._dbusmonitor.get_value("com.victronenergy.settings'", '/Settings/CGwacs/PreventFeedback'), prevent_feedback))
+			self._device.self_consume(restrictions, not prevent_feedback)
 
 		return True
 				
@@ -985,6 +989,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# lower the available acpv without conversion losses.
 
 		available_solar_plus = 0
+		
 		direct_acpv_consume = min(self._device.acpv or 0, self._device.consumption)
 		remaining_ac_pv = max(0, (self._device.acpv or 0) - direct_acpv_consume)
 		if remaining_ac_pv > 0:
@@ -997,6 +1002,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			available_solar_plus = (self._device.pvpower or 0) - direct_dcpv_consume / self.oneway_efficency
 
 		self._dbusservice["/DynamicEss/AvailableOverhead"] = available_solar_plus
+		logger.log(logging.DEBUG, "ACPV / DCPV / Cons / Overhead is: {} / {} / {} / {}".format(self._device.acpv, self._device.pvpower, self._device.consumption, available_solar_plus))
+
 		next_window_higher_target_soc = nw is not None and (nw.soc > w.soc) and nw.strategy != Strategy.SELFCONSUME
 		next_window_lower_target_soc = nw is not None and (nw.soc < w.soc) and nw.strategy != Strategy.SELFCONSUME
 
@@ -1059,8 +1066,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				reactive_strategy = ReactiveStrategy.UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC
 
 			else:
-				self.charge_hysteresis = 0
-				self.discharge_hysteresis = 1
 				self.update_chargerate(now, w.stop, self.soc, w.soc)
 
 				# Based on the coping flags, charging has 4 options
@@ -1106,7 +1111,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION
 			else:
 				# we are above or equal to target soc, or the charge histeresis has not yet kicked in from a prior state.
-				self.charge_hysteresis = 1
 				
 				if (available_solar_plus > 0 and not excess_to_grid):
 					# If surplus is available, always attempt to charge, unless we are flagged EXCESSTOGRID
@@ -1115,8 +1119,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				else:
 					# so, now we have: (availableSolarPlus <= 0 or solaroverhaed, but excess_to_grid) and (equal or above targetSoc).
 					# so, most likely any of the discharge-variants is required (or ultimately idle)
-					self.discharge_hysteresis = 0
-
 					# if we are flagged EXESSTOGRID and MISSINGTOGRID, perform a strict discharge, based on soc difference.
 					# Any imprecission shall be handled by the grid
 					# not allowed with bat2grid restriction
@@ -1199,19 +1201,29 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 			if reactive_strategy in self.charge_states:
 				self._device.charge(w.flags, restrictions, abs(final_chargerate), w.allow_feedin)
+				self.charge_hysteresis = 0 #allow to reach targetsoc precicesly.
+				self.discharge_hysteresis = 1 #avoid discharging, when overshooting targetsoc.
 
 			elif reactive_strategy in self.selfconsume_states:
 				self._device.self_consume(restrictions, w.allow_feedin)
+				self.charge_hysteresis = 0 #no hysteresis.
+				self.discharge_hysteresis = 0 #no hysteresis.
 
 			elif reactive_strategy in self.idle_states:
 				self._device.idle(w.allow_feedin)
+				self.charge_hysteresis = 1 #avoid rapid changes.
+				self.discharge_hysteresis = 1 #avoid rapid changes.
 
 			elif reactive_strategy in self.discharge_states:	
 				#chargerate to be send to discharge method has to be always positive.
 				self._device.discharge(w.flags, restrictions, abs(final_chargerate), w.allow_feedin)
+				self.charge_hysteresis = 1 #avoid charging, when undershooting targetsoc.
+				self.discharge_hysteresis = 0 # allow to reach tsoc precicesly.
 
 			elif reactive_strategy in self.error_selfconsume_states:
 				#errorstates are handled outside this method. Seperate return to avoid else-case.
+				self.charge_hysteresis = 0 #no hysteresis.
+				self.discharge_hysteresis = 0 #no hysteresis.
 				return reactive_strategy
 
 			else:
