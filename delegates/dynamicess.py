@@ -286,8 +286,11 @@ class VebusDevice(EssDevice):
 		return self.delegate._dbusservice['/Control/ActiveSocLimit']
 
 	def _set_feedin(self, allow_feedin):
-		self.monitor.set_value_async(HUB4_SERVICE,
-			'/Overrides/FeedInExcess', 2 if allow_feedin else 1)
+		""" None = follow system setup
+			True = allow
+			False = restrict """
+
+		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/FeedInExcess', 0 if allow_feedin is None else 2 if allow_feedin else 1)
 
 	def _set_charge_power(self, v):
 		Dvcc.instance.internal_maxchargepower = None if v is None else max(v, 50)
@@ -456,7 +459,7 @@ class MultiRsDevice(EssDevice):
 		return 0
 
 	def charge(self, flags, restrictions, rate, allow_feedin):
-		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin))
+		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin) if allow_feedin is not None else 0)
 
 		#if the desired rate is lower than dcpv, this would come down to NOT charging from AC,
 		#but 100% of dcpv. To really achieve an overall charge-rate of what's requested, we need
@@ -495,7 +498,7 @@ class MultiRsDevice(EssDevice):
 	def discharge(self, flags, restrictions, rate, allow_feedin):
 		batteryexport = not (restrictions & int(Restrictions.BAT2GRID))
 
-		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin))
+		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin) if allow_feedin is not None else 0)
 		if allow_feedin:
 			# Calculate how fast to sell. If exporting the battery to the grid
 			# is allowed, then export rate plus whatever DC-coupled PV is
@@ -525,12 +528,12 @@ class MultiRsDevice(EssDevice):
 			return rate
 
 	def idle(self, allow_feedin):
-		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin))
+		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin) if allow_feedin is not None else 0)
 		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
 		self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', -max(0, self.pvpower))
 
 	def self_consume(self, restrictions, allow_feedin):
-		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin))
+		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin) if allow_feedin is not None else 0)
 		self.monitor.set_value_async(self.service, '/Ess/AcPowerSetpoint', 0)
 		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 0)
 
@@ -970,9 +973,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			#Do at least regular ESS. 
 			self.chargerate = None
 			self._dbusservice['/DynamicEss/ChargeRate'] = 0
-			prevent_feedback = (self._dbusmonitor.get_value("com.victronenergy.settings'", '/Settings/CGwacs/PreventFeedback') or 1) == 1
-			logger.log(logging.DEBUG, "PreventFeedback is {} => {}".format(self._dbusmonitor.get_value("com.victronenergy.settings'", '/Settings/CGwacs/PreventFeedback'), prevent_feedback))
-			self._device.self_consume(restrictions, not prevent_feedback)
+			self._device.self_consume(restrictions, None)
 
 		return True
 

@@ -469,7 +469,7 @@ class TestDynamicEss(TestSystemCalcBase):
 
 		self._check_external_values({
 			'com.victronenergy.hub4': {
-				'/Overrides/FeedInExcess': 1 #for the NO_WINDOW Test, gwacs setting should lead to 1.
+				'/Overrides/FeedInExcess': 0 #for the NO_WINDOW Test, should default to system configuration. 
 		}})
 
 	def validate_self_consume(self, maxChargePower=None):
