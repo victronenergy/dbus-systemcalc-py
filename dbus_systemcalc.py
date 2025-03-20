@@ -190,6 +190,14 @@ class SystemCalc:
 				'/Ac/Out/L3/I': dummy,
 				'/Yield/Power': dummy,
 				'/Soc': dummy},
+			'com.victronenergy.acsystem': {
+				'/Connected': dummy,
+				'/Mgmt/Connection': dummy,
+				'/CustomName': dummy,
+				'/Dc/0/Voltage': dummy,
+				'/Dc/0/Current': dummy,
+				'/Dc/0/Power': dummy,
+				'/Soc': dummy},
 			'com.victronenergy.dcsystem': {
 				'/Dc/0/Voltage': dummy,
 				'/Dc/0/Power': dummy,
@@ -483,18 +491,15 @@ class SystemCalc:
 		if self._get_first_connected_service('com.victronenergy.charger') is not None:
 			return None
 
-		# Also no Multi, then give up.
+		# If no Multi, but there are other SoC capable inverter/chargers, use those
 		vebus_service = self._get_service_having_lowest_instance('com.victronenergy.vebus')
 		if vebus_service is None:
 			# No VE.Bus, but maybe there is an inverter with built-in SOC
 			# tracking, eg RS Smart or Multi RS.
-			inverter = self._get_service_having_lowest_instance('com.victronenergy.multi')
-			if inverter and self._dbusmonitor.get_value(inverter[0], '/Soc') is not None:
-				return inverter[0]
-
-			inverter = self._get_service_having_lowest_instance('com.victronenergy.inverter')
-			if inverter and self._dbusmonitor.get_value(inverter[0], '/Soc') is not None:
-				return inverter[0]
+			for t in ('acsystem', 'multi', 'inverter'):
+				inverter = self._get_service_having_lowest_instance(f"com.victronenergy.{t}")
+				if inverter and self._dbusmonitor.get_value(inverter[0], '/Soc') is not None:
+					return inverter[0]
 
 			return None
 
@@ -677,13 +682,13 @@ class SystemCalc:
 		# ==== BATTERY ====
 		if self._batteryservice is not None:
 			batteryservicetype = self._batteryservice.split('.')[2]
-			assert batteryservicetype in ('battery', 'vebus', 'inverter', 'multi')
+			assert batteryservicetype in ('battery', 'vebus', 'inverter', 'multi', 'acsystem')
 
 			newvalues['/Dc/Battery/TimeToGo'] = self._dbusmonitor.get_value(self._batteryservice,'/TimeToGo')
 			newvalues['/Dc/Battery/ConsumedAmphours'] = self._dbusmonitor.get_value(self._batteryservice,'/ConsumedAmphours')
 			newvalues['/Dc/Battery/ProductId'] = self._dbusmonitor.get_value(self._batteryservice, '/ProductId')
 
-			if batteryservicetype in ('battery', 'inverter', 'multi'):
+			if batteryservicetype in ('battery', 'inverter', 'multi', 'acsystem'):
 				newvalues['/Dc/Battery/Voltage'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Voltage')
 				newvalues['/Dc/Battery/VoltageService'] = self._batteryservice
 				newvalues['/Dc/Battery/Current'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
@@ -1110,6 +1115,7 @@ class SystemCalc:
 
 		services = self._get_connected_service_list('com.victronenergy.vebus')
 		services.update(self._get_connected_service_list('com.victronenergy.battery'))
+		services.update(self._dbusmonitor.get_service_list('com.victronenergy.acsystem'))
 		services.update({k: v for k, v in self._get_connected_service_list(
 			'com.victronenergy.multi').items() if self._dbusmonitor.get_value(k, '/Soc') is not None})
 		services.update({k: v for k, v in self._get_connected_service_list(
