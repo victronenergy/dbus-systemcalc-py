@@ -77,6 +77,7 @@ class SystemCalc:
 				'/ProductId': dummy,
 				'/ProductName': dummy,
 				'/Mgmt/Connection': dummy,
+				'/CustomName': dummy,
 				'/Mode': dummy,
 				'/State': dummy,
 				'/Dc/0/Voltage': dummy,
@@ -137,6 +138,7 @@ class SystemCalc:
 				'/Connected': dummy,
 				'/ProductName': dummy,
 				'/Mgmt/Connection': dummy,
+				'/CustomName': dummy,
 				'/Dc/0/Voltage': dummy,
 				'/Dc/0/Current': dummy,
 				'/Dc/0/Power': dummy,
@@ -158,6 +160,7 @@ class SystemCalc:
 				'/Connected': dummy,
 				'/ProductName': dummy,
 				'/Mgmt/Connection': dummy,
+				'/CustomName': dummy,
 				'/Dc/0/Voltage': dummy,
 				'/Dc/0/Current': dummy,
 				'/Dc/0/Power': dummy,
@@ -1131,6 +1134,10 @@ class SystemCalc:
 		self._changed = True
 
 	def _get_readable_service_name(self, servicename):
+		cn = self._dbusmonitor.get_value(servicename, '/CustomName')
+		if cn is not None and cn.strip():
+			return cn
+
 		return '%s on %s' % (
 			self._dbusmonitor.get_value(servicename, '/ProductName'),
 			self._dbusmonitor.get_value(servicename, '/Mgmt/Connection'))
@@ -1154,7 +1161,7 @@ class SystemCalc:
 
 		# Workaround because com.victronenergy.vebus is available even when there is no vebus product
 		# connected.
-		if (dbusPath in ['/Connected', '/ProductName', '/Mgmt/Connection'] or
+		if (dbusPath in ['/Connected', '/ProductName', '/Mgmt/Connection', '/CustomName'] or
 			(dbusPath == '/State' and dbusServiceName.split('.')[0:3] == ['com', 'victronenergy', 'vebus'])):
 			self._handleservicechange()
 
