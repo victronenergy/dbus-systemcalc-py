@@ -286,7 +286,7 @@ class ScheduledCharging(SystemCalcDelegate, ChargeControl):
 
 	@classmethod
 	def _charge_windows(klass, today, days, starttimes, durations, stopsocs, discharges):
-		starttimes = (time(x//3600, x//60 % 60, x % 60) for x in starttimes)
+		starttimes = (time(x//3600 % 24, x//60 % 60, x % 60) for x in starttimes)
 
 		for d, starttime, duration, soc, discharge in zip(days, starttimes, durations, stopsocs, discharges):
 			if d >= 0:
