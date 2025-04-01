@@ -19,6 +19,7 @@ INTERVAL = 5
 SELLPOWER = -32000
 HUB4_SERVICE = 'com.victronenergy.hub4'
 ERROR_TIMEOUT = 60
+TRANSITION_STATE_THRESHOLD = 90.0
 
 MODES = {
        0: 'Off',
@@ -551,6 +552,24 @@ class DynamicEssWindow(ScheduledWindow):
 		self.restrictions = restrictions
 		self.strategy = strategy
 		self.flags = flags
+		self.duration = duration
+
+	def get_window_progress(self, now) -> float:
+		""" returns the progress of the window, 0.00 - 100.00. If the window is not or no longer active, this returns none.
+			current time shall be passed as now, to ensure same result throughout multiple calls.
+		"""
+
+		if (now < self.start or now > self.stop):
+			return None
+		elif (now == self.start):
+			return 0.00
+		elif (now == self.stop):
+			return 100.0
+
+		passed_seconds = now - self.start
+		progress = passed_seconds.seconds / self.duration * 100.0
+		#logger.log(logging.INFO, "Start / Now / End / Duration / Passed / Progress: {} / {} / {} / {}s / {}s / {}%".format(self.start, now, self.stop, self.duration, passed_seconds.seconds, round(progress, 2)))
+		return progress
 
 	def __repr__(self):
 		return "Start: {}, Stop: {}, Soc: {}".format(
@@ -1012,6 +1031,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self.iteration_change_tracker.input(self.soc, self.targetsoc, next_window_higher_target_soc, next_window_lower_target_soc)
 		soc_change = self.iteration_change_tracker.soc_change()
 		target_soc_change = self.iteration_change_tracker.target_soc_change()
+		window_progress = w.get_window_progress(now) or 0
 
 		# When we have a Scheduled-Selfconsume, we can ommit to walk through the decission tree. 
 		if w.strategy == Strategy.SELFCONSUME:
@@ -1020,10 +1040,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			self._device.self_consume(restrictions, w.allow_feedin)
 			return ReactiveStrategy.SCHEDULED_SELFCONSUME
 
-		# Below here, strategy is Strategy.TARGETSOC. 
-		# Every possible variable combination is leading to a deterministic ReactiveStrategy, allowing to easily identify
-		# current parameters based on the choosen strategy. 
-
+		# Below here, strategy is any of the target soc dependent strategies
 		# some preparations
 		self.override_chargerate = None #if a override to chargerate can be found, it is set here.
 		if self.targetsoc != w.soc:
@@ -1049,23 +1066,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				reactive_strategy = ReactiveStrategy.KEEP_BATTERY_CHARGED
 
 			# we are behind plan. Charging is required. 
-			# 
-			# First exception case here is : 
-			# When we directly hit self.soc + self.charge_hysteris == w.soc, we need to check, if this happened with or falling
-			# soc. If the soc was FALLING, it means we have most likely been idling and dropped bellow target_soc. In that case, we want to 
-			# avoid spiky charge peaks (can happen close to window end) but rather catch up to target soc at 10% of chargelimit.
-			# as soon as target_soc changes, this state has to be left. Cannot be done with grid2bat restriction.
-			elif ((soc_change == ChangeIndicator.FALLING and
-	   			 target_soc_change == ChangeIndicator.NONE and
-				 self.soc + self.charge_hysteresis == w.soc - 1 and 
-				 not (w.restrictions & Restrictions.GRID2BAT)) or
-	   		    (self.iteration_change_tracker._previous_reactive_strategy == ReactiveStrategy.UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC and 
-		  		target_soc_change == ChangeIndicator.NONE and self.soc < w.soc)):
-				# Yes, this turned into a charge-window by a dropping soc. (limit is in kW, therefore * 1000 / 10) 
-				self.override_chargerate = self.battery_charge_limit * 100
-				self.chargerate = self.override_chargerate #chargerate is the override
-				reactive_strategy = ReactiveStrategy.UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC
-
 			else:
 				self.update_chargerate(now, w.stop, self.soc, w.soc)
 
@@ -1103,9 +1103,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		else:
 			# if we are currently in any SCHEDULED_CHARGE_* State and our next window outlines an even higher target soc, 
 			# don't switch to idle, but keep a certain chargerate. As soon as target_soc changes, this state has to be left.
+			# but only enter it, when window progress is >= TRANSITION_STATE_THRESHOLD
 			if (self.iteration_change_tracker._previous_reactive_strategy in self.charge_states and 
-	   			next_window_higher_target_soc and
-	   			target_soc_change == ChangeIndicator.NONE):
+	   			next_window_higher_target_soc and window_progress >= TRANSITION_STATE_THRESHOLD) or \
+				(self.iteration_change_tracker._previous_reactive_strategy == ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION and target_soc_change == ChangeIndicator.NONE):
 				# keep current charge rate untouched.
 				# already targeting the new soc target of "next" window will cause a not smooth transition, if next window in slot 1 is outdated
 				# and the next window beeing pushed to slot 0 indicates another target soc.
@@ -1174,11 +1175,12 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 							reactive_strategy = ReactiveStrategy.IDLE_SCHEDULED_FEEDIN
 						else:
 							if (self.iteration_change_tracker._previous_reactive_strategy in self.discharge_states and 
-								next_window_lower_target_soc and
-								target_soc_change == ChangeIndicator.NONE):
+								next_window_lower_target_soc and window_progress >= TRANSITION_STATE_THRESHOLD) or \
+								(self.iteration_change_tracker._previous_reactive_strategy == ReactiveStrategy.SCHEDULED_DISCHARGE_SMOOTH_TRANSITION and target_soc_change == ChangeIndicator.NONE):
 								# keep current charge rate untouched.
 								# already targeting the new soc target of "next" window will cause a not smooth transition, if next window in slot 1 is outdated
 								# and the next window beeing pushed to slot 0 indicates another target soc.
+								# but only enter it, when window progress is >= TRANSITION_STATE_THRESHOLD
 								reactive_strategy = ReactiveStrategy.SCHEDULED_DISCHARGE_SMOOTH_TRANSITION
 							else:
 								# else, it's idle due to soc==targetsoc, or soc + charge_hystersis == targetsoc.

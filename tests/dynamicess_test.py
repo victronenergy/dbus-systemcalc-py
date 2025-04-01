@@ -119,9 +119,8 @@ class TestDynamicEss(TestSystemCalcBase):
 		#	(percent * capacity * 36000) / duration	
 		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600)
 		
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate. 
+		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
 		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
-		
 		self.validate_charge_state(expected_rate)
 
 	def test_6_SCHEDULED_DISCHARGE(self):
@@ -182,7 +181,143 @@ class TestDynamicEss(TestSystemCalcBase):
 
 		self.validate_idle_state()
 
+	def test_10_SCHEDULED_CHARGE_SMOOTH_TRANSITION(self):
 
+		# When a system reaches target soc early during 2 consecutive scheduled charge windows, 
+		# it should keep up the current charge rate until the next target soc change.
+		# This should only happen, if targetsoc is reached within the last 20% of window progress.
+
+
+		#first, create two consecutive charge windows.
+		now = timer_manager.datetime
+		stamp = int(now.timestamp())
+		self._set_setting('/Settings/DynamicEss/BatteryCapacity', 10.0)
+		self._monitor.set_value(self.vebus, '/Soc', 50.0)
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 2)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 60)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
+
+		self._set_setting('/Settings/DynamicEss/Schedule/1/Start', stamp + 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/Strategy', 2)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/Soc', 65)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/AllowGridFeedIn', 1)
+
+		#run 1800 seconds, validate charging as per schedule 0
+		timer_manager.run(1800 * 1000)
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ReactiveStrategy': 2,
+			'/DynamicEss/LastScheduledStart': stamp + 3600,
+		})
+
+		#	(percent * capacity * 36000) / duration	
+		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600)
+
+		#assert equality based on /100, to eliminate seconds the delegate needs to calculate. 
+		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
+
+		self.validate_charge_state(expected_rate)
+
+		# run 1700 seconds more and pretend we reached target soc. Transition state should now kick in.
+		# chargerate should remain the same as currently set. 
+		timer_manager.run(1690 * 1000)
+		self._monitor.set_value(self.vebus, '/Soc', 60.0)
+		timer_manager.run(10 * 1000)
+
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ReactiveStrategy': 10,
+			'/DynamicEss/LastScheduledStart': stamp + 3600,
+		})
+		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
+		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
+
+		self.validate_charge_state(expected_rate)
+
+		#transist to next window - should cause a change back to regular charging with updated chargerate. 
+		timer_manager.run(110 * 1000)
+
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ReactiveStrategy': 2,
+			'/DynamicEss/LastScheduledStart': stamp + 3600,
+		})
+
+		expected_rate = round(1.1 * (5 * 10 * 36000) / 3600)
+		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
+		self.validate_charge_state(expected_rate)
+
+	def test_10_SCHEDULED_CHARGE_SMOOTH_TRANSITION_NOK(self):
+
+		# When a system reaches target soc early during 2 consecutive scheduled charge windows,
+		# it should keep up the current charge rate until the next target soc change.
+		# This should only happen, if targetsoc is reached within the last 20% of window progress.
+
+
+		#first, create two consecutive charge windows.
+		now = timer_manager.datetime
+		stamp = int(now.timestamp())
+		self._set_setting('/Settings/DynamicEss/BatteryCapacity', 10.0)
+		self._monitor.set_value(self.vebus, '/Soc', 50.0)
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 2)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 60)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
+
+		self._set_setting('/Settings/DynamicEss/Schedule/1/Start', stamp + 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/Strategy', 2)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/Soc', 65)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/AllowGridFeedIn', 1)
+
+		#run 1800 seconds, validate charging as per schedule 0
+		timer_manager.run(1800 * 1000)
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ReactiveStrategy': 2,
+			'/DynamicEss/LastScheduledStart': stamp + 3600,
+		})
+
+		#	(percent * capacity * 36000) / duration	
+		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600)
+
+		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
+		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
+
+		self.validate_charge_state(expected_rate)
+
+		# run 1400 seconds more and pretend we reached target soc. Transition state should NOT kick in, but idle. 
+		# chargerate should remain the same as currently set. 
+		timer_manager.run(1390 * 1000)
+		self._monitor.set_value(self.vebus, '/Soc', 60.0)
+		timer_manager.run(10 * 1000)
+
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ReactiveStrategy': 9,
+			'/DynamicEss/LastScheduledStart': stamp + 3600,
+		})
+		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
+		self.validate_idle_state()
+
+		#transist to next window - should cause a change back to regular charging with updated chargerate. 
+		timer_manager.run(406 * 1000)
+
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ReactiveStrategy': 2,
+			'/DynamicEss/LastScheduledStart': stamp + 3600,
+		})
+
+		expected_rate = round(1.1 * (5 * 10 * 36000) / 3600)
+		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
+		self.validate_charge_state(expected_rate)
 
 	def test_12_SCHEDULED_CHARGE_NO_GRID(self):
 		#this strategy is currently not used. Replaced with 14 - SELFCONSUME_NO_GRID
@@ -214,7 +349,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		#	(percent * capacity * 36000) / duration	
 		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600) * -1
 		
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate. 
+		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
 		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
 		self.validate_discharge_state(expected_rate)
 
@@ -348,7 +483,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		#	(percent * capacity * 36000) / duration	
 		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600) * -1
 		
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate. 
+		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
 		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
 		self.validate_self_consume()
 
@@ -408,6 +543,144 @@ class TestDynamicEss(TestSystemCalcBase):
 
 		#rate in this state should be 250 watt fixed.
 		self.validate_charge_state(250)
+
+	def test_19_SCHEDULED_DISCHARGE_SMOOTH_TRANSITION(self):
+
+		# When a system reaches target soc early during 2 consecutive scheduled discharge windows, 
+		# it should keep up the current charge rate until the next target soc change.
+		# This should only happen, if targetsoc is reached within the last 20% of window progress.
+
+
+		#first, create two consecutive charge windows.
+		now = timer_manager.datetime
+		stamp = int(now.timestamp())
+		self._set_setting('/Settings/DynamicEss/BatteryCapacity', 10.0)
+		self._monitor.set_value(self.vebus, '/Soc', 50.0)
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3) #use progrid for discharge.
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 40)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
+
+		self._set_setting('/Settings/DynamicEss/Schedule/1/Start', stamp + 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/Strategy', 3) #use progrid for discharge.
+		self._set_setting('/Settings/DynamicEss/Schedule/1/Soc', 35)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/AllowGridFeedIn', 1)
+
+		#run 1800 seconds, validate charging as per schedule 0
+		timer_manager.run(1800 * 1000)
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ReactiveStrategy': 13,
+			'/DynamicEss/LastScheduledStart': stamp + 3600,
+		})
+
+		#	(percent * capacity * 36000) / duration	
+		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600) * -1
+
+		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
+		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
+
+		self.validate_discharge_state(expected_rate)
+
+		# run 1700 seconds more and pretend we reached target soc. Transition state should now kick in. 
+		# chargerate should remain the same as currently set. 
+		timer_manager.run(1690 * 1000)
+		self._monitor.set_value(self.vebus, '/Soc', 40.0)
+		timer_manager.run(10 * 1000)
+
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ReactiveStrategy': 19,
+			'/DynamicEss/LastScheduledStart': stamp + 3600,
+		})
+		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
+		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
+
+		self.validate_discharge_state(expected_rate)
+
+		#transist to next window - should cause a change back to regular charging with updated chargerate. 
+		timer_manager.run(110 * 1000)
+
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ReactiveStrategy': 13,
+			'/DynamicEss/LastScheduledStart': stamp + 3600,
+		})
+
+		expected_rate = round(1.1 * (5 * 10 * 36000) / 3600) * -1
+		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
+		self.validate_discharge_state(expected_rate)
+
+	def test_19_SCHEDULED_DISCHARGE_SMOOTH_TRANSITION_NOK(self):
+
+		# When a system reaches target soc early during 2 consecutive scheduled charge windows, 
+		# it should keep up the current charge rate until the next target soc change.
+		# This should only happen, if targetsoc is reached within the last 20% of window progress.
+
+
+		#first, create two consecutive charge windows.
+		now = timer_manager.datetime
+		stamp = int(now.timestamp())
+		self._set_setting('/Settings/DynamicEss/BatteryCapacity', 10.0)
+		self._monitor.set_value(self.vebus, '/Soc', 50.0)
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 40)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
+
+		self._set_setting('/Settings/DynamicEss/Schedule/1/Start', stamp + 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/Strategy', 3)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/Soc', 35)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/AllowGridFeedIn', 1)
+
+		#run 1800 seconds, validate charging as per schedule 0
+		timer_manager.run(1800 * 1000)
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ReactiveStrategy': 13,
+			'/DynamicEss/LastScheduledStart': stamp + 3600,
+		})
+
+		#	(percent * capacity * 36000) / duration	
+		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600) * -1
+
+		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
+		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
+
+		self.validate_discharge_state(expected_rate)
+
+		# run 1400 seconds more and pretend we reached target soc. Transition state should NOT kick in, but idle. 
+		# chargerate should remain the same as currently set. 
+		timer_manager.run(1390 * 1000)
+		self._monitor.set_value(self.vebus, '/Soc', 40.0)
+		timer_manager.run(10 * 1000)
+
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ReactiveStrategy': 9,
+			'/DynamicEss/LastScheduledStart': stamp + 3600,
+		})
+		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
+		self.validate_idle_state()
+
+		#transist to next window - should cause a change back to regular charging with updated chargerate. 
+		timer_manager.run(406 * 1000)
+
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ReactiveStrategy': 13,
+			'/DynamicEss/LastScheduledStart': stamp + 3600,
+		})
+
+		expected_rate = round(1.1 * (5 * 10 * 36000) / 3600) * -1
+		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
+		self.validate_discharge_state(expected_rate)
 
 	def test_92_DESS_DISABLED(self):
 		
