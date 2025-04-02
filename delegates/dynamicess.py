@@ -301,12 +301,13 @@ class VebusDevice(EssDevice):
 		if not Dvcc.instance.has_ess_assistant:
 			return 1 # No ESS
 
-		if self.minsoc is None:
-			return 4 # SOC low
-
 		# In Keep-Charged mode or external control, no point in doing anything
 		if BatteryLife.instance.state == BatteryLifeState.KeepCharged or self.hub4mode == 3:
 			return 2 # ESS mode is wrong
+
+		# KeepCharged will also set minsoc to none - so this check should come after.
+		if self.minsoc is None:
+			return 4 # SOC low
 
 		return 0
 
