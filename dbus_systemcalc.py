@@ -264,7 +264,7 @@ class SystemCalc:
 			'acin1connmax': ['/Settings/Gui/Gauges/Ac/AcIn1/Consumption/Current/Max', float(0), 0, float("inf")],
 			'acin2connmax': ['/Settings/Gui/Gauges/Ac/AcIn2/Consumption/Current/Max', float(0), 0, float("inf")],
 			'motordrivepowermax': ['/Settings/Gui/Gauges/MotorDrive/Power/Max', float(0), 0, float("inf")],
-			'motordriverpmmax': ['/Settings/Gui/Gauges/MotorDrive/Rpm/Max', float(0), 0, float("inf")],
+			'motordriverpmmax': ['/Settings/Gui/Gauges/MotorDrive/RPM/Max', float(0), 0, float("inf")],
 			'gpsspeedmax': ['/Settings/Gui/Gauges/Speed/Max', float(0), 0, float("inf")],
 			'electricpropulsionenabled': ['/Settings/Gui/ElectricPropulsionUI/Enabled', 0, 0, 1],
 			}
@@ -1096,7 +1096,7 @@ class SystemCalc:
 				self._settings['motordrivepowermax'] = max(self._settings['motordrivepowermax'] or 0,
 																newvalues.get('/MotorDrive/Power') or 0)
 				self._settings['motordriverpmmax'] = max(self._settings['motordriverpmmax'] or 0,
-															newvalues.get('/MotorDrive/Rpm') or 0)
+															newvalues.get('/MotorDrive/RPM') or 0)
 				self._settings['gpsspeedmax'] = max(self._settings['gpsspeedmax'] or 0,
 													newvalues.get('/GpsSpeed') or 0)
 
