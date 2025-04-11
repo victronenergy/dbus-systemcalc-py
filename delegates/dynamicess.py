@@ -223,6 +223,11 @@ class EssDevice(object):
 		return self.monitor.get_value(self.service, "/Connected") == 1
 
 	@property
+	def device_instance(self):
+		""" Returns the DeviceInstance of this device. """
+		return self.monitor.get_value(self.service, '/DeviceInstance')
+
+	@property
 	def available(self):
 		return True
 
@@ -685,6 +690,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				'/Overrides/FeedInExcess']),
 			('com.victronenergy.acsystem', [
 				 '/Connected',
+				 '/DeviceInstance',
 				 '/Capabilities/HasDynamicEssSupport',
 				 '/Ess/AcPowerSetpoint',
 				 '/Ess/InverterPowerSetpoint',
@@ -702,8 +708,11 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		return [('/DynamicEss/Available', {'gettext': '%s'})]
 
 	def _set_device(self, *args, **kwargs):
-		# Use first connected device in dict, there should be just one
-		for self._device in self._devices.values():
+		# Use device with lowest DeviceInstance. In systems with both
+		# Multi-RS and VE.Bus, this will tend to favour the RS. Otherwise
+		# it will favour the device on the internal mk2 connection.
+		for self._device in sorted(self._devices.values(),
+				key=lambda x: x.device_instance):
 			if self._device.connected:
 				break
 		else:
