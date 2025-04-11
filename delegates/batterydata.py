@@ -165,6 +165,49 @@ class FischerPandaTracker(BatteryTracker):
 			'name': self.name
 		}
 
+class EvTracker(BatteryTracker):
+	_paths = (
+		'/Soc',
+		'/Ac/Power',
+		'/Ac/Voltage',
+		'/Ac/Current',
+		'/ChargingState',
+		'/AtSite',
+		'/Connected')
+
+	@property
+	def valid(self):
+		# It is valid if connected and has at least Soc,
+		# hide if EV is known to be not on site
+		return self.monitor.get_value(self.service, '/Connected') == 1 and \
+			self.monitor.get_value(self.service, '/Soc') != None and \
+			self.monitor.get_value(self.service, '/AtSite') in [None, 1]
+
+	def _get_state(self):
+		s = self._tracked.get('/ChargingState', None)
+		if s in [1, 4]: return 0 # connected or charged
+		elif s == 2: return 1    # charging
+		elif s == 5: return 2    # inverting (v2x)
+		else: return None
+
+	def _data(self):
+		s = self._get_state()
+		p = self._tracked.get('/Ac/Power', None)
+		v = self._tracked.get('/Ac/Voltage', None)
+		c = self._tracked.get('/Ac/Current', None)
+		if s not in [0, 1, 2]:
+			p, v, c = [None]*3
+		return {
+			'id': self.service,
+			'instance': self.instance,
+			'soc': self._tracked['/Soc'],
+			'power': p,
+			'voltage': v,
+			'current': c,
+			'state': s,
+			'name': self.name
+		}
+
 class MultiTracker(BatteryTracker):
 	_paths = (
 		'/Dc/0/Voltage',
@@ -209,6 +252,16 @@ class BatteryData(SystemCalcDelegate):
 				'/Dc/0/Power',
 				'/StarterVoltage',
 				'/CustomName',
+				'/ProductName']),
+			('com.victronenergy.ev', [
+				'/Soc',
+				'/Ac/Power',
+				'/Ac/Voltage',
+				'/Ac/Current',
+				'/ChargingState',
+				'/AtSite',
+				'/Connected',
+				'/CustomName',
 				'/ProductName'])
 		]
 
@@ -240,6 +293,8 @@ class BatteryData(SystemCalcDelegate):
 			self.add_trackers(service,
 				SecondaryBatteryTracker(service, instance, self._dbusmonitor, 0),
 				FischerPandaTracker(service, instance, self._dbusmonitor))
+		elif service.startswith('com.victronenergy.ev.'):
+			self.add_trackers(service, EvTracker(service, instance, self._dbusmonitor))
 		elif service == 'com.victronenergy.settings':
 			for cb in self.configured_batteries.values():
 				cb.bind_settings()
