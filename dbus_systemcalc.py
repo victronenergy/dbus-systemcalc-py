@@ -567,7 +567,8 @@ class SystemCalc:
 		solarchargers = self._dbusmonitor.get_service_list('com.victronenergy.solarcharger')
 		solarcharger_batteryvoltage = None
 		solarcharger_batteryvoltage_service = None
-		solarchargers_charge_power = 0
+		solarchargers_charge_power = 0.0
+		solarchargers_total_power = 0.0
 		solarchargers_loadoutput_power = None
 
 		for solarcharger in solarchargers:
@@ -586,6 +587,7 @@ class SystemCalc:
 					solarchargers_loadoutput_power += l * v
 
 			solarchargers_charge_power += v * i
+			solarchargers_total_power += v * (total_current := _safeadd(i, l))
 
 			# Note that this path is not in the _summeditems{}, making for it to not be
 			# published on D-Bus. Which fine. The only one needing it is the vebussocwriter-
@@ -596,13 +598,13 @@ class SystemCalc:
 				newvalues['/Dc/Pv/ChargeCurrent'] += i
 
 			if '/Dc/Pv/Power' not in newvalues:
-				newvalues['/Dc/Pv/Power'] = v * _safeadd(i, l)
-				newvalues['/Dc/Pv/Current'] = _safeadd(i, l)
+				newvalues['/Dc/Pv/Power'] = v * total_current
+				newvalues['/Dc/Pv/Current'] = total_current
 				solarcharger_batteryvoltage = v
 				solarcharger_batteryvoltage_service = solarcharger
 			else:
-				newvalues['/Dc/Pv/Power'] += v * _safeadd(i, l)
-				newvalues['/Dc/Pv/Current'] += _safeadd(i, l)
+				newvalues['/Dc/Pv/Power'] += v * total_current
+				newvalues['/Dc/Pv/Current'] += total_current
 
 		# ==== FUELCELLS ====
 		fuelcells = self._dbusmonitor.get_service_list('com.victronenergy.fuelcell')
@@ -811,7 +813,6 @@ class SystemCalc:
 
 			battery_power = newvalues.get('/Dc/Battery/Power')
 			if battery_power is not None:
-				dc_pv_power = newvalues.get('/Dc/Pv/Power', 0)
 				charger_power = newvalues.get('/Dc/Charger/Power', 0)
 				fuelcell_power = newvalues.get('/Dc/FuelCell/Power', 0)
 				alternator_power = newvalues.get('/Dc/Alternator/Power', 0)
@@ -830,7 +831,7 @@ class SystemCalc:
 							i, '/Ac/Out/L1/V', 0) * self._dbusmonitor.get_value(
 							i, '/Ac/Out/L1/I', 0)
 				newvalues['/Dc/System/MeasurementType'] = 0 # estimated
-				newvalues['/Dc/System/Power'] = dc_pv_power + charger_power + fuelcell_power + alternator_power + vebuspower + inverter_power - battery_power
+				newvalues['/Dc/System/Power'] = solarchargers_total_power + charger_power + fuelcell_power + alternator_power + vebuspower + inverter_power - battery_power
 				try:
 					newvalues['/Dc/System/Current'] = \
 						newvalues['/Dc/System/Power'] / newvalues['/Dc/Battery/Voltage']
