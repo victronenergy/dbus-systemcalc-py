@@ -20,6 +20,7 @@ DynamicEss._get_time = lambda *a: timer_manager.datetime
 
 class TestDynamicEss(TestSystemCalcBase):
 	vebus = 'com.victronenergy.vebus.ttyO1'
+	settings_service = 'com.victronenergy.settings'
 	def __init__(self, methodName='runTest'):
 		TestSystemCalcBase.__init__(self, methodName)
 
@@ -56,7 +57,7 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Overrides/FeedInExcess': 0
 		})
 
-		self._add_device('com.victronenergy.settings',
+		self._add_device(self.settings_service,
 			values={
 				'/Settings/CGwacs/MaxFeedInPower': -1,
 				'/Settings/CGwacs/PreventFeedback': 0,
@@ -778,7 +779,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.hub4': {
 				'/Overrides/ForceCharge': 0,
-				'/Overrides/Setpoint': -32000
+				'/Overrides/Setpoint': -96000
 		}})
 
 		self.assertAlmostEqual(rate/100.0, self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower')/-100.0,1)
@@ -794,9 +795,9 @@ class TestDynamicEss(TestSystemCalcBase):
 		#TODO check more settings to validate idle state.
 
 	def test_hysteresis(self):
-		""" Test case for batteries that don't report whole numbers, but
-		    jumps between SOC values and don't always hit match target SOC
-		    exactly. Use case jitters between 43.8% and 44.4%. """
+		#Test case for batteries that don't report whole numbers, but
+		#jumps between SOC values and don't always hit match target SOC
+		#exactly. Use case jitters between 43.8% and 44.4%. """
 		from delegates import Dvcc
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
@@ -840,3 +841,99 @@ class TestDynamicEss(TestSystemCalcBase):
 		timer_manager.run(5000)
 		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower'), -1.0)
 		self.assertGreaterEqual(Dvcc.instance.internal_maxchargepower, 0.0)
+
+	def test_feedInLimitPrecedence(self):
+		# no limit set? default (-96000) kW should kick in.
+		# dess limit set? Dess limit should kick in
+		# local limit set? local limit should kick in
+		# dess and local limit set? lower limit should kick in.
+		now = timer_manager.datetime
+		stamp = int(now.timestamp())
+
+		#Some base data causing idle state, so the setpoint is set to the feedin limit.
+		self._set_setting('/Settings/DynamicEss/BatteryCapacity', 10.0)
+		self._monitor.set_value(self.vebus, '/Soc', 50.0)
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 50)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
+
+		#no limit
+		timer_manager.run(5000)
+
+		#check internal values
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ReactiveStrategy': 9,
+			'/DynamicEss/LastScheduledStart': stamp
+		})
+
+		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/Setpoint') , -96000)
+		self.validate_idle_state()
+
+		#local limit there, no dess limit.
+
+		self._monitor.set_value(self.settings_service, '/Settings/CGwacs/MaxFeedInPower', 7500)
+		self._set_setting('/Settings/DynamicEss/GridExportLimit', -1)
+
+		timer_manager.run(5000)
+
+		#check internal values
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ReactiveStrategy': 9,
+			'/DynamicEss/LastScheduledStart': stamp
+		})
+
+		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/Setpoint') , -7500)
+		self.validate_idle_state()
+
+		#dess limit there, no local limit
+		self._monitor.set_value(self.settings_service, '/Settings/CGwacs/MaxFeedInPower', -1)
+		self._set_setting('/Settings/DynamicEss/GridExportLimit', 6.4)
+
+		timer_manager.run(5000)
+
+		#check internal values
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ReactiveStrategy': 9,
+			'/DynamicEss/LastScheduledStart': stamp
+		})
+
+		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/Setpoint') , -6400)
+		self.validate_idle_state()
+
+		#both limits, local smaller
+		self._monitor.set_value(self.settings_service, '/Settings/CGwacs/MaxFeedInPower', 8000)
+		self._set_setting('/Settings/DynamicEss/GridExportLimit', 9)
+
+		timer_manager.run(5000)
+
+		#check internal values
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ReactiveStrategy': 9,
+			'/DynamicEss/LastScheduledStart': stamp
+		})
+
+		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/Setpoint') , -8000)
+		self.validate_idle_state()
+
+		#both limits, dess smaller
+		self._monitor.set_value(self.settings_service, '/Settings/CGwacs/MaxFeedInPower', 8000)
+		self._set_setting('/Settings/DynamicEss/GridExportLimit', 6.1)
+
+		timer_manager.run(5000)
+
+		#check internal values
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ReactiveStrategy': 9,
+			'/DynamicEss/LastScheduledStart': stamp
+		})
+
+		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/Setpoint') , -6100)
+		self.validate_idle_state()
