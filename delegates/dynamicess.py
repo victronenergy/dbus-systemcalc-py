@@ -16,9 +16,9 @@ logger = logging.getLogger(__name__)
 
 NUM_SCHEDULES = 48
 INTERVAL = 5
-SELLPOWER = -32000
 HUB4_SERVICE = 'com.victronenergy.hub4'
 ERROR_TIMEOUT = 60
+MAX_FEEDIN_VALUE = 96000
 TRANSITION_STATE_THRESHOLD = 90.0
 
 MODES = {
@@ -223,6 +223,11 @@ class EssDevice(object):
 		return self.monitor.get_value(self.service, "/Connected") == 1
 
 	@property
+	def device_instance(self):
+		""" Returns the DeviceInstance of this device. """
+		return self.monitor.get_value(self.service, '/DeviceInstance')
+
+	@property
 	def available(self):
 		return True
 
@@ -277,9 +282,23 @@ class VebusDevice(EssDevice):
 
 	@property
 	def maxfeedinpower(self):
-		l = self.monitor.get_value('com.victronenergy.settings',
+		local_feedin_limit = self.monitor.get_value('com.victronenergy.settings',
                 '/Settings/CGwacs/MaxFeedInPower')
-		return SELLPOWER if l < 0 else max(-l, SELLPOWER)
+
+		dess_feedin_limit = self.delegate.grid_export_limit * 1000.0 if self.delegate.grid_export_limit is not None else -1
+
+		if local_feedin_limit > -1 and dess_feedin_limit == -1:
+			return local_feedin_limit * -1
+
+		if dess_feedin_limit > -1 and local_feedin_limit == -1:
+			return dess_feedin_limit * -1
+
+		#if both limits are present, the more restricive one takes precedence.
+		if dess_feedin_limit > -1 and local_feedin_limit > -1:
+			return min(dess_feedin_limit, local_feedin_limit) * -1
+
+		#No limit present
+		return -MAX_FEEDIN_VALUE
 
 	@property
 	def minsoc(self):
@@ -685,6 +704,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				'/Overrides/FeedInExcess']),
 			('com.victronenergy.acsystem', [
 				 '/Connected',
+				 '/DeviceInstance',
 				 '/Capabilities/HasDynamicEssSupport',
 				 '/Ess/AcPowerSetpoint',
 				 '/Ess/InverterPowerSetpoint',
@@ -702,8 +722,11 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		return [('/DynamicEss/Available', {'gettext': '%s'})]
 
 	def _set_device(self, *args, **kwargs):
-		# Use first connected device in dict, there should be just one
-		for self._device in self._devices.values():
+		# Use device with lowest DeviceInstance. In systems with both
+		# Multi-RS and VE.Bus, this will tend to favour the RS. Otherwise
+		# it will favour the device on the internal mk2 connection.
+		for self._device in sorted(self._devices.values(),
+				key=lambda x: x.device_instance):
 			if self._device.connected:
 				break
 		else:

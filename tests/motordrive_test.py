@@ -21,7 +21,7 @@ class MotorDriveTest(TestSystemCalcBase):
 				'/Dc/0/Voltage': 24,
 				'/Dc/0/Current': 10,
 				'/Dc/0/Power': 240,
-				'/Motor/Rpm': 1000 })
+				'/Motor/RPM': 1000 })
 		self._update_values()
 
 	def test_check_values(self):
@@ -29,7 +29,7 @@ class MotorDriveTest(TestSystemCalcBase):
 			'/MotorDrive/Voltage': 24,
 			'/MotorDrive/Current': 10,
 			'/MotorDrive/Power': 240,
-			'/MotorDrive/Rpm': 1000
+			'/MotorDrive/RPM': 1000
 		})
 
 		self._monitor.set_value('com.victronenergy.motordrive.ttyX1', '/Dc/0/Current', 5)
