@@ -676,6 +676,16 @@ class SystemCalc:
 				if (pv_yield := self._dbusmonitor.get_value(i, "/Yield/Power")) is not None:
 					newvalues['/Dc/Pv/Power'] = newvalues.get('/Dc/Pv/Power', 0) + pv_yield
 
+					# Also calculate and update DC current contribution of this
+					# inverter/charger.
+					try:
+						newvalues['/Dc/Pv/Current'] = newvalues.get(
+							'/Dc/Pv/Current', 0) + (
+							pv_yield / self._dbusmonitor.get_value(i, "/Dc/0/Voltage"))
+					except (TypeError, ZeroDivisionError):
+						pass
+
+
 		# Used lower down, possibly needed for battery values as well
 		dcsystems = self._dbusmonitor.get_service_list('com.victronenergy.dcsystem')
 
