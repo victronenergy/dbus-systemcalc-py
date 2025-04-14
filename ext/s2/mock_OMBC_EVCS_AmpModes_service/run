@@ -1,0 +1,5 @@
+#!/bin/sh
+exec 2>&1
+
+
+exec python /opt/victronenergy/dbus-systemcalc-py/ext/s2/mock_OMBC_EVCS_AmpModes.py
