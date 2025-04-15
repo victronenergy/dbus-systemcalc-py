@@ -18,7 +18,8 @@ NUM_SCHEDULES = 48
 INTERVAL = 5
 HUB4_SERVICE = 'com.victronenergy.hub4'
 ERROR_TIMEOUT = 60
-MAX_FEEDIN_VALUE = 96000
+MAX_FEEDIN_VALUE = -96000
+MAX_IMPORT_VALUE = 96000
 TRANSITION_STATE_THRESHOLD = 90.0
 
 MODES = {
@@ -270,16 +271,6 @@ class EssDevice(object):
 			(self.delegate._dbusservice['/Ac/Consumption/L2/Power'] or 0) +
 			(self.delegate._dbusservice['/Ac/Consumption/L3/Power'] or 0))
 
-class VebusDevice(EssDevice):
-	@property
-	def available(self):
-		return Dvcc.instance.has_ess_assistant
-
-	@property
-	def hub4mode(self):
-		return self.monitor.get_value('com.victronenergy.settings',
-                '/Settings/CGwacs/Hub4Mode')
-
 	@property
 	def maxfeedinpower(self):
 		local_feedin_limit = self.monitor.get_value('com.victronenergy.settings',
@@ -298,8 +289,28 @@ class VebusDevice(EssDevice):
 			return min(dess_feedin_limit, local_feedin_limit) * -1
 
 		#No limit present
-		return -MAX_FEEDIN_VALUE
+		return MAX_FEEDIN_VALUE
+	
+	@property
+	def maximportpower(self):
+		dess_import_limit = self.delegate.grid_import_limit * 1000.0 if self.delegate.grid_import_limit is not None else -1
 
+		if dess_import_limit > -1:
+			return dess_import_limit * -1
+
+		#No limit present
+		return MAX_IMPORT_VALUE
+
+class VebusDevice(EssDevice):
+	@property
+	def available(self):
+		return Dvcc.instance.has_ess_assistant
+
+	@property
+	def hub4mode(self):
+		return self.monitor.get_value('com.victronenergy.settings',
+                '/Settings/CGwacs/Hub4Mode')
+	
 	@property
 	def minsoc(self):
 		# The BatteryLife delegate puts the active soc limit here.
@@ -505,7 +516,7 @@ class MultiRsDevice(EssDevice):
 			fast_charge_clearance = self.delegate.get_charge_power_capability() <= self.delegate.battery_charge_limit * 1000
 
 		if rate is None or (fast_charge_requested and fast_charge_clearance):
-			self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', 15000)
+			self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', self.maximportpower)
 		else:
 			# if fast charge is requested, but not yet cleared, use the configured battery charge limit as charge rate. 
 			# this way the limit is obeyed, but the desired "maximum charge" is achieved. 
@@ -527,7 +538,7 @@ class MultiRsDevice(EssDevice):
 			# to DC-coupled PV plus local consumption.
 			self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
 			if flags & Flags.FASTCHARGE:
-				self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', -15000)
+				self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', self.maxfeedinpower)
 				return None
 			else:
 				srate = max(1.0, (rate or 0) + self.pvpower) # 1.0 to allow selling overvoltage

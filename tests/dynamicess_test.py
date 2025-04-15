@@ -20,6 +20,8 @@ DynamicEss._get_time = lambda *a: timer_manager.datetime
 
 class TestDynamicEss(TestSystemCalcBase):
 	vebus = 'com.victronenergy.vebus.ttyO1'
+	acsystem = 'com.victronenergy.acsystem.socketcan_can0_sys0'
+	multiRS = 'com.victronenergy.multi.socketcan_can0_001'
 	settings_service = 'com.victronenergy.settings'
 	def __init__(self, methodName='runTest'):
 		TestSystemCalcBase.__init__(self, methodName)
@@ -27,20 +29,7 @@ class TestDynamicEss(TestSystemCalcBase):
 	def setUp(self):
 		logging.getLogger().setLevel(logging.DEBUG)
 		TestSystemCalcBase.setUp(self)
-		self._add_device(self.vebus, product_name='Multi',
-			values={
-				'/Devices/0/Assistants': [0x55, 0x1] + (26 * [0]),
-				'/Hub4/AssistantId': 5,
-				'/VebusMainState': 9,
-				'/Ac/ActiveIn/ActiveInput': 0,
-				"/Ac/Out/L1/P": 0,
-				"/Ac/Out/L2/P": 0,
-				"/Ac/Out/L3/P": 0,
-				'/Ac/NumberOfAcInputs': 1,
-				'/State': 3,
-				'/Soc': 55.0,
-				'/ExtraBatteryCurrent': 0})
-
+		
 		self._add_device('com.victronenergy.grid.ttyUSB0', {
 			'/Ac/L1/Power': 0,
 			'/Ac/L2/Power': 0,
@@ -67,13 +56,48 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/BatteryCapacity', 10.0)
 		self._set_setting('/Settings/DynamicEss/SystemEfficiency', 90.0)
 
+	def setUpMulti(self):
+		self._add_device(self.vebus, product_name='Multi',
+			values={
+				'/Devices/0/Assistants': [0x55, 0x1] + (26 * [0]),
+				'/Hub4/AssistantId': 5,
+				'/VebusMainState': 9,
+				'/Ac/ActiveIn/ActiveInput': 0,
+				"/Ac/Out/L1/P": 0,
+				"/Ac/Out/L2/P": 0,
+				"/Ac/Out/L3/P": 0,
+				'/Ac/NumberOfAcInputs': 1,
+				'/State': 3,
+				'/Soc': 55.0,
+				'/ExtraBatteryCurrent': 0})
+		
+		self._update_values()
+
+	def setUpRS(self):
+		self._add_device(self.multiRS,
+			product_name='Multi RS',
+			values={
+				'/State': 252,
+				'/Soc': 55.0,
+				'/Ac/ActiveIn/ActiveInput': 0,
+				"/Ac/Out/L1/P": 0,
+				"/Ac/Out/L2/P": 0,
+				"/Ac/Out/L3/P": 0
+			})
+		
+		self._add_device(self.acsystem,
+			product_name='Multi RS AC',
+			values={
+				'/State': 252
+			})
+		
 		self._update_values()
 
 	def tearDown(self):
 		DynamicEss.instance.release_control()
 
-	def test_1_SCHEDULED_SELFCONSUME(self):
-		
+	def test_Multi_1_SCHEDULED_SELFCONSUME(self):
+		self.setUpMulti()
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
 
@@ -92,9 +116,10 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp
 		})
 
-		self.validate_self_consume
+		self.validate_multi_self_consume
 	
-	def test_2_SCHEDULED_CHARGE_ALLOW_GRID(self):
+	def test_Multi_2_SCHEDULED_CHARGE_ALLOW_GRID(self):
+		self.setUpMulti()
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
 
@@ -122,9 +147,10 @@ class TestDynamicEss(TestSystemCalcBase):
 		
 		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
 		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
-		self.validate_charge_state(expected_rate)
+		self.validate_multi_charge_state(expected_rate)
 
-	def test_6_SCHEDULED_DISCHARGE(self):
+	def test_Multi_6_SCHEDULED_DISCHARGE(self):
+		self.setUpMulti()
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
 
@@ -153,11 +179,12 @@ class TestDynamicEss(TestSystemCalcBase):
 		#assert equality based on /100, to eliminate seconds the delegate needs to calculate. 
 		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
 		
-		self.validate_discharge_state(expected_rate)
+		self.validate_multi_discharge_state(expected_rate)
 
 
 
-	def test_9_IDLE_MAINTAIN_TARGETSOC(self):
+	def test_Multi_9_IDLE_MAINTAIN_TARGETSOC(self):
+		self.setUpMulti()
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
 
@@ -180,10 +207,10 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp,
 		})
 
-		self.validate_idle_state()
+		self.validate_multi_idle_state()
 
-	def test_10_SCHEDULED_CHARGE_SMOOTH_TRANSITION(self):
-
+	def test_Multi_10_SCHEDULED_CHARGE_SMOOTH_TRANSITION(self):
+		self.setUpMulti()
 		# When a system reaches target soc early during 2 consecutive scheduled charge windows, 
 		# it should keep up the current charge rate until the next target soc change.
 		# This should only happen, if targetsoc is reached within the last 20% of window progress.
@@ -221,7 +248,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		#assert equality based on /100, to eliminate seconds the delegate needs to calculate. 
 		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
 
-		self.validate_charge_state(expected_rate)
+		self.validate_multi_charge_state(expected_rate)
 
 		# run 1700 seconds more and pretend we reached target soc. Transition state should now kick in.
 		# chargerate should remain the same as currently set. 
@@ -237,7 +264,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
 		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
 
-		self.validate_charge_state(expected_rate)
+		self.validate_multi_charge_state(expected_rate)
 
 		#transist to next window - should cause a change back to regular charging with updated chargerate. 
 		timer_manager.run(110 * 1000)
@@ -250,10 +277,10 @@ class TestDynamicEss(TestSystemCalcBase):
 
 		expected_rate = round(1.1 * (5 * 10 * 36000) / 3600)
 		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
-		self.validate_charge_state(expected_rate)
+		self.validate_multi_charge_state(expected_rate)
 
-	def test_10_SCHEDULED_CHARGE_SMOOTH_TRANSITION_NOK(self):
-
+	def test_Multi_10_SCHEDULED_CHARGE_SMOOTH_TRANSITION_NOK(self):
+		self.setUpMulti()
 		# When a system reaches target soc early during 2 consecutive scheduled charge windows,
 		# it should keep up the current charge rate until the next target soc change.
 		# This should only happen, if targetsoc is reached within the last 20% of window progress.
@@ -291,7 +318,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
 		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
 
-		self.validate_charge_state(expected_rate)
+		self.validate_multi_charge_state(expected_rate)
 
 		# run 1400 seconds more and pretend we reached target soc. Transition state should NOT kick in, but idle. 
 		# chargerate should remain the same as currently set. 
@@ -305,7 +332,7 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
-		self.validate_idle_state()
+		self.validate_multi_idle_state()
 
 		#transist to next window - should cause a change back to regular charging with updated chargerate. 
 		timer_manager.run(406 * 1000)
@@ -318,13 +345,15 @@ class TestDynamicEss(TestSystemCalcBase):
 
 		expected_rate = round(1.1 * (5 * 10 * 36000) / 3600)
 		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
-		self.validate_charge_state(expected_rate)
+		self.validate_multi_charge_state(expected_rate)
 
-	def test_12_SCHEDULED_CHARGE_NO_GRID(self):
+	def test_Multi_12_SCHEDULED_CHARGE_NO_GRID(self):
+		self.setUpMulti()
 		#this strategy is currently not used. Replaced with 14 - SELFCONSUME_NO_GRID
 		pass  # to implement
 
-	def test_13_SCHEDULED_MINIMUM_DISCHARGE(self):
+	def test_Multi_13_SCHEDULED_MINIMUM_DISCHARGE(self):
+		self.setUpMulti()
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
 
@@ -352,9 +381,10 @@ class TestDynamicEss(TestSystemCalcBase):
 		
 		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
 		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
-		self.validate_discharge_state(expected_rate)
+		self.validate_multi_discharge_state(expected_rate)
 
-	def test_14_SELFCONSUME_NO_GRID(self):
+	def test_Multi_14_SELFCONSUME_NO_GRID(self):
+		self.setUpMulti()
 		# keep battery charged should be entered, when we have 100 soc = 100 tsoc and
 		# 250 Watt solar plus.
 		now = timer_manager.datetime
@@ -402,9 +432,10 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp,
 		})
 
-		self.validate_self_consume(300)
+		self.validate_multi_self_consume(300)
 
-	def test_15_IDLE_NO_OPPORTUNITY(self):
+	def test_Multi_15_IDLE_NO_OPPORTUNITY(self):
+		self.setUpMulti()
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
 
@@ -428,11 +459,12 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp,
 		})
 
-		self.validate_idle_state()
+		self.validate_multi_idle_state()
 
 
 
-	def test_17_SELFCONSUME_INCREASED_DISCHARGE(self):
+	def test_Multi_17_SELFCONSUME_INCREASED_DISCHARGE(self):
+		self.setUpMulti()
 		# keep battery charged should be entered, when we have 100 soc = 100 tsoc and
 		# 250 Watt solar plus.
 		now = timer_manager.datetime
@@ -486,9 +518,10 @@ class TestDynamicEss(TestSystemCalcBase):
 		
 		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
 		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
-		self.validate_self_consume()
+		self.validate_multi_self_consume()
 
-	def test_18_KEEP_BATTERY_CHARGED(self):
+	def test_Multi_18_KEEP_BATTERY_CHARGED(self):
+		self.setUpMulti()
 		# keep battery charged should be entered, when we have 100 soc = 100 tsoc and
 		# 250 Watt solar plus.
 		now = timer_manager.datetime
@@ -543,10 +576,10 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		#rate in this state should be 250 watt fixed.
-		self.validate_charge_state(250)
+		self.validate_multi_charge_state(250)
 
-	def test_19_SCHEDULED_DISCHARGE_SMOOTH_TRANSITION(self):
-
+	def test_Multi_19_SCHEDULED_DISCHARGE_SMOOTH_TRANSITION(self):
+		self.setUpMulti()
 		# When a system reaches target soc early during 2 consecutive scheduled discharge windows, 
 		# it should keep up the current charge rate until the next target soc change.
 		# This should only happen, if targetsoc is reached within the last 20% of window progress.
@@ -584,7 +617,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
 		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
 
-		self.validate_discharge_state(expected_rate)
+		self.validate_multi_discharge_state(expected_rate)
 
 		# run 1700 seconds more and pretend we reached target soc. Transition state should now kick in. 
 		# chargerate should remain the same as currently set. 
@@ -600,7 +633,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
 		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
 
-		self.validate_discharge_state(expected_rate)
+		self.validate_multi_discharge_state(expected_rate)
 
 		#transist to next window - should cause a change back to regular charging with updated chargerate. 
 		timer_manager.run(110 * 1000)
@@ -613,10 +646,10 @@ class TestDynamicEss(TestSystemCalcBase):
 
 		expected_rate = round(1.1 * (5 * 10 * 36000) / 3600) * -1
 		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
-		self.validate_discharge_state(expected_rate)
+		self.validate_multi_discharge_state(expected_rate)
 
-	def test_19_SCHEDULED_DISCHARGE_SMOOTH_TRANSITION_NOK(self):
-
+	def test_Multi_19_SCHEDULED_DISCHARGE_SMOOTH_TRANSITION_NOK(self):
+		self.setUpMulti()
 		# When a system reaches target soc early during 2 consecutive scheduled charge windows, 
 		# it should keep up the current charge rate until the next target soc change.
 		# This should only happen, if targetsoc is reached within the last 20% of window progress.
@@ -654,7 +687,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
 		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
 
-		self.validate_discharge_state(expected_rate)
+		self.validate_multi_discharge_state(expected_rate)
 
 		# run 1400 seconds more and pretend we reached target soc. Transition state should NOT kick in, but idle. 
 		# chargerate should remain the same as currently set. 
@@ -668,7 +701,7 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
-		self.validate_idle_state()
+		self.validate_multi_idle_state()
 
 		#transist to next window - should cause a change back to regular charging with updated chargerate. 
 		timer_manager.run(406 * 1000)
@@ -681,10 +714,10 @@ class TestDynamicEss(TestSystemCalcBase):
 
 		expected_rate = round(1.1 * (5 * 10 * 36000) / 3600) * -1
 		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
-		self.validate_discharge_state(expected_rate)
+		self.validate_multi_discharge_state(expected_rate)
 
-	def test_92_DESS_DISABLED(self):
-		
+	def test_Multi_92_DESS_DISABLED(self):
+		self.setUpMulti()
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
 
@@ -702,34 +735,35 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/ReactiveStrategy': 92
 		})
 
-		self.validate_self_consume()
+		self.validate_multi_self_consume()
 
-	def test_93_SELFCONSUME_UNEXPECTED_EXCEPTION(self):
+	def test_Multi_93_SELFCONSUME_UNEXPECTED_EXCEPTION(self):
 		#can't really be tested, because in a ideal delegate, we don't have unexpected exceptions.
 		pass
 
-	def test_94_SELFCONSUME_FAULTY_CHARGERATE(self):
+	def test_Multi_94_SELFCONSUME_FAULTY_CHARGERATE(self):
 		#can't really be tested, because in a ideal delegate, we don't have input-options to provoke a faulty charge rate.
 		pass
 
-	def test_95_UNKNOWN_OPERATING_MODE(self):
+	def test_Multi_95_UNKNOWN_OPERATING_MODE(self):
 		#currently, there is a operating mode independent logic, so this is not validated.
 		pass
 
-	def test_96_ESS_LOW_SOC(self):
+	def test_Multi_96_ESS_LOW_SOC(self):
 		# mock environment doesn't seem to produce the desired SystemState-Value to validate this.
 		pass  # to implement
 
-	def test_97_SELFCONSUME_UNMAPPED_STATE(self):
+	def test_Multi_97_SELFCONSUME_UNMAPPED_STATE(self):
 		# in an ideal delegate, we don't have unmapped states. So, doesn't make sence to add a unmapped state for testing
 		pass
 
-	def test_98_SELFCONSUME_UNPREDICTED(self):
+	def test_Multi_98_SELFCONSUME_UNPREDICTED(self):
 		# in an ideal delegate, we don't have unpredicted inputs. So, doesn't make sence to add a unpredicted input-set state for testing
 		# cuase by the time we know that input set, it would become predicted and to be implemented.
 		pass  
 
-	def test_99_NO_WINDOW(self):
+	def test_Multi_99_NO_WINDOW(self):
+		self.setUpMulti()
 		self._set_setting('/Settings/DynamicEss/Mode', 1)
 		timer_manager.run(10000) #give DESS time to pick up settings.
 
@@ -739,62 +773,15 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/ReactiveStrategy': 99,
 		})
 
-		self.validate_self_consume()
+		self.validate_multi_self_consume()
 
 		self._check_external_values({
 			'com.victronenergy.hub4': {
 				'/Overrides/FeedInExcess': 0 #for the NO_WINDOW Test, should default to system configuration. 
 		}})
 
-	def validate_self_consume(self, maxChargePower=None):
-		from delegates import Dvcc
-
-		#validate external values
-		self._check_external_values({
-			'com.victronenergy.hub4': {
-				'/Overrides/ForceCharge': 0,
-				'/Overrides/Setpoint': None,
-				'/Overrides/MaxDischargePower': -1
-		}})
-
-		self.assertEqual(maxChargePower, Dvcc.instance.internal_maxchargepower)
-
-	def validate_charge_state(self, rate):
-		from delegates import Dvcc
-
-		#validate external values
-		self._check_external_values({
-			'com.victronenergy.hub4': {
-				'/Overrides/ForceCharge': 1,
-				'/Overrides/Setpoint': None,
-				'/Overrides/MaxDischargePower': -1
-		}})
-
-		self.assertAlmostEqual(rate/100.0, Dvcc.instance.internal_maxchargepower/100.0,1)
-	
-	def validate_discharge_state(self, rate):
-		from delegates import Dvcc
-
-		#validate external values
-		self._check_external_values({
-			'com.victronenergy.hub4': {
-				'/Overrides/ForceCharge': 0,
-				'/Overrides/Setpoint': -96000
-		}})
-
-		self.assertAlmostEqual(rate/100.0, self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower')/-100.0,1)
-		self.assertEqual(None, Dvcc.instance.internal_maxchargepower)
-	
-	def validate_idle_state(self):
-		#validate external values
-		self._check_external_values({
-			'com.victronenergy.hub4': {
-				'/Overrides/ForceCharge': 0,
-				'/Overrides/MaxDischargePower':1
-		}})
-		#TODO check more settings to validate idle state.
-
-	def test_hysteresis(self):
+	def test_Multi_Hysteresis(self):
+		self.setUpMulti()
 		#Test case for batteries that don't report whole numbers, but
 		#jumps between SOC values and don't always hit match target SOC
 		#exactly. Use case jitters between 43.8% and 44.4%. """
@@ -842,7 +829,8 @@ class TestDynamicEss(TestSystemCalcBase):
 		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower'), -1.0)
 		self.assertGreaterEqual(Dvcc.instance.internal_maxchargepower, 0.0)
 
-	def test_feedInLimitPrecedence(self):
+	def test_Multi_FeedInLimitPrecedence(self):
+		self.setUpMulti()
 		# no limit set? default (-96000) kW should kick in.
 		# dess limit set? Dess limit should kick in
 		# local limit set? local limit should kick in
@@ -871,7 +859,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/Setpoint') , -96000)
-		self.validate_idle_state()
+		self.validate_multi_idle_state()
 
 		#local limit there, no dess limit.
 
@@ -888,7 +876,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/Setpoint') , -7500)
-		self.validate_idle_state()
+		self.validate_multi_idle_state()
 
 		#dess limit there, no local limit
 		self._monitor.set_value(self.settings_service, '/Settings/CGwacs/MaxFeedInPower', -1)
@@ -904,7 +892,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/Setpoint') , -6400)
-		self.validate_idle_state()
+		self.validate_multi_idle_state()
 
 		#both limits, local smaller
 		self._monitor.set_value(self.settings_service, '/Settings/CGwacs/MaxFeedInPower', 8000)
@@ -920,7 +908,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/Setpoint') , -8000)
-		self.validate_idle_state()
+		self.validate_multi_idle_state()
 
 		#both limits, dess smaller
 		self._monitor.set_value(self.settings_service, '/Settings/CGwacs/MaxFeedInPower', 8000)
@@ -936,4 +924,59 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/Setpoint') , -6100)
-		self.validate_idle_state()
+		self.validate_multi_idle_state()
+
+	def validate_multi_self_consume(self, maxChargePower=None):
+		from delegates import Dvcc
+
+		#validate external values
+		self._check_external_values({
+			'com.victronenergy.hub4': {
+				'/Overrides/ForceCharge': 0,
+				'/Overrides/Setpoint': None,
+				'/Overrides/MaxDischargePower': -1
+		}})
+
+		self.assertEqual(maxChargePower, Dvcc.instance.internal_maxchargepower)
+
+	def validate_multi_charge_state(self, rate):
+		from delegates import Dvcc
+
+		#validate external values
+		self._check_external_values({
+			'com.victronenergy.hub4': {
+				'/Overrides/ForceCharge': 1,
+				'/Overrides/Setpoint': None,
+				'/Overrides/MaxDischargePower': -1
+		}})
+
+		self.assertAlmostEqual(rate/100.0, Dvcc.instance.internal_maxchargepower/100.0,1)
+	
+	def validate_multi_discharge_state(self, rate):
+		from delegates import Dvcc
+
+		#validate external values
+		self._check_external_values({
+			'com.victronenergy.hub4': {
+				'/Overrides/ForceCharge': 0,
+				'/Overrides/Setpoint': -96000
+		}})
+
+		self.assertAlmostEqual(rate/100.0, self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower')/-100.0,1)
+		self.assertEqual(None, Dvcc.instance.internal_maxchargepower)
+	
+	def validate_multi_idle_state(self):
+		#validate external values
+		self._check_external_values({
+			'com.victronenergy.hub4': {
+				'/Overrides/ForceCharge': 0,
+				'/Overrides/MaxDischargePower':1
+		}})
+
+	def validate_rs_idle_state(self, dcpv):
+		#validate external values
+		self._check_external_values({
+			'com.victronenergy.acsystem': {
+				'/Ess/UseInverterPowerSetpoint': 1,
+				'/Ess/InverterPowerSetpoint':-max(0, dcpv)
+		}})
