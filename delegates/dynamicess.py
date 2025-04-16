@@ -726,7 +726,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# Multi-RS and VE.Bus, this will tend to favour the RS. Otherwise
 		# it will favour the device on the internal mk2 connection.
 		for self._device in sorted(self._devices.values(),
-				key=lambda x: x.device_instance):
+				key=lambda x: (x.device_instance or 0xFF)):
 			if self._device.connected:
 				break
 		else:
@@ -760,11 +760,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 	def device_added(self, service, instance, *args):
 		if service.startswith('com.victronenergy.vebus.'):
-			# Only one device, controlled via hub4control
-			if not any(isinstance(s, VebusDevice) for s in self._devices.values()):
-				self._devices[service] = VebusDevice(self, self._dbusmonitor, service)
-				self._dbusmonitor.track_value(service, "/Connected", self._set_device)
-				self._set_device()
+			self._devices[service] = VebusDevice(self, self._dbusmonitor, service)
+			self._dbusmonitor.track_value(service, "/Connected", self._set_device)
+			self._set_device()
 		elif service.startswith('com.victronenergy.acsystem.'):
 			self._devices[service] = MultiRsDevice(self, self._dbusmonitor, service)
 			self._set_device()
