@@ -1107,7 +1107,7 @@ class SystemCalc:
 				self._settings['motordrivepowermax'] = max(self._settings['motordrivepowermax'] or 0,
 																newvalues.get('/MotorDrive/Power') or 0)
 				self._settings['motordriverpmmax'] = max(self._settings['motordriverpmmax'] or 0,
-															newvalues.get('/MotorDrive/RPM') or 0)
+															newvalues.get('/MotorDrive/0/RPM') or 0)
 				self._settings['gpsspeedmax'] = max(self._settings['gpsspeedmax'] or 0,
 													newvalues.get('/GpsSpeed') or 0)
 
