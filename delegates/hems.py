@@ -11,9 +11,12 @@ from enum import Enum
 from time import time
 import json
 import logging
+import dbus
+from typing import Dict
 logger = logging.getLogger(__name__)
 
-HUB4_SERVICE = 'com.victronenergy.hub4'
+HUB4_SERVICE = "com.victronenergy.hub4"
+S2_IFACE = "com.victronenergy.S2"
 
 class Modes(int, Enum):
 	Off = 0
@@ -33,13 +36,24 @@ class SystemType(int, Enum):
 	OffGrid2Phase = 10
 	OffGrid3Phase = 11
 
+class S2RMDelegate():
+	def __init__(self, service, instance, rmno):
+		self.service = service
+		self.instance = instance
+		self.rmno = rmno
+
+	@property
+	def unique_identifier(self):
+		return "{}_RM{}".format(self.service, self.rmno)
+
 class HEMS(SystemCalcDelegate):
 	control_priority = 0
 	_get_time = datetime.now
 
 	def __init__(self):
 		super(HEMS, self).__init__()
-		self.SystemType = SystemType.Unknown
+		self.system_type = SystemType.Unknown
+		self.managed_rms: Dict[str, S2RMDelegate] = {}
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(HEMS, self).set_sources(dbusmonitor, settings, dbusservice)
@@ -48,7 +62,7 @@ class HEMS(SystemCalcDelegate):
 		self._dbusservice.add_path('/HEMS/BatteryReservationState', value=None)
 		self._dbusservice.add_path('/HEMS/SystemType', value=0, gettextcallback=lambda p, v: SystemType(v))
 
-		self.SystemType = self._determineSystemType()
+		self.system_type = self._determineSystemType()
 
 		if self.mode == 1:
 			self._enable()
@@ -79,15 +93,36 @@ class HEMS(SystemCalcDelegate):
 	def get_output(self):
 		return []
 
+	def _check_s2_rm(self, serviceName, objectPath):
+		try:
+			self._dbusmonitor.dbusConn.call_blocking(serviceName, objectPath, S2_IFACE, 'GetValue', '', [])
+			return True
+		except dbus.exceptions.DBusException as e:
+			return False
+		
 	def device_added(self, service, instance, *args):
 		logger.info("Device added: {}".format(service))
-		#TODO: Scan if S2 device we need to control
-		pass
+		i = 0
+		while True:
+			s2_rm_exists = self._check_s2_rm(service, "/Devices/{}/S2".format(i))
+
+			if s2_rm_exists:
+				delegate = S2RMDelegate(service, instance, i)
+				self.managed_rms[delegate.unique_identifier] = delegate
+				logger.info(" -> Identified S2 RM {} on {}. Added to managed RMs as {}".format(i, service, delegate.unique_identifier))
+				i += 1
+			else:
+				break
 
 	def device_removed(self, service, instance):
 		logger.info("Device removed: {}".format(service))
-		#TODO: Scan if S2 device we are currently controlling
-		pass
+
+		#check, if this service provided one or multiple rm, we have been controlling. 
+		known_rms = list(self.managed_rms.keys()) 
+		for key in known_rms:
+			if key.startswith(service):
+				logger.info(" -> Removing RM {} from managed RMs.".format(key))
+				del self.managed_rms[key]
 
 	def settings_changed(self, setting, oldvalue, newvalue):
 		if setting == 'hems_mode':
@@ -165,7 +200,7 @@ class HEMS(SystemCalcDelegate):
 				#TODO: Determine number of phases Offgrid, can't use grid information here. 
 				pass
 		except Exception as ex:
-			logger.warning("Unable to determine SystemType by now. Retrying...", exc_info=ex)
+			logger.warning("Unable to determine SystemType by now. Retrying later...")
 			#may happen during startup, until all delegates have populated their initial values. 
 			pass
 
@@ -175,7 +210,7 @@ class HEMS(SystemCalcDelegate):
 	def _on_timer(self):
 		# Control loop timer.
 		now = self._get_time()
-		self.SystemType = self._determineSystemType()
+		self.system_type = self._determineSystemType()
 		
 		#TODO: Work work work
 		logger.info("SOC / Reservation: {}% / {}W".format(self.soc, self.current_battery_reservation))

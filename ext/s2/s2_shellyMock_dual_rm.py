@@ -36,6 +36,20 @@ class RM1():
         
     rm_control_type = rm_control_type()
 
+class RM2():
+    class rm_control_type(PEBCControlType):
+        def activate(self, conn):
+            #TODO: Implement
+            print("Received Activate Command")
+            return super().activate(conn)
+        
+        def deactivate(self, conn):
+            #TODO: Implement
+            print("Received Deactivate Command")
+            return super().deactivate(conn)
+        
+    rm_control_type = rm_control_type()
+
 class ShellyS2Mock(Service):
     def __init__(self, bus, name, instance):
         self.instance = instance
@@ -43,7 +57,9 @@ class ShellyS2Mock(Service):
 
     def setup_rm1(self):
         self.rm1 = RM1()
+        self.rm2 = RM2()
         self.add_item(S2ResourceManagerItem('/Devices/0/S2', [self.rm1.rm_control_type], None))
+        self.add_item(S2ResourceManagerItem('/Devices/1/S2', [self.rm2.rm_control_type], None))
 
     async def _loop(self):
         while True:
@@ -60,7 +76,7 @@ if __name__ == "__main__":
         from dbus_next.constants import BusType
 
     async def main():
-        instance = 929
+        instance = 930
         bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
         service = ShellyS2Mock(bus, 'com.victronenergy.s2Mock', instance)
         
