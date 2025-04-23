@@ -50,7 +50,7 @@ from s2python.s2_connection import MessageHandlers, AssetDetails
 
 
 logger = logging.getLogger(__name__)
-
+logger.setLevel(logging.DEBUG)
 
 IFACE="com.victronenergy.S2"
 

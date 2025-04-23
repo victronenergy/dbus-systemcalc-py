@@ -12,8 +12,21 @@ from time import time
 import json
 import logging
 import dbus
-from typing import Dict
+import uuid
+from typing import Dict, cast
 from ve_utils import wrap_dbus_value, unwrap_dbus_value
+
+from s2python.common import (
+    ReceptionStatusValues,
+    ReceptionStatus,
+    Handshake,
+    EnergyManagementRole,
+    HandshakeResponse,
+    SelectControlType,
+)
+from s2python.s2_parser import S2Parser
+from s2python.version import S2_VERSION
+from s2python.validate_values_mixin import S2MessageComponent
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +63,8 @@ class S2RMDelegate():
 		self.keep_alive_missed = 0
 		self._message_receiver=None
 		self._disconnect_receiver=None
+		self._keep_alive_timer=None
+		self.s2_parser = S2Parser()
 
 	@property
 	def unique_identifier(self):
@@ -61,7 +76,7 @@ class S2RMDelegate():
 		"""
 		if self._s2_connect():
 			#Set KeepAlive Timer. 
-			self._timer = GLib.timeout_add(KEEP_ALIVE_INTERVAL * 1000, self._keep_alive_loop)
+			self._keep_alive_timer = GLib.timeout_add(KEEP_ALIVE_INTERVAL * 1000, self._keep_alive_loop)
 
 		#RM is now ready to be managed.
 		self.initialized = True
@@ -70,7 +85,20 @@ class S2RMDelegate():
 		"""
 			To be called when the RM leaves the dbus. 
 		"""
+		if self._message_receiver is not None:
+			self._dbusmonitor.dbusConn.remove_signal_receiver(self._s2_on_message_handler, path=self.s2path, signal_name="Message", dbus_interface=S2_IFACE)
+			self._message_receiver = None
+
+		if self._disconnect_receiver is not None:
+			self._dbusmonitor.dbusConn.remove_signal_receiver(self._s2_on_disconnect_handler, path=self.s2path, signal_name="Disconnect", dbus_interface=S2_IFACE)
+			self._disconnect_receiver = None
+
+		if self._keep_alive_timer is not None:
+			GLib.source_remove(self._keep_alive_timer)
+			self._keep_alive_timer = None
+
 		self.initialized=False
+		logger.info("RMDelegate is now uninitialized: {}".format(self.unique_identifier))
 
 	def _keep_alive_loop(self):
 		"""
@@ -121,13 +149,53 @@ class S2RMDelegate():
 	def _s2_on_message_handler(self, client_id, message):
 		if self.unique_identifier == client_id:
 			logger.info("Received Message from {}: {}".format(self.unique_identifier, message))
+			try:
+				parsed = self.s2_parser.parse_as_any_message(message)
+			except Exception as ex:
+				#TODO: Handle parse errors.
+				logger.error("Exception parsing s2 message", exc_info=ex)
+				pass
+			else:
+				if isinstance(parsed, Handshake):
+					self._s2_on_handhsake_message(parsed)
+				else:
+					if not isinstance(parsed, ReceptionStatus):
+						#Not yet implemented! 
+						self._s2_send_reception_message(ReceptionStatusValues.PERMANENT_ERROR, parsed, "MessageType not yet implemented in HEMS.")
+					
+	def _s2_on_handhsake_message(self, message:Handshake):
+		#RM wants to handshake. Do that :) 
+		logger.info("Received handshake from {}.".format(self.unique_identifier))
+		if S2_VERSION in message.supported_protocol_versions:
+			self._s2_send_reception_message(ReceptionStatusValues.OK, message)
+			#Supported Version, Accept.
+			resp = HandshakeResponse(
+				message_id=uuid.uuid4(),
+				selected_protocol_version=S2_VERSION
+			)
+
+			self._s2_send_message(resp) #TODO: Verify it worked?
+		else:
+			logger.warning("RM {} is using outdated version: {}; expected: {}".format(self.unique_identifier, message.supported_protocol_versions, S2_VERSION))
+			#wrong version. Reject. 
+			self._s2_send_reception_message(ReceptionStatusValues.INVALID_CONTENT, message)
 
 	def _s2_on_disconnect_handler(self, client_id, reason):
 		if self.unique_identifier == client_id:
 			logger.info("Received Disconnect from {}: {}".format(self.unique_identifier, reason))
 			  
-	def _s2_send_keep_alive(self) -> bool:
-		pass
+	def _s2_send_reception_message(self, rsv:ReceptionStatusValues, src:S2MessageComponent, info:str=None):
+
+		resp = ReceptionStatus(
+			status=rsv,
+			subject_message_id = str(src.to_dict()["message_id"]),
+			diagnostic_label=info
+		)
+		return self._s2_send_message(resp)
+
+	def _s2_send_message(self, message:S2MessageComponent) -> bool:
+		return self._dbusmonitor.dbusConn.call_blocking(self.service, self.s2path, S2_IFACE, method='Message', signature='ss', 
+				args=[wrap_dbus_value(self.unique_identifier), wrap_dbus_value(message.to_json())])
 
 class HEMS(SystemCalcDelegate):
 	control_priority = 0
