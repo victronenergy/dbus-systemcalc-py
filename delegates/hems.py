@@ -13,10 +13,13 @@ import json
 import logging
 import dbus
 from typing import Dict
+from ve_utils import wrap_dbus_value, unwrap_dbus_value
+
 logger = logging.getLogger(__name__)
 
 HUB4_SERVICE = "com.victronenergy.hub4"
 S2_IFACE = "com.victronenergy.S2"
+KEEP_ALIVE_INTERVAL = 20
 
 class Modes(int, Enum):
 	Off = 0
@@ -37,14 +40,94 @@ class SystemType(int, Enum):
 	OffGrid3Phase = 11
 
 class S2RMDelegate():
-	def __init__(self, service, instance, rmno):
+	def __init__(self, monitor, service, instance, rmno):
+		self.initialized = False
 		self.service = service
 		self.instance = instance
 		self.rmno = rmno
+		self.s2path = "/Devices/{}/S2".format(rmno)
+		self._dbusmonitor = monitor
+		self.keep_alive_missed = 0
+		self._message_receiver=None
+		self._disconnect_receiver=None
 
 	@property
 	def unique_identifier(self):
 		return "{}_RM{}".format(self.service, self.rmno)
+	
+	def begin(self):
+		"""
+			Initializes the RM, establishes connection, handshake, etc. 
+		"""
+		if self._s2_connect():
+			#Set KeepAlive Timer. 
+			self._timer = GLib.timeout_add(KEEP_ALIVE_INTERVAL * 1000, self._keep_alive_loop)
+
+		#RM is now ready to be managed.
+		self.initialized = True
+	
+	def end(self):
+		"""
+			To be called when the RM leaves the dbus. 
+		"""
+		self.initialized=False
+
+	def _keep_alive_loop(self):
+		"""
+			Sends the keepalive and monitors for success. 
+		"""
+		def reply_handler(result): 
+			if result:
+				self.keep_alive_missed = 0
+			else:
+				self.keep_alive_missed = self.keep_alive_missed + 1	
+		
+		def error_handler(result): 
+			self.keep_alive_missed = self.keep_alive_missed + 1
+
+		self._dbusmonitor.dbusConn.call_async(self.service, self.s2path, S2_IFACE, method='KeepAlive', signature='s',
+										args=[wrap_dbus_value(self.unique_identifier)],
+										reply_handler=reply_handler, error_handler=error_handler)
+		
+		if self.keep_alive_missed < 2:
+			logger.info("Keepalive OK for {}".format(self.unique_identifier))
+			return True
+		else:
+			#TODO: We missed keepalives. Handle s2-based timeouts. 
+			logger.info("Keepalive MISSED for {} ({})".format(self.unique_identifier, self.keep_alive_missed))
+			self.initialized=False
+			return False
+
+	def _s2_connect(self) -> bool:
+		"""
+			Establishes Connection to the RM via S2. 
+		"""
+		#start to monitor for Signals: Message and Disconnect. 
+		self._message_receiver = self._dbusmonitor.dbusConn.add_signal_receiver(self._s2_on_message_handler,
+			dbus_interface=S2_IFACE, signal_name='Message', path=self.s2path)
+
+		self._disconnect_receiver = self._dbusmonitor.dbusConn.add_signal_receiver(self._s2_on_disconnect_handler,
+			dbus_interface=S2_IFACE, signal_name='Disconnect', path=self.s2path)
+		
+		if self._dbusmonitor.dbusConn.call_blocking(self.service, self.s2path, S2_IFACE, method='Connect', signature='si', 
+										   args=[wrap_dbus_value(self.unique_identifier), wrap_dbus_value(KEEP_ALIVE_INTERVAL)]):
+			logger.info("S2-Connection to {} established with Keep-Alive {}".format(self.unique_identifier, KEEP_ALIVE_INTERVAL))
+
+			return True
+		else:
+			logger.warning("S2-Connection to {} failed.".format(self.unique_identifier))
+			return False
+
+	def _s2_on_message_handler(self, client_id, message):
+		if self.unique_identifier == client_id:
+			logger.info("Received Message from {}: {}".format(self.unique_identifier, message))
+
+	def _s2_on_disconnect_handler(self, client_id, reason):
+		if self.unique_identifier == client_id:
+			logger.info("Received Disconnect from {}: {}".format(self.unique_identifier, reason))
+			  
+	def _s2_send_keep_alive(self) -> bool:
+		pass
 
 class HEMS(SystemCalcDelegate):
 	control_priority = 0
@@ -62,7 +145,7 @@ class HEMS(SystemCalcDelegate):
 		self._dbusservice.add_path('/HEMS/BatteryReservationState', value=None)
 		self._dbusservice.add_path('/HEMS/SystemType', value=0, gettextcallback=lambda p, v: SystemType(v))
 
-		self.system_type = self._determineSystemType()
+		self.system_type = self._determine_system_type()
 
 		if self.mode == 1:
 			self._enable()
@@ -107,10 +190,11 @@ class HEMS(SystemCalcDelegate):
 			s2_rm_exists = self._check_s2_rm(service, "/Devices/{}/S2".format(i))
 
 			if s2_rm_exists:
-				delegate = S2RMDelegate(service, instance, i)
+				delegate = S2RMDelegate(self._dbusmonitor, service, instance, i)
 				self.managed_rms[delegate.unique_identifier] = delegate
-				logger.info(" -> Identified S2 RM {} on {}. Added to managed RMs as {}".format(i, service, delegate.unique_identifier))
-				i += 1
+				logger.info("Identified S2 RM {} on {}. Added to managed RMs as {}".format(i, service, delegate.unique_identifier))
+				delegate.begin()
+				i += 1 #probe next one.
 			else:
 				break
 
@@ -121,7 +205,8 @@ class HEMS(SystemCalcDelegate):
 		known_rms = list(self.managed_rms.keys()) 
 		for key in known_rms:
 			if key.startswith(service):
-				logger.info(" -> Removing RM {} from managed RMs.".format(key))
+				logger.info("Removing RM {} from managed RMs.".format(key))
+				self.managed_rms[key].end()
 				del self.managed_rms[key]
 
 	def settings_changed(self, setting, oldvalue, newvalue):
@@ -152,8 +237,10 @@ class HEMS(SystemCalcDelegate):
 			returns the current desired battery reservation based on the user equation in watts.
 			0 if error in equation. /HEMS/BatteryReservationState will indicate if there is an error with the equation
 		"""
+		reservation = 0.0
 		try:
 			reservation = round(eval(self._settings['hems_batteryreservation'].replace("SOC", str(self.soc))))
+			#TODO: Check BMS ChargeRate capability, reservation should not be greater than what the BMS is currently capable of, else we are wasting solar.
 			self._dbusservice["/HEMS/BatteryReservationState"] = "OK"
 		except Exception as ex:
 			reservation = 0.0
@@ -172,7 +259,7 @@ class HEMS(SystemCalcDelegate):
 		logger.info("HEMS deactivated.")
 		pass
 
-	def _determineSystemType(self) -> SystemType:
+	def _determine_system_type(self) -> SystemType:
 		#TODO: Determine current system kind. Required to distribute energy properly based on the type of the system.
 		system_type = SystemType.Unknown
 		try:
@@ -210,7 +297,7 @@ class HEMS(SystemCalcDelegate):
 	def _on_timer(self):
 		# Control loop timer.
 		now = self._get_time()
-		self.system_type = self._determineSystemType()
+		self.system_type = self._determine_system_type()
 		
 		#TODO: Work work work
 		logger.info("SOC / Reservation: {}% / {}W".format(self.soc, self.current_battery_reservation))
