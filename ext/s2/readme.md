@@ -18,8 +18,11 @@ python -m pip install tzdata
 ```
 
 Missing module "zoneinfo" (dev env):
+
 1.) Download https://www.python.org/ftp/python/3.12.0/Python-3.12.0.tgz
+
 2.) Copy `Python-3.12.0/Lib/zoneinfo` to `/usr/lib/python3.12/site-packages/`
+
 3.) Alternatively copy `.../ext/s2/zoneinfo` to `/usr/lib/python3.12/site-packages/`
 
 From repository to cerbo:
