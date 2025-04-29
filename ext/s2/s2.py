@@ -5,6 +5,7 @@ import uuid
 import logging
 import asyncio
 import os
+import sys
 
 try:
     import dbus_fast
@@ -38,6 +39,7 @@ from s2python.common import (
     EnergyManagementRole,
     HandshakeResponse,
     SelectControlType,
+    ResourceManagerDetails
 )
 from s2python.reception_status_awaiter import ReceptionStatusAwaiter
 from s2python.s2_control_type import S2ControlType
@@ -48,12 +50,11 @@ from s2python.version import S2_VERSION
 
 from s2python.s2_connection import MessageHandlers, AssetDetails
 
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+logger.addHandler(logging.StreamHandler(sys.stdout))
 
 IFACE="com.victronenergy.S2"
-
 
 class S2ServerItem(Item):
 
