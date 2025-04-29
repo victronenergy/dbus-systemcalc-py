@@ -76,6 +76,129 @@ class ClaimType(int, Enum):
 	PerPhase = 1
 	Transfer = 2
 
+class PropertyAccessPhase:
+		def __init__(self, obj, props):
+			self._obj = obj
+			self._props = props
+		
+		def __getitem__(self, index):
+			name = self._props[index]
+			return getattr(self._obj, name)
+		
+		def __setitem__(self, index, value):
+			name = self._props[index]
+			setattr(self._obj, name, value)
+	
+class PropertyAccessCommodity:
+	def __init__(self, obj, props):
+		self._obj = obj
+		self._props = props
+	
+	def __getitem__(self, key):
+		return getattr(self._obj, self._props[key])
+	
+	def __setitem__(self, key, value):
+		setattr(self._obj, self._props[key], value)
+
+class PhaseAwareFloat():
+	def __init__(self, l1:float, l2:float, l3:float, dc:float):
+		self._l1 = l1
+		self._l2 = l2
+		self._l3 = l3
+		self._dc = dc
+
+		self.by_phase = PropertyAccessPhase(self, ["total","l1", "l2", "l3", "dc"])
+		self.by_commodity = PropertyAccessCommodity(self, {
+			CommodityQuantity.ELECTRIC_POWER_L1: "l1",
+			CommodityQuantity.ELECTRIC_POWER_L2: "l2",
+			CommodityQuantity.ELECTRIC_POWER_L3: "l3"
+		})
+
+	def __iadd__(self, other):
+		if not isinstance(other, PhaseAwareFloat):
+			raise TypeError("Only PhaseAwareFloats can be added.")
+		
+		self._l1 += other._l1
+		self._l2 += other._l2
+		self._l3 += other._l3
+		self._dc += other._dc
+
+		return self		
+	
+	def __add__(self, other):
+		if not isinstance(other, PhaseAwareFloat):
+			raise TypeError("Only PhaseAwareFloats can be added.")
+		
+		return PhaseAwareFloat(
+			self._l1 + other._l1,
+			self._l2 + other._l2,
+			self._l3 + other._l3,
+			self._dc + other._dc,
+		)
+
+	def __isub__(self, other):
+		if not isinstance(other, PhaseAwareFloat):
+			raise TypeError("Only PhaseAwareFloats can be sub'd.")
+		
+		self._l1 -= other._l1
+		self._l2 -= other._l2
+		self._l3 -= other._l3
+		self._dc -= other._dc
+
+		return self	
+		
+	def __sub__(self, other):
+		if not isinstance(other, PhaseAwareFloat):
+			raise TypeError("Only PhaseAwareFloats can be sub'd.")
+		
+		return PhaseAwareFloat(
+			self._l1 - other._l1,
+			self._l2 - other._l2,
+			self._l3 - other._l3,
+			self._dc - other._dc,
+		)
+	
+	@property
+	def l1(self)->float:
+		return self._l1
+
+	@l1.setter
+	def l1(self, value):
+		self._l1 = value
+
+	@property
+	def l2(self)->float:
+		return self._l2
+	
+	@l2.setter
+	def l2(self, value):
+		self._l2 = value
+
+	@property
+	def l3(self)->float:
+		return self._l3
+	
+	@l3.setter
+	def l3(self, value):
+		self._l3 = value
+
+	@property
+	def dc(self)->float:
+		return self._dc
+	
+	@dc.setter
+	def dc(self, value):
+		self._dc = value
+
+	@property
+	def total(self)->float:
+		return self._l1 + self._l2 + self._l3 + self._dc
+	
+	def __repr__(self):
+		return "PhaseAwareFloat[{}, {}, {}, {}, {}]".format(
+			self.total, self._l1, self._l2, self._l3, self._dc
+		)
+
 class PowerClaim():
 	"""
 		Represents a power claim. To be carried by each RMDelegate, so the solar overhead calculation
@@ -99,64 +222,34 @@ class PowerClaim():
 
 class SolarOverhead():
 	def __init__(self, l1:float, l2:float, l3:float, dcpv:float, reservation:float, battery_rate:float):
-		self.l1 = l1
-		self.l2 = l2
-		self.l3 = l3
-		self.dcpv = dcpv
+		self.power:PhaseAwareFloat = PhaseAwareFloat(l1,l2,l3,dcpv)
+		self.power_reserved:PhaseAwareFloat = PhaseAwareFloat(0,0,0,0)
+		self._prior_power:PhaseAwareFloat=None
+		self.power_claim:PhaseAwareFloat=None
+		
 		self.battery_rate = battery_rate
-
-		self.l1_reserved = 0
-		self.l2_reserved = 0
-		self.l3_reserved = 0
-		self.dcpv_reserved = 0
-
 		self.battery_reservation = reservation
-		self.transaction_running=False
-		self.claim_list = []
+		self.transaction_running = False
 
 		if reservation > 0:
 			#first use DCPV to cover the reservation. That is technically what happens anyway, when 
 			#enabling AC Consumers anyway.
-			if reservation <= self.dcpv:
+			if reservation <= self.power.dc:
 				#whole reservation can be covered by DCPV.
-				self.dcpv_reserved = reservation
+				self.power_reserved.dc = reservation
 			else:
 				#need dcpv completly + some of ACPV.
-				self.dcpv_reserved = self.dcpv
-				reservation -= self.dcpv
+				self.power_reserved.dc = self.power.dc
+				reservation -= self.power.dc
 
-				#TODO: phases could have different ACPV Amounts. Figure out best approach, which should account for reservation.
-				#      for now, we start on L3, go to L2, finally L1, as most consumers usually run of L1.
-				if reservation > 0:
-					if reservation <= self.l3 * 0.9:
-						self.l3_reserved = reservation / 0.9 #need part of l3.
-						reservation = 0
-					else:
-						reservation -= l3 * 0.9
-						self.l3_reserved = self.l3 #need all of l3
-				
-				if reservation > 0:
-					if reservation <= self.l2 * 0.9:
-						self.l2_reserved = reservation / 0.9 #need part of l2.
-						reservation = 0
-					else:
-						reservation -= l2 * 0.9
-						self.l2_reserved = self.l2 #need all of l2
-
-				if reservation > 0:
-					if reservation <= self.l1 * 0.9:
-						self.l1_reserved = reservation / 0.9 #need part of l1.
-						reservation = 0
-					else:
-						reservation -= l1 * 0.9
-						self.l1_reserved = self.l1 #need all of l1
-	@property
-	def total(self):
-		return self.l1 + self.l2 + self.l3 + self.dcpv
-
-	@property
-	def total_reserved(self):
-		return self.l1_reserved + self.l2_reserved + self.l3_reserved + self.dcpv_reserved * 0.9 #TODO: Do we need to 0.9 here?
+				for l in [3,2,1]:
+					if reservation > 0:
+						if reservation <= self.power.by_phase[l] * 0.9:
+							self.power_reserved.by_phase[l] = reservation / 0.9 #need part of this phase
+							reservation = 0
+						else:
+							reservation -= self.power.by_phase[l] * 0.9
+							self.power_reserved.by_phase[l] = self.power.by_phase[l] #need all of this phase.
 
 	def begin(self):
 		"""
@@ -167,10 +260,8 @@ class SolarOverhead():
 		if self.transaction_running:
 			raise Exception("Solar Claim Transaction currently running, need to call comit() or rollback() before starting another one.")
 		
-		self.prior_l1 = self.l1
-		self.prior_l2 = self.l2
-		self.prior_l3 = self.l3
-		self.prior_dcpv = self.dcpv
+		self._prior_power = self.power
+		self.power_claim = PhaseAwareFloat(0,0,0,0)
 		self.transaction_running = True
 	
 	def claim(self, commodity_quantity:CommodityQuantity, minv:float, maxv:float, 
@@ -188,27 +279,14 @@ class SolarOverhead():
 
 		#Check based on claim type, if we can allocate enough power for this claim. 
 		#TODO: Implement Strict and Transfer Claim-Types for offgrid usage.
-		power_claim = PowerClaim()
-		power_claim.commodity_quantity = commodity_quantity
-
 		if claim_type == ClaimType.Total:
 			if ctrl_type == ControlType.OPERATION_MODE_BASED_CONTROL:
 				#TODO: Factor needs to be generated for the OMBC! For now, we assume fixed values, i.e. factor = 1.0 
 				#find our power on l1/l2/l3, first, last consider dcpv. On ClaimType.Total, it doesn't matter where we source from. 				
-				if max(self.total - self.total_reserved * rsrv, 0) >= maxv:
+				if max(self.power.total - self.power_reserved.total * rsrv, 0) >= maxv:
 					#Even if it is a total claim, we need to allocate the claim to the proper phase. 
-					if commodity_quantity == CommodityQuantity.ELECTRIC_POWER_L1:
-						power_claim.l1 = maxv
-						self.l1 -= maxv
-					if commodity_quantity == CommodityQuantity.ELECTRIC_POWER_L2:
-						power_claim.l2 = maxv
-						self.l2 -= maxv
-					if commodity_quantity == CommodityQuantity.ELECTRIC_POWER_L3:
-						power_claim.l3 = maxv
-						self.l3 -= maxv
-
-					power_claim.successfull=True
-					self.claim_list.append(power_claim)
+					self.power_claim.by_commodity[commodity_quantity] = maxv
+					self.power.by_commodity[commodity_quantity] -= maxv
 					return True
 			else:
 				logger.warning("Unimplemented control_type {}".format(ctrl_type))
@@ -221,30 +299,18 @@ class SolarOverhead():
 		if not self.transaction_running:
 			raise Exception("No Solar Claim Transaction currently running. Need to call begin() before rolling back.")
 		
-		self.l1 = self.prior_l1
-		self.l2 = self.prior_l2
-		self.l3 = self.prior_l3
-		self.dcpv = self.prior_dcpv
-
-		self.prior_dcpv = None
-		self.prior_l1 = None
-		self.prior_l2 = None
-		self.prior_l3 = None
-		
+		self.power = self._prior_power
+		self._prior_power = None
 		self.transaction_running = False
-		self.claim_list = []
+		self.power_claim=None
 
 	def comit(self):
 		if not self.transaction_running:
 			raise Exception("No Solar Claim Transaction currently running. Need to call begin() before comit().")
 
-		self.prior_dcpv = None
-		self.prior_l1 = None
-		self.prior_l2 = None
-		self.prior_l3 = None
-
+		self._prior_power = None
+		self.power_claim=None
 		self.transaction_running = False
-		self.claim_list = []
 
 class S2RMDelegate():
 	def __init__(self, monitor, service, instance, rmno, priority, consumer_type, hems):
@@ -263,15 +329,9 @@ class S2RMDelegate():
 		self.claim_list:list[PowerClaim]=[]
 
 		#power tracking values
-		self._current_power_l1 = 0
-		self._current_power_l1_ts = 0
-		self._current_power_l2 = 0
-		self._current_power_l2_ts = 0
-		self._current_power_l3 = 0
-		self._current_power_l3_ts = 0
-		self._current_counter_l1 = 0
-		self._current_counter_l2 = 0
-		self._current_counter_l3 = 0
+		self._current_power:PhaseAwareFloat = PhaseAwareFloat(0,0,0,0)
+		self._current_counter:PhaseAwareFloat = PhaseAwareFloat(0,0,0,0)
+		self._current_timestamps:PhaseAwareFloat = PhaseAwareFloat(0,0,0,0)
 
 		#Generic Handler
 		self._message_receiver=None
@@ -400,42 +460,26 @@ class S2RMDelegate():
 						
 	def _s2_on_power_measurement(self, message:PowerMeasurement):
 		#RM reported Powermeasurement. Track internally, until HEMS requests an update.
-		for pv in message.values:
-			if pv.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_L1 or pv.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC:
-				if self._current_power_l1_ts == 0:
-					#initialize counter for the first time, no evaluation possible.
-					self._current_power_l1 = pv.value / (3 if pv.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC else 1)
-					self._current_power_l1_ts = message.measurement_timestamp
-				else:
-					duration = (message.measurement_timestamp - self._current_power_l1_ts).total_seconds()
-					consumption = (self._current_power_l1 * duration / 3600.0) / 1000.0
-					self._current_counter_l1 += consumption
-					self._current_power_l1 = pv.value / (3 if pv.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC else 1)
-					self._current_power_l1_ts = message.measurement_timestamp
+		def increase_counter(self:S2RMDelegate, commodity:CommodityQuantity, value:float, timestamp):
+			if self._current_timestamps.by_commodity[commodity]==0:
+				#initialize counter for the first time, no evaluation possible.
+				self._current_power.by_commodity[commodity] = value
+				self._current_timestamps.by_commodity[commodity] = timestamp
+			else:
+				duration = (timestamp - self._current_timestamps.by_commodity[commodity]).total_seconds()
+				consumption = (self._current_power.by_commodity[commodity] * duration / 3600.0) / 1000.0
+				self._current_counter.by_commodity[commodity] += consumption
+				self._current_power.by_commodity[commodity] = value
+				self._current_timestamps.by_commodity[commodity] = timestamp
 
-			if pv.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_L2 or pv.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC:
-				if self._current_power_l2_ts == 0:
-					#initialize counter for the first time, no evaluation possible.
-					self._current_power_l2 = pv.value / (3 if pv.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC else 1)
-					self._current_power_l2_ts = message.measurement_timestamp
-				else:
-					duration = (message.measurement_timestamp - self._current_power_l2_ts).total_seconds()
-					consumption = (self._current_power_l2 * duration / 3600.0) / 1000.0
-					self._current_counter_l2 += consumption
-					self._current_power_l2 = pv.value / (3 if pv.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC else 1)
-					self._current_power_l2_ts = message.measurement_timestamp
-			
-			if pv.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_L3 or pv.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC:
-				if self._current_power_l3_ts == 0:
-					#initialize counter for the first time, no evaluation possible.
-					self._current_power_l3 = pv.value / (3 if pv.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC else 1)
-					self._current_power_l3_ts = message.measurement_timestamp
-				else:
-					duration = (message.measurement_timestamp - self._current_power_l3_ts).total_seconds()
-					consumption = (self._current_power_l3 * duration / 3600.0) / 1000.0
-					self._current_counter_l3 += consumption
-					self._current_power_l3 = pv.value / (3 if pv.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC else 1)
-					self._current_power_l3_ts = message.measurement_timestamp
+		for pv in message.values:
+			if pv.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC:
+				#TODO: To Clearify, if power value is the single phased or three phased value.
+				for c in [CommodityQuantity.ELECTRIC_POWER_L1, CommodityQuantity.ELECTRIC_POWER_L2, CommodityQuantity.ELECTRIC_POWER_L3]:
+					increase_counter(self, c, pv.value / 3.0, message.measurement_timestamp)
+			else:
+				increase_counter(self,pv.commodity_quantity,pv.value, message.measurement_timestamp)
+				
 
 		self._s2_send_reception_message(ReceptionStatusValues.OK, message)
 
@@ -538,7 +582,7 @@ class S2RMDelegate():
 			RMDelegate is waiting for commit() of HEMS, before sending new instructions to RM.
 		"""
 		try:
-			self.claim_list = []
+			self.power_claim = None
 			#based on control type, this is different.
 			if self.active_control_type == ControlType.OPERATION_MODE_BASED_CONTROL:
 				#check all Operation modes, and if one fits. op modes have been sorted
@@ -562,10 +606,9 @@ class S2RMDelegate():
 						if overhead.transaction_running:
 							#Managed to verify all power ranges and transaction still running? This mode is eligible! 
 							logger.info("Operation Mode selected: '{}' on {}".format(opm.diagnostic_label, self.unique_identifier))
-							self.claim_list = overhead.claim_list
+							self.power_claim = overhead.power_claim
 
-							for pc in self.claim_list:
-								logger.info("Power-Claim: {}".format(pc))
+							logger.info("Power-Claim: {}".format(self.power_claim))
 
 							overhead.comit()
 
@@ -606,21 +649,13 @@ class S2RMDelegate():
 				self.ombc_active_operation_mode = self.ombc_next_operation_mode
 				self.ombc_next_operation_mode = None
 
-	def pop_powerstats(self) -> list[list[float, float]]:
+	def pop_powerstats(self) -> tuple[PhaseAwareFloat, PhaseAwareFloat]:
 		"""
-			Returns a list of lists of current power stats for each phase. (each sublist is [power, consumption])
-			resets internal counters.
+			Returns a tuple of PhaseAwareFloats, where the first tuple is the power values and the second
+			is the counters.
 		"""
-		result = [
-			[self._current_power_l1, self._current_counter_l1],
-			[self._current_power_l2, self._current_counter_l2],
-			[self._current_power_l3, self._current_counter_l3],
-		]
-
-		self._current_counter_l1 = 0
-		self._current_counter_l2 = 0
-		self._current_counter_l3 = 0
-
+		result = (self._current_power, self._current_counter)
+		self._current_counter = PhaseAwareFloat(0,0,0,0)
 		return result
 
 class HEMS(SystemCalcDelegate):
@@ -633,52 +668,35 @@ class HEMS(SystemCalcDelegate):
 		self.managed_rms: Dict[str, S2RMDelegate] = {}
 
 		#consumption counters. Flushed to settings every 15 minutes.
-		self.power_primary_l1 = 0
-		self.power_primary_l2 = 0
-		self.power_primary_l3 = 0
-		self.power_secondary_l1 = 0
-		self.power_secondary_l2 = 0
-		self.power_secondary_l3 = 0
-		
-		self.counter_primary_l1 = None
-		self.counter_primary_l2 = None
-		self.counter_primary_l3 = None
-		self.counter_secondary_l1 = None
-		self.counter_secondary_l2 = None
-		self.counter_secondary_l3 = None
+		self.power_primary:PhaseAwareFloat = PhaseAwareFloat(0,0,0,0)
+		self.power_secondary:PhaseAwareFloat = PhaseAwareFloat(0,0,0,0)
+		self.counter_primary:PhaseAwareFloat = PhaseAwareFloat(0,0,0,0)
+		self.counter_secondary:PhaseAwareFloat = PhaseAwareFloat(0,0,0,0)
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(HEMS, self).set_sources(dbusmonitor, settings, dbusservice)
 
 		#load stored counters.
-		self.counter_primary_l1 = settings["hems_primary_l1_forward"]
-		self.counter_primary_l2 = settings["hems_primary_l2_forward"]
-		self.counter_primary_l3 = settings["hems_primary_l3_forward"]
-		self.counter_secondary_l1 = settings["hems_secondary_l1_forward"]
-		self.counter_secondary_l2 = settings["hems_secondary_l2_forward"]
-		self.counter_secondary_l3 = settings["hems_secondary_l3_forward"]
-
-		logger.info("Loaded stored counters: {}/{}/{} | {}/{}/{}".format(
-			self.counter_primary_l1, self.counter_primary_l2, self.counter_primary_l3,
-			self.counter_secondary_l1, self.counter_secondary_l2, self.counter_secondary_l3
-		))
+		for l in [1,2,3]:
+			self.counter_primary.by_phase[l] = settings["hems_primary_l{}_forward".format(l)]
+			self.counter_secondary.by_phase[l] = settings["hems_secondary_l{}_forward".format(l)]
 
 		self._dbusservice.add_path('/HEMS/Active', value=0, gettextcallback=lambda p, v: Modes(v))
 		self._dbusservice.add_path('/HEMS/BatteryReservation', value=0)
 		self._dbusservice.add_path('/HEMS/BatteryReservationState', value=None)
 		self._dbusservice.add_path('/HEMS/SystemType', value=0, gettextcallback=lambda p, v: SystemType(v))
-		self._dbusservice.add_path('/HEMS/PrimaryConsumer/Ac/L1/Power', value=None)
-		self._dbusservice.add_path('/HEMS/PrimaryConsumer/Ac/L1/Energy/Forward', value=self.counter_primary_l1)
-		self._dbusservice.add_path('/HEMS/PrimaryConsumer/Ac/L2/Power', value=None)
-		self._dbusservice.add_path('/HEMS/PrimaryConsumer/Ac/L2/Energy/Forward', value=self.counter_primary_l2)
-		self._dbusservice.add_path('/HEMS/PrimaryConsumer/Ac/L3/Power', value=None)
-		self._dbusservice.add_path('/HEMS/PrimaryConsumer/Ac/L3/Energy/Forward', value=self.counter_primary_l3)
-		self._dbusservice.add_path('/HEMS/SecondaryConsumer/Ac/L1/Power', value=None)
-		self._dbusservice.add_path('/HEMS/SecondaryConsumer/Ac/L1/Energy/Forward', value=self.counter_secondary_l1)
-		self._dbusservice.add_path('/HEMS/SecondaryConsumer/Ac/L2/Power', value=None)
-		self._dbusservice.add_path('/HEMS/SecondaryConsumer/Ac/L2/Energy/Forward', value=self.counter_secondary_l2)
-		self._dbusservice.add_path('/HEMS/SecondaryConsumer/Ac/L3/Power', value=None)
-		self._dbusservice.add_path('/HEMS/SecondaryConsumer/Ac/L3/Energy/Forward', value=self.counter_secondary_l3)
+
+		for l in [1,2,3]:
+			self._dbusservice.add_path('/HEMS/PrimaryConsumer/Ac/L{}/Power'.format(l), value=None)
+			self._dbusservice.add_path('/HEMS/PrimaryConsumer/Ac/L{}/Energy/Forward'.format(l), value=self.counter_primary.by_phase[l])
+			self._dbusservice.add_path('/HEMS/SecondaryConsumer/Ac/L{}/Power'.format(l), value=None)
+			self._dbusservice.add_path('/HEMS/SecondaryConsumer/Ac/L{}/Energy/Forward'.format(l), value=self.counter_secondary.by_phase[l])
+		
+		self._dbusservice.add_path('/HEMS/PrimaryConsumer/Ac/Power'.format(l), value=None)
+		self._dbusservice.add_path('/HEMS/PrimaryConsumer/Ac/Energy/Forward'.format(l), value=self.counter_primary.total)
+		self._dbusservice.add_path('/HEMS/SecondaryConsumer/Ac/Power'.format(l), value=None)
+		self._dbusservice.add_path('/HEMS/SecondaryConsumer/Ac/Energy/Forward'.format(l), value=self.counter_secondary.total)
+
 		self.system_type = self._determine_system_type()
 
 		if self.mode == 1:
@@ -856,27 +874,24 @@ class HEMS(SystemCalcDelegate):
 		return system_type
 	
 	def _on_timer_save_counters(self):
-		self._dbusmonitor.set_value_async("com.victronenergy.settings", "/Settings/HEMS/Energy/Primary/L1/Forward", self.counter_primary_l1)
-		self._dbusmonitor.set_value_async("com.victronenergy.settings", "/Settings/HEMS/Energy/Primary/L2/Forward", self.counter_primary_l2)
-		self._dbusmonitor.set_value_async("com.victronenergy.settings", "/Settings/HEMS/Energy/Primary/L3/Forward", self.counter_primary_l3)
-		self._dbusmonitor.set_value_async("com.victronenergy.settings", "/Settings/HEMS/Energy/Secondary/L1/Forward", self.counter_secondary_l1)
-		self._dbusmonitor.set_value_async("com.victronenergy.settings", "/Settings/HEMS/Energy/Secondary/L2/Forward", self.counter_secondary_l2)
-		self._dbusmonitor.set_value_async("com.victronenergy.settings", "/Settings/HEMS/Energy/Secondary/L3/Forward", self.counter_secondary_l3)
+		#TODO: Somehow doesn't work.
+		#self._dbusmonitor.set_value_async("com.victronenergy.settings", "/Settings/HEMS/Energy/Primary/L1/Forward", self.counter_primary_l1)
+		#self._dbusmonitor.set_value_async("com.victronenergy.settings", "/Settings/HEMS/Energy/Primary/L2/Forward", self.counter_primary_l2)
+		#self._dbusmonitor.set_value_async("com.victronenergy.settings", "/Settings/HEMS/Energy/Primary/L3/Forward", self.counter_primary_l3)
+		#self._dbusmonitor.set_value_async("com.victronenergy.settings", "/Settings/HEMS/Energy/Secondary/L1/Forward", self.counter_secondary_l1)
+		#self._dbusmonitor.set_value_async("com.victronenergy.settings", "/Settings/HEMS/Energy/Secondary/L2/Forward", self.counter_secondary_l2)
+		#self._dbusmonitor.set_value_async("com.victronenergy.settings", "/Settings/HEMS/Energy/Secondary/L3/Forward", self.counter_secondary_l3)
 
-		logger.info("Saved transient counters: {}/{}/{} | {}/{}/{}".format(
-			self.counter_primary_l1, self.counter_primary_l2, self.counter_primary_l3,
-			self.counter_secondary_l1, self.counter_secondary_l2, self.counter_secondary_l3
-		))
+		#logger.info("Saved transient counters: {}/{}/{} | {}/{}/{}".format(
+		#	self.counter_primary_l1, self.counter_primary_l2, self.counter_primary_l3,
+		#	self.counter_secondary_l1, self.counter_secondary_l2, self.counter_secondary_l3
+		#))
 
 		return True
 
 	def _on_timer_track_power(self):
-		self.power_primary_l1 = 0
-		self.power_primary_l2 = 0
-		self.power_primary_l3 = 0
-		self.power_secondary_l1 = 0
-		self.power_secondary_l2 = 0
-		self.power_secondary_l3 = 0
+		self.power_primary = PhaseAwareFloat(0,0,0,0)
+		self.power_secondary = PhaseAwareFloat(0,0,0,0)
 
 		#TODO: Needs differentiation between primary and secondary power, for now all secondary. 
 		for unique_identifier, delegate in self.managed_rms.items():
@@ -884,36 +899,24 @@ class HEMS(SystemCalcDelegate):
 				values = delegate.pop_powerstats()
 
 				if delegate.consumer_type == ConsumerType.Primary:
-					self.power_primary_l1 += values[0][0]
-					self.power_primary_l2 += values[1][0]
-					self.power_primary_l3 += values[2][0]
-
-					self.counter_primary_l1 += values[0][1]
-					self.counter_primary_l2 += values[1][1]
-					self.counter_primary_l3 += values[2][1]
+					self.power_primary += values[0]
+					self.counter_primary += values[1]
 
 				if delegate.consumer_type == ConsumerType.Secondary:
-					self.power_secondary_l1 += values[0][0]
-					self.power_secondary_l2 += values[1][0]
-					self.power_secondary_l3 += values[2][0]
-
-					self.counter_secondary_l1 += values[0][1]
-					self.counter_secondary_l2 += values[1][1]
-					self.counter_secondary_l3 += values[2][1]
+					self.power_secondary += values[0]
+					self.counter_secondary += values[1]
 		
 		#dump on dbus
-		self._dbusservice["/HEMS/PrimaryConsumer/Ac/L1/Power"] = self.power_primary_l1
-		self._dbusservice["/HEMS/PrimaryConsumer/Ac/L2/Power"] = self.power_primary_l2
-		self._dbusservice["/HEMS/PrimaryConsumer/Ac/L3/Power"] = self.power_primary_l3
-		self._dbusservice["/HEMS/PrimaryConsumer/Ac/L1/Energy/Forward"] = self.counter_primary_l1
-		self._dbusservice["/HEMS/PrimaryConsumer/Ac/L2/Energy/Forward"] = self.counter_primary_l2
-		self._dbusservice["/HEMS/PrimaryConsumer/Ac/L3/Energy/Forward"] = self.counter_primary_l3
-		self._dbusservice["/HEMS/SecondaryConsumer/Ac/L1/Power"] = self.power_secondary_l1
-		self._dbusservice["/HEMS/SecondaryConsumer/Ac/L2/Power"] = self.power_secondary_l2
-		self._dbusservice["/HEMS/SecondaryConsumer/Ac/L3/Power"] = self.power_secondary_l3
-		self._dbusservice["/HEMS/SecondaryConsumer/Ac/L1/Energy/Forward"] = self.counter_secondary_l1
-		self._dbusservice["/HEMS/SecondaryConsumer/Ac/L2/Energy/Forward"] = self.counter_secondary_l2
-		self._dbusservice["/HEMS/SecondaryConsumer/Ac/L3/Energy/Forward"] = self.counter_secondary_l3
+		for l in [1,2,3]:
+			self._dbusservice["/HEMS/PrimaryConsumer/Ac/L{}/Power".format(l)] = self.power_primary.by_phase[l]
+			self._dbusservice["/HEMS/PrimaryConsumer/Ac/L{}/Energy/Forward".format(l)] = self.counter_primary.by_phase[l]	
+			self._dbusservice["/HEMS/SecondaryConsumer/Ac/L{}/Power".format(l)] = self.power_secondary.by_phase[l]
+			self._dbusservice["/HEMS/SecondaryConsumer/Ac/L{}/Energy/Forward".format(l)] = self.counter_secondary.by_phase[l]
+
+		self._dbusservice["/HEMS/PrimaryConsumer/Ac/Power".format(l)] = self.power_primary.total
+		self._dbusservice["/HEMS/PrimaryConsumer/Ac/Energy/Forward".format(l)] = self.counter_primary.total	
+		self._dbusservice["/HEMS/SecondaryConsumer/Ac/Power".format(l)] = self.power_secondary.total
+		self._dbusservice["/HEMS/SecondaryConsumer/Ac/Energy/Forward".format(l)] = self.counter_secondary.total
 
 		return True
 
@@ -930,11 +933,11 @@ class HEMS(SystemCalcDelegate):
 				available_overhead.battery_rate,
 				self.current_battery_reservation,
 				self._dbusservice["/HEMS/BatteryReservationState"],
-				available_overhead.l1,
-				available_overhead.l2,
-				available_overhead.l3,
-				available_overhead.dcpv,
-				available_overhead.total,
+				available_overhead.power.l1,
+				available_overhead.power.l2,
+				available_overhead.power.l3,
+				available_overhead.power.dc,
+				available_overhead.power.total,
 			)
 		)
 
@@ -962,11 +965,11 @@ class HEMS(SystemCalcDelegate):
 				available_overhead.battery_rate,
 				self.current_battery_reservation,
 				self._dbusservice["/HEMS/BatteryReservationState"],
-				available_overhead.l1,
-				available_overhead.l2,
-				available_overhead.l3,
-				available_overhead.dcpv,
-				available_overhead.total,
+				available_overhead.power.l1,
+				available_overhead.power.l2,
+				available_overhead.power.l3,
+				available_overhead.power.dc,
+				available_overhead.power.total,
 			)
 		)
 
