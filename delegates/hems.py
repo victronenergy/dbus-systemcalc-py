@@ -101,7 +101,7 @@ class PropertyAccessCommodity:
 		setattr(self._obj, self._props[key], value)
 
 class PhaseAwareFloat():
-	def __init__(self, l1:float, l2:float, l3:float, dc:float):
+	def __init__(self, l1:float=0.0, l2:float=0.0, l3:float=0.0, dc:float=0.0):
 		self._l1 = l1
 		self._l2 = l2
 		self._l3 = l3
@@ -199,31 +199,10 @@ class PhaseAwareFloat():
 			self.total, self._l1, self._l2, self._l3, self._dc
 		)
 
-class PowerClaim():
-	"""
-		Represents a power claim. To be carried by each RMDelegate, so the solar overhead calculation
-		can consider claimed budget as available overhead again. (Required, because consumption will increase
-		when claiming overhead, hence solar overhead will become less by turning on a consumer.)
-	"""
-	def __init__(self):
-		self.l1:float = 0
-		self.l2:float = 0
-		self.l3:float = 0
-		self.dcpv:float = 0
-		self.commodity_quantity:CommodityQuantity = None
-		self.successfull:bool = False
-	
-	def __repr__(self):
-		return "PowerClaim[l1={}, l2={}, l3={}, total={}, dcpv={}, cq={}, success={}]".format(self.l1, self.l2, self.l3, self.total, self.dcpv, self.commodity_quantity, self.successfull)
-	
-	@property
-	def total(self):
-		return self.l1 + self.l2 + self.l3 + self.dcpv
-
 class SolarOverhead():
 	def __init__(self, l1:float, l2:float, l3:float, dcpv:float, reservation:float, battery_rate:float):
 		self.power:PhaseAwareFloat = PhaseAwareFloat(l1,l2,l3,dcpv)
-		self.power_reserved:PhaseAwareFloat = PhaseAwareFloat(0,0,0,0)
+		self.power_reserved:PhaseAwareFloat = PhaseAwareFloat()
 		self._prior_power:PhaseAwareFloat=None
 		self.power_claim:PhaseAwareFloat=None
 		
@@ -261,14 +240,14 @@ class SolarOverhead():
 			raise Exception("Solar Claim Transaction currently running, need to call comit() or rollback() before starting another one.")
 		
 		self._prior_power = self.power
-		self.power_claim = PhaseAwareFloat(0,0,0,0)
+		self.power_claim = PhaseAwareFloat()
 		self.transaction_running = True
 	
 	def claim(self, commodity_quantity:CommodityQuantity, minv:float, maxv:float, 
 		   	  claim_type:ClaimType, ctrl_type:ControlType, primary:bool)->bool:
 		"""
 			Claims a bunch of power. Returns true on success, false on error. If the requirements of an RM are satisfied,
-			retrieve the related powerclaims from SolarOverhead.claim_list before calling comit().
+			call comit() which returns a PhaseAwareFloat representing the powerclaim of the transaction.
 		"""
 		if not self.transaction_running:
 			raise Exception("No Solar Claim Transaction currently running. Need to call begin() before claiming power.")
@@ -296,6 +275,10 @@ class SolarOverhead():
 		return False
 
 	def rollback(self):
+		"""
+			Rollback the current transaction, restoring prior values associated with the underlaying PhaseAwareFloat
+			Object.
+		"""
 		if not self.transaction_running:
 			raise Exception("No Solar Claim Transaction currently running. Need to call begin() before rolling back.")
 		
@@ -304,13 +287,20 @@ class SolarOverhead():
 		self.transaction_running = False
 		self.power_claim=None
 
-	def comit(self):
+	def comit(self)->PhaseAwareFloat:
+		"""
+			Comits the ongoing transaction, returns a PhaseAwareFloat representing the claim on each Phase.
+		"""
 		if not self.transaction_running:
 			raise Exception("No Solar Claim Transaction currently running. Need to call begin() before comit().")
+
+		power_claim = self.power_claim
 
 		self._prior_power = None
 		self.power_claim=None
 		self.transaction_running = False
+
+		return power_claim
 
 class S2RMDelegate():
 	def __init__(self, monitor, service, instance, rmno, priority, consumer_type, hems):
@@ -326,12 +316,12 @@ class S2RMDelegate():
 		self.priority = priority
 		self.consumer_type = consumer_type
 		self.hems:HEMS=hems
-		self.claim_list:list[PowerClaim]=[]
+		self.power_claim:PhaseAwareFloat=PhaseAwareFloat()
 
 		#power tracking values
-		self._current_power:PhaseAwareFloat = PhaseAwareFloat(0,0,0,0)
-		self._current_counter:PhaseAwareFloat = PhaseAwareFloat(0,0,0,0)
-		self._current_timestamps:PhaseAwareFloat = PhaseAwareFloat(0,0,0,0)
+		self._current_power:PhaseAwareFloat = PhaseAwareFloat()
+		self._current_counter:PhaseAwareFloat = PhaseAwareFloat()
+		self._current_timestamps:PhaseAwareFloat = PhaseAwareFloat()
 
 		#Generic Handler
 		self._message_receiver=None
@@ -606,11 +596,8 @@ class S2RMDelegate():
 						if overhead.transaction_running:
 							#Managed to verify all power ranges and transaction still running? This mode is eligible! 
 							logger.info("Operation Mode selected: '{}' on {}".format(opm.diagnostic_label, self.unique_identifier))
-							self.power_claim = overhead.power_claim
-
+							self.power_claim = overhead.comit()
 							logger.info("Power-Claim: {}".format(self.power_claim))
-
-							overhead.comit()
 
 							#store this operation_mode as beeing the next one to be send. EMS will call comit() on the RM-Delegate, 
 							#once it should inform the actual RM and send out a new instruction, if required. RM-Delegate has to 
@@ -655,7 +642,7 @@ class S2RMDelegate():
 			is the counters.
 		"""
 		result = (self._current_power, self._current_counter)
-		self._current_counter = PhaseAwareFloat(0,0,0,0)
+		self._current_counter = PhaseAwareFloat()
 		return result
 
 class HEMS(SystemCalcDelegate):
@@ -668,10 +655,10 @@ class HEMS(SystemCalcDelegate):
 		self.managed_rms: Dict[str, S2RMDelegate] = {}
 
 		#consumption counters. Flushed to settings every 15 minutes.
-		self.power_primary:PhaseAwareFloat = PhaseAwareFloat(0,0,0,0)
-		self.power_secondary:PhaseAwareFloat = PhaseAwareFloat(0,0,0,0)
-		self.counter_primary:PhaseAwareFloat = PhaseAwareFloat(0,0,0,0)
-		self.counter_secondary:PhaseAwareFloat = PhaseAwareFloat(0,0,0,0)
+		self.power_primary:PhaseAwareFloat = PhaseAwareFloat()
+		self.power_secondary:PhaseAwareFloat = PhaseAwareFloat()
+		self.counter_primary:PhaseAwareFloat = PhaseAwareFloat()
+		self.counter_secondary:PhaseAwareFloat = PhaseAwareFloat()
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(HEMS, self).set_sources(dbusmonitor, settings, dbusservice)
@@ -890,8 +877,8 @@ class HEMS(SystemCalcDelegate):
 		return True
 
 	def _on_timer_track_power(self):
-		self.power_primary = PhaseAwareFloat(0,0,0,0)
-		self.power_secondary = PhaseAwareFloat(0,0,0,0)
+		self.power_primary = PhaseAwareFloat()
+		self.power_secondary = PhaseAwareFloat()
 
 		#TODO: Needs differentiation between primary and secondary power, for now all secondary. 
 		for unique_identifier, delegate in self.managed_rms.items():
@@ -998,13 +985,12 @@ class HEMS(SystemCalcDelegate):
 		batrate = (self._dbusservice["/Dc/Battery/Power"] or 0)
 
 		#finally, we need to ADD power that is already claimed from availability. 
+		#TODO: Think if we don't need to use the actual (latest) powervalue here, as that is the one really affecting consumption.
 		for unique_identifier, delegate in self.managed_rms.items():
-			for pc in delegate.claim_list:
-				if pc.successfull:
-					l1 += pc.l1
-					l2 += pc.l2
-					l3 += pc.l3
-					dcpv += pc.dcpv
+			l1 += delegate.power_claim.l1
+			l2 += delegate.power_claim.l2
+			l3 += delegate.power_claim.l3
+			dcpv += delegate.power_claim.dc
 
 		#Init of SolarOverhead will take care to apply reservation constraints
 		return SolarOverhead(
