@@ -48,8 +48,8 @@ logger = logging.getLogger(__name__)
 
 HUB4_SERVICE = "com.victronenergy.hub4"
 S2_IFACE = "com.victronenergy.S2"
-KEEP_ALIVE_INTERVAL = 30 #dev purpose low to account for timeout during systemcalc restart. 
-COUNTER_PERSIST_INTERVAL = 300 #dev purpose, save every 5 minutes. 
+KEEP_ALIVE_INTERVAL = 30 
+COUNTER_PERSIST_INTERVAL = 60 #save every 15 minutes. 
 CONNECTION_RETRY_INTERVAL = 35
 
 class Modes(int, Enum):
@@ -769,22 +769,20 @@ class HEMS(SystemCalcDelegate):
 	def get_settings(self):
 		# Settings for HEMS
 		path = '/Settings/HEMS'
-
+		#EnergyCounters are stored in settings. Values will be written every 15 min, meanwhile run out of memory.
+		#TODO: Settings with no limit? 
+		#TODO: ReadOnly Settings?
 		settings = [
 			("hems_mode", path + "/Mode", 0, 0, 1),
 			("hems_clinterval", path + "/ControlLoopInterval", 5, 1, 60),
 			("hems_balancingthreshold", path + '/BalancingThreshold', 98, 2, 98),
 			("hems_batteryreservation", path + '/BatteryReservationEquation', "15000.0 * (100.0-SOC)/100.0", "", ""),
-
-			#EnergyCounters are stored in settings. Values will be written every 15 min, meanwhile run out of memory.
-			#TODO: Settings with no limit? 
-			#TODO: ReadOnly Settings?
-			("hems_primary_l1_forward", path + "/Energy/Primary/L1/Forward", 0, 0, 9999999),
-			("hems_primary_l2_forward", path + "/Energy/Primary/L2/Forward", 0, 0, 9999999),
-			("hems_primary_l3_forward", path + "/Energy/Primary/L3/Forward", 0, 0, 9999999),
-			("hems_secondary_l1_forward", path + "/Energy/Secondary/L1/Forward", 0, 0, 9999999),
-			("hems_secondary_l2_forward", path + "/Energy/Secondary/L2/Forward", 0, 0, 9999999),
-			("hems_secondary_l3_forward", path + "/Energy/Secondary/L3/Forward", 0, 0, 9999999),
+			("hems_primary_l1_forward", path + "/Energy/Primary/L1/Forward", 0.0, 0.0, 999999.9),
+			("hems_primary_l2_forward", path + "/Energy/Primary/L2/Forward", 0.0, 0.0, 999999.9),
+			("hems_primary_l3_forward", path + "/Energy/Primary/L3/Forward", 0.0, 0.0, 999999.9),
+			("hems_secondary_l1_forward", path + "/Energy/Secondary/L1/Forward", 0.0, 0.0, 999999.9),
+			("hems_secondary_l2_forward", path + "/Energy/Secondary/L2/Forward", 0.0, 0.0, 999999.9),
+			("hems_secondary_l3_forward", path + "/Energy/Secondary/L3/Forward", 0.0, 0.0, 999999.9),
 		]
 
 		return settings
@@ -802,7 +800,7 @@ class HEMS(SystemCalcDelegate):
 				'/Settings/HEMS/Energy/Primary/L3/Forward',
 				'/Settings/HEMS/Energy/Secondary/L1/Forward',
 				'/Settings/HEMS/Energy/Secondary/L2/Forward',
-				'/Settings/HEMS/Energy/Secondary/L3/Forward',]),
+				'/Settings/HEMS/Energy/Secondary/L3/Forward']),
 			('com.victronenergy.s2Mock', [
 				'/Devices/0/S2/Priority',
 				'/Devices/0/S2/ConsumerType',
@@ -813,7 +811,7 @@ class HEMS(SystemCalcDelegate):
 				'/Devices/3/S2/Priority',
 				'/Devices/3/S2/ConsumerType',
 				'/Devices/4/S2/Priority',
-				'/Devices/4/S2/ConsumerType',
+				'/Devices/4/S2/ConsumerType'
 			])
 		]
 
@@ -976,14 +974,18 @@ class HEMS(SystemCalcDelegate):
 		return system_type
 	
 	def _on_timer_save_counters(self):
-		for l in [1,2,3]:
-			self._dbusmonitor.set_value_async("com.victronenergy.settings", "/Settings/HEMS/Energy/Primary/L{}/Forward".format(l), self.counter_primary.by_phase[l])
-			self._dbusmonitor.set_value_async("com.victronenergy.settings", "/Settings/HEMS/Energy/Secondary/L{}/Forward".format(l), self.counter_secondary.by_phase[l])
+		try:
+			for l in [1,2,3]:
+				self._dbusmonitor.set_value("com.victronenergy.settings", "/Settings/HEMS/Energy/Primary/L{}/Forward".format(l), self.counter_primary.by_phase[l])
+				self._dbusmonitor.set_value("com.victronenergy.settings", "/Settings/HEMS/Energy/Secondary/L{}/Forward".format(l), self.counter_secondary.by_phase[l])
 
-		logger.info("Saved transient counters: P: {}/{}/{} | S: {}/{}/{}".format(
-			self.counter_primary_l1, self.counter_primary_l2, self.counter_primary_l3,
-			self.counter_secondary_l1, self.counter_secondary_l2, self.counter_secondary_l3
-		))
+			logger.info("Saved transient counters: P: {}/{}/{} | S: {}/{}/{}".format(
+				self.counter_primary.l1, self.counter_primary.l2, self.counter_primary.l3,
+				self.counter_secondary.l1, self.counter_secondary.l2, self.counter_secondary.l3
+			))
+
+		except Exception as ex:
+			logger.error("Exception saving counters", exc_info=ex)
 
 		return True
 
