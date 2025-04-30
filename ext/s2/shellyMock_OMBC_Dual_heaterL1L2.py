@@ -47,7 +47,8 @@ from s2python.common import (
     PowerRange,
     Transition,
     PowerMeasurement,
-    PowerValue
+    PowerValue,
+    Timer
 )
 
 from s2python.ombc import (
@@ -73,6 +74,7 @@ class OMBCT(OMBCControlType):
         #Control Type has been selected by CEM. Advertise OperationModes.
         self.on_id = uuid.uuid4()
         self.off_id = uuid.uuid4()
+        self.on_off_timer_id = uuid.uuid4()
 
         self.system_description = OMBCSystemDescription(
             message_id=uuid.uuid4(),
@@ -108,8 +110,8 @@ class OMBCT(OMBCControlType):
                     id=uuid.uuid4(),
                     from_=self.on_id,
                     to=self.off_id,
-                    start_timers=[],
-                    blocking_timers=[],
+                    start_timers=[self.on_off_timer_id],
+                    blocking_timers=[self.on_off_timer_id],
                     transition_duration=2000,
                     abnormal_condition_only=False,
                     transition_costs=None
@@ -118,14 +120,20 @@ class OMBCT(OMBCControlType):
                     id=uuid.uuid4(),
                     from_=self.off_id,
                     to =self.on_id,
-                    start_timers=[],
-                    blocking_timers=[],
+                    start_timers=[self.on_off_timer_id],
+                    blocking_timers=[self.on_off_timer_id],
                     transition_duration=2000,
                     abnormal_condition_only=False,
                     transition_costs=None
                 )
             ],
-            timers=[]
+            timers=[
+                Timer(
+                    id = self.on_off_timer_id,
+                    diagnostic_label="On/Off Hysteresis 60s",
+                    duration=60*1000
+                )
+            ]
         )
 
         self.rm_item.send_msg_and_await_reception_status_sync(self.system_description)
@@ -282,6 +290,7 @@ class OMBCT_1(OMBCControlType):
         #Control Type has been selected by CEM. Advertise OperationModes.
         self.on_id = uuid.uuid4()
         self.off_id = uuid.uuid4()
+        self.on_off_timer_id = uuid.uuid4()
 
         self.system_description = OMBCSystemDescription(
             message_id=uuid.uuid4(),
@@ -317,8 +326,8 @@ class OMBCT_1(OMBCControlType):
                     id=uuid.uuid4(),
                     from_=self.on_id,
                     to=self.off_id,
-                    start_timers=[],
-                    blocking_timers=[],
+                    start_timers=[self.on_off_timer_id],
+                    blocking_timers=[self.on_off_timer_id],
                     transition_duration=2000,
                     abnormal_condition_only=False,
                     transition_costs=None
@@ -327,14 +336,20 @@ class OMBCT_1(OMBCControlType):
                     id=uuid.uuid4(),
                     from_=self.off_id,
                     to =self.on_id,
-                    start_timers=[],
-                    blocking_timers=[],
+                    start_timers=[self.on_off_timer_id],
+                    blocking_timers=[self.on_off_timer_id],
                     transition_duration=2000,
                     abnormal_condition_only=False,
                     transition_costs=None
                 )
             ],
-            timers=[]
+            timers=[
+                Timer(
+                    id = self.on_off_timer_id,
+                    diagnostic_label="On/Off Hysteresis 60s",
+                    duration=60*1000
+                )
+            ]
         )
 
         self.rm_item.send_msg_and_await_reception_status_sync(self.system_description)
