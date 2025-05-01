@@ -412,7 +412,7 @@ class S2RMDelegate():
 			logger.debug("Keepalive OK for {}".format(self.unique_identifier))
 			return True
 		else:
-			logger.info("Keepalive MISSED for {} ({})".format(self.unique_identifier, self._keep_alive_missed))
+			logger.warning("Keepalive MISSED for {} ({})".format(self.unique_identifier, self._keep_alive_missed))
 			self.end()
 			return False
 
@@ -443,7 +443,7 @@ class S2RMDelegate():
 			jmsg = json.loads(msg)
 
 			if jmsg["message_type"] != "ReceptionStatus":
-				logger.info("Received Message from {}: {}".format(self.unique_identifier, jmsg["message_type"]))
+				logger.debug("Received Message from {}: {}".format(self.unique_identifier, jmsg["message_type"]))
 
 			if "message_type" in jmsg:
 				#if client is not initialized, deny all messages, except Handshake.
@@ -458,7 +458,7 @@ class S2RMDelegate():
 						self._s2_on_power_measurement(self.s2_parser.parse_as_message(msg, PowerMeasurement))
 					elif jmsg["message_type"] == "ReceptionStatus":
 						p = self.s2_parser.parse_as_message(msg, ReceptionStatus)
-						logger.info("Received ReceptionStatus from {}: {} -> {} ({})".format(self.unique_identifier, jmsg["message_type"], p.status, p.diagnostic_label))
+						logger.debug("Received ReceptionStatus from {}: {} -> {} ({})".format(self.unique_identifier, jmsg["message_type"], p.status, p.diagnostic_label))
 					else:
 						#Not yet implemented! 
 						logger.warning("Received an unknown Message: {} from {}".format(jmsg["message_type"], self.unique_identifier))
@@ -608,15 +608,15 @@ class S2RMDelegate():
 									ClaimType.Total, self.active_control_type, self.consumer_type==ConsumerType.Primary)
 								if not claim_success:
 									#maximum assignment for this powerrange failed for at least one powerrange requested. This OperationMode is currently not eligible. 
-									logger.info("Operation Mode not eligible: '{}' on {} due to missing availability on commodity: {}".format(opm.diagnostic_label, self.unique_identifier, pr.commodity_quantity))
+									logger.debug("Operation Mode not eligible: '{}' on {} due to missing availability on commodity: {}".format(opm.diagnostic_label, self.unique_identifier, pr.commodity_quantity))
 									overhead.rollback()
 									break
 						
 						if overhead.transaction_running:
 							#Managed to verify all power ranges and transaction still running? This mode is eligible! 
-							logger.info("Operation Mode selected: '{}' on {}".format(opm.diagnostic_label, self.unique_identifier))
+							logger.debug("Operation Mode selected: '{}' on {}".format(opm.diagnostic_label, self.unique_identifier))
 							self.power_claim = overhead.comit()
-							logger.info("Power-Claim: {}".format(self.power_claim))
+							logger.debug("Power-Claim: {}".format(self.power_claim))
 
 							#store this operation_mode as beeing the next one to be send. EMS will call comit() on the RM-Delegate, 
 							#once it should inform the actual RM and send out a new instruction, if required. RM-Delegate has to 
@@ -654,6 +654,8 @@ class S2RMDelegate():
 						operation_mode_id= self._ombc_next_operation_mode.id,
 						abnormal_condition=False
 					)
+
+					logger.info("Instruction send: OMBC = {} for {}".format(self._ombc_next_operation_mode.diagnostic_label, self.unique_identifier))
 
 					#Check, if this transition starts any timer. Only required if we leave a well known operation mode. 
 					if self.ombc_active_operation_mode is not None:
@@ -829,7 +831,7 @@ class HEMS(SystemCalcDelegate):
 			return False
 		
 	def device_added(self, service, instance, *args):
-		logger.info("Device added: {}".format(service))
+		logger.debug("Device added: {}".format(service))
 		i = 0
 		while True:
 			s2_rm_exists = self._check_s2_rm(service, "/Devices/{}/S2".format(i))
@@ -838,7 +840,7 @@ class HEMS(SystemCalcDelegate):
 				priority = self._dbusmonitor.get_value(service, "/Devices/{}/S2/Priority".format(i)) or 50
 				ct_raw = self._dbusmonitor.get_value(service, "/Devices/{}/S2/ConsumerType".format(i))
 				consumer_type = ConsumerType(1 if ct_raw is None else ct_raw)
-				logger.info("priority and ct: {} {}:{}".format(priority, ct_raw, consumer_type))
+				logger.debug("priority and ct: {} {}:{}".format(priority, ct_raw, consumer_type))
 				delegate = S2RMDelegate(self._dbusmonitor, service, instance, i, priority, consumer_type, self)
 				self.managed_rms[delegate.unique_identifier] = delegate
 				logger.info("Identified S2 RM {} on {}. Added to managed RMs as {}".format(i, service, delegate.unique_identifier))
@@ -848,7 +850,7 @@ class HEMS(SystemCalcDelegate):
 				break
 
 	def device_removed(self, service, instance):
-		logger.info("Device removed: {}".format(service))
+		logger.debug("Device removed: {}".format(service))
 
 		#check, if this service provided one or multiple rm, we have been controlling. 
 		known_rms = list(self.managed_rms.keys()) 
@@ -979,7 +981,7 @@ class HEMS(SystemCalcDelegate):
 				self._dbusmonitor.set_value("com.victronenergy.settings", "/Settings/HEMS/Energy/Primary/L{}/Forward".format(l), self.counter_primary.by_phase[l])
 				self._dbusmonitor.set_value("com.victronenergy.settings", "/Settings/HEMS/Energy/Secondary/L{}/Forward".format(l), self.counter_secondary.by_phase[l])
 
-			logger.info("Saved transient counters: P: {}/{}/{} | S: {}/{}/{}".format(
+			logger.debug("Saved transient counters: P: {}/{}/{} | S: {}/{}/{}".format(
 				self.counter_primary.l1, self.counter_primary.l2, self.counter_primary.l3,
 				self.counter_secondary.l1, self.counter_secondary.l2, self.counter_secondary.l3
 			))
@@ -1028,13 +1030,13 @@ class HEMS(SystemCalcDelegate):
 		return True
 
 	def _on_timer(self):
-		logger.info("v------------------- LOOP -------------------v")
+		logger.debug("v------------------- LOOP -------------------v")
 		# Control loop timer.
 		now = self._get_time()
 		self.system_type = self._determine_system_type()
 		available_overhead = self._get_available_overhead()
 
-		logger.info("SOC={}%, RSRV={}/{}W ({}), L1o={}W, L2o={}W, L3o={}W, dcpvo={}W, totalo={}W".format(
+		logger.debug("SOC={}%, RSRV={}/{}W ({}), L1o={}W, L2o={}W, L3o={}W, dcpvo={}W, totalo={}W".format(
 				self.soc,
 				available_overhead.battery_rate,
 				self.current_battery_reservation,
@@ -1054,19 +1056,19 @@ class HEMS(SystemCalcDelegate):
 		for unique_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority):
 			if delegate.initialized:
 				if delegate.active_control_type is not None and delegate.active_control_type != ControlType.NOT_CONTROLABLE:
-					logger.info("RM {} is controllable: {}".format(unique_identifier, delegate.active_control_type))	
+					logger.debug("RM {} is controllable: {}".format(unique_identifier, delegate.active_control_type))	
 					available_overhead = delegate.self_assign_overhead(available_overhead)
 				else:
-					logger.warning("RM {} is uncontrollable: {}".format(unique_identifier, delegate.active_control_type))	
+					logger.debug("RM {} is uncontrollable: {}".format(unique_identifier, delegate.active_control_type))	
 			else:
-				logger.warning("RM {} is not yet initialized.".format(unique_identifier))
+				logger.debug("RM {} is not yet initialized.".format(unique_identifier))
 
-		logger.info("All assignments done. Comiting states.")
+		logger.debug("All assignments done. Comiting states.")
 		for unique_identifier, delegate in self.managed_rms.items():
 			if delegate.initialized:
 				delegate.comit()
 				
-		logger.info("SOC={}%, RSRV={}/{}W ({}), L1o={}W, L2o={}W, L3o={}W, dcpvo={}W, totalo={}W".format(
+		logger.debug("SOC={}%, RSRV={}/{}W ({}), L1o={}W, L2o={}W, L3o={}W, dcpvo={}W, totalo={}W".format(
 				self.soc,
 				available_overhead.battery_rate,
 				self.current_battery_reservation,
@@ -1079,7 +1081,7 @@ class HEMS(SystemCalcDelegate):
 			)
 		)
 
-		logger.info("^------------------- LOOP -------------------^")
+		logger.debug("^------------------- LOOP -------------------^")
 
 		if (self.mode == 1):
 			return True	#keep timer up as long as mode is enabled.

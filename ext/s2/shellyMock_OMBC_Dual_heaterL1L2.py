@@ -234,7 +234,7 @@ class RM0(S2ResourceManagerItem):
                         self.asset_details.to_resource_manager_details(self.control_types)
                     )
 
-            elif rod_temp >= 95 or water_temp >= 85:
+            elif rod_temp >= 95 or water_temp >= 70:
                 #temp exceeded. Switch to NOCTRL and turn off heater. 
                 if self._current_control_type != self.ct_noctrl:
                     logger.info("Temperature exhausted, switching to noctrl and turning heater off.")
@@ -455,7 +455,7 @@ class RM1(S2ResourceManagerItem):
                         self.asset_details.to_resource_manager_details(self.control_types)
                     )
 
-            elif rod_temp >= 90 or water_temp >= 85:
+            elif rod_temp >= 90 or water_temp >= 70:
                 #temp exceeded. Switch to NOCTRL and turn off heater.
                 if self._current_control_type != self.ct_noctrl:
                     self.control_types = [self.ct_noctrl]

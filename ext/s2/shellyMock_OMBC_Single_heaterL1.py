@@ -218,7 +218,7 @@ class RM0(S2ResourceManagerItem):
                         self.asset_details.to_resource_manager_details(self.control_types)
                     )
             
-            elif rod_temp >= 100 or water_temp >= 85:
+            elif rod_temp >= 100 or water_temp >= 70:
                 #temp exceeded. Switch to NOCTRL and turn off heater.
                 if self._current_control_type != self.ct_noctrl:
                     self.control_types = [self.ct_noctrl]
@@ -247,7 +247,7 @@ class RM0(S2ResourceManagerItem):
                 logger.info("Selected operation mode: {} @ {}W".format(self.ct_ombc.active_operation_mode.diagnostic_label, power))
             else:
                 logger.info("Selected operation mode: None @ {}W".format(power))
-                
+
             await self.send_msg_and_await_reception_status(
                 PowerMeasurement(
                     message_id=uuid.uuid4(),
