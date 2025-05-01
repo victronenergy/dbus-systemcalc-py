@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 sys.path.insert(1, '/opt/victronenergy/dbus-systemcalc-py/ext/s2')
 sys.path.insert(1, '/opt/victronenergy/dbus-systemcalc-py/ext/velib_python')
@@ -58,6 +58,20 @@ from s2python.ombc import (
     OMBCSystemDescription,
     OMBCTimerStatus
 )
+
+def spam_web_request(url):
+    """
+        Sometimes web requests on wifi shellies time out.
+        This is a dirty helper to repeat such a request until successfull.
+    """
+    while True:
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                break
+        
+        except Exception as ex:
+            logger.warning("Web request failed,retrying:{}".format(url))
 
 class OMBCT(OMBCControlType):
     
@@ -143,19 +157,21 @@ class OMBCT(OMBCControlType):
         logger.info("OMBC deactivated.")
     
     def handle_instruction(self, conn, msg, send_okay):
-        logger.info("Instruction received: {}".format(msg))
-
         for op_mode in self.system_description.operation_modes:
             if op_mode.id == msg.operation_mode_id:
+                logger.info("Instruction received: {}".format(op_mode.diagnostic_label))
                 self.active_operation_mode = op_mode
                 break
 
         if self.active_operation_mode is not None:
             #Here we actually do, what we are supposed to do. Reporting Power is handled by loop.
-            if self.active_operation_mode.diagnostic_label == "On":
-                requests.get("http://10.10.20.58/relay/0?turn=on")
-            if self.active_operation_mode.diagnostic_label == "Off":
-                requests.get("http://10.10.20.58/relay/0?turn=off")
+            try:
+                if self.active_operation_mode.diagnostic_label == "On":
+                    spam_web_request("http://10.10.20.58/relay/0?turn=on")
+                if self.active_operation_mode.diagnostic_label == "Off":
+                    spam_web_request("http://10.10.20.58/relay/0?turn=off")
+            except Exception as ex:
+                logger.error("Exception during Shelly control", exc_info=ex)
 
 class CTNOCTRL(NoControlControlType):
 
@@ -226,7 +242,7 @@ class RM0(S2ResourceManagerItem):
                     await self.send_msg_and_await_reception_status(
                         self.asset_details.to_resource_manager_details(self.control_types)
                     )
-                    requests.get("http://10.10.20.58/relay/0?turn=off")
+                    spam_web_request("http://10.10.20.58/relay/0?turn=off")
             else:
                 #Automatic Mode and temperatures are good. Only possible control type is now PEBC. 
                 # Change the advertisement, if confirmed, we are done.
@@ -242,7 +258,10 @@ class RM0(S2ResourceManagerItem):
             jo_response = json.loads(response.content)
             power = jo_response["switch:0"]["apower"]
 
-            logger.info("Selected operation mode: {} @ {}W".format(self.ct_ombc.active_operation_mode.diagnostic_label, power))
+            if self.ct_ombc.active_operation_mode is not None:
+                logger.info("Selected operation mode: {} @ {}W".format(self.ct_ombc.active_operation_mode.diagnostic_label, power))
+            else:
+                logger.info("Selected operation mode: None @ {}W".format(power))
 
             await self.send_msg_and_await_reception_status(
                 PowerMeasurement(
@@ -256,8 +275,8 @@ class RM0(S2ResourceManagerItem):
                     ]
                 )
             )
-        except Exception:
-            pass
+        except Exception as ex:
+                logger.error("Exception during loop", exc_info=ex)
     
     async def _on_s2_message(self, message):
         #FIXME: Current S2 Implementation uses S2Parser, which fails for certain messages. So, we have to 
@@ -359,19 +378,21 @@ class OMBCT_1(OMBCControlType):
         logger.info("OMBC deactivated.")
     
     def handle_instruction(self, conn, msg, send_okay):
-        logger.info("Instruction received: {}".format(msg))
-
         for op_mode in self.system_description.operation_modes:
             if op_mode.id == msg.operation_mode_id:
+                logger.info("Instruction received: {}".format(op_mode.diagnostic_label))
                 self.active_operation_mode = op_mode
                 break
 
         if self.active_operation_mode is not None:
             #Here we actually do, what we are supposed to do. Reporting Power is handled by loop.
-            if self.active_operation_mode.diagnostic_label == "On":
-                requests.get("http://10.10.20.58/relay/1?turn=on")
-            if self.active_operation_mode.diagnostic_label == "Off":
-                requests.get("http://10.10.20.58/relay/1?turn=off")
+            try:
+                if self.active_operation_mode.diagnostic_label == "On":
+                    spam_web_request("http://10.10.20.58/relay/1?turn=on")
+                if self.active_operation_mode.diagnostic_label == "Off":
+                    spam_web_request("http://10.10.20.58/relay/1?turn=off")
+            except Exception as ex:
+                logger.error("Exception during Shelly control", exc_info=ex)
 
 class CTNOCTRL_1(NoControlControlType):
 
@@ -442,7 +463,7 @@ class RM1(S2ResourceManagerItem):
                     await self.send_msg_and_await_reception_status(
                         self.asset_details.to_resource_manager_details(self.control_types)
                     )
-                    requests.get("http://10.10.20.58/relay/1?turn=off")
+                    spam_web_request("http://10.10.20.58/relay/1?turn=off")
             else:
                 #Automatic Mode and temperatures are good. Only possible control type is now PEBC. 
                 # Change the advertisement, if confirmed, we are done.
@@ -458,7 +479,10 @@ class RM1(S2ResourceManagerItem):
             jo_response = json.loads(response.content)
             power = jo_response["switch:1"]["apower"]
 
-            logger.info("Selected operation mode: {} @ {}W".format(self.ct_ombc.active_operation_mode.diagnostic_label, power))
+            if self.ct_ombc.active_operation_mode is not None:
+                logger.info("Selected operation mode: {} @ {}W".format(self.ct_ombc.active_operation_mode.diagnostic_label, power))
+            else:
+                logger.info("Selected operation mode: None @ {}W".format(power))
 
             await self.send_msg_and_await_reception_status(
                 PowerMeasurement(
@@ -472,8 +496,8 @@ class RM1(S2ResourceManagerItem):
                     ]
                 )
             )
-        except Exception:
-            pass
+        except Exception as ex:
+                logger.error("Exception during loop", exc_info=ex)
     
     async def _on_s2_message(self, message):
         #FIXME: Current S2 Implementation uses S2Parser, which fails for certain messages. So, we have to 

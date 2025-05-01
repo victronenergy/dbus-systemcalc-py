@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 sys.path.insert(1, '/opt/victronenergy/dbus-systemcalc-py/ext/s2')
 sys.path.insert(1, '/opt/victronenergy/dbus-systemcalc-py/ext/velib_python')
@@ -57,6 +57,21 @@ from s2python.ombc import (
     OMBCSystemDescription,
     OMBCTimerStatus
 )
+
+def spam_web_request(url):
+    """
+        Sometimes web requests on wifi shellies time out.
+        This is a dirty helper to repeat such a request until successfull.
+    """
+    while True:
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                break
+        
+        except Exception as ex:
+            logger.warning("Web request failed,retrying:{}".format(url))
+
 
 class OMBCT(OMBCControlType):
     
@@ -135,20 +150,22 @@ class OMBCT(OMBCControlType):
         logger.info("OMBC deactivated.")
     
     def handle_instruction(self, conn, msg, send_okay):
-        logger.info("Instruction received: {}".format(msg))
-
         for op_mode in self.system_description.operation_modes:
             if op_mode.id == msg.operation_mode_id:
+                logger.info("Instruction received: {}".format(op_mode.diagnostic_label))
                 self.active_operation_mode = op_mode
                 break
 
         if self.active_operation_mode is not None:
             #Here we actually do, what we are supposed to do. Reporting Power is handled by loop.
             #We just reuse the diagnostic label to determine which operation type was selected by the ems. 
-            if self.active_operation_mode.diagnostic_label == "On":
-                requests.get("http://shelly1pmminiwaterplayfilter.ad.equinox-solutions.de/relay/0?turn=on")
-            if self.active_operation_mode.diagnostic_label == "Off":
-                requests.get("http://shelly1pmminiwaterplayfilter.ad.equinox-solutions.de/relay/0?turn=off")
+            try:
+                if self.active_operation_mode.diagnostic_label == "On":
+                    spam_web_request("http://shelly1pmminiwaterplayfilter.ad.equinox-solutions.de/relay/0?turn=on")
+                if self.active_operation_mode.diagnostic_label == "Off":
+                    spam_web_request("http://shelly1pmminiwaterplayfilter.ad.equinox-solutions.de/relay/0?turn=off")
+            except Exception as ex:
+                logger.error("Exception during Shelly control", exc_info=ex)
 
 class RM0(S2ResourceManagerItem):        
     def __init__(self, path:str, asset_details:AssetDetails, service:Service):
@@ -187,8 +204,8 @@ class RM0(S2ResourceManagerItem):
                     ]
                 )
             )
-        except Exception:
-            pass
+        except Exception as ex:
+            logger.error("Exception during loop", exc_info=ex)
     
     async def _on_s2_message(self, message):
         #FIXME: Current S2 Implementation uses S2Parser, which fails for certain messages. So, we have to 

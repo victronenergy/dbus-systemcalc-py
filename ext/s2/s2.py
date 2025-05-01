@@ -51,7 +51,7 @@ from s2python.version import S2_VERSION
 from s2python.s2_connection import MessageHandlers, AssetDetails
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 logger.addHandler(logging.StreamHandler(sys.stdout))
 
 IFACE="com.victronenergy.S2"

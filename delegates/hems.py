@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 HUB4_SERVICE = "com.victronenergy.hub4"
 S2_IFACE = "com.victronenergy.S2"
-KEEP_ALIVE_INTERVAL = 30 
+KEEP_ALIVE_INTERVAL = 5 
 COUNTER_PERSIST_INTERVAL = 60 #save every 15 minutes. 
 CONNECTION_RETRY_INTERVAL = 35
 
