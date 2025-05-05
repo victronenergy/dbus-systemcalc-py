@@ -218,7 +218,7 @@ class RM0(S2ResourceManagerItem):
                         self.asset_details.to_resource_manager_details(self.control_types)
                     )
             
-            elif rod_temp >= 100 or water_temp >= 70:
+            elif rod_temp >= 100 or water_temp >= 85:
                 #temp exceeded. Switch to NOCTRL and turn off heater.
                 if self._current_control_type != self.ct_noctrl:
                     self.control_types = [self.ct_noctrl]
@@ -295,7 +295,7 @@ class ShellyS2Mock(Service):
                 Duration.from_milliseconds(5000),
                 [Role(role=RoleType.ENERGY_CONSUMER, commodity=Commodity.ELECTRICITY)],
                 None,
-                "Shelly Heater L1",
+                "Heater L1",
                 "Shelly",
                 "1.2 kW Heating Rod",
                 "1.0",

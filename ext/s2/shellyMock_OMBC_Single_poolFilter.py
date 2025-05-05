@@ -88,7 +88,7 @@ class OMBCT(OMBCControlType):
         #Control Type has been selected by CEM. Advertise OperationModes.
         self.on_id = uuid.uuid4()
         self.off_id = uuid.uuid4()
-        self.on_off_timer_id = uuid.uuid4()
+        self.on_off_timer_id= uuid.uuid4()
 
         self.system_description = OMBCSystemDescription(
             message_id=uuid.uuid4(),
@@ -112,8 +112,8 @@ class OMBCT(OMBCControlType):
                     abnormal_condition_only=False,
                     power_ranges=[
                         PowerRange(
-                            start_of_range=85,
-                            end_of_range=85,
+                            start_of_range=220,
+                            end_of_range=220,
                             commodity_quantity=CommodityQuantity.ELECTRIC_POWER_L1
                         )
                     ]
@@ -144,8 +144,8 @@ class OMBCT(OMBCControlType):
             timers=[
                 Timer(
                     id = self.on_off_timer_id,
-                    diagnostic_label="On/Off Hysteresis 60s",
-                    duration=60*1000
+                    diagnostic_label="On/Off Hysteresis 300s",
+                    duration=300*1000
                 )
             ]
         )
@@ -168,9 +168,11 @@ class OMBCT(OMBCControlType):
             #We just reuse the diagnostic label to determine which operation type was selected by the ems. 
             try:
                 if self.active_operation_mode.diagnostic_label == "On":
-                    spam_web_request("http://shelly1pmminiwaterplayfilter.ad.equinox-solutions.de/relay/0?turn=on")
+                    spam_web_request("http://shellypro2pmpoolcontrol.ad.equinox-solutions.de/relay/1?turn=on")
+                    pass
                 if self.active_operation_mode.diagnostic_label == "Off":
-                    spam_web_request("http://shelly1pmminiwaterplayfilter.ad.equinox-solutions.de/relay/0?turn=off")
+                    spam_web_request("http://shellypro2pmpoolcontrol.ad.equinox-solutions.de/relay/1?turn=off")
+                    pass
             except Exception as ex:
                 logger.error("Exception during Shelly control", exc_info=ex)
 
@@ -184,8 +186,9 @@ class RM0(S2ResourceManagerItem):
 
     async def loop(self):
         try:
+            logger.info("loop...")
+
             # dumbest consumer ever - it jus wants to run, no constraints. 
-            # see shellyMock_OMBC_Single_heaterL1.py for a mock having operational constraints utilizing no_ctrl type as well.
             if self._current_control_type != self.ct_ombc:
                 logger.info("Not in OMBC Mode. Offering...")
                 await self.send_msg_and_await_reception_status(
@@ -193,9 +196,9 @@ class RM0(S2ResourceManagerItem):
                 )
             
             #Report power device is currently consuming. 
-            response = requests.get("http://shelly1pmminiwaterplayfilter.ad.equinox-solutions.de/rpc/Shelly.GetStatus")
+            response = requests.get("http://shellypro2pmpoolcontrol.ad.equinox-solutions.de/rpc/Shelly.GetStatus")
             jo_response = json.loads(response.content)
-            power = jo_response["switch:0"]["apower"]
+            power = jo_response["switch:1"]["apower"]
 
             logger.info("Selected operation mode: {} @ {}W".format(self.ct_ombc.active_operation_mode.diagnostic_label, power))
 
@@ -246,9 +249,9 @@ class ShellyS2Mock(Service):
                 Duration.from_milliseconds(10000),
                 [Role(role=RoleType.ENERGY_CONSUMER, commodity=Commodity.ELECTRICITY)],
                 None,
-                "Waterplay Filter",
+                "Pool Filter",
                 "Shelly",
-                "70 Watts Waterfilter",
+                "220 Watts Waterfilter",
                 "1.0",
                 "1337"
             ), self)
@@ -284,7 +287,7 @@ if __name__ == "__main__":
 
     async def main():
         configure_logger()
-        instance = 900
+        instance = 910
         bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
         service = ShellyS2Mock(bus, 'com.victronenergy.s2Mock', instance)
         
@@ -304,7 +307,7 @@ if __name__ == "__main__":
         #Some to be discussed items. Suspect to User-Configuration.
         #Actual (generic) rm may use more here, like Power and Phase(s) used by the RSS.
         #(Because a generic RM controlling a shelly / switchable output can't know.)
-        service.add_item(IntegerItem('/Devices/0/S2/Priority', 5)) #Priority , EMS will read
+        service.add_item(IntegerItem('/Devices/0/S2/Priority', 6)) #Priority , EMS will read
         service.add_item(IntegerItem('/Devices/0/S2/ConsumerType', 0)) # 0=primary load, 1=secondary load, EMS will read
         
         service.setup_rm0()

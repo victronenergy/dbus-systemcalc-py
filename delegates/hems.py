@@ -10,7 +10,9 @@ from delegates.batterylife import State as BatteryLifeState
 from enum import Enum
 from time import time
 import json
+import os
 import logging
+import platform
 import dbus #type:ignore
 import uuid
 from typing import Dict, cast
@@ -51,6 +53,7 @@ S2_IFACE = "com.victronenergy.S2"
 KEEP_ALIVE_INTERVAL = 5 
 COUNTER_PERSIST_INTERVAL = 60 #save every 15 minutes. 
 CONNECTION_RETRY_INTERVAL = 35
+USE_FAKE_BMS = True
 
 class Modes(int, Enum):
 	Off = 0
@@ -272,9 +275,16 @@ class SolarOverhead():
 				#TODO: Factor needs to be generated for the OMBC! For now, we assume fixed values, i.e. factor = 1.0 
 				#find our power on l1/l2/l3, first, last consider dcpv. On ClaimType.Total, it doesn't matter where we source from. 				
 				if max(self.power.total - self.power_reserved.total * rsrv, 0) >= maxv:
-					#Even if it is a total claim, we need to allocate the claim to the proper phase. 
-					self.power_claim.by_commodity[commodity_quantity] = maxv
-					self.power.by_commodity[commodity_quantity] -= maxv
+					#Even if it is a total claim, we need to allocate the claim to the proper phase.
+					#TODO need to distinguish between AC and DC Claim here. 
+					if commodity_quantity != CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC:
+						self.power_claim.by_commodity[commodity_quantity] = maxv
+						self.power.by_commodity[commodity_quantity] -= maxv
+					else:
+						for l in [1,2,3]:
+							self.power_claim.by_phase[l] = maxv / 3.0
+							self.power.by_phase[l] -= maxv
+
 					return True
 			else:
 				logger.warning("Unimplemented control_type {}".format(ctrl_type))
@@ -325,6 +335,11 @@ class S2RMDelegate():
 		self.priority = priority
 		self.consumer_type = consumer_type
 		self._hems:HEMS=hems
+
+		if USE_FAKE_BMS:
+			self._hems.available_fake_bms = sorted(self._hems.available_fake_bms)
+			self._fake_bms_no = self._hems.available_fake_bms.pop(0)
+			logger.info("Assigned fakebms {} to {}".format(self._fake_bms_no,self.unique_identifier))
 
 		#power tracking values
 		self.power_claim:PhaseAwareFloat=PhaseAwareFloat()
@@ -482,14 +497,20 @@ class S2RMDelegate():
 				self.current_power.by_commodity[commodity] = value
 				self._current_timestamps.by_commodity[commodity] = timestamp
 
+		total = 0
 		for pv in message.values:
 			if pv.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC:
 				#TODO: To Clearify, if power value is the single phased or three phased value.
 				for c in [CommodityQuantity.ELECTRIC_POWER_L1, CommodityQuantity.ELECTRIC_POWER_L2, CommodityQuantity.ELECTRIC_POWER_L3]:
 					increase_counter(self, c, pv.value / 3.0, message.measurement_timestamp)
+					total += pv.value / 3.0
 			else:
 				increase_counter(self,pv.commodity_quantity,pv.value, message.measurement_timestamp)
-				
+				total += pv.value
+
+		if USE_FAKE_BMS:
+			self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/Dc/0/Power", total)		
+		
 		self._s2_send_reception_message(ReceptionStatusValues.OK, message)
 
 	def _s2_on_ombc_system_description(self, message:OMBCSystemDescription):
@@ -527,6 +548,12 @@ class S2RMDelegate():
 			#TODO: This should be set, if transmission of the above message is confirmed. Need Async Continuation + callback.
 			self.active_control_type = ControlType.NOT_CONTROLABLE
 			logger.warning("RM {} only offered NOCTRL, accepting.".format(self.unique_identifier))
+
+			if USE_FAKE_BMS:
+				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{} [NOCTRL] ".format(
+					self.rm_details.name
+				))
+
 		else:
 			#Check if OMBC is available, that is our prefered mode as of now.
 			if ControlType.OPERATION_MODE_BASED_CONTROL in message.available_control_types:
@@ -540,6 +567,11 @@ class S2RMDelegate():
 				#TODO: This should be set, if transmission of the above message is confirmed. Need Async Continuation + callback.
 				self.active_control_type = ControlType.OPERATION_MODE_BASED_CONTROL
 				logger.info("RM {} offered OMBC, accepting.".format(self.unique_identifier))
+
+				if USE_FAKE_BMS:
+					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{} [OMBC] ".format(
+						self.rm_details.name
+					))
 			else:
 				#TODO: Implement other controltypes.
 				#Any Other controltype is currenetly not implemented, we just can reject. 
@@ -642,7 +674,7 @@ class S2RMDelegate():
 		if self.active_control_type == ControlType.OPERATION_MODE_BASED_CONTROL:
 			#Transitioning may be based on timers. So, check if our transition is suspect to be delayed currently. 
 			
-			if self.ombc_active_operation_mode != self._ombc_next_operation_mode and self._ombc_next_operation_mode is not None:
+			if self._ombc_next_operation_mode is not None and self.ombc_active_operation_mode != self._ombc_next_operation_mode:
 				#check, if transition is blocked. Else we will retry later, no problem. 
 				if not self._check_ombc_timer_block():
 					#send out op mode selection, as operation mode changed. 
@@ -678,6 +710,11 @@ class S2RMDelegate():
 					self.ombc_active_operation_mode = self._ombc_next_operation_mode
 					self._ombc_next_operation_mode = None
 
+					if USE_FAKE_BMS:
+						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{} [OMBC] @ {}".format(
+							self.rm_details.name, self.ombc_active_operation_mode.diagnostic_label
+						))
+
 	def _check_ombc_timer_block(self):
 		#if the current mode is unknown, we have no block. 
 		#if the next operation mode is unknown, it's no block at all.
@@ -697,21 +734,21 @@ class S2RMDelegate():
 							for running_timer_id, running_timer in self.ombc_timers.items():
 								if blocking_timer_id == running_timer_id:
 									#this one is potentially blocking. Check, if it is still active. 
-									if self.ombc_timer_starts[blocking_timer_id] + running_timer.duration <  datetime.now(timezone.utc):
+									if self.ombc_timer_starts[blocking_timer_id] + running_timer.duration.to_timedelta() <  datetime.now(timezone.utc):
 										#timer is expired. Schedule for removel, it's non blocking anymore.
 										timer_to_invalidate.append(blocking_timer_id)
 									else:
 										logger.warning("Timer '{}' is preventing {} to transition from '{}' to '{}' currently.".format(
 											running_timer.diagnostic_label, self.unique_identifier, self.ombc_active_operation_mode.diagnostic_label, self._ombc_next_operation_mode.diagnostic_label
 										))
-										return False
+										return True
 		
 		for id in timer_to_invalidate:
 			del self.ombc_timers[id]
 			del self.ombc_timer_starts[id]
 
 		#nothing blocked, we are good to go.
-		return True
+		return False
 
 	def pop_powerstats(self) -> tuple[PhaseAwareFloat, PhaseAwareFloat]:
 		"""
@@ -736,6 +773,9 @@ class HEMS(SystemCalcDelegate):
 		self.power_secondary:PhaseAwareFloat = PhaseAwareFloat()
 		self.counter_primary:PhaseAwareFloat = PhaseAwareFloat()
 		self.counter_secondary:PhaseAwareFloat = PhaseAwareFloat()
+
+		if USE_FAKE_BMS:
+			self.available_fake_bms = [1,2,3,4,5,6,7]
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(HEMS, self).set_sources(dbusmonitor, settings, dbusservice)
@@ -802,7 +842,8 @@ class HEMS(SystemCalcDelegate):
 				'/Settings/HEMS/Energy/Primary/L3/Forward',
 				'/Settings/HEMS/Energy/Secondary/L1/Forward',
 				'/Settings/HEMS/Energy/Secondary/L2/Forward',
-				'/Settings/HEMS/Energy/Secondary/L3/Forward']),
+				'/Settings/HEMS/Energy/Secondary/L3/Forward'
+			]),
 			('com.victronenergy.s2Mock', [
 				'/Devices/0/S2/Priority',
 				'/Devices/0/S2/ConsumerType',
@@ -814,6 +855,9 @@ class HEMS(SystemCalcDelegate):
 				'/Devices/3/S2/ConsumerType',
 				'/Devices/4/S2/Priority',
 				'/Devices/4/S2/ConsumerType'
+			]),
+			('com.victronenergy.battery', [
+				'/CustomName'
 			])
 		]
 
@@ -858,6 +902,17 @@ class HEMS(SystemCalcDelegate):
 			if key.startswith(service):
 				logger.info("Removing RM {} from managed RMs.".format(key))
 				self.managed_rms[key].end()
+
+				if USE_FAKE_BMS:
+					if self.managed_rms[key]._fake_bms_no not in self.available_fake_bms:
+						no= self.managed_rms[key]._fake_bms_no
+						self.available_fake_bms.append(no)
+
+						#reset that fake BMS to defaults.
+						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(no), "/Dc/0/Power", 0.0)
+						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(no), "/Dc/0/Soc", 0)
+						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(no), "/CustomName", "HEMS Fake BMS {}".format(no))
+
 				del self.managed_rms[key]
 
 	def settings_changed(self, setting, oldvalue, newvalue):
@@ -900,6 +955,10 @@ class HEMS(SystemCalcDelegate):
 					reservation_hint = "BMS"
 				
 			self._dbusservice["/HEMS/BatteryReservationState"] = reservation_hint
+
+			if USE_FAKE_BMS:
+				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/CustomName", "Battery Reservation: {}W ({})".format(reservation, reservation_hint))
+
 		except Exception as ex:
 			reservation = 0.0
 			self._dbusservice["/HEMS/BatteryReservationState"] = "ERROR"
@@ -1096,14 +1155,15 @@ class HEMS(SystemCalcDelegate):
 			choosen, balancing on a soc-point.
 		"""
 		#TODO: If system mode does not allow to determine overhead, return None.
-		#TODO: IF overhead is negative on a certain phase, check if that is backed by grid or dcpv. If dcpv, reduce the dcpv amount beeing reported available. 
+		#      Eventually the easiest way is to return an artificial Solar-Overhead, increasing 100W per iteration
+		#      Until we get a slightly negative discharge rate?
 		l1 = (self._dbusservice["/Ac/PvOnGrid/L1/Power"] or 0) + (self._dbusservice["/Ac/PvOnOutput/L1/Power"] or 0) - (self._dbusservice["/Ac/Consumption/L1/Power"] or 0)
 		l2 = (self._dbusservice["/Ac/PvOnGrid/L2/Power"] or 0) + (self._dbusservice["/Ac/PvOnOutput/L2/Power"] or 0) - (self._dbusservice["/Ac/Consumption/L2/Power"] or 0)
 		l3 = (self._dbusservice["/Ac/PvOnGrid/L3/Power"] or 0) + (self._dbusservice["/Ac/PvOnOutput/L3/Power"] or 0) - (self._dbusservice["/Ac/Consumption/L3/Power"] or 0)
 		dcpv = (self._dbusservice["/Dc/Pv/Power"] or 0) * 0.9 #dcpv has a penalty of 0.9 when beeing turned into AC Consumption.
 		batrate = (self._dbusservice["/Dc/Battery/Power"] or 0)
 
-		#finally, we need to ADD power that is already beeing consumed by S2 Devices again, because it will also be deducted in the Consumption-Values.
+		#finally, we need to ADD power that is already beeing consumed by S2 Devices, because it will also be deducted in the Consumption-Values.
 		#if the device is sourcing from DCPV it can be ignored, that will also be "ac-consumption" beeing reported, which we need to cancel out. 
 		#current_power will still report AC consumption based on phase-allocation of the consumer. 
 		for unique_identifier, delegate in self.managed_rms.items():

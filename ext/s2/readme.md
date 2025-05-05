@@ -44,4 +44,6 @@ chmod 755 /opt/victronenergy/dbus-systemcalc-py/ext/s2/shellyMock_OMBC_Dual_heat
 ln -s /opt/victronenergy/dbus-systemcalc-py/ext/s2/shellyMock_OMBC_Dual_heaterL1L2_service /service/shellyMock_OMBC_Dual_heaterL1L2_service
 ```
 
+(last line probably shoud be added to /data/rc.local as well.)
+
 All mocks will log to `/data/log/S2/{filename}`
