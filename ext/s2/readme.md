@@ -59,17 +59,17 @@ When enabling, three configurations in the gx should be performed:
 
 1.) Make sure you select your actual BMS in DVCC: 
 
-![image](https://github.com/user-attachments/assets/c642b57d-03d8-4174-8365-c65c7d5aecba | width=200)
+<img src="https://github.com/user-attachments/assets/c642b57d-03d8-4174-8365-c65c7d5aecba" width="200">
 
 2.) Make sure you select your actual BMS as primary Battery-Monitor: 
 
-![image](https://github.com/user-attachments/assets/395caa5d-51fe-462b-92b6-f058fc0aefca | width=200)
+<img src="https://github.com/user-attachments/assets/395caa5d-51fe-462b-92b6-f058fc0aefca" width="200">
 
 3.) Select which Fake BMS you want to enable to be displayed in VRM:
 
-![image](https://github.com/user-attachments/assets/586b8eb5-2ef5-4106-9de5-0ffa1ec6c826 | width=200)
+<img src="https://github.com/user-attachments/assets/586b8eb5-2ef5-4106-9de5-0ffa1ec6c826" width="200">
 
 Example: 
 VRM now outlines every controllable consumer and some information about the state as seen by hems: 
 
-![image](https://github.com/user-attachments/assets/1b5aa49f-f11c-47ae-b167-70f75737b032 | width=200)
+<img src="https://github.com/user-attachments/assets/1b5aa49f-f11c-47ae-b167-70f75737b032" width="200">
