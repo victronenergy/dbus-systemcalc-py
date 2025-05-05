@@ -88,7 +88,8 @@ class OMBCT(OMBCControlType):
         #Control Type has been selected by CEM. Advertise OperationModes.
         self.on_id = uuid.uuid4()
         self.off_id = uuid.uuid4()
-        self.on_off_timer_id= uuid.uuid4()
+        self.on_timer_id= uuid.uuid4()
+        self.off_timer_id= uuid.uuid4()
 
         self.system_description = OMBCSystemDescription(
             message_id=uuid.uuid4(),
@@ -124,8 +125,8 @@ class OMBCT(OMBCControlType):
                     id=uuid.uuid4(),
                     from_=self.on_id,
                     to=self.off_id,
-                    start_timers=[self.on_off_timer_id],
-                    blocking_timers=[self.on_off_timer_id],
+                    start_timers=[self.on_timer_id],
+                    blocking_timers=[self.off_timer_id],
                     transition_duration=2000,
                     abnormal_condition_only=False,
                     transition_costs=None
@@ -134,8 +135,8 @@ class OMBCT(OMBCControlType):
                     id=uuid.uuid4(),
                     from_=self.off_id,
                     to =self.on_id,
-                    start_timers=[self.on_off_timer_id],
-                    blocking_timers=[self.on_off_timer_id],
+                    start_timers=[self.off_timer_id],
+                    blocking_timers=[self.on_timer_id],
                     transition_duration=2000,
                     abnormal_condition_only=False,
                     transition_costs=None
@@ -143,14 +144,36 @@ class OMBCT(OMBCControlType):
             ],
             timers=[
                 Timer(
-                    id = self.on_off_timer_id,
-                    diagnostic_label="On/Off Hysteresis 300s",
-                    duration=300*1000
+                    id = self.on_timer_id,
+                    diagnostic_label="On Hysteresis 60s",
+                    duration=60*1000
+                ),
+                Timer(
+                    id = self.off_timer_id,
+                    diagnostic_label="Off Hysteresis 600s",
+                    duration=600*1000
                 )
             ]
         )
 
         self.rm_item.send_msg_and_await_reception_status_sync(self.system_description)
+
+        #system description send, tell the HEMS in which state we are currently, so it can
+        #start to issue transitions. We start with "off".
+        spam_web_request("http://shellypro2pmpoolcontrol.ad.equinox-solutions.de/relay/0?turn=off")
+        self.rm_item.send_msg_and_await_reception_status_sync(
+            OMBCStatus(
+                message_id=uuid.uuid4(),
+                active_operation_mode_id="{}".format(self.off_id),
+                operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+            )
+        )
+
+        for opm in self.system_description.operation_modes:
+            if opm.id == self.off_id:
+                self.active_operation_mode = opm
+
+        #that should be it.
     
     def deactivate(self, conn):
         #TODO: Implement

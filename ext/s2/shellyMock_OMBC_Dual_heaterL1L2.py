@@ -151,6 +151,19 @@ class OMBCT(OMBCControlType):
         )
 
         self.rm_item.send_msg_and_await_reception_status_sync(self.system_description)
+
+        #system description send, tell the HEMS in which state we are currently, so it can
+        #start to issue transitions. We start with "off".
+        spam_web_request("http://10.10.20.58/relay/0?turn=off")
+        self.rm_item.send_msg_and_await_reception_status_sync(
+            OMBCStatus(
+                message_id=uuid.uuid4(),
+                active_operation_mode_id="{}".format(self.off_id),
+                operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+            )
+        )
+
+        #that should be it.
     
     def deactivate(self, conn):
         #TODO: Implement
@@ -234,7 +247,7 @@ class RM0(S2ResourceManagerItem):
                         self.asset_details.to_resource_manager_details(self.control_types)
                     )
 
-            elif rod_temp >= 95 or water_temp >= 70:
+            elif rod_temp >= 95 or water_temp >= 75:
                 #temp exceeded. Switch to NOCTRL and turn off heater. 
                 if self._current_control_type != self.ct_noctrl:
                     logger.info("Temperature exhausted, switching to noctrl and turning heater off.")
@@ -372,6 +385,19 @@ class OMBCT_1(OMBCControlType):
         )
 
         self.rm_item.send_msg_and_await_reception_status_sync(self.system_description)
+
+        #system description send, tell the HEMS in which state we are currently, so it can
+        #start to issue transitions. We start with "off".
+        spam_web_request("http://10.10.20.58/relay/1?turn=off")
+        self.rm_item.send_msg_and_await_reception_status_sync(
+            OMBCStatus(
+                message_id=uuid.uuid4(),
+                active_operation_mode_id="{}".format(self.off_id),
+                operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+            )
+        )
+
+        #that should be it. 
     
     def deactivate(self, conn):
         #TODO: Implement

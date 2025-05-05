@@ -335,6 +335,7 @@ class S2RMDelegate():
 		self.priority = priority
 		self.consumer_type = consumer_type
 		self._hems:HEMS=hems
+		self._reported_as_blocked = False
 
 		if USE_FAKE_BMS:
 			self._hems.available_fake_bms = sorted(self._hems.available_fake_bms)
@@ -469,6 +470,8 @@ class S2RMDelegate():
 						self._s2_on_rm_details(self.s2_parser.parse_as_message(msg, ResourceManagerDetails))
 					elif jmsg["message_type"] == "OMBC.SystemDescription":
 						self._s2_on_ombc_system_description(self.s2_parser.parse_as_message(msg, OMBCSystemDescription))
+					elif jmsg["message_type"] == "OMBC.Status":
+						self._s2_on_ombc_status(self.s2_parser.parse_as_message(msg, OMBCStatus))
 					elif jmsg["message_type"] == "PowerMeasurement":
 						self._s2_on_power_measurement(self.s2_parser.parse_as_message(msg, PowerMeasurement))
 					elif jmsg["message_type"] == "ReceptionStatus":
@@ -485,6 +488,7 @@ class S2RMDelegate():
 						
 	def _s2_on_power_measurement(self, message:PowerMeasurement):
 		#RM reported Powermeasurement. Track internally, until HEMS requests an update.
+		#TODO: If the underlaying Service is reporting a building Ac/Energy/Forward, use that counter.
 		def increase_counter(self:S2RMDelegate, commodity:CommodityQuantity, value:float, timestamp):
 			if self._current_timestamps.by_commodity[commodity]==0:
 				#initialize counter for the first time, no evaluation possible.
@@ -524,6 +528,26 @@ class S2RMDelegate():
 		message.operation_modes.sort(key=sum_key, reverse=True)
 		self.ombc_system_description = message
 		self._s2_send_reception_message(ReceptionStatusValues.OK, message)
+	
+	def _s2_on_ombc_status(self, message:OMBCStatus):
+		for opm in self.ombc_system_description.operation_modes:
+			#FIXME: Theres an error with message.active_operation_mode_id in s2-pyhton. fix this, once it was fixed.
+			#       Until then, compare root with id.
+			if "{}".format(opm.id) == "{}".format(message.active_operation_mode_id.root):
+				self.ombc_active_operation_mode = opm
+
+				logger.info("{} reported operation mode: '{}'".format(self.unique_identifier, self.ombc_active_operation_mode.diagnostic_label))
+
+				if USE_FAKE_BMS:
+					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{} [OMBC] @ {}".format(
+						self.rm_details.name, self.ombc_active_operation_mode.diagnostic_label
+					))
+
+				self._s2_send_reception_message(ReceptionStatusValues.OK, message)
+				return
+
+		#Operationmode is not known. This may be a temporary error.
+		self._s2_send_reception_message(ReceptionStatusValues.TEMPORARY_ERROR, message, "Unknown operationmode-id: {}".format(message.active_operation_mode_id))
 
 	def _s2_on_rm_details(self, message:ResourceManagerDetails):
 		# Detail update. Store to keep information present.
@@ -617,7 +641,7 @@ class S2RMDelegate():
 		return bool(self._dbusmonitor.dbusConn.call_blocking(self.service, self.s2path, S2_IFACE, method='Message', signature='ss', 
 				args=[wrap_dbus_value(self.unique_identifier), wrap_dbus_value(message.to_json())]))
 	
-	def self_assign_overhead(self, overhead:SolarOverhead):
+	def self_assign_overhead(self, overhead:SolarOverhead) -> SolarOverhead:
 		"""
 			RM Delegate is claiming power that matches it's requirements.
 			RMDelegate is waiting for comit() of HEMS, before sending new instructions to RM.
@@ -626,46 +650,70 @@ class S2RMDelegate():
 			self.power_claim = None
 			#based on control type, this is different.
 			if self.active_control_type == ControlType.OPERATION_MODE_BASED_CONTROL:
-				#check all Operation modes, and if one fits. op modes have been sorted
-				#when retrieved, so first one is most expensive and should be selected
-				#if possible. 
-				if self.ombc_system_description is not None:
-					for opm in self.ombc_system_description.operation_modes:
-						overhead.begin()
-						for pr in opm.power_ranges:
-							#TODO: offgrid and on individual systems, consider phase-assignment.
-							if self._hems.system_type in [SystemType.GridConnected1Phase, SystemType.GridConnected2PhaseSaldating, 
-									SystemType.GridConnected3PhaseSaldating]:
-								claim_success = overhead.claim(pr.commodity_quantity, pr.start_of_range, pr.end_of_range, 
-									ClaimType.Total, self.active_control_type, self.consumer_type==ConsumerType.Primary)
-								if not claim_success:
-									#maximum assignment for this powerrange failed for at least one powerrange requested. This OperationMode is currently not eligible. 
-									logger.debug("Operation Mode not eligible: '{}' on {} due to missing availability on commodity: {}".format(opm.diagnostic_label, self.unique_identifier, pr.commodity_quantity))
-									overhead.rollback()
-									break
-						
-						if overhead.transaction_running:
-							#Managed to verify all power ranges and transaction still running? This mode is eligible! 
-							logger.debug("Operation Mode selected: '{}' on {}".format(opm.diagnostic_label, self.unique_identifier))
-							self.power_claim = overhead.comit()
-							logger.debug("Power-Claim: {}".format(self.power_claim))
-
-							#store this operation_mode as beeing the next one to be send. EMS will call comit() on the RM-Delegate, 
-							#once it should inform the actual RM and send out a new instruction, if required. RM-Delegate has to 
-							#track if a (re-)send is required. 
-							self._ombc_next_operation_mode = opm
-							break
-					
-					#TODO: If we are here, and didn't find a proper operation mode with 0Watt - the client probably didn't report
-					#      one. So, let's see, if we can switch to a NOCTRL mode, if not, drop the connection.
-				else:
-					logger.warning("No System Description available for {}".format(self.unique_identifier))					
+				return self._ombc_self_assign_overhead(overhead)
+								
 		except Exception as ex:
 			logger.error("Exception during Power assignment. This may be temporary", exc_info=ex)
 			overhead.rollback() #restore state before claiming power values. 
 
 		return overhead
 	
+	def _ombc_self_assign_overhead(self, overhead:SolarOverhead)->SolarOverhead:
+		#check all Operation modes, and if one fits. op modes have been sorted
+		#when retrieved, so first one is most expensive and should be selected
+		#if possible. 
+		if self.ombc_system_description is None:
+			logger.warning("No System Description available for {}".format(self.unique_identifier))	
+			return overhead
+		
+		if self.ombc_active_operation_mode is None:
+			logger.warning("No active operation mode known for {}".format(self.unique_identifier))	
+			return overhead
+
+		for opm in self.ombc_system_description.operation_modes:
+			if self._ombc_can_transition(self.ombc_active_operation_mode, opm):
+				overhead.begin()
+				for pr in opm.power_ranges:
+					#TODO: offgrid and on individual systems, consider phase-assignment.
+					if self._hems.system_type in [SystemType.GridConnected1Phase, SystemType.GridConnected2PhaseSaldating, 
+							SystemType.GridConnected3PhaseSaldating]:
+						claim_success = overhead.claim(pr.commodity_quantity, pr.start_of_range, pr.end_of_range, 
+							ClaimType.Total, self.active_control_type, self.consumer_type==ConsumerType.Primary)
+						if not claim_success:
+							#maximum assignment for this powerrange failed for at least one powerrange requested. This OperationMode is currently not eligible. 
+							logger.debug("Operation Mode not eligible: '{}' on {} due to missing availability on commodity: {}".format(opm.diagnostic_label, self.unique_identifier, pr.commodity_quantity))
+							overhead.rollback()
+							break
+				
+				if overhead.transaction_running:
+					#Managed to verify all power ranges and transaction still running? This mode is eligible! 
+					logger.debug("Operation Mode selected: '{}' on {}".format(opm.diagnostic_label, self.unique_identifier))
+					self.power_claim = overhead.comit()
+					logger.debug("Power-Claim: {}".format(self.power_claim))
+
+					#store this operation_mode as beeing the next one to be send. EMS will call comit() on the RM-Delegate, 
+					#once it should inform the actual RM and send out a new instruction, if required. RM-Delegate has to 
+					#track if a (re-)send is required. 
+					self._ombc_next_operation_mode = opm
+					break
+		
+		#TODO: If we are here, and didn't find a proper operation mode with 0Watt - the client probably didn't report
+		#      one. So, let's see, if we can switch to a NOCTRL mode, if not, drop the connection.
+		
+		return overhead
+
+	def _ombc_can_transition(self, active_operation_mode:OMBCOperationMode, candidate:OMBCOperationMode)->bool:
+		"""
+			Checks, if the transition from active_operation_mode to candidate is teoretically possible,
+			i.e. if a transition exists. Then this mode can be selected. Before transitioning however,
+			blocking timers need to be validated using _ombc_check_timer_block.
+		"""
+		for t in self.ombc_system_description.transitions:
+			if t.from_ == active_operation_mode.id and t.to == candidate.id:
+				return True
+		
+		return False
+
 	def comit(self):
 		"""
 			To be called, when all consumers have claimed their power share. If no new instruction is required 
@@ -673,10 +721,10 @@ class S2RMDelegate():
 		"""
 		if self.active_control_type == ControlType.OPERATION_MODE_BASED_CONTROL:
 			#Transitioning may be based on timers. So, check if our transition is suspect to be delayed currently. 
-			
 			if self._ombc_next_operation_mode is not None and self.ombc_active_operation_mode != self._ombc_next_operation_mode:
 				#check, if transition is blocked. Else we will retry later, no problem. 
-				if not self._check_ombc_timer_block():
+				seconds_blocked = self._ombc_check_timer_block()
+				if seconds_blocked <= 0.0:
 					#send out op mode selection, as operation mode changed. 
 					self.ombc_active_instruction = OMBCInstruction(
 						message_id = uuid.uuid4(),
@@ -694,6 +742,8 @@ class S2RMDelegate():
 						for t in self.ombc_system_description.transitions:
 							if t.from_ == self.ombc_active_operation_mode.id and t.to == self._ombc_next_operation_mode.id:
 								#transition found, timer required?
+
+								#TODO: If we cannot find a transition - we can't even transition between these states. Needs to be considered.
 								for tmr in t.start_timers:
 									#find the timer we need to start and start it. 
 									for tmr_cand in self.ombc_system_description.timers:
@@ -714,12 +764,32 @@ class S2RMDelegate():
 						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{} [OMBC] @ {}".format(
 							self.rm_details.name, self.ombc_active_operation_mode.diagnostic_label
 						))
+				else:
+					if USE_FAKE_BMS:
+						self._reported_as_blocked = True
+						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{} [OMBC] @ {} ({}s)".format(
+							self.rm_details.name, self.ombc_active_operation_mode.diagnostic_label, seconds_blocked
+						))
+			
+			else:
+				#No transition required. Make sure our BMS does not outline a blocking-timer information. 
+				if USE_FAKE_BMS:
+					if self._reported_as_blocked:
+						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{} [OMBC] @ {}".format(
+							self.rm_details.name, self.ombc_active_operation_mode.diagnostic_label
+						))
+						self._reported_as_blocked = False
 
-	def _check_ombc_timer_block(self):
+
+
+	def _ombc_check_timer_block(self) ->float:
+		"""
+			Checks if there is a blocking timer, if there is, returns the amount of seconds to go. 
+		"""
 		#if the current mode is unknown, we have no block. 
 		#if the next operation mode is unknown, it's no block at all.
 		if self.ombc_active_operation_mode is None or self._ombc_next_operation_mode is None:
-			return False
+			return 0
 		
 		#attempting to transist between 2 operation modes. See, if there is a defined transition
 		timer_to_invalidate = []
@@ -738,17 +808,20 @@ class S2RMDelegate():
 										#timer is expired. Schedule for removel, it's non blocking anymore.
 										timer_to_invalidate.append(blocking_timer_id)
 									else:
-										logger.warning("Timer '{}' is preventing {} to transition from '{}' to '{}' currently.".format(
-											running_timer.diagnostic_label, self.unique_identifier, self.ombc_active_operation_mode.diagnostic_label, self._ombc_next_operation_mode.diagnostic_label
+										seconds_remaining = round(((self.ombc_timer_starts[blocking_timer_id] + running_timer.duration.to_timedelta()) 
+									 		- datetime.now(timezone.utc)).total_seconds(),0)
+										
+										logger.warning("Timer '{}' is preventing {} to transition from '{}' to '{}' currently. ({}s)".format(
+											running_timer.diagnostic_label, self.unique_identifier, self.ombc_active_operation_mode.diagnostic_label, 
+											self._ombc_next_operation_mode.diagnostic_label, seconds_remaining
 										))
-										return True
+										return seconds_remaining
 		
 		for id in timer_to_invalidate:
 			del self.ombc_timers[id]
 			del self.ombc_timer_starts[id]
 
-		#nothing blocked, we are good to go.
-		return False
+		return 0
 
 	def pop_powerstats(self) -> tuple[PhaseAwareFloat, PhaseAwareFloat]:
 		"""
@@ -1167,10 +1240,15 @@ class HEMS(SystemCalcDelegate):
 		#if the device is sourcing from DCPV it can be ignored, that will also be "ac-consumption" beeing reported, which we need to cancel out. 
 		#current_power will still report AC consumption based on phase-allocation of the consumer. 
 		for unique_identifier, delegate in self.managed_rms.items():
-			if delegate.current_power is not None:
-				l1 += delegate.current_power.l1
-				l2 += delegate.current_power.l2
-				l3 += delegate.current_power.l3
+			if delegate.initialized:
+				if delegate.current_power is not None:
+					#Check, if the consumer is about to turn off (0-Power-Claim) - then we don't add
+					#the current consumption, it is about to turn off cause not enough energy, so current consumption
+					#of the consumer shall not be considered available overhead. 
+					if delegate.power_claim is not None and delegate.power_claim.total > 0:
+						l1 += delegate.current_power.l1
+						l2 += delegate.current_power.l2
+						l3 += delegate.current_power.l3
 
 		#Init of SolarOverhead will take care to apply reservation constraints
 		return SolarOverhead(

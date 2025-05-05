@@ -151,6 +151,23 @@ class OMBCT(OMBCControlType):
         )
 
         self.rm_item.send_msg_and_await_reception_status_sync(self.system_description)
+
+        #system description send, tell the HEMS in which state we are currently, so it can
+        #start to issue transitions. We start with "off".
+        spam_web_request("http://shellypro2pmpoolcontrol.ad.equinox-solutions.de/relay/1?turn=off")
+        self.rm_item.send_msg_and_await_reception_status_sync(
+            OMBCStatus(
+                message_id=uuid.uuid4(),
+                active_operation_mode_id="{}".format(self.off_id),
+                operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+            )
+        )
+
+        for opm in self.system_description.operation_modes:
+            if opm.id == self.off_id:
+                self.active_operation_mode = opm
+
+        #that should be it.
     
     def deactivate(self, conn):
         #TODO: Implement

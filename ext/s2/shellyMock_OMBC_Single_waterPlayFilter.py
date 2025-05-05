@@ -85,6 +85,9 @@ class OMBCT(OMBCControlType):
     def activate(self, conn):
         logger.info("OMBC activated.")
         
+        #reset
+        self.active_operation_mode = None
+
         #Control Type has been selected by CEM. Advertise OperationModes.
         self.on_id = uuid.uuid4()
         self.off_id = uuid.uuid4()
@@ -151,6 +154,19 @@ class OMBCT(OMBCControlType):
         )
 
         self.rm_item.send_msg_and_await_reception_status_sync(self.system_description)
+
+        #system description send, tell the HEMS in which state we are currently, so it can
+        #start to issue transitions. We start with "off".
+        spam_web_request("http://shelly1pmminiwaterplayfilter.ad.equinox-solutions.de/relay/0?turn=off")
+        self.rm_item.send_msg_and_await_reception_status_sync(
+            OMBCStatus(
+                message_id=uuid.uuid4(),
+                active_operation_mode_id="{}".format(self.off_id),
+                operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+            )
+        )
+
+        #that should be it. 
     
     def deactivate(self, conn):
         #TODO: Implement
@@ -191,6 +207,10 @@ class RM0(S2ResourceManagerItem):
                 await self.send_msg_and_await_reception_status(
                     self.asset_details.to_resource_manager_details([self.ct_ombc])
                 )
+            
+            if self.ct_ombc.active_operation_mode is None:
+                logger.warning("Operation Mode not yet selected.")
+                return 
             
             #Report power device is currently consuming. 
             response = requests.get("http://shelly1pmminiwaterplayfilter.ad.equinox-solutions.de/rpc/Shelly.GetStatus")

@@ -59,6 +59,21 @@ from s2python.ombc import (
     OMBCTimerStatus
 )
 
+
+def spam_web_request(url):
+    """
+        Sometimes web requests on wifi shellies time out.
+        This is a dirty helper to repeat such a request until successfull.
+    """
+    while True:
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                break
+        
+        except Exception as ex:
+            logger.warning("Web request failed,retrying:{}".format(url))
+
 class OMBCT(OMBCControlType):
     
     def __init__(self, rm_item:S2ResourceManagerItem):
@@ -137,6 +152,19 @@ class OMBCT(OMBCControlType):
         )
 
         self.rm_item.send_msg_and_await_reception_status_sync(self.system_description)
+
+        #system description send, tell the HEMS in which state we are currently, so it can
+        #start to issue transitions. We start with "off".
+        spam_web_request("http://10.10.20.57/relay/1?turn=off")
+        self.rm_item.send_msg_and_await_reception_status_sync(
+            OMBCStatus(
+                message_id=uuid.uuid4(),
+                active_operation_mode_id="{}".format(self.off_id),
+                operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+            )
+        )
+
+        #that should be it. 
     
     def deactivate(self, conn):
         #TODO: Implement
@@ -153,9 +181,9 @@ class OMBCT(OMBCControlType):
             #Here we actually do, what we are supposed to do. Reporting Power is handled by loop.
             try:
                 if self.active_operation_mode.diagnostic_label == "On":
-                    requests.get("http://10.10.20.57/relay/1?turn=on")
+                    spam_web_request("http://10.10.20.57/relay/1?turn=on")
                 if self.active_operation_mode.diagnostic_label == "Off":
-                    requests.get("http://10.10.20.57/relay/1?turn=off")
+                    spam_web_request("http://10.10.20.57/relay/1?turn=off")
             except Exception as ex:
                 logger.error("Exception during Shelly control", exc_info=ex)
 
@@ -218,7 +246,7 @@ class RM0(S2ResourceManagerItem):
                         self.asset_details.to_resource_manager_details(self.control_types)
                     )
             
-            elif rod_temp >= 100 or water_temp >= 85:
+            elif rod_temp >= 100 or water_temp >= 80:
                 #temp exceeded. Switch to NOCTRL and turn off heater.
                 if self._current_control_type != self.ct_noctrl:
                     self.control_types = [self.ct_noctrl]
@@ -226,7 +254,7 @@ class RM0(S2ResourceManagerItem):
                     await self.send_msg_and_await_reception_status(
                         self.asset_details.to_resource_manager_details(self.control_types)
                     )
-                    requests.get("http://10.10.20.57/relay/1?turn=off")
+                    spam_web_request("http://10.10.20.57/relay/1?turn=off")
 
             else:
                 #Automatic Mode and temperatures are good. Only possible control type is now PEBC. 

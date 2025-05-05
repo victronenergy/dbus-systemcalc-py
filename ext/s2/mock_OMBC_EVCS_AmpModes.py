@@ -79,7 +79,10 @@ class OMBCT(OMBCControlType):
         #nothing todo here, loop will handle.
     
     def deactivate(self, conn):
-        #TODO: Implement
+        #reset, so loop is resending information, when OMBC is enabled.
+        #that is implemented in the loop, because the car state may change
+        #during OMBC beeing active as well.
+        self.rm_item.car_connected = None 
         logger.info("OMBC deactivated.")
     
     def handle_instruction(self, conn, msg, send_okay):
@@ -92,10 +95,29 @@ class OMBCT(OMBCControlType):
 
         if self.active_operation_mode is not None:
             #Here we actually do, what we are supposed to do. Reporting Power is handled by loop.
-            pass
+            if msg.active_operation_mode_id == self.rm_item.stand_by_id:
+                #if charging, stop.
+                if self.rm_item.dbus_monitor.get_value(EVCS_SERVICE, "/StartStop") != 0:
+                    logger.info("Sending Stop!")
+                    self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/StartStop", 0)
+            elif msg.active_operation_mode_id == self.rm_item.no_car_id:
+                #nothing todo, ensure off tho.
+                if self.rm_item.dbus_monitor.get_value(EVCS_SERVICE, "/StartStop") != 0:
+                    logger.info("Sending Stop!")
+                    self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/StartStop", 0)
+            else:
+                #check, if a chargemode is selected - then verify the EVCS is running and select the proper amps.
+                amps = self.rm_item.charge_mode_map[msg.active_operation_mode_id]
+                if amps is not None:
+                    logger.info("Setting amps to {}".format(amps))
+                    self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/SetCurrent", amps)
+
+                    #verify we are charging, else send Start.
+                    if self.rm_item.dbus_monitor.get_value(EVCS_SERVICE, "/StartStop") != 1:
+                        logger.info("Sending Start!")
+                        self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/StartStop", 1)
 
 class CTNOCTRL(NoControlControlType):
-
     def __init__(self, rm_item:S2ResourceManagerItem):
         self.rm_item = rm_item
         super().__init__()
@@ -119,6 +141,7 @@ class RM0(S2ResourceManagerItem):
         self.asset_details = asset_details
         self.service = service
         self.car_connected = None
+        self.charge_mode_map = {}
 
         #we don't need a change handler, we read when required.
         dummy = {'code': None, 'whenToLog': 'configChange', 'accessLevel': None}
@@ -126,6 +149,11 @@ class RM0(S2ResourceManagerItem):
             "com.victronenergy.evcharger" : {
                 "/Mode" : dummy,
                 "/Status" : dummy,
+                "/StartStop" : dummy,
+                "/SetCurrent" : dummy,
+                "/Ac/L1/Power" : dummy,
+                "/Ac/L2/Power" : dummy,
+                "/Ac/L3/Power" : dummy,
             }
         })
 
@@ -331,6 +359,7 @@ class RM0(S2ResourceManagerItem):
                 #TODO: Need to handle when car is fully charged.
                 self.car_connected = car_connected
                 self.stand_by_id = uuid.uuid4()
+                self.no_car_id = uuid.uuid4()
 
                 if self.car_connected:
                     #Standby + All amp states
@@ -352,10 +381,13 @@ class RM0(S2ResourceManagerItem):
                     ]
 
                     #EVCS would get this from settings. (Charging with 6-16A)
+                    self.charge_mode_map.clear()
                     for a in range(6,17):
+                        op_mode_id = uuid.uuid4()
+                        self.charge_mode_map[op_mode_id] = a
                         operation_modes_temp.append(
                             OMBCOperationMode(
-                                id=self.no_car_id,
+                                id=op_mode_id,
                                 diagnostic_label="Charge {} A".format(a),
                                 abnormal_condition_only=False,
                                 power_ranges=[
@@ -428,6 +460,20 @@ class RM0(S2ResourceManagerItem):
                     )
 
                     await self.send_msg_and_await_reception_status(self.system_description)
+
+                    await self.send_msg_and_await_reception_status(
+                        OMBCStatus(
+                            message_id=uuid.uuid4(),
+                            active_operation_mode_id="{}".format(self.stand_by_id),
+                            operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+                        )
+                    )
+
+                    for opm in self.system_description.operation_modes:
+                        if opm.id == self.no_car_id:
+                            self.active_operation_mode = opm
+
+                    #that should be it.
                 else:
                     #Only offer NoCar.
                     self.no_car_id = uuid.uuid4()
@@ -459,7 +505,20 @@ class RM0(S2ResourceManagerItem):
                     logger.info("Only offering 'NoCar' Mode.")
                     await self.send_msg_and_await_reception_status(self.system_description)
 
-        return
+                    await self.send_msg_and_await_reception_status(
+                        OMBCStatus(
+                            message_id=uuid.uuid4(),
+                            active_operation_mode_id="{}".format(self.no_car_id),
+                            operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+                        )
+                    )
+
+                    for opm in self.system_description.operation_modes:
+                        if opm.id == self.no_car_id:
+                            self.active_operation_mode = opm
+
+                    #that should be it.
+
         #TODO: Implement Power Mode.
         await self.send_msg_and_await_reception_status(
             PowerMeasurement(
@@ -468,15 +527,15 @@ class RM0(S2ResourceManagerItem):
                 values = [
                     PowerValue(
                         commodity_quantity=CommodityQuantity.ELECTRIC_POWER_L1,
-                        value=power1
+                        value=self.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L1/Power", 0)
                     ),
                     PowerValue(
                         commodity_quantity=CommodityQuantity.ELECTRIC_POWER_L2,
-                        value=power2
+                        value=self.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L2/Power", 0)
                     ),
                     PowerValue(
                         commodity_quantity=CommodityQuantity.ELECTRIC_POWER_L3,
-                        value=power3
+                        value=self.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L3/Power", 0)
                     )
                 ]
             )
@@ -525,8 +584,22 @@ class EVCSMock(Service):
 
     async def _loop(self):
         while True:
-            await asyncio.sleep(10) #validate operation constraints every 10 seconds. 
+            await asyncio.sleep(5) #validate operation constraints every 10 seconds. 
             await self.rm0.loop()
+
+def configure_logger():
+    from logging.handlers import TimedRotatingFileHandler
+    log_dir = "/data/log/S2"    
+    if not os.path.exists(log_dir):
+        os.mkdir(log_dir)
+    
+    logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)s %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        level=logging.DEBUG,
+        handlers=[
+        TimedRotatingFileHandler(log_dir + "/" + os.path.basename(__file__) + ".log", when="midnight", interval=1, backupCount=2),
+        logging.StreamHandler()
+        ])
 
 if __name__ == "__main__":
     try:
@@ -537,6 +610,7 @@ if __name__ == "__main__":
         from dbus_next.constants import BusType
 
     async def main():
+        configure_logger()
         instance = 920
         bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
         service = EVCSMock(bus, 'com.victronenergy.s2Mock', instance)
