@@ -166,6 +166,10 @@ class OMBCT(OMBCControlType):
             )
         )
 
+        for opm in self.system_description.operation_modes:
+            if opm.id == self.off_id:
+                self.active_operation_mode = opm
+
         #that should be it. 
     
     def deactivate(self, conn):
@@ -173,22 +177,42 @@ class OMBCT(OMBCControlType):
         logger.info("OMBC deactivated.")
     
     def handle_instruction(self, conn, msg, send_okay):
-        for op_mode in self.system_description.operation_modes:
-            if op_mode.id == msg.operation_mode_id:
-                logger.info("Instruction received: {}".format(op_mode.diagnostic_label))
-                self.active_operation_mode = op_mode
-                break
+        try:
+            prior_id = "{}".format(self.active_operation_mode.id) if self.active_operation_mode is not None else None
 
-        if self.active_operation_mode is not None:
-            #Here we actually do, what we are supposed to do. Reporting Power is handled by loop.
-            #We just reuse the diagnostic label to determine which operation type was selected by the ems. 
-            try:
-                if self.active_operation_mode.diagnostic_label == "On":
-                    spam_web_request("http://shelly1pmminiwaterplayfilter.ad.equinox-solutions.de/relay/0?turn=on")
-                if self.active_operation_mode.diagnostic_label == "Off":
-                    spam_web_request("http://shelly1pmminiwaterplayfilter.ad.equinox-solutions.de/relay/0?turn=off")
-            except Exception as ex:
-                logger.error("Exception during Shelly control", exc_info=ex)
+            for op_mode in self.system_description.operation_modes:
+                if op_mode.id == msg.operation_mode_id:
+                    logger.info("Instruction received: {}".format(op_mode.diagnostic_label))
+                    self.active_operation_mode = op_mode
+                    break
+            
+            status = OMBCStatus(
+                    message_id=uuid.uuid4(),
+                    active_operation_mode_id="{}".format(self.active_operation_mode.id),
+                    previous_operation_mode_id=prior_id,
+                    transition_timestamp=datetime.now(timezone.utc),
+                    operation_mode_factor=msg.operation_mode_factor
+                )
+            
+            logger.info("Answering with {}".format(status))
+
+            #sending block / wait does not work in here.
+            self.rm_item._send_and_forget(
+                status
+            )
+
+            logger.info("Fire and forgot done.")
+
+            if self.active_operation_mode is not None:
+                #Here we actually do, what we are supposed to do. Reporting Power is handled by loop.
+                #We just reuse the diagnostic label to determine which operation type was selected by the ems. 
+                
+                    if self.active_operation_mode.diagnostic_label == "On":
+                        spam_web_request("http://shelly1pmminiwaterplayfilter.ad.equinox-solutions.de/relay/0?turn=on")
+                    if self.active_operation_mode.diagnostic_label == "Off":
+                        spam_web_request("http://shelly1pmminiwaterplayfilter.ad.equinox-solutions.de/relay/0?turn=off")
+        except Exception as ex:
+            logger.error("Exception during handle_instructions", exc_info=ex)
 
 class RM0(S2ResourceManagerItem):        
     def __init__(self, path:str, asset_details:AssetDetails, service:Service):
@@ -198,39 +222,49 @@ class RM0(S2ResourceManagerItem):
         self.service = service
         super().__init__(self.s2_path, [self.ct_ombc], self.asset_details)
 
+    async def _destroy_connection(self):
+        await super()._destroy_connection()
+
+        #debug purpose: When we have a disconnect, simply restart the service. 
+        #this ensures the services are restarted with an eventually updated file.
+        logger.info("Connection destroyed, ending execution to allow service to restart.")
+        sys.exit(0)
+    
     async def loop(self):
         try:
-            # dumbest consumer ever - it jus wants to run, no constraints. 
-            # see shellyMock_OMBC_Single_heaterL1.py for a mock having operational constraints utilizing no_ctrl type as well.
-            if self._current_control_type != self.ct_ombc:
-                logger.info("Not in OMBC Mode. Offering...")
+            if self.is_connected:
+                # dumbest consumer ever - it jus wants to run, no constraints. 
+                # see shellyMock_OMBC_Single_heaterL1.py for a mock having operational constraints utilizing no_ctrl type as well.
+                if self._current_control_type != self.ct_ombc:
+                    logger.info("Not in OMBC Mode. Offering...")
+                    await self.send_msg_and_await_reception_status(
+                        self.asset_details.to_resource_manager_details([self.ct_ombc])
+                    )
+                
+                if self.ct_ombc.active_operation_mode is None:
+                    logger.warning("Operation Mode not yet selected.")
+                    return 
+                
+                #Report power device is currently consuming. 
+                response = requests.get("http://shelly1pmminiwaterplayfilter.ad.equinox-solutions.de/rpc/Shelly.GetStatus")
+                jo_response = json.loads(response.content)
+                power = jo_response["switch:0"]["apower"]
+
+                op_label = self.ct_ombc.active_operation_mode.diagnostic_label if self.ct_ombc.active_operation_mode.diagnostic_label is not None else "None"
+                logger.info("Selected operation mode: {} @ {}W".format(op_label, power))
+
                 await self.send_msg_and_await_reception_status(
-                    self.asset_details.to_resource_manager_details([self.ct_ombc])
+                    PowerMeasurement(
+                        message_id=uuid.uuid4(),
+                        measurement_timestamp=datetime.now(timezone.utc),
+                        values = [
+                            PowerValue(
+                                commodity_quantity=CommodityQuantity.ELECTRIC_POWER_L1,
+                                value=power
+                            )
+                        ]
+                    )
                 )
-            
-            if self.ct_ombc.active_operation_mode is None:
-                logger.warning("Operation Mode not yet selected.")
-                return 
-            
-            #Report power device is currently consuming. 
-            response = requests.get("http://shelly1pmminiwaterplayfilter.ad.equinox-solutions.de/rpc/Shelly.GetStatus")
-            jo_response = json.loads(response.content)
-            power = jo_response["switch:0"]["apower"]
-
-            logger.info("Selected operation mode: {} @ {}W".format(self.ct_ombc.active_operation_mode.diagnostic_label, power))
-
-            await self.send_msg_and_await_reception_status(
-                PowerMeasurement(
-                    message_id=uuid.uuid4(),
-                    measurement_timestamp=datetime.now(timezone.utc),
-                    values = [
-                        PowerValue(
-                            commodity_quantity=CommodityQuantity.ELECTRIC_POWER_L1,
-                            value=power
-                        )
-                    ]
-                )
-            )
         except Exception as ex:
             logger.error("Exception during loop", exc_info=ex)
     

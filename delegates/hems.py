@@ -48,9 +48,11 @@ from s2python.validate_values_mixin import S2MessageComponent
 
 logger = logging.getLogger(__name__)
 
+logger.setLevel(logging.DEBUG)
+
 HUB4_SERVICE = "com.victronenergy.hub4"
 S2_IFACE = "com.victronenergy.S2"
-KEEP_ALIVE_INTERVAL = 5 
+KEEP_ALIVE_INTERVAL = 30
 COUNTER_PERSIST_INTERVAL = 60 #save every 15 minutes. 
 CONNECTION_RETRY_INTERVAL = 35
 USE_FAKE_BMS = True
@@ -273,7 +275,8 @@ class SolarOverhead():
 		if claim_type == ClaimType.Total:
 			if ctrl_type == ControlType.OPERATION_MODE_BASED_CONTROL:
 				#TODO: Factor needs to be generated for the OMBC! For now, we assume fixed values, i.e. factor = 1.0 
-				#find our power on l1/l2/l3, first, last consider dcpv. On ClaimType.Total, it doesn't matter where we source from. 				
+				#find our power on l1/l2/l3, first, last consider dcpv. On ClaimType.Total, it doesn't matter where we source from.
+				logger.debug("Comparing Available budget {}W and claim {}W".format(max(self.power.total - self.power_reserved.total * rsrv, 0), maxv)) 				
 				if max(self.power.total - self.power_reserved.total * rsrv, 0) >= maxv:
 					#Even if it is a total claim, we need to allocate the claim to the proper phase.
 					#TODO need to distinguish between AC and DC Claim here. 
@@ -634,12 +637,17 @@ class S2RMDelegate():
 			subject_message_id = message_id,
 			diagnostic_label=info
 		)
-		return self._s2_send_message(resp)
+		self._s2_send_message(resp)
 
-	def _s2_send_message(self, message:S2MessageComponent) -> bool:
+	def _s2_send_message(self, message:S2MessageComponent):
 		logger.debug("Send Message to {}: {}".format(self.unique_identifier, message.to_dict()["message_type"]))
-		return bool(self._dbusmonitor.dbusConn.call_blocking(self.service, self.s2path, S2_IFACE, method='Message', signature='ss', 
-				args=[wrap_dbus_value(self.unique_identifier), wrap_dbus_value(message.to_json())]))
+		try:
+			#TODO: Eventually we want to do something with replies here? Handler?
+			self._dbusmonitor.dbusConn.call_async(self.service, self.s2path, S2_IFACE, method='Message', signature='ss', 
+					args=[wrap_dbus_value(self.unique_identifier), wrap_dbus_value(message.to_json())], 
+					reply_handler=None, error_handler=None)
+		except Exception as ex:
+			logger.error("Error sending a S2 Message.", exc_info=ex)
 	
 	def self_assign_overhead(self, overhead:SolarOverhead) -> SolarOverhead:
 		"""
@@ -688,14 +696,21 @@ class S2RMDelegate():
 				if overhead.transaction_running:
 					#Managed to verify all power ranges and transaction still running? This mode is eligible! 
 					logger.debug("Operation Mode selected: '{}' on {}".format(opm.diagnostic_label, self.unique_identifier))
+
+					old_power_claim = self.power_claim
 					self.power_claim = overhead.comit()
 					logger.debug("Power-Claim: {}".format(self.power_claim))
+
+					if (old_power_claim is not None and old_power_claim.total != self.power_claim.total):
+						logger.debug("Power Claim changed from {}W to {}W. Overhead now is: {}W".format(old_power_claim.total, self.power_claim.total, overhead.power.total))
 
 					#store this operation_mode as beeing the next one to be send. EMS will call comit() on the RM-Delegate, 
 					#once it should inform the actual RM and send out a new instruction, if required. RM-Delegate has to 
 					#track if a (re-)send is required. 
 					self._ombc_next_operation_mode = opm
 					break
+			else:
+				logger.debug("Can't transition from {} to {}. Checking next.".format(self.ombc_active_operation_mode.diagnostic_label, opm.diagnostic_label))
 		
 		#TODO: If we are here, and didn't find a proper operation mode with 0Watt - the client probably didn't report
 		#      one. So, let's see, if we can switch to a NOCTRL mode, if not, drop the connection.
@@ -707,7 +722,12 @@ class S2RMDelegate():
 			Checks, if the transition from active_operation_mode to candidate is teoretically possible,
 			i.e. if a transition exists. Then this mode can be selected. Before transitioning however,
 			blocking timers need to be validated using _ombc_check_timer_block.
+
+			Transitioning from state X to state X is considered always allowed - that means, keep current operation mode. 
 		"""
+		if active_operation_mode.id == candidate.id:
+			return True
+			
 		for t in self.ombc_system_description.transitions:
 			if t.from_ == active_operation_mode.id and t.to == candidate.id:
 				return True
@@ -1181,6 +1201,10 @@ class HEMS(SystemCalcDelegate):
 			)
 		)
 
+		if USE_FAKE_BMS:
+			self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Voltage", available_overhead.power.total)
+			self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Power", available_overhead.battery_rate)
+
 		#Iterate over all known RMs, check their requirement and assign them a suitable Budget. 
 		#The RMDelegate is responsible to communicate with it's rm upon .comit() beeing called. 
 		#(Will be called after finishing all power assignments to avoid instructions beeing send out immediately)
@@ -1212,6 +1236,9 @@ class HEMS(SystemCalcDelegate):
 				available_overhead.power.total,
 			)
 		)
+
+		if USE_FAKE_BMS:
+			self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Current", available_overhead.power.total)
 
 		logger.debug("^------------------- LOOP -------------------^")
 

@@ -87,11 +87,22 @@ class OMBCT(OMBCControlType):
     
     def handle_instruction(self, conn, msg, send_okay):
         logger.info("Instruction received: {}".format(msg))
+        prior_id = "{}".format(self.active_operation_mode.id) if self.active_operation_mode is not None else None
 
         for op_mode in self.rm_item.system_description.operation_modes:
             if op_mode.id == msg.operation_mode_id:
                 self.active_operation_mode = op_mode
                 break
+
+        self.rm_item._send_and_forget(
+            OMBCStatus(
+                message_id=uuid.uuid4(),
+                active_operation_mode_id="{}".format(self.active_operation_mode.id),
+                previous_operation_mode_id=prior_id,
+                transition_timestamp=datetime.now(timezone.utc),
+                operation_mode_factor=msg.operation_mode_factor
+            )
+        )
 
         if self.active_operation_mode is not None:
             #Here we actually do, what we are supposed to do. Reporting Power is handled by loop.
@@ -346,7 +357,13 @@ class RM0(S2ResourceManagerItem):
                         ) 
                     )
 
-        
+    async def _destroy_connection(self):
+        await super()._destroy_connection()
+
+        #debug purpose: When we have a disconnect, simply restart the service. 
+        #this ensures the services are restarted with an eventually updated file.
+        logger.info("Connection destroyed, ending execution to allow service to restart.")
+        sys.exit(0)
 
     async def loop(self):
         # check if car is connected or if we are charging.

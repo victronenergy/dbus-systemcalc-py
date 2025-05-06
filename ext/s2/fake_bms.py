@@ -67,9 +67,9 @@ class FakeBMS():
         self.dbusService.add_path('/Connected', 1)
         self.dbusService.add_path('/Serial', "1337")
 
-        self.dbusService.add_path('/Dc/0/Voltage', 0)
+        self.dbusService.add_path('/Dc/0/Voltage', 0, writeable=True)
         self.dbusService.add_path('/Dc/0/Power', 0, writeable=True)
-        self.dbusService.add_path('/Dc/0/Current', 0)
+        self.dbusService.add_path('/Dc/0/Current', 0, writeable=True)
         self.dbusService.add_path('/Soc', 0, writeable=True)
 
         self.dbusService.register()

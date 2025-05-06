@@ -164,6 +164,10 @@ class OMBCT(OMBCControlType):
             )
         )
 
+        for opm in self.system_description.operation_modes:
+            if opm.id == self.off_id:
+                self.active_operation_mode = opm
+
         #that should be it. 
     
     def deactivate(self, conn):
@@ -171,11 +175,24 @@ class OMBCT(OMBCControlType):
         logger.info("OMBC deactivated.")
     
     def handle_instruction(self, conn, msg, send_okay):
+        prior_id = "{}".format(self.active_operation_mode.id) if self.active_operation_mode is not None else None
+
+
         for op_mode in self.system_description.operation_modes:
             if op_mode.id == msg.operation_mode_id:
                 logger.info("Instruction received: {}".format(op_mode.diagnostic_label))
                 self.active_operation_mode = op_mode
                 break
+
+        self.rm_item._send_and_forget(
+            OMBCStatus(
+                message_id=uuid.uuid4(),
+                active_operation_mode_id="{}".format(self.active_operation_mode.id),
+                previous_operation_mode_id=prior_id,
+                transition_timestamp=datetime.now(timezone.utc),
+                operation_mode_factor=msg.operation_mode_factor
+            )
+        )
 
         if self.active_operation_mode is not None:
             #Here we actually do, what we are supposed to do. Reporting Power is handled by loop.
@@ -211,6 +228,15 @@ class RM0(S2ResourceManagerItem):
         self.service = service
         super().__init__(self.s2_path, [self.ct_noctrl], self.asset_details)
         
+    
+    async def _destroy_connection(self):
+        await super()._destroy_connection()
+
+        #debug purpose: When we have a disconnect, simply restart the service. 
+        #this ensures the services are restarted with an eventually updated file.
+        logger.info("Connection destroyed, ending execution to allow service to restart.")
+        sys.exit(0)
+    
     async def loop(self):
         try:
             #Check, if Heatingrod-Control is set to automatic.
@@ -236,6 +262,8 @@ class RM0(S2ResourceManagerItem):
                 water_temp, 
                 self._current_control_type.__class__.__name__)
             )
+
+           
 
             if is_manual_override:
                 #Manual Mode Only possible control type is now noctrl. 
@@ -271,10 +299,8 @@ class RM0(S2ResourceManagerItem):
             jo_response = json.loads(response.content)
             power = jo_response["switch:1"]["apower"]
 
-            if self.ct_ombc.active_operation_mode is not None:
-                logger.info("Selected operation mode: {} @ {}W".format(self.ct_ombc.active_operation_mode.diagnostic_label, power))
-            else:
-                logger.info("Selected operation mode: None @ {}W".format(power))
+            op_label = self.ct_ombc.active_operation_mode.diagnostic_label if self.ct_ombc.active_operation_mode.diagnostic_label is not None else "None"
+            logger.info("Selected operation mode: {} @ {}W".format(op_label, power))
 
             await self.send_msg_and_await_reception_status(
                 PowerMeasurement(

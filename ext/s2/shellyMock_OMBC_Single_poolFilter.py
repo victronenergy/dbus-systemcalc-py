@@ -174,11 +174,23 @@ class OMBCT(OMBCControlType):
         logger.info("OMBC deactivated.")
     
     def handle_instruction(self, conn, msg, send_okay):
+        prior_id = "{}".format(self.active_operation_mode.id) if self.active_operation_mode is not None else None
+
         for op_mode in self.system_description.operation_modes:
             if op_mode.id == msg.operation_mode_id:
                 logger.info("Instruction received: {}".format(op_mode.diagnostic_label))
                 self.active_operation_mode = op_mode
                 break
+
+        self.rm_item._send_and_forget(
+            OMBCStatus(
+                message_id=uuid.uuid4(),
+                active_operation_mode_id="{}".format(self.active_operation_mode.id),
+                previous_operation_mode_id=prior_id,
+                transition_timestamp=datetime.now(timezone.utc),
+                operation_mode_factor=msg.operation_mode_factor
+            )
+        )
 
         if self.active_operation_mode is not None:
             #Here we actually do, what we are supposed to do. Reporting Power is handled by loop.
@@ -201,6 +213,15 @@ class RM0(S2ResourceManagerItem):
         self.service = service
         super().__init__(self.s2_path, [self.ct_ombc], self.asset_details)
 
+    
+    async def _destroy_connection(self):
+        await super()._destroy_connection()
+
+        #debug purpose: When we have a disconnect, simply restart the service. 
+        #this ensures the services are restarted with an eventually updated file.
+        logger.info("Connection destroyed, ending execution to allow service to restart.")
+        sys.exit(0)
+    
     async def loop(self):
         try:
             logger.info("loop...")
@@ -217,7 +238,8 @@ class RM0(S2ResourceManagerItem):
             jo_response = json.loads(response.content)
             power = jo_response["switch:1"]["apower"]
 
-            logger.info("Selected operation mode: {} @ {}W".format(self.ct_ombc.active_operation_mode.diagnostic_label, power))
+            op_label = self.ct_ombc.active_operation_mode.diagnostic_label if self.ct_ombc.active_operation_mode.diagnostic_label is not None else "None"
+            logger.info("Selected operation mode: {} @ {}W".format(op_label, power))
 
             await self.send_msg_and_await_reception_status(
                 PowerMeasurement(
