@@ -48,7 +48,7 @@ from s2python.validate_values_mixin import S2MessageComponent
 
 logger = logging.getLogger(__name__)
 
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 HUB4_SERVICE = "com.victronenergy.hub4"
 S2_IFACE = "com.victronenergy.S2"
@@ -1202,8 +1202,12 @@ class HEMS(SystemCalcDelegate):
 		)
 
 		if USE_FAKE_BMS:
-			self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Voltage", available_overhead.power.total)
-			self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Power", available_overhead.battery_rate)
+			try:
+				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Voltage", available_overhead.power.total)
+				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Power", available_overhead.battery_rate)
+				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Soc", available_overhead.battery_rate / available_overhead.battery_reservation * 100.0)
+			except:
+				pass
 
 		#Iterate over all known RMs, check their requirement and assign them a suitable Budget. 
 		#The RMDelegate is responsible to communicate with it's rm upon .comit() beeing called. 
@@ -1260,7 +1264,7 @@ class HEMS(SystemCalcDelegate):
 		l1 = (self._dbusservice["/Ac/PvOnGrid/L1/Power"] or 0) + (self._dbusservice["/Ac/PvOnOutput/L1/Power"] or 0) - (self._dbusservice["/Ac/Consumption/L1/Power"] or 0)
 		l2 = (self._dbusservice["/Ac/PvOnGrid/L2/Power"] or 0) + (self._dbusservice["/Ac/PvOnOutput/L2/Power"] or 0) - (self._dbusservice["/Ac/Consumption/L2/Power"] or 0)
 		l3 = (self._dbusservice["/Ac/PvOnGrid/L3/Power"] or 0) + (self._dbusservice["/Ac/PvOnOutput/L3/Power"] or 0) - (self._dbusservice["/Ac/Consumption/L3/Power"] or 0)
-		dcpv = (self._dbusservice["/Dc/Pv/Power"] or 0) * 0.9 #dcpv has a penalty of 0.9 when beeing turned into AC Consumption.
+		dcpv = (self._dbusservice["/Dc/Pv/Power"] or 0) * 0.95 #dcpv has a penalty of 0.9 when beeing turned into AC Consumption.
 		batrate = (self._dbusservice["/Dc/Battery/Power"] or 0)
 
 		#finally, we need to ADD power that is already beeing consumed by S2 Devices, because it will also be deducted in the Consumption-Values.

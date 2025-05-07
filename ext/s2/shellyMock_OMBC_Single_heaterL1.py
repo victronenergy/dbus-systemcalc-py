@@ -113,8 +113,8 @@ class OMBCT(OMBCControlType):
                     abnormal_condition_only=False,
                     power_ranges=[
                         PowerRange(
-                            start_of_range=1200,
-                            end_of_range=1200,
+                            start_of_range=1150,
+                            end_of_range=1150,
                             commodity_quantity=CommodityQuantity.ELECTRIC_POWER_L1
                         )
                     ]
