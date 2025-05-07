@@ -7,7 +7,7 @@ import logging
 import os
 import platform
 import uuid
-import requests 
+import requests #type:ignore
 import asyncio
 from datetime import datetime, timedelta, timezone
 import json
@@ -23,10 +23,17 @@ sys.path.insert(1, '/opt/victronenergy/dbus-systemcalc-py/ext/s2')
 sys.path.insert(1, '/opt/victronenergy/dbus-systemcalc-py/ext/velib_python')
 sys.path.insert(1, '/opt/victronenergy/dbus-systemcalc-py/ext/aiovelib')
 
+if sys.version_info.major == 2:
+    import gobject # type: ignore
+else:
+    from gi.repository import GLib as gobject # type: ignore
+
 from dbusmonitor import DbusMonitor # type: ignore
 from dbus.mainloop.glib import DBusGMainLoop # type: ignore
 from aiovelib.service import IntegerItem, TextItem, DoubleItem
 from aiovelib.service import Service
+import asyncio_glib #type:ignore
+asyncio.set_event_loop_policy(asyncio_glib.GLibEventLoopPolicy())
 
 #s2 related stuff
 from s2 import S2ResourceManagerItem
@@ -86,47 +93,51 @@ class OMBCT(OMBCControlType):
         logger.info("OMBC deactivated.")
     
     def handle_instruction(self, conn, msg, send_okay):
-        logger.info("Instruction received: {}".format(msg))
-        prior_id = "{}".format(self.active_operation_mode.id) if self.active_operation_mode is not None else None
+        try:
+            #logger.info("Instruction received: {}".format(msg))
+            prior_id = "{}".format(self.active_operation_mode.id) if self.active_operation_mode is not None else None
 
-        for op_mode in self.rm_item.system_description.operation_modes:
-            if op_mode.id == msg.operation_mode_id:
-                self.active_operation_mode = op_mode
-                break
+            for op_mode in self.rm_item.system_description.operation_modes:
+                if op_mode.id == msg.operation_mode_id:
+                    logger.info("Instruction received: {}".format(op_mode.diagnostic_label))
+                    self.active_operation_mode = op_mode
+                    break
 
-        self.rm_item._send_and_forget(
-            OMBCStatus(
-                message_id=uuid.uuid4(),
-                active_operation_mode_id="{}".format(self.active_operation_mode.id),
-                previous_operation_mode_id=prior_id,
-                transition_timestamp=datetime.now(timezone.utc),
-                operation_mode_factor=msg.operation_mode_factor
+            self.rm_item._send_and_forget(
+                OMBCStatus(
+                    message_id=uuid.uuid4(),
+                    active_operation_mode_id="{}".format(self.active_operation_mode.id),
+                    previous_operation_mode_id=prior_id,
+                    transition_timestamp=datetime.now(timezone.utc),
+                    operation_mode_factor=msg.operation_mode_factor
+                )
             )
-        )
 
-        if self.active_operation_mode is not None:
-            #Here we actually do, what we are supposed to do. Reporting Power is handled by loop.
-            if msg.active_operation_mode_id == self.rm_item.stand_by_id:
-                #if charging, stop.
-                if self.rm_item.dbus_monitor.get_value(EVCS_SERVICE, "/StartStop") != 0:
-                    logger.info("Sending Stop!")
-                    self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/StartStop", 0)
-            elif msg.active_operation_mode_id == self.rm_item.no_car_id:
-                #nothing todo, ensure off tho.
-                if self.rm_item.dbus_monitor.get_value(EVCS_SERVICE, "/StartStop") != 0:
-                    logger.info("Sending Stop!")
-                    self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/StartStop", 0)
-            else:
-                #check, if a chargemode is selected - then verify the EVCS is running and select the proper amps.
-                amps = self.rm_item.charge_mode_map[msg.active_operation_mode_id]
-                if amps is not None:
-                    logger.info("Setting amps to {}".format(amps))
-                    self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/SetCurrent", amps)
+            if self.active_operation_mode is not None:
+                #Here we actually do, what we are supposed to do. Reporting Power is handled by loop.
+                if msg.operation_mode_id == self.rm_item.stand_by_id:
+                    #if charging, stop.
+                    if self.rm_item.dbus_monitor.get_value(EVCS_SERVICE, "/StartStop") != False:
+                        logger.info("Sending Stop!")
+                        self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/StartStop", False)
+                elif msg.operation_mode_id == self.rm_item.no_car_id:
+                    #nothing todo, ensure off tho.
+                    if self.rm_item.dbus_monitor.get_value(EVCS_SERVICE, "/StartStop") != False:
+                        logger.info("Sending Stop!")
+                        self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/StartStop", False)
+                else:
+                    #check, if a chargemode is selected - then verify the EVCS is running and select the proper amps.
+                    amps = self.rm_item.charge_mode_map[msg.operation_mode_id]
+                    if amps is not None:
+                        logger.info("Setting amps to {}".format(amps))
+                        self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/SetCurrent", amps)
 
-                    #verify we are charging, else send Start.
-                    if self.rm_item.dbus_monitor.get_value(EVCS_SERVICE, "/StartStop") != 1:
-                        logger.info("Sending Start!")
-                        self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/StartStop", 1)
+                        #verify we are charging, else send Start.
+                        if self.rm_item.dbus_monitor.get_value(EVCS_SERVICE, "/StartStop") != True:
+                            logger.info("Sending Start!")
+                            self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/StartStop", True)
+        except Exception as ex:
+            logger.error("Error in handle_instructions", exc_info=ex)
 
 class CTNOCTRL(NoControlControlType):
     def __init__(self, rm_item:S2ResourceManagerItem):
@@ -164,12 +175,18 @@ class RM0(S2ResourceManagerItem):
                 "/SetCurrent" : dummy,
                 "/Ac/L1/Power" : dummy,
                 "/Ac/L2/Power" : dummy,
-                "/Ac/L3/Power" : dummy,
+                "/Ac/L3/Power" : dummy
             }
         })
 
         super().__init__(self.s2_path, [self.ct_noctrl, self.ct_ombc], self.asset_details)
         
+    def _dbusValueChanged(self, dbusServiceName, dbusPath, dict, changes, deviceInstance):
+        try:
+            logger.info(self, "Change on dbus for {0} (new value: {1})".format(dbusServiceName, changes['Value'])) 
+        except Exception as ex:
+            logger.error("Exception", exc_info=ex)
+
     def generate_operation_modes(self):
         #Generate the OperationModes and Transitions. We use the states
         #Standby, NoCar, 6A - 16A
@@ -366,197 +383,234 @@ class RM0(S2ResourceManagerItem):
         sys.exit(0)
 
     async def loop(self):
-        # check if car is connected or if we are charging.
-        self.evcs_mode = self.dbus_monitor.get_value(EVCS_SERVICE, "/Status")
-        car_connected = self.evcs_mode > 0
+        try:
+            # check if car is connected or if we are charging.
+            self.evcs_mode = self.dbus_monitor.get_value(EVCS_SERVICE, "/Status")
+            car_connected = self.evcs_mode > 0
 
-        if self._current_control_type == self.ct_ombc:
-            if (self.car_connected is None or self.car_connected != car_connected):
-                #State changed, need to update operation modes available.
-                #TODO: Need to handle when car is fully charged.
-                self.car_connected = car_connected
-                self.stand_by_id = uuid.uuid4()
-                self.no_car_id = uuid.uuid4()
+            if self._current_control_type == self.ct_ombc:
+                if (self.car_connected is None or self.car_connected != car_connected):
+                    #State changed, need to update operation modes available.
+                    #TODO: Need to handle when car is fully charged.
+                    self.car_connected = car_connected
+                    self.stand_by_id = uuid.uuid4()
+                    self.no_car_id = uuid.uuid4()
 
-                if self.car_connected:
-                    #Standby + All amp states
-                    logger.info("Car connected. Offering Standby and a State per Amp")
+                    if self.car_connected:
+                        #Standby + All amp states
+                        logger.info("Car connected. Offering Standby and a State per Amp")
 
-                    operation_modes_temp=[
-                        OMBCOperationMode(
-                            id=self.stand_by_id,
-                            diagnostic_label="Standby",
-                            abnormal_condition_only=False,
-                            power_ranges=[
-                                PowerRange(
-                                    start_of_range=0,
-                                    end_of_range=0,
-                                    commodity_quantity=CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC
-                                )
-                            ]
-                        )
-                    ]
-
-                    #EVCS would get this from settings. (Charging with 6-16A)
-                    self.charge_mode_map.clear()
-                    for a in range(6,17):
-                        op_mode_id = uuid.uuid4()
-                        self.charge_mode_map[op_mode_id] = a
-                        operation_modes_temp.append(
+                        operation_modes_temp=[
                             OMBCOperationMode(
-                                id=op_mode_id,
-                                diagnostic_label="Charge {} A".format(a),
+                                id=self.stand_by_id,
+                                diagnostic_label="Standby",
                                 abnormal_condition_only=False,
                                 power_ranges=[
                                     PowerRange(
-                                        start_of_range=a * 240 * 3, #3 phased charging.
-                                        end_of_range=a * 240 * 3,
+                                        start_of_range=0,
+                                        end_of_range=0,
                                         commodity_quantity=CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC
                                     )
                                 ]
-                            )   
-                        )
-                    
-                    self.on_off_timer_id = uuid.uuid4()
-                    self.amp_switch_timer_id = uuid.uuid4()
+                            )
+                        ]
 
-                    timers_temp = [
-                        Timer(
-                            id = self.on_off_timer_id,
-                            diagnostic_label="On/Off Hysteresis 300s",
-                            duration=300*1000
-                        ),
-                        Timer(
-                            id = self.amp_switch_timer_id,
-                            diagnostic_label="Amp Switch Delay",
-                            duration=30*1000
-                        )
-                    ]
+                        #EVCS would get this from settings. (Charging with 6-16A)
+                        self.charge_mode_map.clear()
+                        for a in range(6,17):
+                            op_mode_id = uuid.uuid4()
+                            self.charge_mode_map[op_mode_id] = a
+                            operation_modes_temp.append(
+                                OMBCOperationMode(
+                                    id=op_mode_id,
+                                    diagnostic_label="Charge {} A".format(a),
+                                    abnormal_condition_only=False,
+                                    power_ranges=[
+                                        PowerRange(
+                                            start_of_range=a * 240 * 3, #3 phased charging.
+                                            end_of_range=a * 240 * 3,
+                                            commodity_quantity=CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC
+                                        )
+                                    ]
+                                )   
+                            )
+                        
+                        self.on_off_timer_id = uuid.uuid4()
+                        self.amp_switch_timer_id = uuid.uuid4()
 
-                    #Now, we need the transitions. We want a 30 second delay for adjusting the ChargeCurrent. 
-                    #And we want a 5 Minute histerysis between Standby and any other state. 
-                    transitions_temp = []
-                    for left in operation_modes_temp:
-                        for right in operation_modes_temp:
-                            if left.id != right.id:
-                                if left.id == self.stand_by_id or right.id == self.stand_by_id:
-                                    #transition to or from standby, use 5 min hysteresis
-                                    transitions_temp.append(
-                                        Transition(
-                                            id=uuid.uuid4(),
-                                            from_=left.id,
-                                            to=right.id,
-                                            start_timers=[self.on_off_timer_id],
-                                            blocking_timers=[self.on_off_timer_id],
-                                            transition_duration=10000,
-                                            abnormal_condition_only=False,
-                                            transition_costs=None
-                                        ) 
-                                    )
-                                else:
-                                    #transition between ampstates, use 30 seconds hysteris.
-                                    transitions_temp.append(
-                                        Transition(
-                                            id=uuid.uuid4(),
-                                            from_=left.id,
-                                            to=right.id,
-                                            start_timers=[self.amp_switch_timer_id],
-                                            blocking_timers=[self.amp_switch_timer_id],
-                                            transition_duration=2000,
-                                            abnormal_condition_only=False,
-                                            transition_costs=None
-                                        ) 
-                                    )
+                        timers_temp = [
+                            Timer(
+                                id = self.on_off_timer_id,
+                                diagnostic_label="On/Off Hysteresis 300s",
+                                duration=300*1000
+                            ),
+                            Timer(
+                                id = self.amp_switch_timer_id,
+                                diagnostic_label="Amp Switch Delay",
+                                duration=15*1000
+                            )
+                        ]
 
-                    self.system_description = OMBCSystemDescription(
-                        message_id=uuid.uuid4(),
-                        valid_from=datetime.now(timezone.utc),
-                        operation_modes=operation_modes_temp,
-                        transitions=transitions_temp,
-                        timers=timers_temp
-                    )
+                        #Now, we need the transitions. We want a 15 second delay for adjusting the ChargeCurrent. 
+                        #And we want a 5 Minute histerysis between Standby and any other state. 
+                        #Transitions should onl be possible: Standby <-> 6 <-> 7 <-> ... <-> 15 <-> 16
+                        #(So the EVCS can't jump from 6 to 16 or vice versa during operation.)
+                        transitions_temp = []
+                        for left in operation_modes_temp:
+                            for right in operation_modes_temp:
+                                if left.id != right.id: #transitions to self, we don't need.
+                                    if left.id == self.stand_by_id:
+                                        #transition to or from standby, use 5 min hysteresis.
+                                        #only legit to the 6A State.
+                                        if self.charge_mode_map[right.id] == 6:
+                                            logger.info("Creating transition from '{}' to '{}' with 5min Hysteresis".format(left.diagnostic_label, right.diagnostic_label))
+                                            transitions_temp.append(
+                                                Transition(
+                                                    id=uuid.uuid4(),
+                                                    from_=left.id,
+                                                    to=right.id,
+                                                    start_timers=[self.on_off_timer_id],
+                                                    blocking_timers=[self.on_off_timer_id],
+                                                    transition_duration=10000,
+                                                    abnormal_condition_only=False,
+                                                    transition_costs=None
+                                                ) 
+                                            )
+                                    elif right.id == self.stand_by_id:
+                                        #transition to or from standby, use 5 min hysteresis.
+                                        #only legit to the 6A State.
+                                        if self.charge_mode_map[left.id] == 6:
+                                            logger.info("Creating transition from '{}' to '{}' with 5min Hysteresis".format(left.diagnostic_label, right.diagnostic_label))
+                                            transitions_temp.append(
+                                                Transition(
+                                                    id=uuid.uuid4(),
+                                                    from_=left.id,
+                                                    to=right.id,
+                                                    start_timers=[self.on_off_timer_id],
+                                                    blocking_timers=[self.on_off_timer_id],
+                                                    transition_duration=10000,
+                                                    abnormal_condition_only=False,
+                                                    transition_costs=None
+                                                ) 
+                                            )
+                                    else:
+                                        #transition between ampstates, use 30 seconds hysteris.
+                                        #only legit, if amp difference is 1 between both states. 
+                                        left_amp = self.charge_mode_map[left.id]
+                                        right_amp = self.charge_mode_map[right.id]
 
-                    await self.send_msg_and_await_reception_status(self.system_description)
+                                        if (abs(left_amp - right_amp) == 1):
+                                            logger.info("Creating transition from '{}' to '{}' with 15s Hysteresis".format(left.diagnostic_label, right.diagnostic_label))
+                                            transitions_temp.append(
+                                                Transition(
+                                                    id=uuid.uuid4(),
+                                                    from_=left.id,
+                                                    to=right.id,
+                                                    start_timers=[self.amp_switch_timer_id],
+                                                    blocking_timers=[self.amp_switch_timer_id],
+                                                    transition_duration=2000,
+                                                    abnormal_condition_only=False,
+                                                    transition_costs=None
+                                                ) 
+                                            )
 
-                    await self.send_msg_and_await_reception_status(
-                        OMBCStatus(
+                        self.system_description = OMBCSystemDescription(
                             message_id=uuid.uuid4(),
-                            active_operation_mode_id="{}".format(self.stand_by_id),
-                            operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+                            valid_from=datetime.now(timezone.utc),
+                            operation_modes=operation_modes_temp,
+                            transitions=transitions_temp,
+                            timers=timers_temp
                         )
-                    )
 
-                    for opm in self.system_description.operation_modes:
-                        if opm.id == self.no_car_id:
-                            self.active_operation_mode = opm
+                        await self.send_msg_and_await_reception_status(self.system_description)
 
-                    #that should be it.
-                else:
-                    #Only offer NoCar.
-                    self.no_car_id = uuid.uuid4()
-
-                    operation_modes_temp=[
-                        OMBCOperationMode(
-                            id=self.no_car_id,
-                            diagnostic_label="No Car",
-                            abnormal_condition_only=False,
-                            power_ranges=[
-                                PowerRange(
-                                    start_of_range=0,
-                                    end_of_range=0,
-                                    commodity_quantity=CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC
-                                )
-                            ]
+                        await self.send_msg_and_await_reception_status(
+                            OMBCStatus(
+                                message_id=uuid.uuid4(),
+                                active_operation_mode_id="{}".format(self.stand_by_id),
+                                operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+                            )
                         )
-                    ]
 
-                    #Control Type has been selected by CEM. Advertise OperationModes.
-                    self.system_description = OMBCSystemDescription(
-                        message_id=uuid.uuid4(),
-                        valid_from=datetime.now(timezone.utc),
-                        operation_modes=operation_modes_temp,
-                        transitions=[],
-                        timers=[]
-                    )
+                        for opm in self.system_description.operation_modes:
+                            if opm.id == self.no_car_id:
+                                self.active_operation_mode = opm
 
-                    logger.info("Only offering 'NoCar' Mode.")
-                    await self.send_msg_and_await_reception_status(self.system_description)
+                        #that should be it.
+                    else:
+                        #Only offer NoCar.
+                        self.no_car_id = uuid.uuid4()
 
-                    await self.send_msg_and_await_reception_status(
-                        OMBCStatus(
+                        operation_modes_temp=[
+                            OMBCOperationMode(
+                                id=self.no_car_id,
+                                diagnostic_label="No Car",
+                                abnormal_condition_only=False,
+                                power_ranges=[
+                                    PowerRange(
+                                        start_of_range=0,
+                                        end_of_range=0,
+                                        commodity_quantity=CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC
+                                    )
+                                ]
+                            )
+                        ]
+
+                        #Control Type has been selected by CEM. Advertise OperationModes.
+                        self.system_description = OMBCSystemDescription(
                             message_id=uuid.uuid4(),
-                            active_operation_mode_id="{}".format(self.no_car_id),
-                            operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+                            valid_from=datetime.now(timezone.utc),
+                            operation_modes=operation_modes_temp,
+                            transitions=[],
+                            timers=[]
                         )
+
+                        logger.info("Only offering 'NoCar' Mode.")
+                        await self.send_msg_and_await_reception_status(self.system_description)
+
+                        await self.send_msg_and_await_reception_status(
+                            OMBCStatus(
+                                message_id=uuid.uuid4(),
+                                active_operation_mode_id="{}".format(self.no_car_id),
+                                operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+                            )
+                        )
+
+                        for opm in self.system_description.operation_modes:
+                            if opm.id == self.no_car_id:
+                                self.active_operation_mode = opm
+
+                        #that should be it.
+
+                l1_power = self.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L1/Power") or 0.0
+                l2_power = self.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L2/Power") or 0.0
+                l3_power = self.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L3/Power") or 0.0
+                set_current = self.dbus_monitor.get_value(EVCS_SERVICE, "/SetCurrent") or 0
+
+                logger.info("Reporting power: {}/{}/{} (Current: {})".format(l1_power, l2_power, l3_power, set_current))
+
+                await self.send_msg_and_await_reception_status(
+                    PowerMeasurement(
+                        message_id=uuid.uuid4(),
+                        measurement_timestamp=datetime.now(timezone.utc),
+                        values = [
+                            PowerValue(
+                                commodity_quantity=CommodityQuantity.ELECTRIC_POWER_L1,
+                                value=l1_power
+                            ),
+                            PowerValue(
+                                commodity_quantity=CommodityQuantity.ELECTRIC_POWER_L2,
+                                value=l2_power
+                            ),
+                            PowerValue(
+                                commodity_quantity=CommodityQuantity.ELECTRIC_POWER_L3,
+                                value=l3_power
+                            )
+                        ]
                     )
-
-                    for opm in self.system_description.operation_modes:
-                        if opm.id == self.no_car_id:
-                            self.active_operation_mode = opm
-
-                    #that should be it.
-
-        #TODO: Implement Power Mode.
-        await self.send_msg_and_await_reception_status(
-            PowerMeasurement(
-                message_id=uuid.uuid4(),
-                measurement_timestamp=datetime.now(timezone.utc),
-                values = [
-                    PowerValue(
-                        commodity_quantity=CommodityQuantity.ELECTRIC_POWER_L1,
-                        value=self.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L1/Power", 0)
-                    ),
-                    PowerValue(
-                        commodity_quantity=CommodityQuantity.ELECTRIC_POWER_L2,
-                        value=self.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L2/Power", 0)
-                    ),
-                    PowerValue(
-                        commodity_quantity=CommodityQuantity.ELECTRIC_POWER_L3,
-                        value=self.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L3/Power", 0)
-                    )
-                ]
-            )
-        )
+                )
+        except Exception as ex:
+            logger.error("Exception in loop: ", exc_info=ex)
     
     async def _on_s2_message(self, message):
         #FIXME: Current S2 Implementation uses S2Parser, which fails for certain messages. So, we have to 
@@ -601,7 +655,7 @@ class EVCSMock(Service):
 
     async def _loop(self):
         while True:
-            await asyncio.sleep(5) #validate operation constraints every 10 seconds. 
+            await asyncio.sleep(2)
             await self.rm0.loop()
 
 def configure_logger():
@@ -627,6 +681,9 @@ if __name__ == "__main__":
         from dbus_next.constants import BusType
 
     async def main():
+        from dbus.mainloop.glib import DBusGMainLoop # type: ignore
+        DBusGMainLoop(set_as_default=True)
+
         configure_logger()
         instance = 920
         bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
@@ -655,8 +712,8 @@ if __name__ == "__main__":
 
         #finally register our service.
         await service.register()
-
         asyncio.get_event_loop().create_task(service._loop())
+        
         await service.bus.wait_for_disconnect()
     
     asyncio.get_event_loop().run_until_complete(main())

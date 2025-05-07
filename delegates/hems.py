@@ -258,7 +258,7 @@ class SolarOverhead():
 		self.transaction_running = True
 	
 	def claim(self, commodity_quantity:CommodityQuantity, minv:float, maxv:float, 
-		   	  claim_type:ClaimType, ctrl_type:ControlType, primary:bool)->bool:
+		   	  claim_type:ClaimType, ctrl_type:ControlType, primary:bool, force:bool=False)->bool:
 		"""
 			Claims a bunch of power. Returns true on success, false on error. If the requirements of an RM are satisfied,
 			call comit() which returns a PhaseAwareFloat representing the powerclaim of the transaction.
@@ -276,8 +276,8 @@ class SolarOverhead():
 			if ctrl_type == ControlType.OPERATION_MODE_BASED_CONTROL:
 				#TODO: Factor needs to be generated for the OMBC! For now, we assume fixed values, i.e. factor = 1.0 
 				#find our power on l1/l2/l3, first, last consider dcpv. On ClaimType.Total, it doesn't matter where we source from.
-				logger.debug("Comparing Available budget {}W and claim {}W".format(max(self.power.total - self.power_reserved.total * rsrv, 0), maxv)) 				
-				if max(self.power.total - self.power_reserved.total * rsrv, 0) >= maxv:
+				logger.debug("Comparing Available budget {}W and claim {}W (forced? {})".format(max(self.power.total - self.power_reserved.total * rsrv, 0), maxv, force)) 				
+				if max(self.power.total - self.power_reserved.total * rsrv, 0) >= maxv or force:
 					#Even if it is a total claim, we need to allocate the claim to the proper phase.
 					#TODO need to distinguish between AC and DC Claim here. 
 					if commodity_quantity != CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC:
@@ -286,7 +286,7 @@ class SolarOverhead():
 					else:
 						for l in [1,2,3]:
 							self.power_claim.by_phase[l] = maxv / 3.0
-							self.power.by_phase[l] -= maxv
+							self.power.by_phase[l] -= maxv / 3.0
 
 					return True
 			else:
@@ -542,8 +542,8 @@ class S2RMDelegate():
 				logger.info("{} reported operation mode: '{}'".format(self.unique_identifier, self.ombc_active_operation_mode.diagnostic_label))
 
 				if USE_FAKE_BMS:
-					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{} [OMBC] @ {}".format(
-						self.rm_details.name, self.ombc_active_operation_mode.diagnostic_label
+					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{}: {} [OMBC] @ {}".format(
+						self.priority, self.rm_details.name, self.ombc_active_operation_mode.diagnostic_label
 					))
 
 				self._s2_send_reception_message(ReceptionStatusValues.OK, message)
@@ -577,8 +577,8 @@ class S2RMDelegate():
 			logger.warning("RM {} only offered NOCTRL, accepting.".format(self.unique_identifier))
 
 			if USE_FAKE_BMS:
-				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{} [NOCTRL] ".format(
-					self.rm_details.name
+				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{}: {} [NOCTRL] ".format(
+					self.priority, self.rm_details.name
 				))
 
 		else:
@@ -596,8 +596,8 @@ class S2RMDelegate():
 				logger.info("RM {} offered OMBC, accepting.".format(self.unique_identifier))
 
 				if USE_FAKE_BMS:
-					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{} [OMBC] ".format(
-						self.rm_details.name
+					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{}: {} [OMBC] ".format(
+						self.priority, self.rm_details.name
 					))
 			else:
 				#TODO: Implement other controltypes.
@@ -678,39 +678,76 @@ class S2RMDelegate():
 			logger.warning("No active operation mode known for {}".format(self.unique_identifier))	
 			return overhead
 
+		#Not every state may be reachable from within the current operation mode. 
+		#So, what we will do here is: 
+		# 1.) Get all States that are reachable or equal current state. 
+		# 2.) They are sorted expensive to cheap, so for self-consumption-optimization, we start probing the most expensive sate. 
+		# 3.) If we couldn't find any suitable state in 0 to n-2, we have to force state n-1 as that means: 
+		#      - There isn't enough overhead to enter more expensive states. 
+		#      - There isn't enough overhead to keep the current state. 
+		#      - hence, the last state in the list - cheapest one - is the one we will choose. 
+		eligible_operation_modes:list[OMBCOperationMode] = []
 		for opm in self.ombc_system_description.operation_modes:
 			if self._ombc_can_transition(self.ombc_active_operation_mode, opm):
-				overhead.begin()
-				for pr in opm.power_ranges:
-					#TODO: offgrid and on individual systems, consider phase-assignment.
-					if self._hems.system_type in [SystemType.GridConnected1Phase, SystemType.GridConnected2PhaseSaldating, 
-							SystemType.GridConnected3PhaseSaldating]:
-						claim_success = overhead.claim(pr.commodity_quantity, pr.start_of_range, pr.end_of_range, 
-							ClaimType.Total, self.active_control_type, self.consumer_type==ConsumerType.Primary)
-						if not claim_success:
-							#maximum assignment for this powerrange failed for at least one powerrange requested. This OperationMode is currently not eligible. 
-							logger.debug("Operation Mode not eligible: '{}' on {} due to missing availability on commodity: {}".format(opm.diagnostic_label, self.unique_identifier, pr.commodity_quantity))
-							overhead.rollback()
-							break
-				
-				if overhead.transaction_running:
-					#Managed to verify all power ranges and transaction still running? This mode is eligible! 
-					logger.debug("Operation Mode selected: '{}' on {}".format(opm.diagnostic_label, self.unique_identifier))
+				eligible_operation_modes.append(opm)
 
-					old_power_claim = self.power_claim
-					self.power_claim = overhead.comit()
-					logger.debug("Power-Claim: {}".format(self.power_claim))
+		logger.debug("Eligible States for consumer {}: {}".format(self.unique_identifier, 
+															[mode.diagnostic_label for mode in eligible_operation_modes]))
 
-					if (old_power_claim is not None and old_power_claim.total != self.power_claim.total):
-						logger.debug("Power Claim changed from {}W to {}W. Overhead now is: {}W".format(old_power_claim.total, self.power_claim.total, overhead.power.total))
+		#this is our last resort.
+		forced_state = eligible_operation_modes[len(eligible_operation_modes) -1]
+		logger.debug("Forced State for consumer {}: {}".format(self.unique_identifier, forced_state.diagnostic_label))
 
-					#store this operation_mode as beeing the next one to be send. EMS will call comit() on the RM-Delegate, 
-					#once it should inform the actual RM and send out a new instruction, if required. RM-Delegate has to 
-					#track if a (re-)send is required. 
-					self._ombc_next_operation_mode = opm
-					break
-			else:
-				logger.debug("Can't transition from {} to {}. Checking next.".format(self.ombc_active_operation_mode.diagnostic_label, opm.diagnostic_label))
+		for opm in eligible_operation_modes:
+			overhead.begin()
+			for pr in opm.power_ranges:
+				#TODO: offgrid and on individual systems, consider phase-assignment.
+				if self._hems.system_type in [SystemType.GridConnected1Phase, SystemType.GridConnected2PhaseSaldating, 
+						SystemType.GridConnected3PhaseSaldating]:
+					claim_success = overhead.claim(pr.commodity_quantity, pr.start_of_range, pr.end_of_range, 
+						ClaimType.Total, self.active_control_type, self.consumer_type==ConsumerType.Primary, 
+						opm.id == forced_state.id)
+					
+					if not claim_success:
+						#maximum assignment for this powerrange failed for at least one powerrange requested. This OperationMode is currently not eligible. 
+						logger.debug("Operation Mode not eligible: '{}' on {} due to missing availability on commodity: {}".format(opm.diagnostic_label, self.unique_identifier, pr.commodity_quantity))
+						overhead.rollback()
+						break
+			
+			if overhead.transaction_running:
+				#Managed to verify all power ranges and transaction still running? This mode is eligible! 
+				logger.debug("Operation Mode selected: '{}' on {}".format(opm.diagnostic_label, self.unique_identifier))
+
+				old_power_claim = self.power_claim
+				new_power_claim = overhead.comit()
+
+				logger.debug("Power-Claim: {}".format(new_power_claim))
+
+				if (old_power_claim is not None and old_power_claim.total != new_power_claim.total):
+					logger.debug("Power Claim changed from {}W to {}W. Overhead now is: {}W".format(old_power_claim.total, new_power_claim.total, overhead.power.total))
+
+				#store this operation_mode as beeing the next one to be send. EMS will call comit() on the RM-Delegate, 
+				#once it should inform the actual RM and send out a new instruction, if required. RM-Delegate has to 
+				#track if a (re-)send is required. 
+				self._ombc_next_operation_mode = opm
+
+				# When a consumer is going from a high to a low claim, but stuck in transition time - the overhead will already be considered
+				# unclaimed, other consumers will be enabled. This shouldn't happen, overhead needs to stay "blocked" until the consumer managed
+				# to reduce it's power consumption. Therefore, if the transition is blocked AND the new claim is smaller, we keep the target mode
+				# but revert the claim.  
+				if self._ombc_check_timer_block() > 0:
+					if (old_power_claim is not None and old_power_claim.total > new_power_claim.total):
+						logger.warning("Consumer {} is stuck in transition-timer. Reverting powerclaim from {} to {} until transition is possible.".format(
+							self.unique_identifier, new_power_claim.total, old_power_claim.total
+						))
+						self.power_claim = old_power_claim
+						overhead.power += new_power_claim
+						overhead.power -= old_power_claim
+				else:
+					#good to go, this will happen. keep the new claim. 
+					self.power_claim = new_power_claim
+
+				break
 		
 		#TODO: If we are here, and didn't find a proper operation mode with 0Watt - the client probably didn't report
 		#      one. So, let's see, if we can switch to a NOCTRL mode, if not, drop the connection.
@@ -781,22 +818,22 @@ class S2RMDelegate():
 					self._ombc_next_operation_mode = None
 
 					if USE_FAKE_BMS:
-						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{} [OMBC] @ {}".format(
-							self.rm_details.name, self.ombc_active_operation_mode.diagnostic_label
+						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{}: {} [OMBC] @ {}".format(
+							self.priority, self.rm_details.name, self.ombc_active_operation_mode.diagnostic_label
 						))
 				else:
 					if USE_FAKE_BMS:
 						self._reported_as_blocked = True
-						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{} [OMBC] @ {} ({}s)".format(
-							self.rm_details.name, self.ombc_active_operation_mode.diagnostic_label, seconds_blocked
+						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{}: {} [OMBC] @ {} ({}s)".format(
+							self.priority, self.rm_details.name, self.ombc_active_operation_mode.diagnostic_label, seconds_blocked
 						))
 			
 			else:
 				#No transition required. Make sure our BMS does not outline a blocking-timer information. 
 				if USE_FAKE_BMS:
 					if self._reported_as_blocked:
-						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{} [OMBC] @ {}".format(
-							self.rm_details.name, self.ombc_active_operation_mode.diagnostic_label
+						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{}: {} [OMBC] @ {}".format(
+							self.priority, self.rm_details.name, self.ombc_active_operation_mode.diagnostic_label
 						))
 						self._reported_as_blocked = False
 
@@ -927,6 +964,13 @@ class HEMS(SystemCalcDelegate):
 		#      They can appear in any service, but we don't want to list 20 eventual paths for every service :-(
 		#	   We need to subscribe to our own counter-settings as well, so dbusmonitor can perform async updates of
 		#      these values.
+
+		#TODO: Nicer way? Subscribe to 30 possible devices for now
+		topic_list = []
+		for i in range(0, 31):
+			topic_list.append('/Devices/{}/S2/Priority'.format(i))
+			topic_list.append('/Devices/{}/S2/ConsumerType'.format(i))
+
 		return [
 			('com.victronenergy.settings', [
 				'/Settings/CGwacs/Hub4Mode',
@@ -937,18 +981,7 @@ class HEMS(SystemCalcDelegate):
 				'/Settings/HEMS/Energy/Secondary/L2/Forward',
 				'/Settings/HEMS/Energy/Secondary/L3/Forward'
 			]),
-			('com.victronenergy.s2Mock', [
-				'/Devices/0/S2/Priority',
-				'/Devices/0/S2/ConsumerType',
-				'/Devices/1/S2/Priority',
-				'/Devices/1/S2/ConsumerType',
-				'/Devices/2/S2/Priority',
-				'/Devices/2/S2/ConsumerType',
-				'/Devices/3/S2/Priority',
-				'/Devices/3/S2/ConsumerType',
-				'/Devices/4/S2/Priority',
-				'/Devices/4/S2/ConsumerType'
-			]),
+			('com.victronenergy.s2Mock', topic_list),
 			('com.victronenergy.battery', [
 				'/CustomName'
 			])
@@ -1204,8 +1237,17 @@ class HEMS(SystemCalcDelegate):
 		if USE_FAKE_BMS:
 			try:
 				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Voltage", available_overhead.power.total)
-				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Power", available_overhead.battery_rate)
-				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Soc", available_overhead.battery_rate / available_overhead.battery_reservation * 100.0)
+
+				if available_overhead.battery_rate > -1 and available_overhead.battery_rate < 1:
+					#0 will make the power value be calculated. avoid that.
+					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Power", 1)
+				else:
+					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Power", available_overhead.battery_rate)
+								 
+				if available_overhead.battery_reservation > 0:
+					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Soc", available_overhead.battery_rate / available_overhead.battery_reservation * 100.0)
+				else:
+					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Soc", 0)
 			except:
 				pass
 
@@ -1216,12 +1258,12 @@ class HEMS(SystemCalcDelegate):
 		for unique_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority):
 			if delegate.initialized:
 				if delegate.active_control_type is not None and delegate.active_control_type != ControlType.NOT_CONTROLABLE:
-					logger.debug("RM {} is controllable: {}".format(unique_identifier, delegate.active_control_type))	
+					logger.debug("===== RM {} is controllable: {} =====".format(unique_identifier, delegate.active_control_type))	
 					available_overhead = delegate.self_assign_overhead(available_overhead)
 				else:
-					logger.debug("RM {} is uncontrollable: {}".format(unique_identifier, delegate.active_control_type))	
+					logger.debug("===== RM {} is uncontrollable: {} =====".format(unique_identifier, delegate.active_control_type))	
 			else:
-				logger.debug("RM {} is not yet initialized.".format(unique_identifier))
+				logger.debug("===== RM {} is not yet initialized. =====".format(unique_identifier))
 
 		logger.debug("All assignments done. Comiting states.")
 		for unique_identifier, delegate in self.managed_rms.items():
@@ -1276,10 +1318,11 @@ class HEMS(SystemCalcDelegate):
 					#Check, if the consumer is about to turn off (0-Power-Claim) - then we don't add
 					#the current consumption, it is about to turn off cause not enough energy, so current consumption
 					#of the consumer shall not be considered available overhead. 
-					if delegate.power_claim is not None and delegate.power_claim.total > 0:
-						l1 += delegate.current_power.l1
-						l2 += delegate.current_power.l2
-						l3 += delegate.current_power.l3
+					#TODO: above comment causing issues, try without.
+					#if delegate.power_claim is not None and delegate.power_claim.total > 0:
+					l1 += delegate.current_power.l1
+					l2 += delegate.current_power.l2
+					l3 += delegate.current_power.l3
 
 		#Init of SolarOverhead will take care to apply reservation constraints
 		return SolarOverhead(

@@ -7,7 +7,7 @@ import logging
 import os
 import platform
 import uuid
-import requests 
+import requests  #type:ignore
 import dbus # type: ignore
 from datetime import datetime, timedelta, timezone
 import json

@@ -7,7 +7,7 @@ import logging
 import os
 import platform
 import uuid
-import requests 
+import requests #type:ignore
 import asyncio
 from datetime import datetime, timedelta, timezone
 import json
@@ -59,7 +59,7 @@ from s2python.ombc import (
     OMBCTimerStatus
 )
 
-def spam_web_request(url):
+def spam_web_request(url)->str:
     """
         Sometimes web requests on wifi shellies time out.
         This is a dirty helper to repeat such a request until successfull,
@@ -69,6 +69,7 @@ def spam_web_request(url):
         try:
             response = requests.get(url)
             if response.status_code == 200:
+                return response.content
                 break
         
         except Exception as ex:
@@ -155,31 +156,32 @@ class OMBCT(OMBCControlType):
         
         #OMBC has just been activated. Check, which state our shelly has, 
         #report the proper state initially. 
-        response = requests.get("http://{}/rpc/Switch.GetStatus?id={}".format(
+        response = spam_web_request("http://{}/rpc/Switch.GetStatus?id={}".format(
             self.rm.ip_address, self.rm.shelly_port)
         )
 
-        if response.status_code == 200:
-            jresponse = json.loads(response.content)
-            if jresponse["output"]:
-                #device is on
-                #FIXME: OMBCStatus is having a wrong datatype for active_operation_mode_id. Need to format as string.
-                self.rm.send_msg_and_await_reception_status_sync(
-                    OMBCStatus(
-                        message_id=uuid.uuid4(),
-                        active_operation_mode_id="{}".format(self.op_mode_on.id),
-                        operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
-                    )
+        jresponse = json.loads(response)
+        if jresponse["output"]:
+            #device is on
+            #FIXME: OMBCStatus is having a wrong datatype for active_operation_mode_id. Need to format as string.
+            self.rm.publish_power_report(jresponse["apower"])
+            self.rm.send_msg_and_await_reception_status_sync(
+                OMBCStatus(
+                    message_id=uuid.uuid4(),
+                    active_operation_mode_id="{}".format(self.op_mode_on.id),
+                    operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
                 )
-            else:
-                #device is off.
-                self.rm.send_msg_and_await_reception_status_sync(
-                    OMBCStatus(
-                        message_id=uuid.uuid4(),
-                        active_operation_mode_id="{}".format(self.op_mode_off.id),
-                        operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
-                    )
+            )
+        else:
+            #device is off.
+            self.rm.send_msg_and_await_reception_status_sync(
+                OMBCStatus(
+                    message_id=uuid.uuid4(),
+                    active_operation_mode_id="{}".format(self.op_mode_off.id),
+                    operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
                 )
+            )
+
 
         #That's it. reaction to switching opmodes by the EMS will happen in handle_instruction.
     
@@ -222,7 +224,7 @@ class OMBCT(OMBCControlType):
                         self.rm.ip_address, self.rm.shelly_port))
                     
         except Exception as ex:
-            self.rm.log_error("Exception during handle_instruction", exc_info=ex)
+            self.rm.log_error("Exception during handle_instruction", ex)
 
 class NOCTRL(NoControlControlType):
     def __init__(self, rm:S2ResourceManagerItem):
@@ -255,9 +257,7 @@ class UnifiedHttpShellyRM(S2ResourceManagerItem):
         self.off_hysteresis = Duration.from_milliseconds(off_hysteresis * 1000)
         self.can_be_controlled = can_be_controlled
 
-        #required for last powe report.
-        self.pushing_power = False
-
+        self.last_power_reported = 0
         self.ct_ombc = OMBCT(self)
         self.ct_no_ctrl = NOCTRL(self)
         
@@ -282,79 +282,56 @@ class UnifiedHttpShellyRM(S2ResourceManagerItem):
         self._current_control_type = self.ct_no_ctrl
     
     async def loop_power_report(self):
-        #report consumption. only needs to be done, when OMBC is enabled
-        #and state is On. Just make sure, we send a last 0 Watt Report, when
-        #transitioning to Off.
-        if self.is_connected and self._current_control_type == self.ct_ombc and \
-            self.ct_ombc.active_operation_mode is not None and \
-            self.ct_ombc.active_operation_mode.diagnostic_label=="On":
-
-            self.pushing_power=True
-
-            response = requests.get("http://{}/rpc/Switch.GetStatus?id={}".format(
+        #report consumption. 
+        if self.is_connected:
+            response = spam_web_request("http://{}/rpc/Switch.GetStatus?id={}".format(
                 self.ip_address, self.shelly_port)
             )
 
-            if response.status_code == 200:
-                jresponse = json.loads(response.content)
+            jresponse = json.loads(response)
+            await self.publish_power_report(jresponse["apower"])
 
-                await self.send_msg_and_await_reception_status(
-                    PowerMeasurement(
-                        message_id=uuid.uuid4(),
-                        measurement_timestamp=datetime.now(timezone.utc),
-                        values = [
-                            PowerValue(
-                                commodity_quantity=self.phase,
-                                value=jresponse["apower"]
-                            )
-                        ]
+    async def publish_power_report(self, v):
+        self.last_power_reported = v
+
+        await self.send_msg_and_await_reception_status(
+            PowerMeasurement(
+                message_id=uuid.uuid4(),
+                measurement_timestamp=datetime.now(timezone.utc),
+                values = [
+                    PowerValue(
+                        commodity_quantity=self.phase,
+                        value=v
                     )
-                )
-        else:
-            #send 0 power, just transitioned to off or noctrl.
-            if self.pushing_power:
-                self.pushing_power = False
-                await self.send_msg_and_await_reception_status(
-                    PowerMeasurement(
-                        message_id=uuid.uuid4(),
-                        measurement_timestamp=datetime.now(timezone.utc),
-                        values = [
-                            PowerValue(
-                                commodity_quantity=self.phase,
-                                value=0
-                            )
-                        ]
-                    )
-                )
-
-                #For the Sake of this mock, ensure consumer is off.
-                #Doesn't hurt to be called twice if in doubt. 
-                spam_web_request("http://{}/rpc/Switch.Set?on=false&id={}".format(
-                        self.ip_address, self.shelly_port))
-
+                ]
+            )
+        )
 
     async def loop_conditions(self):
         if self.is_connected:
-            #Connected, check if this shelly can currently be controlled.
-            #If yes, ensure OMBC is offered, else offer only noctrl.
-            #Rest is handled in the ControlType-Implementations.
-            if self.can_be_controlled():
-                if self._current_control_type != self.ct_ombc:
-                    #Offer OMBC control.
-                    self.log_info("Offering OMBC...")
-                    #FIXME: Until Fixed by PT, we need to update the internal control type map as well
-                    self.control_types = [self.ct_ombc]
-                    await self.send_msg_and_await_reception_status(
-                        self.asset_details.to_resource_manager_details([self.ct_ombc])
-                    )
-            else:
-                if self._current_control_type != self.ct_no_ctrl:
-                    self.log_info("Offering NOCTRL...")
-                    #FIXME: Until Fixed by PT, we need to update the internal control type map as well
-                    self.control_types = [self.ct_no_ctrl]
-                    await self.send_msg_and_await_reception_status(
-                        self.asset_details.to_resource_manager_details([self.ct_no_ctrl])
-                    )
+            try:
+                #Connected, check if this shelly can currently be controlled.
+                #If yes, ensure OMBC is offered, else offer only noctrl.
+                #Rest is handled in the ControlType-Implementations.
+                if self.can_be_controlled():
+                    if self._current_control_type != self.ct_ombc:
+                        #Offer OMBC control.
+                        self.log_info("Offering OMBC...")
+                        #FIXME: Until Fixed by PT, we need to update the internal control type map as well
+                        self.control_types = [self.ct_ombc]
+                        await self.send_msg_and_await_reception_status(
+                            self.asset_details.to_resource_manager_details([self.ct_ombc])
+                        )
+                else:
+                    if self._current_control_type != self.ct_no_ctrl:
+                        self.log_info("Offering NOCTRL...")
+                        #FIXME: Until Fixed by PT, we need to update the internal control type map as well
+                        self.control_types = [self.ct_no_ctrl]
+                        await self.send_msg_and_await_reception_status(
+                            self.asset_details.to_resource_manager_details([self.ct_no_ctrl])
+                        )
+            except Exception as ex:
+                self.log_error("Error in loop_conditions", ex)
 
     def log_info(self, msg):
         logger.info("[{} @ RM{}]: {}".format(self.custom_name, self.rm_no, msg))
@@ -387,7 +364,7 @@ class ShellyMockService(Service):
     
     def __init__(self, bus, name, instance):
         self.instance = instance
-        self.shelly_ios:list(UnifiedHttpShellyRM) = None
+        self.shelly_ios:list[UnifiedHttpShellyRM] = None
         super().__init__(bus, "{}.m_{}".format(name, instance))
 
     def setup_shellies(self):
