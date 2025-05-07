@@ -255,6 +255,9 @@ class UnifiedHttpShellyRM(S2ResourceManagerItem):
         self.off_hysteresis = Duration.from_milliseconds(off_hysteresis * 1000)
         self.can_be_controlled = can_be_controlled
 
+        #required for last powe report.
+        self.pushing_power = False
+
         self.ct_ombc = OMBCT(self)
         self.ct_no_ctrl = NOCTRL(self)
         
@@ -286,6 +289,8 @@ class UnifiedHttpShellyRM(S2ResourceManagerItem):
             self.ct_ombc.active_operation_mode is not None and \
             self.ct_ombc.active_operation_mode.diagnostic_label=="On":
 
+            self.pushing_power=True
+
             response = requests.get("http://{}/rpc/Switch.GetStatus?id={}".format(
                 self.ip_address, self.shelly_port)
             )
@@ -305,6 +310,28 @@ class UnifiedHttpShellyRM(S2ResourceManagerItem):
                         ]
                     )
                 )
+        else:
+            #send 0 power, just transitioned to off or noctrl.
+            if self.pushing_power:
+                self.pushing_power = False
+                await self.send_msg_and_await_reception_status(
+                    PowerMeasurement(
+                        message_id=uuid.uuid4(),
+                        measurement_timestamp=datetime.now(timezone.utc),
+                        values = [
+                            PowerValue(
+                                commodity_quantity=self.phase,
+                                value=0
+                            )
+                        ]
+                    )
+                )
+
+                #For the Sake of this mock, ensure consumer is off.
+                #Doesn't hurt to be called twice if in doubt. 
+                spam_web_request("http://{}/rpc/Switch.Set?on=false&id={}".format(
+                        self.ip_address, self.shelly_port))
+
 
     async def loop_conditions(self):
         if self.is_connected:
