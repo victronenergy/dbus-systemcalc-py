@@ -975,6 +975,13 @@ class Dvcc(SystemCalcDelegate):
 		self._dbusservice.add_path('/Dvcc/Alarms/FirmwareInsufficient', value=0)
 		self._dbusservice.add_path('/Dvcc/Alarms/MultipleBatteries', value=0)
 
+		# Side effect of a BMS voltage change, is that the bms changed callback
+		# is called. In that case, set the tickcount to 1 so that the period
+		# tasks run as quickly as possible.
+		def reset_ticker(*args):
+			self._tickcount = 1
+		BatteryService.instance.add_bms_changed_callback(reset_ticker)
+
 	def device_added(self, service, instance, do_service_change=True):
 		service_type = service.split('.')[2]
 		if service_type == 'solarcharger':
