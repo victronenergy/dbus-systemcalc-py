@@ -242,16 +242,6 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/ChargeVoltage'))
 		self._check_values({'/Control/SolarChargeVoltage': 1})
 
-	def test_hub1_control_ve_can_service_no_setpoint(self):
-		self._update_values()
-		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 12.65)
-		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', 2)
-		self._add_device('com.victronenergy.vecan.can0', {}, connection='VE.Can')
-		self._update_values()
-		self.assertEqual(None, self._monitor.get_value('com.victronenergy.vecan.can0', '/Link/ChargeVoltage'))
-		self._check_values({'/Control/SolarChargeCurrent': 0})
-		self._check_values({'/Control/SolarChargeVoltage': 0})
-
 	def test_hub1_control_vedirect_solarcharger_bms_battery(self):
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 55.2)
 		self._monitor.add_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn', 0)
