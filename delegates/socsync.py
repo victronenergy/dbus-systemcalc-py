@@ -3,6 +3,9 @@ from delegates.base import SystemCalcDelegate
 from delegates.multi import Multi
 from sc_utils import safeadd
 
+def service_is_battery(self, service):
+	return service.split('.')[2] == 'battery'
+
 class SocSync(SystemCalcDelegate):
 	""" This is similar to VebusSocWriter, but for InverterRS. """
 	def __init__(self, sc):
@@ -36,10 +39,12 @@ class SocSync(SystemCalcDelegate):
 
 	def update_values(self, newvalues):
 		# Sync SOC with all non-VE.Bus inverter-chargers
-		if self.systemcalc.batteryservice is not None:
-			origin = self._dbusmonitor.get_value(self.systemcalc.batteryservice, '/Mgmt/Connection')
+		batteryservice = self.systemcalc.batteryservice
+		if batteryservice is not None:
+			origin = self._dbusmonitor.get_value(batteryservice, '/Mgmt/Connection')
 			soc = newvalues.get('/Dc/Battery/Soc', None)
-			if soc is not None and origin and origin != 'VE.Can':
+			if soc is not None and origin and (
+					origin != 'VE.Can' or service_is_battery(batteryservice)):
 				for service in self.vecan:
 					# In case service goes down while we write, ignore
 					# exception
