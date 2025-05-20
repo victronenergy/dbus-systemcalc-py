@@ -260,7 +260,7 @@ class BatterySense(SystemCalcDelegate):
 		return service.split('.')[2] == 'battery'
 
 	def _service_on_vecan(self, service):
-		return self._dbusmonitor.get_value(service, '/Mgmt/Connection') == 'VE.Can'
+		return service.split('.')[2] == 'acsystem' or self._dbusmonitor.get_value(service, '/Mgmt/Connection') == 'VE.Can'
 
 	def _distribute_sense_voltage(self, has_vsense):
 		sense_voltage = self._dbusservice['/Dc/Battery/Voltage']
@@ -345,8 +345,7 @@ class BatterySense(SystemCalcDelegate):
 		# Forward isense to VE.Can only if it doesn't come from there
 		vecan = self._dbusmonitor.get_service_list('com.victronenergy.vecan')
 		if vecan:
-			sense_origin = self._dbusmonitor.get_value(sense_voltage_service, '/Mgmt/Connection')
-			if sense_origin and sense_origin != 'VE.Can':
+			if not self._service_on_vecan(sense_voltage_service):
 				for service in vecan.keys():
 					self._dbusmonitor.set_value_async(service, '/Link/BatteryCurrent', battery_current)
 					sent = BatterySense.ISENSE_ENABLED
