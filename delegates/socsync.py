@@ -3,7 +3,7 @@ from delegates.base import SystemCalcDelegate
 from delegates.multi import Multi
 from sc_utils import safeadd
 
-def service_is_battery(self, service):
+def service_is_battery(service):
 	return service.split('.')[2] == 'battery'
 
 class SocSync(SystemCalcDelegate):
@@ -37,14 +37,19 @@ class SocSync(SystemCalcDelegate):
 		self.vecan.discard(service)
 		self.solarchargers.discard(service)
 
+	def _service_is_vecan(self, service):
+		# acsystem gets its values from VE.Can, so is considered vecan.
+		return service.split('.')[2] == 'acsystem' or \
+			self._dbusmonitor.get_value(service, '/Mgmt/Connection') == 'VE.Can'
+
 	def update_values(self, newvalues):
 		# Sync SOC with all non-VE.Bus inverter-chargers
 		batteryservice = self.systemcalc.batteryservice
 		if batteryservice is not None:
-			origin = self._dbusmonitor.get_value(batteryservice, '/Mgmt/Connection')
 			soc = newvalues.get('/Dc/Battery/Soc', None)
-			if soc is not None and origin and (
-					origin != 'VE.Can' or service_is_battery(batteryservice)):
+			if soc is not None and (
+					not self._service_is_vecan(batteryservice)
+					or service_is_battery(batteryservice)):
 				for service in self.vecan:
 					# In case service goes down while we write, ignore
 					# exception
