@@ -9,6 +9,7 @@ from delegates.batterylife import BatteryLife
 from delegates.batterylife import State as BatteryLifeState
 from enum import Enum
 from time import time
+from logging.handlers import TimedRotatingFileHandler
 import json
 import os
 import logging
@@ -46,9 +47,21 @@ from s2python.version import S2_VERSION
 from s2python.s2_control_type import S2ControlType, PEBCControlType, NoControlControlType
 from s2python.validate_values_mixin import S2MessageComponent
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("hems_logger")
+logger.setLevel(logging.DEBUG)
 
-logger.setLevel(logging.INFO)
+#debug purpose.
+log_dir = "/data/log/S2"    
+if not os.path.exists(log_dir):
+	os.mkdir(log_dir)
+
+logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)s %(message)s',
+	datefmt='%Y-%m-%d %H:%M:%S',
+	level=logging.DEBUG, 
+	handlers=[
+		TimedRotatingFileHandler(log_dir + "/" + os.path.basename(__file__) + ".log", when="midnight", interval=1, backupCount=2),
+		logging.StreamHandler()
+	])
 
 HUB4_SERVICE = "com.victronenergy.hub4"
 S2_IFACE = "com.victronenergy.S2"
@@ -81,8 +94,9 @@ class SystemType(int, Enum):
 
 class ClaimType(int, Enum):
 	Total = 0
-	PerPhase = 1
-	Transfer = 2
+	AC = 1
+	DC = 2
+	ACDCAC = 3
 
 class PropertyAccessPhase:
 	def __init__(self, obj, props):
@@ -109,11 +123,24 @@ class PropertyAccessCommodity:
 		setattr(self._obj, self._props[key], value)
 
 class PhaseAwareFloat():
+	"""
+		The PhaseAwareFloat offers access to values on different phases. Each value can be accessed
+		in three ways, depending on the needs and available information to avoid continious if/else checks. 
+		- Direct: obj.total, obj.l1, obj.l2, obj.l3, obj.dc 
+		- via index: obj.by_phase[0], obj.by_phase[1], obj.by_phase[2], obj.by_phase[3], obj.by_phase[4]
+		- by commodity: objc.by_commodity[CommodityQuantity.ELECTRIC_POWER_L1], etc. (only for l1,l2,l3) 
+
+		PhaseAwareFloats support "+", "-", "+=" and "-=" operators.
+	"""	
 	def __init__(self, l1:float=0.0, l2:float=0.0, l3:float=0.0, dc:float=0.0):
 		self._l1 = l1
 		self._l2 = l2
 		self._l3 = l3
 		self._dc = dc
+
+		#carrier for debug information. Not to be used for production purpose, can be anything.
+		#just something to be dumped in logs, when != None
+		self._diagnostic_label = None
 
 		self.by_phase = PropertyAccessPhase(self, ["total","l1", "l2", "l3", "dc"])
 		self.by_commodity = PropertyAccessCommodity(self, {
@@ -121,6 +148,15 @@ class PhaseAwareFloat():
 			CommodityQuantity.ELECTRIC_POWER_L2: "l2",
 			CommodityQuantity.ELECTRIC_POWER_L3: "l3"
 		})
+
+	@classmethod
+	def from_phase_aware_float(clazz, other):
+		return clazz(
+			other.l1,
+			other.l2,
+			other.l3,
+			other.dc
+		)
 
 	def __iadd__(self, other):
 		if not isinstance(other, PhaseAwareFloat):
@@ -211,11 +247,14 @@ class PhaseAwareFloat():
 		)
 
 class SolarOverhead():
-	def __init__(self, l1:float, l2:float, l3:float, dcpv:float, reservation:float, battery_rate:float):
+	def __init__(self, l1:float, l2:float, l3:float, dcpv:float, reservation:float, battery_rate:float, 
+			  inverterPowerL1:float, inverterPowerL2:float, inverterPowerL3:float):
 		self.power:PhaseAwareFloat = PhaseAwareFloat(l1,l2,l3,dcpv)
+		self.inverterPower:PhaseAwareFloat = PhaseAwareFloat(inverterPowerL1, inverterPowerL2, inverterPowerL3)
 		self.power_reserved:PhaseAwareFloat = PhaseAwareFloat()
 		self._prior_power:PhaseAwareFloat = None
 		self.power_claim:PhaseAwareFloat = None
+		self.power_request:PhaseAwareFloat = None
 		
 		self.battery_rate = battery_rate
 		self.battery_reservation = reservation
@@ -244,6 +283,11 @@ class SolarOverhead():
 				#TODO: If reservation still > 0, it can't be covered by now. Need to deduct that somewhere anyway?
 				#      Shouldn't be required, all components are 0'd, no Primary-Consumer will be able to run.
 
+	def __repr__(self):
+		return "SolarOverhead[power={}, res={}, tr={}]".format(
+			self.power, self.battery_reservation, self.transaction_running
+		)
+
 	def begin(self):
 		"""
 			Creates a checkpoint for claiming power. If all claims required for a certain usage
@@ -253,12 +297,11 @@ class SolarOverhead():
 		if self.transaction_running:
 			raise Exception("Solar Claim Transaction currently running, need to call comit() or rollback() before starting another one.")
 		
-		self._prior_power = self.power
+		self._prior_power = PhaseAwareFloat.from_phase_aware_float(self.power)
 		self.power_claim = PhaseAwareFloat()
 		self.transaction_running = True
 	
-	def claim(self, commodity_quantity:CommodityQuantity, minv:float, maxv:float, 
-		   	  claim_type:ClaimType, ctrl_type:ControlType, primary:bool, force:bool=False)->bool:
+	def claim(self, commodity_quantity:CommodityQuantity, minv:float, maxv:float, primary:bool, force:bool=False)->bool:
 		"""
 			Claims a bunch of power. Returns true on success, false on error. If the requirements of an RM are satisfied,
 			call comit() which returns a PhaseAwareFloat representing the powerclaim of the transaction.
@@ -270,31 +313,124 @@ class SolarOverhead():
 		#else, evaluate against the amount AFTER deducting reservation. 
 		rsrv = 0 if primary else 1
 
-		#Check based on claim type, if we can allocate enough power for this claim. 
-		#TODO: Implement Strict and Transfer Claim-Types for offgrid usage.
-		if claim_type == ClaimType.Total:
-			if ctrl_type == ControlType.OPERATION_MODE_BASED_CONTROL:
-				#TODO: Factor needs to be generated for the OMBC! For now, we assume fixed values, i.e. factor = 1.0 
-				#find our power on l1/l2/l3, first, last consider dcpv. On ClaimType.Total, it doesn't matter where we source from.
-				logger.debug("Comparing Available budget {}W and claim {}W (forced? {})".format(max(self.power.total - self.power_reserved.total * rsrv, 0), maxv, force)) 				
-				if max(self.power.total - self.power_reserved.total * rsrv, 0) >= maxv or force:
-					#Even if it is a total claim, we need to allocate the claim to the proper phase.
-					#TODO need to distinguish between AC and DC Claim here. 
-					if commodity_quantity != CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC:
-						self.power_claim.by_commodity[commodity_quantity] = maxv
-						self.power.by_commodity[commodity_quantity] -= maxv
-					else:
-						for l in [1,2,3]:
-							self.power_claim.by_phase[l] = maxv / 3.0
-							self.power.by_phase[l] -= maxv / 3.0
+		#When claiming energy, we always try to do it the most efficient way: First AC-PV, Second DC-PV, Third ACDCAC-PV.
+		#Only if none (or combination of all) claims does not work out, we consider the claim failed. 
 
-					return True
-			else:
-				logger.warning("Unimplemented control_type {}".format(ctrl_type))
-		else:
-			logger.warning("Unimplemented claim_type {}".format(claim_type))
+		#First, start to determine the actual amount we want to claim. It needs to be between min and max, as close to max as possible.
+		#Also check, if reservation needs to be applied for this claim. If there is enough "total", we can drive the consumer. 
+		#The claim however may source from any available Power thereis.
+		claim_target_total = maxv
 		
-		return False
+		#Build the PhaseAwareFloat representing the claim split onto individual phases.
+		claim_target = PhaseAwareFloat()
+		if commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC:
+			for l in [1,2,3]:
+				claim_target.by_phase[l] = claim_target_total / 3.0
+		else:
+			claim_target.by_commodity[commodity_quantity] = claim_target_total
+
+		#if the consumer is not providing Powermeasurements, we store this as power_request
+		#to be able to calculate consumption later.
+		self.power_request = PhaseAwareFloat(claim_target.l1, claim_target.l2, claim_target.l3)
+		
+		#TODO: However, when getting energy from DC or any other phase, we need to respect inverter-capabilities for certain system types.  
+
+		#calculate the claim_factor as OMBC needs it. Other control types don't need this, but doesn't hurt either. 
+		power_factor = (maxv - minv) / claim_target_total if claim_target_total > 0 else 0
+
+		#now, deduct energy from the proper source. We start by allocating direct ACPV, then take DC, finally fullfill with ACDCAC
+		logger.debug("AC Claim begin. Claim {} and remaining: {}".format(self.power_claim, claim_target))
+
+		#1) Direct AC Claim. 
+		for l in [1,2,3]:
+			if claim_target.by_phase[l] > 0:
+				if claim_target.by_phase[l] <= self.power.by_phase[l]:
+					#can be satisfied by ACPV.
+					claimed = claim_target.by_phase[l]
+					self.power_claim.by_phase[l] = claimed
+					logger.debug("-- claimed {}W AC to be used on L{} (AC saturates)".format(claimed, l))
+				else:
+					#Not enough ACPV, claim what's available.
+					claimed = max(self.power.by_phase[l], 0)
+					self.power_claim.by_phase[l] = claimed
+					logger.debug("-- claimed {}W AC to be used on L{} (not enough AC)".format(claimed, l))
+				self.power.by_phase[l] -= claimed
+				claim_target.by_phase[l] -= claimed
+				logger.debug("---- AC L{} now {}W".format(l, self.power.by_phase[l]))
+
+		logger.debug("AC done. Claim {} and remaining: {}".format(self.power_claim, claim_target))
+		logger.debug("DC Claim begin. DC is {}W".format(self.power.dc))
+
+		#2) Check, if we need to source more from DCPV.
+		for l in [1,2,3]:
+			if claim_target.by_phase[l] > 0:
+				if claim_target.by_phase[l] <= self.power.dc:
+					#can be satisfied by DC.
+					claimed = claim_target.by_phase[l]
+					logger.debug("-- claimed {}W DC to be used on L{} (DC saturates)".format(claimed, l))
+					self.power_claim.dc += claimed #incremental, every phase may source from DCPV
+				else:
+					#Not enough DC, claim what's available
+					claimed = max(self.power.dc, 0)
+					logger.debug("-- claimed {}W DC to be used on L{} (not enough DC)".format(claimed, l))
+					self.power_claim.dc = claimed
+				self.power.dc -= claimed
+				logger.debug("---- DC now {}".format(self.power.dc))
+				claim_target.by_phase[l] -= claimed
+		
+		logger.debug("DC done. Claim {} and remaining: {}".format(self.power_claim, claim_target))
+		logger.debug("ACDCAC Claim begin. Overhead is {}".format(self.power))
+
+		#3) Check, if we need to source more fron ACDCAC. That will be deducted with an efficiency penalty of 2 times conversion losses (0.9025)
+		#   From the respective phase we are sourcing from. At this point, we have to validate claimings, what was initially calculated as "matching"
+		#   against the total may now exceed the available budget due to conversion losses. 
+		#FIXME: While we theoretically still claim OUR energy from another phase, on Systems using Multiphase-Balancing,
+		#       We don't have an efficiency penalty for that.
+		for l in [1,2,3]:
+			if claim_target.by_phase[l] > 0:
+				#claiming ACDCAC means, we can claim from any other phase that is NOT the current phase. 
+				for o in [1,2,3]:
+					if l != o:
+						if self.power.by_phase[o] >= claim_target.by_phase[l]/0.9025:
+							#can be totally satisfied by ACDCAC from o.
+							effective_claim = claim_target.by_phase[l]
+							total_claim = claim_target.by_phase[l]/0.9025
+							self.power_claim.by_phase[o] += total_claim
+							self.power.by_phase[o] -= total_claim
+							claim_target.by_phase[l] -= effective_claim #satisfied.
+							logger.debug("-- claimed {}W AC (Effective {}W) from L{} to be used on L{} (ACDCAC saturates)".format(total_claim, effective_claim, o, l))
+						else:
+							#there is not enough on o. eventually we have another o to try to get the remaining power.
+							#take what this o has to offer.
+							effective_claim = self.power.by_phase[o] * 0.9025
+							total_claim = self.power.by_phase[o]
+							self.power_claim.by_phase[o] += total_claim
+							self.power.by_phase[o] -= total_claim
+							claim_target.by_phase[l] -= effective_claim #only amount after conversion hits the consumer. 
+							logger.debug("-- claimed {}W AC (Effective {}W) from L{} to be used on L{} (not enough ACDCAC)".format(total_claim, effective_claim, o, l))
+				
+		logger.debug("ACDCAC done. Claim {} and remaining: {}".format(self.power_claim, claim_target))
+
+		#check, if the claim_target is fully satisfied.
+		if claim_target.total > 0:
+			logger.debug("- Missing Power: {}W".format(claim_target.total))
+			if not force:
+				#claim just failed
+				return False
+			else:
+				#Forced claim, punish the battery for what is missing. 
+				logger.debug("-- Force claiming remaining power from dc: {}W".format(claim_target.total))
+				self.power.dc -= claim_target.total
+				self.power_claim.dc += claim_target.total
+		
+		#final consideration - check if battery reservation would be violated.
+		logger.debug ("- Claim {}W vs reservation {}W on budget {}W (Primary:{}, force:{})".format(self.power_claim.total, self.battery_reservation, self.power.total, primary, force))
+		if (self.power.total < self.battery_reservation) and not primary and not force:
+			logger.debug("-- Claiming {}W would violate Battery reservation. Rejecting.".format(self.power_claim.total))
+			return False
+
+		#We either satisfied all needs or force-claimed power from dc.
+		return True
 
 	def rollback(self):
 		"""
@@ -304,7 +440,8 @@ class SolarOverhead():
 		if not self.transaction_running:
 			raise Exception("No Solar Claim Transaction currently running. Need to call begin() before rolling back.")
 		
-		self.power = self._prior_power
+		logger.debug("Rolling back overhead from {} to {}".format(self.power, self._prior_power))
+		self.power = PhaseAwareFloat.from_phase_aware_float(self._prior_power)
 		self._prior_power = None
 		self.transaction_running = False
 		self.power_claim=None
@@ -339,7 +476,7 @@ class S2RMDelegate():
 		self.consumer_type = consumer_type
 		self._hems:HEMS=hems
 		self._reported_as_blocked = False
-
+		
 		if USE_FAKE_BMS:
 			self._hems.available_fake_bms = sorted(self._hems.available_fake_bms)
 			self._fake_bms_no = self._hems.available_fake_bms.pop(0)
@@ -347,9 +484,11 @@ class S2RMDelegate():
 
 		#power tracking values
 		self.power_claim:PhaseAwareFloat=PhaseAwareFloat()
+		self.power_request:PhaseAwareFloat=PhaseAwareFloat()
 		self.current_power:PhaseAwareFloat = PhaseAwareFloat()
 		self._current_counter:PhaseAwareFloat = PhaseAwareFloat()
 		self._current_timestamps:PhaseAwareFloat = PhaseAwareFloat()
+		self._last_pop_powerstats:datetime = None
 
 		#Generic Handler
 		self._message_receiver=None
@@ -420,15 +559,15 @@ class S2RMDelegate():
 			else:
 				self._keep_alive_missed = self._keep_alive_missed + 1	
 		
-		def error_handler(result): 
+		def error_handler(result):
 			self._keep_alive_missed = self._keep_alive_missed + 1
 
 		self._dbusmonitor.dbusConn.call_async(self.service, self.s2path, S2_IFACE, method='KeepAlive', signature='s',
 										args=[wrap_dbus_value(self.unique_identifier)],
 										reply_handler=reply_handler, error_handler=error_handler)
 		
-		if self._keep_alive_missed < 2:
-			logger.debug("Keepalive OK for {}".format(self.unique_identifier))
+		if self._keep_alive_missed < 2: 
+			#logger.debug("Keepalive OK for {}".format(self.unique_identifier))
 			return True
 		else:
 			logger.warning("Keepalive MISSED for {} ({})".format(self.unique_identifier, self._keep_alive_missed))
@@ -461,8 +600,8 @@ class S2RMDelegate():
 
 			jmsg = json.loads(msg)
 
-			if jmsg["message_type"] != "ReceptionStatus":
-				logger.debug("Received Message from {}: {}".format(self.unique_identifier, jmsg["message_type"]))
+			#if jmsg["message_type"] != "ReceptionStatus":
+			#	logger.debug("Received Message from {}: {}".format(self.unique_identifier, jmsg["message_type"]))
 
 			if "message_type" in jmsg:
 				#if client is not initialized, deny all messages, except Handshake.
@@ -479,7 +618,7 @@ class S2RMDelegate():
 						self._s2_on_power_measurement(self.s2_parser.parse_as_message(msg, PowerMeasurement))
 					elif jmsg["message_type"] == "ReceptionStatus":
 						p = self.s2_parser.parse_as_message(msg, ReceptionStatus)
-						logger.debug("Received ReceptionStatus from {}: {} -> {} ({})".format(self.unique_identifier, jmsg["message_type"], p.status, p.diagnostic_label))
+						#logger.debug("Received ReceptionStatus from {}: {} -> {} ({})".format(self.unique_identifier, jmsg["message_type"], p.status, p.diagnostic_label))
 					else:
 						#Not yet implemented! 
 						logger.warning("Received an unknown Message: {} from {}".format(jmsg["message_type"], self.unique_identifier))
@@ -640,7 +779,7 @@ class S2RMDelegate():
 		self._s2_send_message(resp)
 
 	def _s2_send_message(self, message:S2MessageComponent):
-		logger.debug("Send Message to {}: {}".format(self.unique_identifier, message.to_dict()["message_type"]))
+		#logger.debug("Send Message to {}: {}".format(self.unique_identifier, message.to_dict()["message_type"]))
 		try:
 			#TODO: Eventually we want to do something with replies here? Handler?
 			self._dbusmonitor.dbusConn.call_async(self.service, self.s2path, S2_IFACE, method='Message', signature='ss', 
@@ -695,24 +834,21 @@ class S2RMDelegate():
 															[mode.diagnostic_label for mode in eligible_operation_modes]))
 
 		#this is our last resort.
+		#FIXME: Once in a while this throws a index out of bound exception. Find Reason and catch it properly.
 		forced_state = eligible_operation_modes[len(eligible_operation_modes) -1]
 		logger.debug("Forced State for consumer {}: {}".format(self.unique_identifier, forced_state.diagnostic_label))
 
 		for opm in eligible_operation_modes:
 			overhead.begin()
 			for pr in opm.power_ranges:
-				#TODO: offgrid and on individual systems, consider phase-assignment.
-				if self._hems.system_type in [SystemType.GridConnected1Phase, SystemType.GridConnected2PhaseSaldating, 
-						SystemType.GridConnected3PhaseSaldating]:
-					claim_success = overhead.claim(pr.commodity_quantity, pr.start_of_range, pr.end_of_range, 
-						ClaimType.Total, self.active_control_type, self.consumer_type==ConsumerType.Primary, 
-						opm.id == forced_state.id)
-					
-					if not claim_success:
-						#maximum assignment for this powerrange failed for at least one powerrange requested. This OperationMode is currently not eligible. 
-						logger.debug("Operation Mode not eligible: '{}' on {} due to missing availability on commodity: {}".format(opm.diagnostic_label, self.unique_identifier, pr.commodity_quantity))
-						overhead.rollback()
-						break
+				claim_success = overhead.claim(pr.commodity_quantity, pr.start_of_range, pr.end_of_range, 
+					self.consumer_type==ConsumerType.Primary, opm.id == forced_state.id)
+				
+				if not claim_success:
+					#maximum assignment for this powerrange failed for at least one powerrange requested. This OperationMode is currently not eligible. 
+					logger.debug("Operation Mode not eligible: '{}' on {} due to missing availability on commodity: {}".format(opm.diagnostic_label, self.unique_identifier, pr.commodity_quantity))
+					overhead.rollback()
+					break
 			
 			if overhead.transaction_running:
 				#Managed to verify all power ranges and transaction still running? This mode is eligible! 
@@ -746,7 +882,7 @@ class S2RMDelegate():
 				else:
 					#good to go, this will happen. keep the new claim. 
 					self.power_claim = new_power_claim
-
+					self.power_request = overhead.power_request
 				break
 		
 		#TODO: If we are here, and didn't find a proper operation mode with 0Watt - the client probably didn't report
@@ -793,6 +929,9 @@ class S2RMDelegate():
 					)
 
 					logger.info("Instruction send: OMBC = {} for {}".format(self._ombc_next_operation_mode.diagnostic_label, self.unique_identifier))
+					#FIXME: Sometimes power_claim is None - this should never happen. It at least has to be a 0-Claim.
+					#       Probably happens, when a state is not reachable, Force-Claim-Issue?
+					logger.info("Power-Claim: {}".format(self.power_claim))
 
 					#Check, if this transition starts any timer. Only required if we leave a well known operation mode. 
 					if self.ombc_active_operation_mode is not None:
@@ -880,13 +1019,25 @@ class S2RMDelegate():
 
 		return 0
 
-	def pop_powerstats(self) -> tuple[PhaseAwareFloat, PhaseAwareFloat]:
+	def pop_powerstats(self, now:datetime) -> tuple[PhaseAwareFloat, PhaseAwareFloat]:
 		"""
 			Returns a tuple of PhaseAwareFloats, where the first tuple is the power values and the second
-			is the counters. Counters are reset after retrievel through this method.
+			is the counters. Counters are reset after retrievel through this method. If the consumer
+			does NOT provide power-measurements counters are estimated based on the current allowance
+			calculated for the consumer.
 		"""
+		if len(self.rm_details.provides_power_measurement_types) == 0:
+			#Consumer does not provide measurements. So, we calculate an estimated power consumption
+			#since the last call of pop_powerstats(). We use the claim per phase as it has been approved
+			if self._last_pop_powerstats is not None:
+				duration = (now - self._last_pop_powerstats).total_seconds
+				for l in [1,2,3]:
+					consumption = (self.power_request.by_phase[l] * duration / 3600.0) / 1000.0
+					self._current_counter.by_phase[l] = consumption
+
 		result = (self.current_power, self._current_counter)
 		self._current_counter = PhaseAwareFloat()
+		self._last_pop_powerstats = now
 		return result
 
 class HEMS(SystemCalcDelegate):
@@ -905,7 +1056,7 @@ class HEMS(SystemCalcDelegate):
 		self.counter_secondary:PhaseAwareFloat = PhaseAwareFloat()
 
 		if USE_FAKE_BMS:
-			self.available_fake_bms = [1,2,3,4,5,6,7]
+			self.available_fake_bms = [1,2,3,4,5,6,7,8,9]
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(HEMS, self).set_sources(dbusmonitor, settings, dbusservice)
@@ -1190,7 +1341,7 @@ class HEMS(SystemCalcDelegate):
 
 		for unique_identifier, delegate in self.managed_rms.items():
 			if delegate.initialized:
-				values = delegate.pop_powerstats()
+				values = delegate.pop_powerstats(self._get_time(timezone.utc))
 
 				if delegate.consumer_type == ConsumerType.Primary:
 					self.power_primary += values[0]
@@ -1256,12 +1407,14 @@ class HEMS(SystemCalcDelegate):
 		#(Will be called after finishing all power assignments to avoid instructions beeing send out immediately)
 		#sort RMs by priority before iterating.
 		for unique_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority):
-			if delegate.initialized:
+			logger.debug("=============================================================================================================")  
+			if delegate.initialized and delegate.rm_details is not None:
 				if delegate.active_control_type is not None and delegate.active_control_type != ControlType.NOT_CONTROLABLE:
-					logger.debug("===== RM {} is controllable: {} =====".format(unique_identifier, delegate.active_control_type))	
+					logger.debug("===== RM {} ({}) is controllable: {} =====".format(unique_identifier, delegate.rm_details.name, delegate.active_control_type))	
 					available_overhead = delegate.self_assign_overhead(available_overhead)
+					logger.debug("==> Remaining overhead: {}".format(available_overhead))
 				else:
-					logger.debug("===== RM {} is uncontrollable: {} =====".format(unique_identifier, delegate.active_control_type))	
+					logger.debug("===== RM {} ({}) is uncontrollable: {} =====".format(unique_identifier, delegate.rm_details.name, delegate.active_control_type))	
 			else:
 				logger.debug("===== RM {} is not yet initialized. =====".format(unique_identifier))
 
@@ -1303,27 +1456,38 @@ class HEMS(SystemCalcDelegate):
 		#TODO: If system mode does not allow to determine overhead, return None.
 		#      Eventually the easiest way is to return an artificial Solar-Overhead, increasing 100W per iteration
 		#      Until we get a slightly negative discharge rate?
+		batrate = (self._dbusservice["/Dc/Battery/Power"] or 0)
 		l1 = (self._dbusservice["/Ac/PvOnGrid/L1/Power"] or 0) + (self._dbusservice["/Ac/PvOnOutput/L1/Power"] or 0) - (self._dbusservice["/Ac/Consumption/L1/Power"] or 0)
 		l2 = (self._dbusservice["/Ac/PvOnGrid/L2/Power"] or 0) + (self._dbusservice["/Ac/PvOnOutput/L2/Power"] or 0) - (self._dbusservice["/Ac/Consumption/L2/Power"] or 0)
 		l3 = (self._dbusservice["/Ac/PvOnGrid/L3/Power"] or 0) + (self._dbusservice["/Ac/PvOnOutput/L3/Power"] or 0) - (self._dbusservice["/Ac/Consumption/L3/Power"] or 0)
-		dcpv = (self._dbusservice["/Dc/Pv/Power"] or 0) * 0.95 #dcpv has a penalty of 0.9 when beeing turned into AC Consumption.
-		batrate = (self._dbusservice["/Dc/Battery/Power"] or 0)
 
-		#finally, we need to ADD power that is already beeing consumed by S2 Devices, because it will also be deducted in the Consumption-Values.
+		#now, we need to ADD power that is already beeing consumed by S2 Devices, because it will also be deducted in the Consumption-Values.
 		#if the device is sourcing from DCPV it can be ignored, that will also be "ac-consumption" beeing reported, which we need to cancel out. 
 		#current_power will still report AC consumption based on phase-allocation of the consumer. 
 		for unique_identifier, delegate in self.managed_rms.items():
 			if delegate.initialized:
 				if delegate.current_power is not None:
-					#Check, if the consumer is about to turn off (0-Power-Claim) - then we don't add
-					#the current consumption, it is about to turn off cause not enough energy, so current consumption
-					#of the consumer shall not be considered available overhead. 
-					#TODO: above comment causing issues, try without.
-					#if delegate.power_claim is not None and delegate.power_claim.total > 0:
 					l1 += delegate.current_power.l1
 					l2 += delegate.current_power.l2
 					l3 += delegate.current_power.l3
+		
+		#DCPV Overhead is: Actual DC PV Power - every ac consumption that is not baked by ACPV.
+		#finally, if there is no solar at all, dcpv overhead should be negative and equal the
+		#battery discharge rate.
+		dcpv = (self._dbusservice["/Dc/Pv/Power"] or 0) * 0.95 #dcpv has a penalty of 0.9 when beeing turned into AC Consumption.
 
+		if l1 < 0:
+			dcpv -= abs(l1)
+			l1=0
+		
+		if l2 < 0:
+			dcpv -= abs(l2)
+			l2=0
+
+		if l3 < 0:
+			dcpv -= abs(l3)
+			l3=0
+		
 		#Init of SolarOverhead will take care to apply reservation constraints
 		return SolarOverhead(
 			round(l1, 1), 
@@ -1331,5 +1495,8 @@ class HEMS(SystemCalcDelegate):
 			round(l3, 1), 
 			round(dcpv, 1),
 			self.current_battery_reservation,
-			batrate
+			batrate,
+			4000, #TODO: Nominal Inverter Power(s). this needs to be queried "somehow".
+			4000,
+			4000,
 		)

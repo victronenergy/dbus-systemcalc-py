@@ -232,8 +232,13 @@ class NOCTRL(NoControlControlType):
         super().__init__()
 
     def activate(self, conn):
-       # self.rm.log_info("NOCTRL activated")
-       pass
+       self.rm.log_info("NOCTRL activated")
+       if not self.rm.can_be_controlled():
+           #Switched to NOCTRL because Operation Constraints no longer work out. 
+           #In that case, we turn off the consumer, in case it was enabled. 
+           self.rm.log_info("-> deactivating consumer.")
+           spam_web_request("http://{}/rpc/Switch.Set?on=false&id={}".format(
+                self.rm.ip_address, self.rm.shelly_port))
     
     def deactivate(self, conn):
         #self.rm.log_info("NOCTRL deactivated")
@@ -371,63 +376,107 @@ class ShellyMockService(Service):
         #populate all the Shelly RMs we want to use.
 
         ##### Just some ugly callbacks to be used for certain consumers. #####
-        
-        def manual_override()->bool:
+        def manual_heater_override()->bool:
             #Check, if Heatingrod-Control is set to automatic.
             #This is indicated by port 0 on the first shelly2pm. "On = Manual Control"
-            response = requests.get(url="http://10.10.20.57/relay/0")
-            if response.status_code == 200:
-                jo_response = json.loads(response.content)
-                return jo_response["ison"]
+            try:
+                response = requests.get(url="http://10.10.20.57/relay/0")
+                if response.status_code == 200:
+                    jo_response = json.loads(response.content)
+                    return jo_response["ison"]
+            except Exception:
+                pass
+            return False
+
+        def pool_filter_automatic()->bool:
+            try:
+                response = requests.get(url="http://aps.ad.equinox-solutions.de/dashboard/hook/mqtt-relay/get/Devices/d1PoolControl/Cfg/FilterAutomaticMode/Value?type=Boolean")
+                if response.status_code == 200:
+                    jo_response = json.loads(response.content)
+                    return str(jo_response["value"])=="true"
+            except Exception:
+                pass
+            return False
+        
+        def pool_heater_automatic()->bool:
+            try:
+                response = requests.get(url="http://aps.ad.equinox-solutions.de/dashboard/hook/mqtt-relay/get/Devices/d1PoolControl/Cfg/HeaterAutomaticMode/Value?type=Boolean")
+                if response.status_code == 200:
+                    jo_response = json.loads(response.content)
+                    return str(jo_response["value"])=="true"
+            except Exception:
+                pass
+            return False
+        
+        def pool_heatpump_automatic()->bool:
+            try:
+                response = requests.get(url="http://aps.ad.equinox-solutions.de/dashboard/hook/mqtt-relay/get/Devices/d1PoolControl/Cfg/HeatpumpAutomaticMode/Value?type=Boolean")
+                if response.status_code == 200:
+                    jo_response = json.loads(response.content)
+                    return str(jo_response["value"])=="true"
+            except Exception:
+                pass
             return False
 
         def rod_temp()->float:
-            response = requests.get(url="http://aps.ad.equinox-solutions.de/dashboard/hook/mqtt-relay/get/Devices/piGardenControl/Sensors/tempReservoirPVHeater/Value?type=Double")
-            if response.status_code == 200:
-                jo_response = json.loads(response.content)
-                return float(jo_response["value"]) #rod temp to prevent overheating.
+            try:
+                response = requests.get(url="http://aps.ad.equinox-solutions.de/dashboard/hook/mqtt-relay/get/Devices/d1Watering1/Sensors/HEATING_ROD_TEMP/Value?type=Double")
+                if response.status_code == 200:
+                    jo_response = json.loads(response.content)
+                    return float(jo_response["value"]) #rod temp to prevent overheating.
+            except Exception:
+                pass
             return 100.0
 
         def water_temp()->float:
-            response = requests.get(url="http://aps.ad.equinox-solutions.de/dashboard/hook/mqtt-relay/get/Devices/piGardenControl/Sensors/tempReservoirTop/Value?type=Double")
-            if response.status_code == 200:
-                jo_response = json.loads(response.content)
-                return float(jo_response["value"]) #reservoir temp to determine target temperature.
+            try:
+                response = requests.get(url="http://aps.ad.equinox-solutions.de/dashboard/hook/mqtt-relay/get/Devices/EbusEvaluator/Sensors/ReservoirUpper/Value?type=Double")
+                if response.status_code == 200:
+                    jo_response = json.loads(response.content)
+                    return float(jo_response["value"]) #reservoir temp to determine target temperature.
+            except Exception:
+                pass
             return 100.0
     
         def pool_temp()->float:
-            response = requests.get(url="http://aps.ad.equinox-solutions.de/dashboard/hook/mqtt-relay/get/Devices/d1PoolControl/Sensors/WaterTemp/Value?type=Double")
-            if response.status_code == 200:
-                jo_response = json.loads(response.content)
-                return float(jo_response["value"]) #reservoir temp to determine target temperature.
+            try:
+                response = requests.get(url="http://aps.ad.equinox-solutions.de/dashboard/hook/mqtt-relay/get/Devices/d1PoolControl/Sensors/WaterTemp/Value?type=Double")
+                if response.status_code == 200:
+                    jo_response = json.loads(response.content)
+                    return float(jo_response["value"]) #reservoir temp to determine target temperature.
+            except Exception:
+                pass
             return 100.0
-
         ##### end of ugly callbacks #####
 
         self.shelly_ios:list[UnifiedHttpShellyRM] = [
             UnifiedHttpShellyRM(
-                self, 0, "10.10.20.90", "Waterplay Filter", 0, 5, 0, CommodityQuantity.ELECTRIC_POWER_L1, 70.0, 60, 60, 
+                self, 0, "10.10.20.90", "Waterplay Filter", 0, 5, 0, CommodityQuantity.ELECTRIC_POWER_L3, 70.0, 60, 60, 
                 lambda: True
             ),
             UnifiedHttpShellyRM(
                 self, 1, "10.10.20.57", "Heater L1", 1, 40, 1, CommodityQuantity.ELECTRIC_POWER_L1, 1150.0, 60, 60, 
-                lambda: (rod_temp() < 85 and water_temp() < 65 and not manual_override())
+                lambda: (rod_temp() < 85 and water_temp() < 65 and not manual_heater_override())
             ),
             UnifiedHttpShellyRM(
                 self, 2, "10.10.20.58", "Heater L2", 0, 30, 1, CommodityQuantity.ELECTRIC_POWER_L2, 1150.0, 60, 60,
-                lambda: (rod_temp() < 95 and water_temp() < 65 and not manual_override())
+                lambda: (rod_temp() < 95 and water_temp() < 65 and not manual_heater_override())
             ),
             UnifiedHttpShellyRM(
                 self, 3, "10.10.20.58", "Heater L3", 1, 35, 1, CommodityQuantity.ELECTRIC_POWER_L3, 1150.0, 60, 60, 
-                lambda: (rod_temp() < 90 and water_temp() < 65 and not manual_override())
+                lambda: (rod_temp() < 90 and water_temp() < 65 and not manual_heater_override())
             ),
             UnifiedHttpShellyRM(
-                self, 4, "10.10.20.66", "Pool Filter", 1, 10, 0, CommodityQuantity.ELECTRIC_POWER_L1, 220.0, 60, 60, 
-                lambda: True
+                self, 4, "10.10.20.98", "Pool Filter", 0, 10, 0, CommodityQuantity.ELECTRIC_POWER_L3, 220.0, 60, 60, 
+                lambda: pool_filter_automatic()
             ),
             UnifiedHttpShellyRM(
-                self, 5, "10.10.20.66", "Pool Heater", 0, 15, 0, CommodityQuantity.ELECTRIC_POWER_L1, 550.0, 60, 300,
-                (lambda: pool_temp() <=34)
+                self, 5, "10.10.20.66", "Pool Heatpump", 0, 15, 0, CommodityQuantity.ELECTRIC_POWER_L1, 550.0, 60, 300,
+                lambda: (pool_temp() <=34 and pool_heatpump_automatic())
+            ),
+            UnifiedHttpShellyRM(
+                self, 6, "10.10.20.66", "Pool E-Heater", 1, 20, 1, CommodityQuantity.ELECTRIC_POWER_L2, 2750.0, 60, 300,
+                lambda: (pool_temp() <=30 and pool_heater_automatic())
             ),
         ]
 

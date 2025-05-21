@@ -79,7 +79,7 @@ if __name__ == "__main__":
         #Creates 10 Fake BMS that can be populated by HEMS to display Consumer-Information. 
         #Set USE_FAKE_BMS to true in HEMS when using. 
         services = []
-        for i in [0,1,2,3,4,5,6,7]:
+        for i in [0,1,2,3,4,5,6,7,8,9]:
             service = FakeBMS('com.victronenergy.battery.hems_fake_{}'.format(i), i)
             services.append(service)
         
