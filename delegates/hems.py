@@ -48,7 +48,7 @@ from s2python.s2_control_type import S2ControlType, PEBCControlType, NoControlCo
 from s2python.validate_values_mixin import S2MessageComponent
 
 logger = logging.getLogger("hems_logger")
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 #debug purpose.
 log_dir = "/data/log/S2"    
@@ -1026,14 +1026,15 @@ class S2RMDelegate():
 			does NOT provide power-measurements counters are estimated based on the current allowance
 			calculated for the consumer.
 		"""
-		if len(self.rm_details.provides_power_measurement_types) == 0:
-			#Consumer does not provide measurements. So, we calculate an estimated power consumption
-			#since the last call of pop_powerstats(). We use the claim per phase as it has been approved
-			if self._last_pop_powerstats is not None:
-				duration = (now - self._last_pop_powerstats).total_seconds
-				for l in [1,2,3]:
-					consumption = (self.power_request.by_phase[l] * duration / 3600.0) / 1000.0
-					self._current_counter.by_phase[l] = consumption
+		if self.rm_details is not None:
+			if len(self.rm_details.provides_power_measurement_types) == 0:
+				#Consumer does not provide measurements. So, we calculate an estimated power consumption
+				#since the last call of pop_powerstats(). We use the claim per phase as it has been approved
+				if self._last_pop_powerstats is not None:
+					duration = (now - self._last_pop_powerstats).total_seconds
+					for l in [1,2,3]:
+						consumption = (self.power_request.by_phase[l] * duration / 3600.0) / 1000.0
+						self._current_counter.by_phase[l] = consumption
 
 		result = (self.current_power, self._current_counter)
 		self._current_counter = PhaseAwareFloat()
@@ -1266,7 +1267,7 @@ class HEMS(SystemCalcDelegate):
 
 	def _enable(self):
 		self._timer = GLib.timeout_add(self.control_loop_interval * 1000, self._on_timer)
-		self._timer_track_power = GLib.timeout_add(10 * 1000, self._on_timer_track_power)
+		self._timer_track_power = GLib.timeout_add(1 * 1000, self._on_timer_track_power)
 		self._timer_save_counters = GLib.timeout_add(COUNTER_PERSIST_INTERVAL * 1000, self._on_timer_save_counters) #save counters every 15 min. 
 		self._timer_retry_connections = GLib.timeout_add(CONNECTION_RETRY_INTERVAL * 1000, self._on_timer_retry_connection) #save counters every 15 min. 
 		self._dbusservice["/HEMS/Active"] = 1
@@ -1336,32 +1337,36 @@ class HEMS(SystemCalcDelegate):
 		return True
 
 	def _on_timer_track_power(self):
-		self.power_primary = PhaseAwareFloat()
-		self.power_secondary = PhaseAwareFloat()
+		try:
+			self.power_primary = PhaseAwareFloat()
+			self.power_secondary = PhaseAwareFloat()
 
-		for unique_identifier, delegate in self.managed_rms.items():
-			if delegate.initialized:
-				values = delegate.pop_powerstats(self._get_time(timezone.utc))
+			for unique_identifier, delegate in self.managed_rms.items():
+				if delegate.initialized:
+					values = delegate.pop_powerstats(self._get_time(timezone.utc))
 
-				if delegate.consumer_type == ConsumerType.Primary:
-					self.power_primary += values[0]
-					self.counter_primary += values[1]
+					if delegate.consumer_type == ConsumerType.Primary:
+						self.power_primary += values[0]
+						self.counter_primary += values[1]
 
-				elif delegate.consumer_type == ConsumerType.Secondary:
-					self.power_secondary += values[0]
-					self.counter_secondary += values[1]
-		
-		#dump on dbus
-		for l in [1,2,3]:
-			self._dbusservice["/HEMS/PrimaryConsumer/Ac/L{}/Power".format(l)] = self.power_primary.by_phase[l]
-			self._dbusservice["/HEMS/PrimaryConsumer/Ac/L{}/Energy/Forward".format(l)] = self.counter_primary.by_phase[l]	
-			self._dbusservice["/HEMS/SecondaryConsumer/Ac/L{}/Power".format(l)] = self.power_secondary.by_phase[l]
-			self._dbusservice["/HEMS/SecondaryConsumer/Ac/L{}/Energy/Forward".format(l)] = self.counter_secondary.by_phase[l]
+					elif delegate.consumer_type == ConsumerType.Secondary:
+						self.power_secondary += values[0]
+						self.counter_secondary += values[1]
+			
+			#dump on dbus
+			for l in [1,2,3]:
+				self._dbusservice["/HEMS/PrimaryConsumer/Ac/L{}/Power".format(l)] = self.power_primary.by_phase[l]
+				self._dbusservice["/HEMS/PrimaryConsumer/Ac/L{}/Energy/Forward".format(l)] = self.counter_primary.by_phase[l]	
+				self._dbusservice["/HEMS/SecondaryConsumer/Ac/L{}/Power".format(l)] = self.power_secondary.by_phase[l]
+				self._dbusservice["/HEMS/SecondaryConsumer/Ac/L{}/Energy/Forward".format(l)] = self.counter_secondary.by_phase[l]
 
-		self._dbusservice["/HEMS/PrimaryConsumer/Ac/Power"] = self.power_primary.total
-		self._dbusservice["/HEMS/PrimaryConsumer/Ac/Energy/Forward"] = self.counter_primary.total	
-		self._dbusservice["/HEMS/SecondaryConsumer/Ac/Power"] = self.power_secondary.total
-		self._dbusservice["/HEMS/SecondaryConsumer/Ac/Energy/Forward"] = self.counter_secondary.total
+			self._dbusservice["/HEMS/PrimaryConsumer/Ac/Power"] = self.power_primary.total
+			self._dbusservice["/HEMS/PrimaryConsumer/Ac/Energy/Forward"] = self.counter_primary.total	
+			self._dbusservice["/HEMS/SecondaryConsumer/Ac/Power"] = self.power_secondary.total
+			self._dbusservice["/HEMS/SecondaryConsumer/Ac/Energy/Forward"] = self.counter_secondary.total
+
+		except Exception as ex:
+			logger.error("Exception while publishing power records", exc_info=ex)
 
 		return True
 
