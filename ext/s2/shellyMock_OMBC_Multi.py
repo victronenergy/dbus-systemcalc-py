@@ -455,15 +455,15 @@ class ShellyMockService(Service):
                 lambda: True
             ),
             UnifiedHttpShellyRM(
-                self, 1, "10.10.20.57", "Heater L1", 1, 40, 1, CommodityQuantity.ELECTRIC_POWER_L1, 1150.0, 60, 60, 
+                self, 1, "10.10.20.57", "Heater L1", 1, 40, 1, CommodityQuantity.ELECTRIC_POWER_L1, 1150.0, 60, 30, 
                 lambda: (rod_temp() < 85 and water_temp() < 65 and not manual_heater_override())
             ),
             UnifiedHttpShellyRM(
-                self, 2, "10.10.20.58", "Heater L2", 0, 30, 1, CommodityQuantity.ELECTRIC_POWER_L2, 1150.0, 60, 60,
+                self, 2, "10.10.20.58", "Heater L2", 0, 30, 1, CommodityQuantity.ELECTRIC_POWER_L2, 1150.0, 60, 30,
                 lambda: (rod_temp() < 95 and water_temp() < 65 and not manual_heater_override())
             ),
             UnifiedHttpShellyRM(
-                self, 3, "10.10.20.58", "Heater L3", 1, 35, 1, CommodityQuantity.ELECTRIC_POWER_L3, 1150.0, 60, 60, 
+                self, 3, "10.10.20.58", "Heater L3", 1, 35, 1, CommodityQuantity.ELECTRIC_POWER_L3, 1150.0, 60, 30, 
                 lambda: (rod_temp() < 90 and water_temp() < 65 and not manual_heater_override())
             ),
             UnifiedHttpShellyRM(
@@ -475,7 +475,7 @@ class ShellyMockService(Service):
                 lambda: (pool_temp() <=34 and pool_heatpump_automatic())
             ),
             UnifiedHttpShellyRM(
-                self, 6, "10.10.20.66", "Pool E-Heater", 1, 20, 1, CommodityQuantity.ELECTRIC_POWER_L2, 2750.0, 60, 300,
+                self, 6, "10.10.20.66", "Pool E-Heater", 1, 26, 1, CommodityQuantity.ELECTRIC_POWER_L2, 2750.0, 60, 30,
                 lambda: (pool_temp() <=30 and pool_heater_automatic())
             ),
         ]
@@ -522,6 +522,7 @@ if __name__ == "__main__":
         # Suppress DEBUG output from requests
         logging.getLogger("requests").setLevel(logging.WARNING)
         logging.getLogger("urllib3").setLevel(logging.WARNING)
+        
 
     async def main():
         configure_logger()
