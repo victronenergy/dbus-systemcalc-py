@@ -248,13 +248,14 @@ class PhaseAwareFloat():
 
 class SolarOverhead():
 	def __init__(self, l1:float, l2:float, l3:float, dcpv:float, reservation:float, battery_rate:float, 
-			  inverterPowerL1:float, inverterPowerL2:float, inverterPowerL3:float):
+			  inverterPowerL1:float, inverterPowerL2:float, inverterPowerL3:float, delegate):
 		self.power:PhaseAwareFloat = PhaseAwareFloat(l1,l2,l3,dcpv)
 		self.inverterPower:PhaseAwareFloat = PhaseAwareFloat(inverterPowerL1, inverterPowerL2, inverterPowerL3)
 		self.power_reserved:PhaseAwareFloat = PhaseAwareFloat()
 		self._prior_power:PhaseAwareFloat = None
 		self.power_claim:PhaseAwareFloat = None
 		self.power_request:PhaseAwareFloat = None
+		self._delegate:HEMS = delegate
 		
 		self.battery_rate = battery_rate
 		self.battery_reservation = reservation
@@ -309,10 +310,6 @@ class SolarOverhead():
 		if not self.transaction_running:
 			raise Exception("No Solar Claim Transaction currently running. Need to call begin() before claiming power.")
 		
-		#If primary is true, ignore the battery reservation.
-		#else, evaluate against the amount AFTER deducting reservation. 
-		rsrv = 0 if primary else 1
-
 		#When claiming energy, we always try to do it the most efficient way: First AC-PV, Second DC-PV, Third ACDCAC-PV.
 		#Only if none (or combination of all) claims does not work out, we consider the claim failed. 
 
@@ -338,7 +335,52 @@ class SolarOverhead():
 		#calculate the claim_factor as OMBC needs it. Other control types don't need this, but doesn't hurt either. 
 		power_factor = (maxv - minv) / claim_target_total if claim_target_total > 0 else 0
 
-		#now, deduct energy from the proper source. We start by allocating direct ACPV, then take DC, finally fullfill with ACDCAC
+		#now, deduct energy from the proper source. We start by allocating direct ACPV.
+		claim_target = self._try_claim_ac(claim_target)
+		
+		#Based on the system type we now proceed with DC or ACDCAC. If the system has a saldating measurement method,
+		#We can claim ACDCAC lossless, so prefer that. Any other case preferably uses DC first.
+		if claim_target.total > 0:
+			if self._delegate.system_type in [SystemType.GridConnected2PhaseSaldating, SystemType.GridConnected3PhaseSaldating]:
+				claim_target = self._try_claim_acdcac(claim_target, 1.0)
+				if (claim_target.total > 0):
+					claim_target = self._try_claim_dc(claim_target)	
+			else:
+				claim_target = self._try_claim_dc(claim_target)
+				if (claim_target.total > 0):
+					claim_target = self._try_claim_acdcac(claim_target, 0.9025)
+		
+		#check, if the claim_target is fully satisfied.
+		if claim_target.total > 0:
+			logger.debug("- Missing Power: {}W".format(claim_target.total))
+			if not force:
+				#claim just failed
+				return False
+			else:
+				#Forced claim, punish the battery for what is missing. 
+				logger.debug("-- Force claiming remaining power from dc: {}W".format(claim_target.total))
+				self.power.dc -= claim_target.total
+				self.power_claim.dc += claim_target.total
+		
+		#final considerations:
+		#check if battery reservation would be violated, then this can't be allowed.
+		#Exception is the state is forced, or the consumer is primary. 
+		logger.debug ("- Claim {}W vs reservation {}W on budget {}W (Primary:{}, force:{})".format(self.power_claim.total, self.battery_reservation, self.power.total, primary, force))
+		if (self.power.total < self.battery_reservation) and not primary and not force:
+			logger.debug("-- Claiming {}W would violate Battery reservation. Rejecting.".format(self.power_claim.total))
+			return False
+
+		#last but not least: Primary consumers are allowed to run despite reservation. However, consumption needs to be covered
+		#before they can be enabled. Check, if that is true for a primary request. 
+		#Deny primaries unless the resulting overheat total is greater than 50 Watts. (To avoid some extensive on/off flickering)
+		if (not force and primary and not self.power.total > 50):
+			logger.debug("-- Claiming {}W (primary) would violate Consumption reservation. Rejecting.".format(self.power_claim.total))
+			return False
+
+		#We either satisfied all needs or force-claimed power from dc.
+		return True
+	
+	def _try_claim_ac(self, claim_target:PhaseAwareFloat):
 		logger.debug("AC Claim begin. Claim {} and remaining: {}".format(self.power_claim, claim_target))
 
 		#1) Direct AC Claim. 
@@ -359,9 +401,10 @@ class SolarOverhead():
 				logger.debug("---- AC L{} now {}W".format(l, self.power.by_phase[l]))
 
 		logger.debug("AC done. Claim {} and remaining: {}".format(self.power_claim, claim_target))
-		logger.debug("DC Claim begin. DC is {}W".format(self.power.dc))
+		return claim_target
 
-		#2) Check, if we need to source more from DCPV.
+	def _try_claim_dc(self, claim_target:PhaseAwareFloat):
+		logger.debug("DC Claim begin. DC is {}W".format(self.power.dc))
 		for l in [1,2,3]:
 			if claim_target.by_phase[l] > 0:
 				if claim_target.by_phase[l] <= self.power.dc:
@@ -379,6 +422,9 @@ class SolarOverhead():
 				claim_target.by_phase[l] -= claimed
 		
 		logger.debug("DC done. Claim {} and remaining: {}".format(self.power_claim, claim_target))
+		return claim_target
+
+	def _try_claim_acdcac(self, claim_target:PhaseAwareFloat, efficiency_penalty:float):
 		logger.debug("ACDCAC Claim begin. Overhead is {}".format(self.power))
 
 		#3) Check, if we need to source more fron ACDCAC. That will be deducted with an efficiency penalty of 2 times conversion losses (0.9025)
@@ -391,10 +437,10 @@ class SolarOverhead():
 				#claiming ACDCAC means, we can claim from any other phase that is NOT the current phase. 
 				for o in [1,2,3]:
 					if l != o:
-						if self.power.by_phase[o] >= claim_target.by_phase[l]/0.9025:
+						if self.power.by_phase[o] >= claim_target.by_phase[l]/efficiency_penalty:
 							#can be totally satisfied by ACDCAC from o.
 							effective_claim = claim_target.by_phase[l]
-							total_claim = claim_target.by_phase[l]/0.9025
+							total_claim = claim_target.by_phase[l]/efficiency_penalty
 							self.power_claim.by_phase[o] += total_claim
 							self.power.by_phase[o] -= total_claim
 							claim_target.by_phase[l] -= effective_claim #satisfied.
@@ -402,7 +448,7 @@ class SolarOverhead():
 						else:
 							#there is not enough on o. eventually we have another o to try to get the remaining power.
 							#take what this o has to offer.
-							effective_claim = self.power.by_phase[o] * 0.9025
+							effective_claim = self.power.by_phase[o] * efficiency_penalty
 							total_claim = self.power.by_phase[o]
 							self.power_claim.by_phase[o] += total_claim
 							self.power.by_phase[o] -= total_claim
@@ -410,28 +456,8 @@ class SolarOverhead():
 							logger.debug("-- claimed {}W AC (Effective {}W) from L{} to be used on L{} (not enough ACDCAC)".format(total_claim, effective_claim, o, l))
 				
 		logger.debug("ACDCAC done. Claim {} and remaining: {}".format(self.power_claim, claim_target))
-
-		#check, if the claim_target is fully satisfied.
-		if claim_target.total > 0:
-			logger.debug("- Missing Power: {}W".format(claim_target.total))
-			if not force:
-				#claim just failed
-				return False
-			else:
-				#Forced claim, punish the battery for what is missing. 
-				logger.debug("-- Force claiming remaining power from dc: {}W".format(claim_target.total))
-				self.power.dc -= claim_target.total
-				self.power_claim.dc += claim_target.total
-		
-		#final consideration - check if battery reservation would be violated.
-		logger.debug ("- Claim {}W vs reservation {}W on budget {}W (Primary:{}, force:{})".format(self.power_claim.total, self.battery_reservation, self.power.total, primary, force))
-		if (self.power.total < self.battery_reservation) and not primary and not force:
-			logger.debug("-- Claiming {}W would violate Battery reservation. Rejecting.".format(self.power_claim.total))
-			return False
-
-		#We either satisfied all needs or force-claimed power from dc.
-		return True
-
+		return claim_target
+	
 	def rollback(self):
 		"""
 			Rollback the current transaction, restoring prior values associated with the underlaying PhaseAwareFloat
@@ -1504,4 +1530,5 @@ class HEMS(SystemCalcDelegate):
 			4000, #TODO: Nominal Inverter Power(s). this needs to be queried "somehow".
 			4000,
 			4000,
+			self
 		)
