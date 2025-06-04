@@ -330,7 +330,7 @@ class S2ResourceManagerItem(S2ServerItem):
 
         await send_okay
 
-        logger.debug(
+        logger.info(
             "CEM selected control type %s. Activating control type.",
             message.control_type,
         )

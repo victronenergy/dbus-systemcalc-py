@@ -321,7 +321,7 @@ class UnifiedHttpShellyRM(S2ResourceManagerItem):
                 if self.can_be_controlled():
                     if self._current_control_type != self.ct_ombc:
                         #Offer OMBC control.
-                        self.log_info("Offering OMBC...")
+                        self.log_info("Offering OMBC... (Current ControlType is: {})".format(self._current_control_type))
                         #FIXME: Until Fixed by PT, we need to update the internal control type map as well
                         self.control_types = [self.ct_ombc]
                         await self.send_msg_and_await_reception_status(
@@ -329,7 +329,7 @@ class UnifiedHttpShellyRM(S2ResourceManagerItem):
                         )
                 else:
                     if self._current_control_type != self.ct_no_ctrl:
-                        self.log_info("Offering NOCTRL...")
+                        self.log_info("Offering NOCTRL... (Current ControlType is: {})".format(self._current_control_type))
                         #FIXME: Until Fixed by PT, we need to update the internal control type map as well
                         self.control_types = [self.ct_no_ctrl]
                         await self.send_msg_and_await_reception_status(
@@ -350,7 +350,8 @@ class UnifiedHttpShellyRM(S2ResourceManagerItem):
         try:
             jmsg = json.loads(message)
 
-            #self.log_info("Received message: {}".format(jmsg))
+            if (jmsg["message_type"] != "ReceptionStatus"):
+                self.log_info("Received message: {}".format(jmsg))
 
             if jmsg["message_type"] == "OMBC.Instruction":
                 #FIXME: This should have be called by S2 implementation, this is just a hack lacking type-safety and parameters. 
@@ -360,7 +361,7 @@ class UnifiedHttpShellyRM(S2ResourceManagerItem):
                 self.ct_ombc.handle_instruction(None, msg, None)
                 return
         except Exception as ex:
-            logger.error("Exception", exc_info=ex)
+            logger.error("Exception in _on_s2_message", exc_info=ex)
 
         # forward other messages to base.
         return await super()._on_s2_message(message)
