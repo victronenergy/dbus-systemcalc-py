@@ -236,9 +236,6 @@ class PhaseAwareFloat():
 
 	@property
 	def total(self)->float:
-		#TODO: Think about, if it makes sence to have dc beeing part of total. It does for Overhead, 
-		#      and consumptions reported by consumers will always only be AC-consumption, so DC has no impact. 
-		#      the consumers power claim should either contain ac or dc values (or a mix of both), so total should be correct again.
 		return self._l1 + self._l2 + self._l3 + self._dc
 	
 	def __repr__(self):
@@ -280,9 +277,6 @@ class SolarOverhead():
 						else:
 							reservation -= self.power.by_phase[l] * 0.9
 							self.power_reserved.by_phase[l] = self.power.by_phase[l] #need all of this phase.
-				
-				#TODO: If reservation still > 0, it can't be covered by now. Need to deduct that somewhere anyway?
-				#      Shouldn't be required, all components are 0'd, no Primary-Consumer will be able to run.
 
 	def __repr__(self):
 		return "SolarOverhead[power={}, res={}, tr={}]".format(
@@ -430,8 +424,6 @@ class SolarOverhead():
 		#3) Check, if we need to source more fron ACDCAC. That will be deducted with an efficiency penalty of 2 times conversion losses (0.9025)
 		#   From the respective phase we are sourcing from. At this point, we have to validate claimings, what was initially calculated as "matching"
 		#   against the total may now exceed the available budget due to conversion losses. 
-		#FIXME: While we theoretically still claim OUR energy from another phase, on Systems using Multiphase-Balancing,
-		#       We don't have an efficiency penalty for that.
 		for l in [1,2,3]:
 			if claim_target.by_phase[l] > 0:
 				#claiming ACDCAC means, we can claim from any other phase that is NOT the current phase. 
@@ -672,7 +664,6 @@ class S2RMDelegate():
 		total = 0
 		for pv in message.values:
 			if pv.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC:
-				#TODO: To Clearify, if power value is the single phased or three phased value.
 				for c in [CommodityQuantity.ELECTRIC_POWER_L1, CommodityQuantity.ELECTRIC_POWER_L2, CommodityQuantity.ELECTRIC_POWER_L3]:
 					increase_counter(self, c, pv.value / 3.0, message.measurement_timestamp)
 					total += pv.value / 3.0
@@ -781,7 +772,7 @@ class S2RMDelegate():
 				selected_protocol_version=S2_VERSION
 			)
 
-			self._s2_send_message(resp) #TODO: Verify it worked?
+			self._s2_send_message(resp)
 		else:
 			logger.warning("RM {} is using outdated version: {}; expected: {}".format(self.unique_identifier, message.supported_protocol_versions, S2_VERSION))
 			#wrong version. Reject. 
@@ -911,7 +902,7 @@ class S2RMDelegate():
 					self.power_request = overhead.power_request
 				break
 		
-		#TODO: If we are here, and didn't find a proper operation mode with 0Watt - the client probably didn't report
+		#FIXME: If we are here, and didn't find a proper operation mode with 0Watt - the client probably didn't report
 		#      one. So, let's see, if we can switch to a NOCTRL mode, if not, drop the connection.
 		
 		return overhead
@@ -955,8 +946,6 @@ class S2RMDelegate():
 					)
 
 					logger.info("Instruction send: OMBC = {} for {}".format(self._ombc_next_operation_mode.diagnostic_label, self.unique_identifier))
-					#FIXME: Sometimes power_claim is None - this should never happen. It at least has to be a 0-Claim.
-					#       Probably happens, when a state is not reachable, Force-Claim-Issue?
 					logger.info("Power-Claim: {}".format(self.power_claim))
 
 					#Check, if this transition starts any timer. Only required if we leave a well known operation mode. 
@@ -964,8 +953,6 @@ class S2RMDelegate():
 						for t in self.ombc_system_description.transitions:
 							if t.from_ == self.ombc_active_operation_mode.id and t.to == self._ombc_next_operation_mode.id:
 								#transition found, timer required?
-
-								#TODO: If we cannot find a transition - we can't even transition between these states. Needs to be considered.
 								for tmr in t.start_timers:
 									#find the timer we need to start and start it. 
 									for tmr_cand in self.ombc_system_description.timers:
@@ -1120,8 +1107,6 @@ class HEMS(SystemCalcDelegate):
 		# Settings for HEMS
 		path = '/Settings/HEMS'
 		#EnergyCounters are stored in settings. Values will be written every 15 min, meanwhile run out of memory.
-		#TODO: Settings with no limit? 
-		#TODO: ReadOnly Settings?
 		settings = [
 			("hems_mode", path + "/Mode", 0, 0, 1),
 			("hems_clinterval", path + "/ControlLoopInterval", 5, 1, 60),
@@ -1484,9 +1469,7 @@ class HEMS(SystemCalcDelegate):
 			If the systems state doesn't allow to determine a numeric overhead, None is returned, then the alternative algorithm has to be
 			choosen, balancing on a soc-point.
 		"""
-		#TODO: If system mode does not allow to determine overhead, return None.
-		#      Eventually the easiest way is to return an artificial Solar-Overhead, increasing 100W per iteration
-		#      Until we get a slightly negative discharge rate?
+		#TODO: On Offgrid / ZeroFeedIn Systems, we need to mimic increased DC overhead, when approaching the battery-soc limit to ensure solar is not throttled. 
 		batrate = (self._dbusservice["/Dc/Battery/Power"] or 0)
 		l1 = (self._dbusservice["/Ac/PvOnGrid/L1/Power"] or 0) + (self._dbusservice["/Ac/PvOnOutput/L1/Power"] or 0) - (self._dbusservice["/Ac/Consumption/L1/Power"] or 0)
 		l2 = (self._dbusservice["/Ac/PvOnGrid/L2/Power"] or 0) + (self._dbusservice["/Ac/PvOnOutput/L2/Power"] or 0) - (self._dbusservice["/Ac/Consumption/L2/Power"] or 0)
@@ -1505,7 +1488,7 @@ class HEMS(SystemCalcDelegate):
 		#DCPV Overhead is: Actual DC PV Power - every ac consumption that is not baked by ACPV.
 		#finally, if there is no solar at all, dcpv overhead should be negative and equal the
 		#battery discharge rate.
-		dcpv = (self._dbusservice["/Dc/Pv/Power"] or 0) * 0.95 #dcpv has a penalty of 0.9 when beeing turned into AC Consumption.
+		dcpv = (self._dbusservice["/Dc/Pv/Power"] or 0) * 0.95 #dcpv has a penalty of 0.95 when beeing turned into AC Consumption.
 
 		if l1 < 0:
 			dcpv -= abs(l1)
