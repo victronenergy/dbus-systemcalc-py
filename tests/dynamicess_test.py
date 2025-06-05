@@ -92,7 +92,7 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp
 		})
 
-		self.validate_self_consume
+		self.validate_self_consume()
 	
 	def test_2_SCHEDULED_CHARGE_ALLOW_GRID(self):
 		now = timer_manager.datetime
@@ -405,32 +405,56 @@ class TestDynamicEss(TestSystemCalcBase):
 		self.validate_self_consume(300)
 
 	def test_15_IDLE_NO_OPPORTUNITY(self):
+		#This has been replaced, cause PROGRID now allows to go bellow targetsoc,
+		# see test_20_SELF_CONSUME_ACCEPT_BELLOW_TSOC_1
+		# and test_20_SELF_CONSUME_ACCEPT_BELLOW_TSOC_2
+		pass
+
+	def test_20_SELF_CONSUME_ACCEPT_BELLOW_TSOC_1(self):
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
 
-		#Set a 10 kWh battery, so charging 1% soc should equal 100 Watt chargerate. (times 1.1 cause ac/dc)
 		self._set_setting('/Settings/DynamicEss/BatteryCapacity', 10.0)
 		self._monitor.set_value(self.vebus, '/Soc', 50.0)
+
 		self._set_setting('/Settings/DynamicEss/Mode', 1)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 1) #restriction and no solar should enter idle with M2B coping
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 60)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 	
 		timer_manager.run(5000)
 
+		#pretend there is consumption, beside we want to charge. 
+		#System should enter 20: SELF_CONSUME_ACCEPT_BELLOW_TSOC due to PROGRID (3) Strategy.
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L1/Power", 0)
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L2/Power", 0)
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L3/Power", 0)
+
+		self._add_device('com.victronenergy.pvinverter.mock31', {
+			'/Ac/L1/Power': 300,
+			'/Ac/L2/Power': 0,
+			'/Ac/L3/Power': 0,
+			'/Position': 0,
+			'/Connected': 1,
+			'/DeviceInstance': 31,
+		})
+
+		self._update_values()
+
 		#check internal values
 		self._check_values({
 			'/DynamicEss/Active': 1,
-			'/DynamicEss/ReactiveStrategy': 15,
+			'/DynamicEss/ReactiveStrategy': 20,
 			'/DynamicEss/LastScheduledStart': stamp,
+			'/Ac/Consumption/L1/Power': 300,
+			'/Ac/Consumption/L2/Power': 0,
+			'/Ac/Consumption/L3/Power': 0,
 		})
 
-		self.validate_idle_state()
-
-
+		self.validate_self_consume()
 
 	def test_17_SELFCONSUME_INCREASED_DISCHARGE(self):
 		# keep battery charged should be entered, when we have 100 soc = 100 tsoc and
@@ -560,13 +584,13 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Mode', 1)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3) #use progrid for discharge.
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0) #use targetsoc for discharge.
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 40)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Start', stamp + 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Duration', 3600)
-		self._set_setting('/Settings/DynamicEss/Schedule/1/Strategy', 3) #use progrid for discharge.
+		self._set_setting('/Settings/DynamicEss/Schedule/1/Strategy', 0) #use targetsoc for discharge.
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Soc', 35)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/AllowGridFeedIn', 1)
 
@@ -574,7 +598,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		timer_manager.run(1800 * 1000)
 		self._check_values({
 			'/DynamicEss/Active': 1,
-			'/DynamicEss/ReactiveStrategy': 13,
+			'/DynamicEss/ReactiveStrategy': 6,
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 
@@ -607,7 +631,7 @@ class TestDynamicEss(TestSystemCalcBase):
 
 		self._check_values({
 			'/DynamicEss/Active': 1,
-			'/DynamicEss/ReactiveStrategy': 13,
+			'/DynamicEss/ReactiveStrategy': 6,
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 
@@ -630,13 +654,13 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Mode', 1)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 40)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Start', stamp + 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Duration', 3600)
-		self._set_setting('/Settings/DynamicEss/Schedule/1/Strategy', 3)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/Strategy', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Soc', 35)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/AllowGridFeedIn', 1)
 
@@ -644,7 +668,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		timer_manager.run(1800 * 1000)
 		self._check_values({
 			'/DynamicEss/Active': 1,
-			'/DynamicEss/ReactiveStrategy': 13,
+			'/DynamicEss/ReactiveStrategy': 6,
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 
@@ -675,7 +699,7 @@ class TestDynamicEss(TestSystemCalcBase):
 
 		self._check_values({
 			'/DynamicEss/Active': 1,
-			'/DynamicEss/ReactiveStrategy': 13,
+			'/DynamicEss/ReactiveStrategy': 6,
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 
