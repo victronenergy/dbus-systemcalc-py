@@ -1123,14 +1123,9 @@ class HEMS(SystemCalcDelegate):
 		return settings
 
 	def get_input(self):
-		#TODO: Adjust for settings we need. Need a generic approach to handle /S2/ paths for retrieval.
-		#      They can appear in any service, but we don't want to list 20 eventual paths for every service :-(
-		#	   We need to subscribe to our own counter-settings as well, so dbusmonitor can perform async updates of
-		#      these values.
-
-		#TODO: Nicer way? Subscribe to 30 possible devices for now
+		#Subscribe to 10 possible devices per service for now
 		topic_list = []
-		for i in range(0, 31):
+		for i in range(0, 9):
 			topic_list.append('/Devices/{}/S2/Priority'.format(i))
 			topic_list.append('/Devices/{}/S2/ConsumerType'.format(i))
 
@@ -1383,6 +1378,7 @@ class HEMS(SystemCalcDelegate):
 
 	def _on_timer(self):
 		logger.debug("v------------------- LOOP -------------------v")
+		# TODO: Add temporary performance counters for loop method, so we can figure out, how intense HEMS is.
 		# Control loop timer.
 		now = self._get_time()
 		self.system_type = self._determine_system_type()
@@ -1480,6 +1476,8 @@ class HEMS(SystemCalcDelegate):
 		#current_power will still report AC consumption based on phase-allocation of the consumer. 
 		for unique_identifier, delegate in self.managed_rms.items():
 			if delegate.initialized:
+				#FIXME: If a consumer is running manually, it's power should not be considered available overhread.
+				#       Also, HEMS consumption counters should not count. -> implement delegate.is_hems_controlled()
 				if delegate.current_power is not None:
 					l1 += delegate.current_power.l1
 					l2 += delegate.current_power.l2

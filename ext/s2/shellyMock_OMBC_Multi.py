@@ -476,7 +476,7 @@ class ShellyMockService(Service):
                 lambda: (pool_temp() <=34 and pool_heatpump_automatic())
             ),
             UnifiedHttpShellyRM(
-                self, 6, "10.10.20.66", "Pool E-Heater", 1, 26, 1, CommodityQuantity.ELECTRIC_POWER_L2, 2750.0, 60, 30,
+                self, 6, "10.10.20.66", "Pool E-Heater", 1, 20, 1, CommodityQuantity.ELECTRIC_POWER_L2, 2750.0, 60, 30,
                 lambda: (pool_temp() <=30 and pool_heater_automatic())
             ),
         ]
