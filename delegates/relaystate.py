@@ -3,6 +3,7 @@ import logging
 import os
 import traceback
 from glob import glob
+from functools import partial
 
 # Victron packages
 from ve_utils import exit_on_error
@@ -40,13 +41,13 @@ class RelayState(SystemCalcDelegate):
 			logging.info('No relays found')
 			return
 
-		self._relays.update({'/Relay/{}/State'.format(i): os.path.join(r, 'value') \
+		self._relays.update({i: os.path.join(r, 'value') \
 			for i, r in enumerate(relays) })
 
 		GLib.idle_add(exit_on_error, self._init_relay_state)
-		for dbus_path in self._relays.keys():
-			self._dbusservice.add_path(dbus_path, value=None, writeable=True,
-				onchangecallback=self._on_relay_state_changed)
+		for idx in self._relays.keys():
+			self._dbusservice.add_path(f'/Relay/{idx}/State', value=None, writeable=True,
+				onchangecallback=partial(self._on_relay_state_changed, idx))
 
 		logging.info('Relays found: {}'.format(', '.join(self._relays.values())))
 
@@ -54,16 +55,17 @@ class RelayState(SystemCalcDelegate):
 		if self.relay_function is None:
 			return True # Try again on the next idle event
 
-		for dbus_path, path in self._relays.items():
-			if self.relay_function != 2 and dbus_path == '/Relay/0/State':
+		for idx, path in self._relays.items():
+			if self.relay_function != 2 and idx == 0:
 				continue # Skip primary relay if function is not manual
+			dbus_path = f'/Relay/{idx}/State'
 			try:
 				state = self._settings[dbus_path]
 			except KeyError:
 				pass
 			else:
 				self._dbusservice[dbus_path] = state
-				self.__on_relay_state_changed(dbus_path, state)
+				self.__on_relay_state_changed(idx, state)
 
 		# Sync state back to dbus
 		self._update_relay_state()
@@ -74,18 +76,18 @@ class RelayState(SystemCalcDelegate):
 
 	def _update_relay_state(self):
 		# @todo EV Do we still need this? Maybe only at startup?
-		for dbus_path, file_path in self._relays.items():
+		for idx, file_path in self._relays.items():
 			try:
 				with open(file_path, 'rt') as r:
 					state = int(r.read().strip())
-					self._dbusservice[dbus_path] = state
+					self._dbusservice[f'/Relay/{idx}/State'] = state
 			except (IOError, ValueError):
 				traceback.print_exc()
 		return True
 
-	def __on_relay_state_changed(self, dbus_path, state):
+	def __on_relay_state_changed(self, idx, state):
 		try:
-			path = self._relays[dbus_path]
+			path = self._relays[idx]
 			with open(path, 'wt') as w:
 				w.write(str(state))
 		except IOError:
@@ -93,14 +95,14 @@ class RelayState(SystemCalcDelegate):
 			return False
 		return True
 
-	def _on_relay_state_changed(self, dbus_path, value):
+	def _on_relay_state_changed(self, idx, dbus_path, value):
 		try:
 			state = int(bool(value))
 		except ValueError:
 			traceback.print_exc()
 			return False
 		try:
-			return self.__on_relay_state_changed(dbus_path, state)
+			return self.__on_relay_state_changed(idx, state)
 		finally:
 			# Remember the state to restore after a restart
-			self._settings[dbus_path] = state
+			self._settings[f'/Relay/{idx}/State'] = state
