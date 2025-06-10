@@ -726,6 +726,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			('com.victronenergy.settings', [
 				'/Settings/CGwacs/Hub4Mode',
 				'/Settings/CGwacs/MaxFeedInPower',
+				'/Settings/CGwacs/AcPowerSetPoint',
 				'/Settings/CGwacs/PreventFeedback'])
 		]
 
