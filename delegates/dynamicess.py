@@ -281,6 +281,11 @@ class VebusDevice(EssDevice):
                 '/Settings/CGwacs/Hub4Mode')
 
 	@property
+	def userconfiguredsetpoint(self):
+		return self.monitor.get_value('com.victronenergy.settings',
+                '/Settings/CGwacs/AcPowerSetPoint')
+	
+	@property
 	def maxfeedinpower(self):
 		local_feedin_limit = self.monitor.get_value('com.victronenergy.settings',
                 '/Settings/CGwacs/MaxFeedInPower')
@@ -446,8 +451,14 @@ class VebusDevice(EssDevice):
 		# If exporting battery to grid is restricted, then limit DC-AC
 		# conversion to pvpower plus consumption. Otherwise unrestricted
 		# and even a negative ESS grid setpoint will cause power to go to
-		# the grid.
-		dcp = -1.0 if batteryexport else max(self.pvpower + self.consumption, 1.0)
+		# the grid. However, if the user is willingly targeting a negative grid
+		# setpoint, the power to sustain that during night needs to be granted as well.
+		gsp = self.userconfiguredsetpoint or 0 #or 0 required for unit-test, can't set gsp there.
+		gsp_sustain_discharge = 0.0
+		if gsp < 0:
+			gsp_sustain_discharge = gsp * -1
+
+		dcp = -1.0 if batteryexport else max(self.pvpower + self.consumption + gsp_sustain_discharge, 1.0)
 		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', dcp)
 
 	def deactivate(self):

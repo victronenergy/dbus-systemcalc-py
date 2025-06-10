@@ -60,6 +60,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._add_device(self.settings_service,
 			values={
 				'/Settings/CGwacs/MaxFeedInPower': -1,
+				#'/Settings/CGwacs/AcPowerSetPoint': 50.0, --not working, unknown setting it says. :( 
 				'/Settings/CGwacs/PreventFeedback': 0,
 				'/Settings/SystemSetup/AcInput1': 1,
 			})
@@ -754,7 +755,7 @@ class TestDynamicEss(TestSystemCalcBase):
 			'com.victronenergy.hub4': {
 				'/Overrides/ForceCharge': 0,
 				'/Overrides/Setpoint': None,
-				'/Overrides/MaxDischargePower': -1
+				'/Overrides/MaxDischargePower': -1 #only valid for when there is no export limit. But fine for the scope of the tests.
 		}})
 
 		self.assertEqual(maxChargePower, Dvcc.instance.internal_maxchargepower)
