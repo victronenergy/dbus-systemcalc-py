@@ -20,18 +20,40 @@ class RelayState(SystemCalcDelegate):
 	def get_input(self):
 		return [
 			('com.victronenergy.settings', [
-				 '/Settings/Relay/Function'])] # Managed by the gui
+				 '/Settings/Relay/Function', # Managed by the gui
+				 '/Settings/Relay/1/Function'])]
 
 	def get_settings(self):
 		return [
 			('/Relay/0/State', '/Settings/Relay/0/InitialState', 0, 0, 1),
-			('/Relay/1/State', '/Settings/Relay/1/InitialState', 0, 0, 1)
+			('/SwitchableOutput/0/Settings/Group', '/Settings/Relay/0/Group', "", 0, 0),
+			('/SwitchableOutput/0/Settings/CustomName', '/Settings/Relay/0/CustomName', "", 0, 0),
+			('/SwitchableOutput/0/Settings/ShowUIControl', '/Settings/Relay/0/ShowUIControl', 0, 0, 1),
+
+			('/Relay/1/State', '/Settings/Relay/1/InitialState', 0, 0, 1),
+			('/SwitchableOutput/1/Settings/Group', '/Settings/Relay/1/Group', "", 0, 0),
+			('/SwitchableOutput/1/Settings/CustomName', '/Settings/Relay/1/CustomName', "", 0, 0),
+			('/SwitchableOutput/1/Settings/ShowUIControl', '/Settings/Relay/1/ShowUIControl', 0, 0, 1),
 		]
+
+	def _relay_function(self, idx):
+		return self._dbusmonitor.get_value('com.victronenergy.settings',
+			('/Settings/Relay/Function' if idx == 0 else
+			 f'/Settings/Relay/{idx}/Function'))
+
+	def set_relay_function(self, valid, idx, v):
+		# check that function is allowed. The relevant bit must be in the
+		# valid mask
+		if 0 <= v <= 5 and bool(2**v & valid):
+			self._dbusmonitor.set_value('com.victronenergy.settings',
+				('/Settings/Relay/Function' if idx == 0 else
+				 f'/Settings/Relay/{idx}/Function'), v)
+			return True
+		return False
 
 	@property
 	def relay_function(self):
-		return self._dbusmonitor.get_value('com.victronenergy.settings',
-			'/Settings/Relay/Function')
+		return self._relay_function(0)
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
@@ -49,6 +71,32 @@ class RelayState(SystemCalcDelegate):
 			self._dbusservice.add_path(f'/Relay/{idx}/State', value=None, writeable=True,
 				onchangecallback=partial(self._on_relay_state_changed, idx))
 
+			# Switchable output paths
+			self._dbusservice.add_path(f'/SwitchableOutput/{idx}/State', value=None,
+				writeable=True, onchangecallback=partial(self._on_relay_state_changed, idx))
+
+			self._dbusservice.add_path(f'/SwitchableOutput/{idx}/Name', f'GX internal relay {idx+1}')
+			self._dbusservice.add_path(f'/SwitchableOutput/{idx}/Status', value=None)
+
+			# Switchable output settings
+			for setting, typ in (('Group', str), ('CustomName', str), ('ShowUIControl', bool)):
+				self._dbusservice.add_path(p := f'/SwitchableOutput/{idx}/Settings/{setting}',
+					value=self._settings[p], writeable=True,
+					onchangecallback=partial(self._on_relay_setting_changed, idx, typ))
+
+			self._dbusservice.add_path(f'/SwitchableOutput/{idx}/Settings/Type',
+				value=1, writeable=True, onchangecallback=(lambda p, v: v == 1)) # R/W, but only accepts latching
+			self._dbusservice.add_path(f'/SwitchableOutput/{idx}/Settings/ValidTypes',
+				value=2) # Latching
+
+			# All functions for first relay, Manual and temperature for the rest
+			functions = 0b111111 if idx == 0 else 0b10100
+			self._dbusservice.add_path(f'/SwitchableOutput/{idx}/Settings/Function',
+				value=self._relay_function(idx), writeable=True,
+				onchangecallback=lambda p, v, idx=idx: self.set_relay_function(functions, idx, int(v)))
+			self._dbusservice.add_path(f'/SwitchableOutput/{idx}/Settings/ValidFunctions',
+				value=functions)
+
 		logging.info('Relays found: {}'.format(', '.join(self._relays.values())))
 
 	def _init_relay_state(self):
@@ -58,13 +106,12 @@ class RelayState(SystemCalcDelegate):
 		for idx, path in self._relays.items():
 			if self.relay_function != 2 and idx == 0:
 				continue # Skip primary relay if function is not manual
-			dbus_path = f'/Relay/{idx}/State'
 			try:
-				state = self._settings[dbus_path]
+				state = self._settings[f'/Relay/{idx}/State']
 			except KeyError:
 				pass
 			else:
-				self._dbusservice[dbus_path] = state
+				self._set_relay_dbus_state(idx, state)
 				self.__on_relay_state_changed(idx, state)
 
 		# Sync state back to dbus
@@ -80,10 +127,19 @@ class RelayState(SystemCalcDelegate):
 			try:
 				with open(file_path, 'rt') as r:
 					state = int(r.read().strip())
-					self._dbusservice[f'/Relay/{idx}/State'] = state
+					self._set_relay_dbus_state(idx, state)
 			except (IOError, ValueError):
 				traceback.print_exc()
+
+			# Make sure updates to relay function in settings is reflected here
+			self._dbusservice[f'/SwitchableOutput/{idx}/Settings/Function'] = self._relay_function(idx)
+
 		return True
+
+	def _set_relay_dbus_state(self, idx, state):
+		self._dbusservice[f'/Relay/{idx}/State'] = state
+		self._dbusservice[f'/SwitchableOutput/{idx}/State'] = state
+		self._dbusservice[f'/SwitchableOutput/{idx}/Status'] = 0x09 if state else 0x00
 
 	def __on_relay_state_changed(self, idx, state):
 		try:
@@ -101,8 +157,17 @@ class RelayState(SystemCalcDelegate):
 		except ValueError:
 			traceback.print_exc()
 			return False
+
+		self._set_relay_dbus_state(idx, state)
 		try:
 			return self.__on_relay_state_changed(idx, state)
 		finally:
 			# Remember the state to restore after a restart
 			self._settings[f'/Relay/{idx}/State'] = state
+
+	def _on_relay_setting_changed(self, idx, _type, dbus_path, value):
+		try:
+			self._settings[dbus_path] = _type(value)
+		except (KeyError, ValueError):
+			return False
+		return True
