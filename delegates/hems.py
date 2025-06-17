@@ -66,8 +66,9 @@ logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)s %(message)s',
 HUB4_SERVICE = "com.victronenergy.hub4"
 S2_IFACE = "com.victronenergy.S2"
 KEEP_ALIVE_INTERVAL = 30
-COUNTER_PERSIST_INTERVAL = 60 #save every 15 minutes. 
+COUNTER_PERSIST_INTERVAL = 60 
 CONNECTION_RETRY_INTERVAL = 35
+AC_DC_EFFICIENCY = 0.90 #Experimental Value.
 USE_FAKE_BMS = True
 
 class Modes(int, Enum):
@@ -271,11 +272,11 @@ class SolarOverhead():
 
 				for l in [3,2,1]:
 					if reservation > 0:
-						if reservation <= self.power.by_phase[l] * 0.9:
-							self.power_reserved.by_phase[l] = reservation / 0.9 #need part of this phase
+						if reservation <= self.power.by_phase[l] * AC_DC_EFFICIENCY:
+							self.power_reserved.by_phase[l] = reservation / AC_DC_EFFICIENCY #need part of this phase
 							reservation = 0
 						else:
-							reservation -= self.power.by_phase[l] * 0.9
+							reservation -= self.power.by_phase[l] * AC_DC_EFFICIENCY
 							self.power_reserved.by_phase[l] = self.power.by_phase[l] #need all of this phase.
 
 	def __repr__(self):
@@ -342,7 +343,7 @@ class SolarOverhead():
 			else:
 				claim_target = self._try_claim_dc(claim_target)
 				if (claim_target.total > 0):
-					claim_target = self._try_claim_acdcac(claim_target, 0.9025)
+					claim_target = self._try_claim_acdcac(claim_target, AC_DC_EFFICIENCY ** 2)
 		
 		#check, if the claim_target is fully satisfied.
 		if claim_target.total > 0:
@@ -421,7 +422,7 @@ class SolarOverhead():
 	def _try_claim_acdcac(self, claim_target:PhaseAwareFloat, efficiency_penalty:float):
 		logger.debug("ACDCAC Claim begin. Overhead is {}".format(self.power))
 
-		#3) Check, if we need to source more fron ACDCAC. That will be deducted with an efficiency penalty of 2 times conversion losses (0.9025)
+		#3) Check, if we need to source more fron ACDCAC. That will be deducted with an efficiency penalty of 2 times conversion losses AC_DC_EFFICIENCY ** 2
 		#   From the respective phase we are sourcing from. At this point, we have to validate claimings, what was initially calculated as "matching"
 		#   against the total may now exceed the available budget due to conversion losses. 
 		for l in [1,2,3]:
@@ -1232,11 +1233,24 @@ class HEMS(SystemCalcDelegate):
 		try:
 			reservation = round(eval(self._settings['hems_batteryreservation'].replace("SOC", str(self.soc))))
 			capability = self.get_charge_power_capability()
+			dess_charge = self._dbusservice["/DynamicEss/ChargeRate"]
+			logger.info("Dess chargerate is {}".format(dess_charge))
 			reservation_hint = "OK"
 			if capability != None:
 				if capability < reservation:
 					reservation = capability
 					reservation_hint = "BMS"
+
+			# for now, only handle the case when DESS is issuing a positive chargerate.
+			# having a lower chargerate issued than the calculated reservation otherwise would cause unused feedin.
+			# TODO: When DESS is keeping the rate lower, this has the intention to feedin. What should hems do? 
+			#       Possible Options (per Consumer?)
+			#       - Steal that overhead? (For now, we do that by simply lowering our reservation to what DESS wants to charge.)
+			#       - Stay "off" and let feedin happen?
+			if dess_charge is not None and dess_charge > 0:
+				if dess_charge < reservation:
+					reservation = dess_charge
+					reservation_hint = "DESS"
 				
 			self._dbusservice["/HEMS/BatteryReservationState"] = reservation_hint
 
@@ -1377,85 +1391,92 @@ class HEMS(SystemCalcDelegate):
 		return True
 
 	def _on_timer(self):
-		logger.debug("v------------------- LOOP -------------------v")
-		# TODO: Add temporary performance counters for loop method, so we can figure out, how intense HEMS is.
-		# Control loop timer.
-		now = self._get_time()
-		self.system_type = self._determine_system_type()
-		available_overhead = self._get_available_overhead()
+		try:
+			logger.debug("v------------------- LOOP -------------------v")
+			# TODO: Add temporary performance counters for loop method, so we can figure out, how intense HEMS is.
+			# Control loop timer.
+			now = self._get_time()
+			self.system_type = self._determine_system_type()
+			available_overhead = self._get_available_overhead()
 
-		logger.debug("SOC={}%, RSRV={}/{}W ({}), L1o={}W, L2o={}W, L3o={}W, dcpvo={}W, totalo={}W".format(
-				self.soc,
-				available_overhead.battery_rate,
-				self.current_battery_reservation,
-				self._dbusservice["/HEMS/BatteryReservationState"],
-				available_overhead.power.l1,
-				available_overhead.power.l2,
-				available_overhead.power.l3,
-				available_overhead.power.dc,
-				available_overhead.power.total,
+			logger.debug("SOC={}%, RSRV={}/{}W ({}), L1o={}W, L2o={}W, L3o={}W, dcpvo={}W, totalo={}W".format(
+					self.soc,
+					available_overhead.battery_rate,
+					self.current_battery_reservation,
+					self._dbusservice["/HEMS/BatteryReservationState"],
+					available_overhead.power.l1,
+					available_overhead.power.l2,
+					available_overhead.power.l3,
+					available_overhead.power.dc,
+					available_overhead.power.total,
+				)
 			)
-		)
 
-		if USE_FAKE_BMS:
-			try:
-				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Voltage", available_overhead.power.total)
+			if USE_FAKE_BMS:
+				try:
+					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Voltage", available_overhead.power.total)
 
-				if available_overhead.battery_rate > -1 and available_overhead.battery_rate < 1:
-					#0 will make the power value be calculated. avoid that.
-					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Power", 1)
+					if available_overhead.battery_rate > -1 and available_overhead.battery_rate < 1:
+						#0 will make the power value be calculated. avoid that.
+						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Power", 1)
+					else:
+						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Power", available_overhead.battery_rate)
+									
+					if available_overhead.battery_reservation > 0:
+						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Soc", available_overhead.battery_rate / available_overhead.battery_reservation * 100.0)
+					else:
+						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Soc", 0)
+				except:
+					pass
+
+			#Iterate over all known RMs, check their requirement and assign them a suitable Budget. 
+			#The RMDelegate is responsible to communicate with it's rm upon .comit() beeing called. 
+			#(Will be called after finishing all power assignments to avoid instructions beeing send out immediately)
+			#sort RMs by priority before iterating.
+			for unique_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority):
+				logger.debug("=============================================================================================================")  
+				if delegate.initialized and delegate.rm_details is not None:
+					if delegate.active_control_type is not None and delegate.active_control_type != ControlType.NOT_CONTROLABLE:
+						logger.debug("===== RM {} ({}) is controllable: {} =====".format(unique_identifier, delegate.rm_details.name, delegate.active_control_type))	
+						available_overhead = delegate.self_assign_overhead(available_overhead)
+						logger.debug("==> Remaining overhead: {}".format(available_overhead))
+					else:
+						logger.debug("===== RM {} ({}) is uncontrollable: {} =====".format(unique_identifier, delegate.rm_details.name, delegate.active_control_type))	
 				else:
-					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Power", available_overhead.battery_rate)
-								 
-				if available_overhead.battery_reservation > 0:
-					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Soc", available_overhead.battery_rate / available_overhead.battery_reservation * 100.0)
-				else:
-					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Soc", 0)
-			except:
-				pass
+					logger.debug("===== RM {} is not yet initialized. =====".format(unique_identifier))
 
-		#Iterate over all known RMs, check their requirement and assign them a suitable Budget. 
-		#The RMDelegate is responsible to communicate with it's rm upon .comit() beeing called. 
-		#(Will be called after finishing all power assignments to avoid instructions beeing send out immediately)
-		#sort RMs by priority before iterating.
-		for unique_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority):
-			logger.debug("=============================================================================================================")  
-			if delegate.initialized and delegate.rm_details is not None:
-				if delegate.active_control_type is not None and delegate.active_control_type != ControlType.NOT_CONTROLABLE:
-					logger.debug("===== RM {} ({}) is controllable: {} =====".format(unique_identifier, delegate.rm_details.name, delegate.active_control_type))	
-					available_overhead = delegate.self_assign_overhead(available_overhead)
-					logger.debug("==> Remaining overhead: {}".format(available_overhead))
-				else:
-					logger.debug("===== RM {} ({}) is uncontrollable: {} =====".format(unique_identifier, delegate.rm_details.name, delegate.active_control_type))	
-			else:
-				logger.debug("===== RM {} is not yet initialized. =====".format(unique_identifier))
-
-		logger.debug("All assignments done. Comiting states.")
-		for unique_identifier, delegate in self.managed_rms.items():
-			if delegate.initialized:
-				delegate.comit()
-				
-		logger.debug("SOC={}%, RSRV={}/{}W ({}), L1o={}W, L2o={}W, L3o={}W, dcpvo={}W, totalo={}W".format(
-				self.soc,
-				available_overhead.battery_rate,
-				self.current_battery_reservation,
-				self._dbusservice["/HEMS/BatteryReservationState"],
-				available_overhead.power.l1,
-				available_overhead.power.l2,
-				available_overhead.power.l3,
-				available_overhead.power.dc,
-				available_overhead.power.total,
+			logger.debug("All assignments done. Comiting states.")
+			for unique_identifier, delegate in self.managed_rms.items():
+				if delegate.initialized:
+					delegate.comit()
+					
+			logger.debug("SOC={}%, RSRV={}/{}W ({}), L1o={}W, L2o={}W, L3o={}W, dcpvo={}W, totalo={}W".format(
+					self.soc,
+					available_overhead.battery_rate,
+					self.current_battery_reservation,
+					self._dbusservice["/HEMS/BatteryReservationState"],
+					available_overhead.power.l1,
+					available_overhead.power.l2,
+					available_overhead.power.l3,
+					available_overhead.power.dc,
+					available_overhead.power.total,
+				)
 			)
-		)
 
-		if USE_FAKE_BMS:
-			self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Current", available_overhead.power.total)
+			if USE_FAKE_BMS:
+				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Current", available_overhead.power.total)
 
-		logger.debug("^------------------- LOOP -------------------^")
+			now2 = self._get_time()
+			duration = (now2 - now).total_seconds() * 1000
+			
+			logger.info("Loop took {}ms".format(duration))
+			logger.debug("^------------------- LOOP -------------------^")
 
-		if (self.mode == 1):
-			return True	#keep timer up as long as mode is enabled.
-	
+			if (self.mode == 1):
+				return True	#keep timer up as long as mode is enabled.
+		except Exception as ex:
+			logger.fatal("Exception during control loop", exc_info=ex)
+
 		#terminate timer
 		return False
 	
@@ -1486,7 +1507,7 @@ class HEMS(SystemCalcDelegate):
 		#DCPV Overhead is: Actual DC PV Power - every ac consumption that is not baked by ACPV.
 		#finally, if there is no solar at all, dcpv overhead should be negative and equal the
 		#battery discharge rate.
-		dcpv = (self._dbusservice["/Dc/Pv/Power"] or 0) * 0.95 #dcpv has a penalty of 0.95 when beeing turned into AC Consumption.
+		dcpv = (self._dbusservice["/Dc/Pv/Power"] or 0) * AC_DC_EFFICIENCY #dcpv has a penalty when beeing turned into AC Consumption.
 
 		if l1 < 0:
 			dcpv -= abs(l1)
