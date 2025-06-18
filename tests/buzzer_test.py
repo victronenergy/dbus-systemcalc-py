@@ -16,34 +16,30 @@ class TestBuzzer(TestSystemCalcBase):
 		TestSystemCalcBase.__init__(self, methodName)
 
 	def test_gpio_buzzer(self):
-		with tempfile.NamedTemporaryFile(mode='wt') as gpio_buzzer_ref_fd:
-			gpio_dir = tempfile.mkdtemp()
-			gpio_state = os.path.join(gpio_dir, 'value')
-			with open(gpio_state, 'wt') as f:
-				f.write('0')
-			try:
-				gpio_buzzer_ref_fd.write(gpio_dir)
-				gpio_buzzer_ref_fd.flush()
-				delegates.BuzzerControl.GPIO_BUZZER_PATH = gpio_buzzer_ref_fd.name
-				bc = delegates.BuzzerControl()
-				bc.set_sources(self._monitor, self._system_calc._settings, self._service)
-				self.assertEqual(bc._pwm_frequency, None)
-				self.assertEqual(bc._gpio_path, gpio_state)
-				self._service.set_value('/Buzzer/State', 'aa')  # Invalid value, should be ignored
-				self.assertEqual(self._service['/Buzzer/State'], 0)
-				self.assertEqual(open(gpio_state, 'rt').read(), '0')
-				self._service.set_value('/Buzzer/State', '1')
-				self.assertEqual(self._service['/Buzzer/State'], 1)
-				self.assertEqual(open(gpio_state, 'rt').read(), '1')
-				self._update_values(interval=505)
-				self.assertEqual(open(gpio_state, 'rt').read(), '0')
-				self._update_values(interval=505)
-				self.assertEqual(open(gpio_state, 'rt').read(), '1')
-				self._service.set_value('/Buzzer/State', 0)
-				self.assertEqual(open(gpio_state, 'rt').read(), '0')
-			finally:
-				os.remove(gpio_state)
-				os.removedirs(gpio_dir)
+		gpio_dir = tempfile.mkdtemp()
+		gpio_state = os.path.join(gpio_dir, 'value')
+		with open(gpio_state, 'wt') as f:
+			f.write('0')
+		try:
+			delegates.BuzzerControl.GPIO_BUZZER_PATH = gpio_dir
+			bc = delegates.BuzzerControl()
+			bc.set_sources(self._monitor, self._system_calc._settings, self._service)
+			self.assertEqual(bc._pwm_frequency, None)
+			self._service.set_value('/Buzzer/State', 'aa')  # Invalid value, should be ignored
+			self.assertEqual(self._service['/Buzzer/State'], 0)
+			self.assertEqual(open(gpio_state, 'rt').read(), '0')
+			self._service.set_value('/Buzzer/State', '1')
+			self.assertEqual(self._service['/Buzzer/State'], 1)
+			self.assertEqual(open(gpio_state, 'rt').read(), '1')
+			self._update_values(interval=505)
+			self.assertEqual(open(gpio_state, 'rt').read(), '0')
+			self._update_values(interval=505)
+			self.assertEqual(open(gpio_state, 'rt').read(), '1')
+			self._service.set_value('/Buzzer/State', 0)
+			self.assertEqual(open(gpio_state, 'rt').read(), '0')
+		finally:
+			os.remove(gpio_state)
+			os.removedirs(gpio_dir)
 
 	def test_pwm_buzzer(self):
 		# This test will log an exception to the standard output, because the BuzzerControl tries to do
