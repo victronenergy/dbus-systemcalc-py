@@ -93,7 +93,7 @@ class RelayState(SystemCalcDelegate):
 			functions = 0b111111 if idx == 0 else 0b10100
 			self._dbusservice.add_path(f'/SwitchableOutput/{idx}/Settings/Function',
 				value=self._relay_function(idx), writeable=True,
-				onchangecallback=lambda p, v, idx=idx: self.set_relay_function(functions, idx, int(v)))
+				onchangecallback=lambda p, v, f=functions, idx=idx: self.set_relay_function(f, idx, int(v)))
 			self._dbusservice.add_path(f'/SwitchableOutput/{idx}/Settings/ValidFunctions',
 				value=functions)
 
