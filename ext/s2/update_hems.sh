@@ -52,12 +52,68 @@ echo " > Updating /usr/lib/python3.12/site-packages/s2python ..."
 rm -rf /usr/lib/python3.12/site-packages/s2python  > /dev/null 2>&1
 mv /tmp/hems/dbus-systemcalc-py-dmanner-hems/ext/s2/s2python /usr/lib/python3.12/site-packages/s2python  > /dev/null 2>&1
 
-if [ $num > 0 ]; then
+if [ "$num" -gt 0 ]; then
     echo " > Altering hems.py to enable FAKE-BMS usage with a count of $num"
-
+    sed -Ei '/USE_FAKE_BMS\s*=\s*(True|False)/c\USE_FAKE_BMS = True' /tmp/hems/dbus-systemcalc-py-dmanner-hems/delegates/hems.py
+    sed -Ei "s/^(\s+)self\.available_fake_bms\s*=.*/\\1self\.available_fake_bms = range(0, $num)/" /tmp/hems/dbus-systemcalc-py-dmanner-hems/delegates/hems.py
 else
     echo " > Altering hems.py to disable FAKE-BMS usage"
+    sed -Ei '/USE_FAKE_BMS\s*=\s*(True|False)/c\USE_FAKE_BMS = False' /tmp/hems/dbus-systemcalc-py-dmanner-hems/delegates/hems.py
 fi
 
+echo " > Copying hems.py to /opt/victronenergy/dbus-systemcalc-py/delegates/ ..."
+cp -f /tmp/hems/dbus-systemcalc-py-dmanner-hems/delegates/hems.py /opt/victronenergy/dbus-systemcalc-py/delegates
+
+echo " > Copying s2-folder to /opt/victronenergy/dbus-systemcalc-py/ext/s2 ..."
+cp -rf /tmp/hems/dbus-systemcalc-py-dmanner-hems/ext/s2 /opt/victronenergy/dbus-systemcalc-py/ext
+
+echo " > Copying aiovelib to /opt/victronenergy/dbus-systemcalc-py/ext/aiovelib ..."
+cp -rf /tmp/hems/dbus-systemcalc-py-dmanner-hems/ext/aiovelib /opt/victronenergy/dbus-systemcalc-py/ext
+
+if [ "$num" -gt 0 ]; then
+    echo " > Making FAKE-BMS service runnable..."
+    chmod a+x /opt/victronenergy/dbus-systemcalc-py/ext/s2/fake_bms_service/run
+    chmod 755 /opt/victronenergy/dbus-systemcalc-py/ext/s2/fake_bms_service/run
+
+    echo " > Symlinking FAKE-BMS service as /service/fake_bms_service ..."
+    ln -s /opt/victronenergy/dbus-systemcalc-py/ext/s2/fake_bms_service /service/fake_bms_service
+
+    echo " > Adding FAKE-BMS service to rc.local..."
+    line="ln -s /opt/victronenergy/dbus-systemcalc-py/ext/s2/fake_bms_service /service/fake_bms_service"
+    file="/data/rc.local"
+    grep -qxF "$line" "$file" || echo "$line" >> "$file"
+
+    echo " > Starting FAKE-BMS service ..."
+    svc -u /service/fake_bms_service
+else
+    echo " > Removing FAKE-BMS service from rc.local..."
+    line="ln -s /opt/victronenergy/dbus-systemcalc-py/ext/s2/fake_bms_service /service/fake_bms_service"
+    file="filename.txt"
+
+    sed -i "/^$(printf '%s' "$line" | sed 's/[^^]/[&]/g; s/\^/\\^/g')$/d" "$file"
+
+    echo " > Stopic FAKE-BMS service if running..."
+    svc -d /service/fake_bms_service
+    svc -k /service/fake_bms_service
+
+    echo " > Removing FAKE-BMS service if existing..."
+    rm "/service/fake_bms_service"
+fi
+
+echo " > Making Shelly-Mock service runnable..."
+chmod a+x /opt/victronenergy/dbus-systemcalc-py/ext/s2/shellyMock_OMBC_Multi_service/run
+chmod 755 /opt/victronenergy/dbus-systemcalc-py/ext/s2/shellyMock_OMBC_Multi_service/run
+
+echo " > Symlinking Shelly-Mock service as /service/shellyMock_OMBC_Multi_service ..."
+ln -s /opt/victronenergy/dbus-systemcalc-py/ext/s2/shellyMock_OMBC_Multi_service /service/shellyMock_OMBC_Multi_service
+
+echo " > Adding Shelly-Mock service to rc.local..."
+line="ln -s /opt/victronenergy/dbus-systemcalc-py/ext/s2/shellyMock_OMBC_Multi_service /service/shellyMock_OMBC_Multi_service"
+file="/data/rc.local"
+grep -qxF "$line" "$file" || echo "$line" >> "$file"
+
+echo " > Starting Shelly-Mock service ..."
+svc -u /service/shellyMock_OMBC_Multi_service
+
 echo ""
-echo "Setup done. HEMS is left in an disabled state for now (unless it was already enabled). Steps to proceed:"
+echo "Setup done. HEMS is set to a disabled state for now. Steps to proceed:"
