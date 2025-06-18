@@ -55,7 +55,7 @@ mv /tmp/hems/dbus-systemcalc-py-dmanner-hems/ext/s2/s2python /usr/lib/python3.12
 if [ "$num" -gt 0 ]; then
     echo " > Altering hems.py to enable FAKE-BMS usage with a count of $num"
     sed -Ei '/USE_FAKE_BMS\s*=\s*(True|False)/c\USE_FAKE_BMS = True' /tmp/hems/dbus-systemcalc-py-dmanner-hems/delegates/hems.py
-    sed -Ei "s/^(\s+)self\.available_fake_bms\s*=.*/\\1self\.available_fake_bms = range(0, $num)/" /tmp/hems/dbus-systemcalc-py-dmanner-hems/delegates/hems.py
+    sed -Ei "s/^(\s+)self\.available_fake_bms\s*=.*/\\1self\.available_fake_bms = range(1, $num)/" /tmp/hems/dbus-systemcalc-py-dmanner-hems/delegates/hems.py
 else
     echo " > Altering hems.py to disable FAKE-BMS usage"
     sed -Ei '/USE_FAKE_BMS\s*=\s*(True|False)/c\USE_FAKE_BMS = False' /tmp/hems/dbus-systemcalc-py-dmanner-hems/delegates/hems.py

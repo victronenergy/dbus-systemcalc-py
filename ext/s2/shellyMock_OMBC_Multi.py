@@ -6,6 +6,7 @@ import os
 import logging
 import os
 import platform
+import subprocess
 import uuid
 import requests #type:ignore
 import asyncio
@@ -235,7 +236,7 @@ class NOCTRL(NoControlControlType):
     def activate(self, conn):
        self.rm.log_info("NOCTRL activated")
        self.rm.offer_count = 0 #reset debug-reconnect flag.
-       
+
        if not self.rm.can_be_controlled():
            #Switched to NOCTRL because Operation Constraints no longer work out. 
            #In that case, we turn off the consumer, in case it was enabled. 
@@ -250,7 +251,7 @@ class NOCTRL(NoControlControlType):
 class UnifiedHttpShellyRM(S2ResourceManagerItem):        
     def __init__(self, service:Service, rm_no:int, ip_address:str, custom_name:str, shelly_port:int,
                  priority:int, consumer_type:int, phase:CommodityQuantity, power:float, 
-                 on_hysteresis:int, off_hysteresis:int, can_be_controlled: Callable[[], bool]):
+                 on_hysteresis:int, off_hysteresis:int):
       
         self.service = service
         self.rm_no = rm_no
@@ -263,7 +264,6 @@ class UnifiedHttpShellyRM(S2ResourceManagerItem):
         self.power = power
         self.on_hysteresis = Duration.from_milliseconds(on_hysteresis * 1000)
         self.off_hysteresis = Duration.from_milliseconds(off_hysteresis * 1000)
-        self.can_be_controlled = can_be_controlled
 
         self.last_power_reported = 0
         self.ct_ombc = OMBCT(self)
@@ -288,9 +288,13 @@ class UnifiedHttpShellyRM(S2ResourceManagerItem):
         #populate additional configuration on dbus. These are not covered by the S2 Standard.
         service.add_item(IntegerItem('/Devices/{}/S2/Priority'.format(self.rm_no), self.priority)) #Priority , EMS will read
         service.add_item(IntegerItem('/Devices/{}/S2/ConsumerType'.format(self.rm_no), self.consumer_type)) # 0=primary load, 1=secondary load, EMS will read
+        service.add_item(IntegerItem('/Devices/{}/S2/Auto'.format(self.rm_no), 1, True)) # true for startup, writeable to grant external control above controllability without coding. 
 
         #Current Type is no ctrl.
         self._current_control_type = self.ct_no_ctrl
+    
+    def can_be_controlled(self) -> bool:
+        return bool(self.service['/Devices/{}/S2/Auto'.format(self.rm_no)])
     
     async def loop_power_report(self):
         #report consumption. 
@@ -344,8 +348,8 @@ class UnifiedHttpShellyRM(S2ResourceManagerItem):
                             self.asset_details.to_resource_manager_details([self.ct_no_ctrl])
                         )
                 
-                if (self.offer_count > 15):
-                    self.log_info("Offered Control 15 times to no success :( - Restarting service.")
+                if (self.offer_count > 5):
+                    self.log_info("Offered Control 5 times to no success :( - Restarting service.")
                     sys.exit(0)
 
             except Exception as ex:
@@ -387,112 +391,38 @@ class ShellyMockService(Service):
         super().__init__(bus, "{}.m_{}".format(name, instance))
 
     def setup_shellies(self):
+        #check, which development system we are on, to use the correct batch of shellies :) 
+        #you can duplicate for YOUR environment
+        is_daniels_gx = subprocess.run(["ping", "-c", "1", "10.10.20.20"], stdout=subprocess.PIPE, stderr=subprocess.PIPE).returncode == 0
+
         #populate all the Shelly RMs we want to use.
-
-        ##### Just some ugly callbacks to be used for certain consumers. #####
-        def manual_heater_override()->bool:
-            #Check, if Heatingrod-Control is set to automatic.
-            #This is indicated by port 0 on the first shelly2pm. "On = Manual Control"
-            try:
-                response = requests.get(url="http://10.10.20.57/relay/0")
-                if response.status_code == 200:
-                    jo_response = json.loads(response.content)
-                    return jo_response["ison"]
-            except Exception:
-                pass
-            return False
-
-        def pool_filter_automatic()->bool:
-            try:
-                response = requests.get(url="http://aps.ad.equinox-solutions.de/dashboard/hook/mqtt-relay/get/Devices/d1PoolControl/Cfg/FilterAutomaticMode/Value?type=Boolean")
-                if response.status_code == 200:
-                    jo_response = json.loads(response.content)
-                    return str(jo_response["value"])=="true"
-            except Exception:
-                pass
-            return False
-        
-        def pool_heater_automatic()->bool:
-            try:
-                response = requests.get(url="http://aps.ad.equinox-solutions.de/dashboard/hook/mqtt-relay/get/Devices/d1PoolControl/Cfg/HeaterAutomaticMode/Value?type=Boolean")
-                if response.status_code == 200:
-                    jo_response = json.loads(response.content)
-                    return str(jo_response["value"])=="true"
-            except Exception:
-                pass
-            return False
-        
-        def pool_heatpump_automatic()->bool:
-            try:
-                response = requests.get(url="http://aps.ad.equinox-solutions.de/dashboard/hook/mqtt-relay/get/Devices/d1PoolControl/Cfg/HeatpumpAutomaticMode/Value?type=Boolean")
-                if response.status_code == 200:
-                    jo_response = json.loads(response.content)
-                    return str(jo_response["value"])=="true"
-            except Exception:
-                pass
-            return False
-
-        def rod_temp()->float:
-            try:
-                response = requests.get(url="http://aps.ad.equinox-solutions.de/dashboard/hook/mqtt-relay/get/Devices/d1Watering1/Sensors/HEATING_ROD_TEMP/Value?type=Double")
-                if response.status_code == 200:
-                    jo_response = json.loads(response.content)
-                    return float(jo_response["value"]) #rod temp to prevent overheating.
-            except Exception:
-                pass
-            return 100.0
-
-        def water_temp()->float:
-            try:
-                response = requests.get(url="http://aps.ad.equinox-solutions.de/dashboard/hook/mqtt-relay/get/Devices/EbusEvaluator/Sensors/ReservoirUpper/Value?type=Double")
-                if response.status_code == 200:
-                    jo_response = json.loads(response.content)
-                    return float(jo_response["value"]) #reservoir temp to determine target temperature.
-            except Exception:
-                pass
-            return 100.0
-    
-        def pool_temp()->float:
-            try:
-                response = requests.get(url="http://aps.ad.equinox-solutions.de/dashboard/hook/mqtt-relay/get/Devices/d1PoolControl/Sensors/WaterTemp/Value?type=Double")
-                if response.status_code == 200:
-                    jo_response = json.loads(response.content)
-                    return float(jo_response["value"]) #reservoir temp to determine target temperature.
-            except Exception:
-                pass
-            return 100.0
-        ##### end of ugly callbacks #####
-
-        self.shelly_ios:list[UnifiedHttpShellyRM] = [
-            UnifiedHttpShellyRM(
-                self, 0, "10.10.20.90", "Waterplay Filter", 0, 5, 0, CommodityQuantity.ELECTRIC_POWER_L3, 70.0, 60, 60, 
-                lambda: True
-            ),
-            UnifiedHttpShellyRM(
-                self, 1, "10.10.20.57", "Heater L1", 1, 40, 1, CommodityQuantity.ELECTRIC_POWER_L1, 1150.0, 60, 30, 
-                lambda: (rod_temp() < 85 and water_temp() < 65 and not manual_heater_override())
-            ),
-            UnifiedHttpShellyRM(
-                self, 2, "10.10.20.58", "Heater L2", 0, 30, 1, CommodityQuantity.ELECTRIC_POWER_L2, 1150.0, 60, 30,
-                lambda: (rod_temp() < 95 and water_temp() < 65 and not manual_heater_override())
-            ),
-            UnifiedHttpShellyRM(
-                self, 3, "10.10.20.58", "Heater L3", 1, 35, 1, CommodityQuantity.ELECTRIC_POWER_L3, 1150.0, 60, 30, 
-                lambda: (rod_temp() < 90 and water_temp() < 65 and not manual_heater_override())
-            ),
-            UnifiedHttpShellyRM(
-                self, 4, "10.10.20.98", "Pool Filter", 0, 10, 0, CommodityQuantity.ELECTRIC_POWER_L3, 220.0, 60, 60, 
-                lambda: pool_filter_automatic()
-            ),
-            UnifiedHttpShellyRM(
-                self, 5, "10.10.20.66", "Pool Heatpump", 0, 15, 0, CommodityQuantity.ELECTRIC_POWER_L1, 550.0, 60, 300,
-                lambda: (pool_temp() <=34 and pool_heatpump_automatic())
-            ),
-            UnifiedHttpShellyRM(
-                self, 6, "10.10.20.66", "Pool E-Heater", 1, 20, 1, CommodityQuantity.ELECTRIC_POWER_L2, 2750.0, 60, 30,
-                lambda: (pool_temp() <=30 and pool_heater_automatic())
-            ),
-        ]
+        if is_daniels_gx:
+            logger.info("Loading shellies for Daniels Environment.")
+            self.shelly_ios:list[UnifiedHttpShellyRM] = [
+                UnifiedHttpShellyRM(
+                    self, 0, "10.10.20.90", "Waterplay Filter", 0, 5, 0, CommodityQuantity.ELECTRIC_POWER_L3, 70.0, 60, 60
+                ),
+                UnifiedHttpShellyRM(
+                    self, 1, "10.10.20.57", "Heater L1", 1, 40, 1, CommodityQuantity.ELECTRIC_POWER_L1, 1150.0, 60, 30
+                ),
+                UnifiedHttpShellyRM(
+                    self, 2, "10.10.20.58", "Heater L2", 0, 30, 1, CommodityQuantity.ELECTRIC_POWER_L2, 1150.0, 60, 30
+                ),
+                UnifiedHttpShellyRM(
+                    self, 3, "10.10.20.58", "Heater L3", 1, 35, 1, CommodityQuantity.ELECTRIC_POWER_L3, 1150.0, 60, 30
+                ),
+                UnifiedHttpShellyRM(
+                    self, 4, "10.10.20.98", "Pool Filter", 0, 10, 0, CommodityQuantity.ELECTRIC_POWER_L3, 220.0, 60, 60
+                ),
+                UnifiedHttpShellyRM(
+                    self, 5, "10.10.20.66", "Pool Heatpump", 0, 15, 0, CommodityQuantity.ELECTRIC_POWER_L1, 550.0, 60, 300
+                ),
+                UnifiedHttpShellyRM(
+                    self, 6, "10.10.20.66", "Pool E-Heater", 1, 20, 1, CommodityQuantity.ELECTRIC_POWER_L2, 2750.0, 60, 30
+                ),
+            ]
+        else:
+            logger.warning("Unknown environment. Not loaded any shellies.")
 
         #add all rms to dbus.
         for rm in self.shelly_ios:
