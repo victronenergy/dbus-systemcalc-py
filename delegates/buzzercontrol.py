@@ -14,7 +14,7 @@ class BuzzerControl(SystemCalcDelegate):
 	CLOCK_TICK_RATE = 1193180
 	KIOCSOUND = 0x4B2F
 	TTY_PATH = '/dev/tty0'
-	GPIO_BUZZER_PATH = '/etc/venus/buzzer'
+	GPIO_BUZZER_PATH = '/dev/gpio/buzzer'
 	PWM_BUZZER_PATH = '/etc/venus/pwm_buzzer'
 
 	def __init__(self):
@@ -26,13 +26,10 @@ class BuzzerControl(SystemCalcDelegate):
 
 	def set_paths(self):
 		# Find GPIO buzzer
-		gpio_paths = sc_utils.gpio_paths(BuzzerControl.GPIO_BUZZER_PATH)
-		try:
-			self._gpio_path = os.path.join(gpio_paths[0], 'value')
-		except IndexError:
-			pass
-		else:
-			logging.info('GPIO buzzer found: {}'.format(self._gpio_path))
+		gpio_path = os.path.join(self.GPIO_BUZZER_PATH, "value")
+		if os.path.exists(gpio_path):
+			self._gpio_path = gpio_path
+			logging.info(f'GPIO buzzer found: {self._gpio_path}')
 
 		# Find PWM buzzer
 		self._pwm_frequency = None
