@@ -47,28 +47,50 @@ from s2python.version import S2_VERSION
 from s2python.s2_control_type import S2ControlType, PEBCControlType, NoControlControlType
 from s2python.validate_values_mixin import S2MessageComponent
 
-logger = logging.getLogger("hems_logger")
-logger.setLevel(logging.INFO)
-
 #debug purpose.
 log_dir = "/data/log/S2"    
 if not os.path.exists(log_dir):
 	os.mkdir(log_dir)
 
-logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)s %(message)s',
-	datefmt='%Y-%m-%d %H:%M:%S',
+class LevelFilter(logging.Filter):
+    def __init__(self, level):
+        self.level = level
+    def filter(self, record):
+        return record.levelno == self.level
+
+log_format = logging.Formatter(
+    fmt='%(asctime)s,%(msecs)d %(levelname)s %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+debug_handler = TimedRotatingFileHandler(log_dir + "/" + os.path.basename(__file__) + "_debug.log", when="midnight", interval=1, backupCount=2)
+info_handler = TimedRotatingFileHandler(log_dir + "/" + os.path.basename(__file__) + "_info.log", when="midnight", interval=1, backupCount=2)
+
+debug_handler.setLevel(logging.DEBUG)
+debug_handler.setFormatter(log_format)
+debug_handler.addFilter(LevelFilter(logging.DEBUG))
+info_handler.setLevel(logging.INFO)
+info_handler.setFormatter(log_format)
+info_handler.addFilter(LevelFilter(logging.INFO))
+
+logging.basicConfig(
 	level=logging.DEBUG, 
 	handlers=[
-		TimedRotatingFileHandler(log_dir + "/" + os.path.basename(__file__) + ".log", when="midnight", interval=1, backupCount=2),
+		debug_handler,
+		info_handler,
 		logging.StreamHandler()
 	])
+
+logger = logging.getLogger("hems_logger")
+logger.setLevel(logging.DEBUG)
+#end debug purpose
 
 HUB4_SERVICE = "com.victronenergy.hub4"
 S2_IFACE = "com.victronenergy.S2"
 KEEP_ALIVE_INTERVAL = 30
 COUNTER_PERSIST_INTERVAL = 60 
 CONNECTION_RETRY_INTERVAL = 35
-AC_DC_EFFICIENCY = 0.90 #Experimental Value.
+AC_DC_EFFICIENCY = 0.925 #Experimental Value.
 USE_FAKE_BMS = True
 
 class Modes(int, Enum):
@@ -129,7 +151,7 @@ class PhaseAwareFloat():
 		in three ways, depending on the needs and available information to avoid continious if/else checks. 
 		- Direct: obj.total, obj.l1, obj.l2, obj.l3, obj.dc 
 		- via index: obj.by_phase[0], obj.by_phase[1], obj.by_phase[2], obj.by_phase[3], obj.by_phase[4]
-		- by commodity: objc.by_commodity[CommodityQuantity.ELECTRIC_POWER_L1], etc. (only for l1,l2,l3) 
+		- by commodity: obj.by_commodity[CommodityQuantity.ELECTRIC_POWER_L1], etc. (only for l1,l2,l3) 
 
 		PhaseAwareFloats support "+", "-", "+=" and "-=" operators.
 	"""	
@@ -1234,7 +1256,6 @@ class HEMS(SystemCalcDelegate):
 			reservation = round(eval(self._settings['hems_batteryreservation'].replace("SOC", str(self.soc))))
 			capability = self.get_charge_power_capability()
 			dess_charge = self._dbusservice["/DynamicEss/ChargeRate"]
-			logger.info("Dess chargerate is {}".format(dess_charge))
 			reservation_hint = "OK"
 			if capability != None:
 				if capability < reservation:
@@ -1469,7 +1490,7 @@ class HEMS(SystemCalcDelegate):
 			now2 = self._get_time()
 			duration = (now2 - now).total_seconds() * 1000
 			
-			logger.info("Loop took {}ms".format(duration))
+			logger.debug("Loop took {}ms".format(duration))
 			logger.debug("^------------------- LOOP -------------------^")
 
 			if (self.mode == 1):

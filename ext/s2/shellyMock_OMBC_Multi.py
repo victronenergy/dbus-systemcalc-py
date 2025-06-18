@@ -95,6 +95,7 @@ class OMBCT(OMBCControlType):
 
     def activate(self, conn):
         self.rm.log_info("OMBC activated")
+        self.rm.offer_count = 0 #reset debug-reconnect flag.
 
         #First, create the system description required. It contains 2 controltypes (On / Off)
         #and the proper transitions accordings to desired On/Off delays.
@@ -233,6 +234,8 @@ class NOCTRL(NoControlControlType):
 
     def activate(self, conn):
        self.rm.log_info("NOCTRL activated")
+       self.rm.offer_count = 0 #reset debug-reconnect flag.
+       
        if not self.rm.can_be_controlled():
            #Switched to NOCTRL because Operation Constraints no longer work out. 
            #In that case, we turn off the consumer, in case it was enabled. 
@@ -265,6 +268,9 @@ class UnifiedHttpShellyRM(S2ResourceManagerItem):
         self.last_power_reported = 0
         self.ct_ombc = OMBCT(self)
         self.ct_no_ctrl = NOCTRL(self)
+
+        #debug hack only to issue reconnect, when stuck.
+        self.offer_count = 0
         
         self.asset_details = AssetDetails(
             resource_id=uuid.uuid4(),
@@ -321,6 +327,7 @@ class UnifiedHttpShellyRM(S2ResourceManagerItem):
                 if self.can_be_controlled():
                     if self._current_control_type != self.ct_ombc:
                         #Offer OMBC control.
+                        self.offer_count += 1
                         self.log_info("Offering OMBC... (Current ControlType is: {})".format(self._current_control_type))
                         #FIXME: Until Fixed by PT, we need to update the internal control type map as well
                         self.control_types = [self.ct_ombc]
@@ -330,11 +337,17 @@ class UnifiedHttpShellyRM(S2ResourceManagerItem):
                 else:
                     if self._current_control_type != self.ct_no_ctrl:
                         self.log_info("Offering NOCTRL... (Current ControlType is: {})".format(self._current_control_type))
+                        self.offer_count += 1
                         #FIXME: Until Fixed by PT, we need to update the internal control type map as well
                         self.control_types = [self.ct_no_ctrl]
                         await self.send_msg_and_await_reception_status(
                             self.asset_details.to_resource_manager_details([self.ct_no_ctrl])
                         )
+                
+                if (self.offer_count > 15):
+                    self.log_info("Offered Control 15 times to no success :( - Restarting service.")
+                    sys.exit(0)
+
             except Exception as ex:
                 self.log_error("Error in loop_conditions", ex)
 
