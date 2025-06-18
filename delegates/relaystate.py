@@ -28,12 +28,12 @@ class RelayState(SystemCalcDelegate):
 			('/Relay/0/State', '/Settings/Relay/0/InitialState', 0, 0, 1),
 			('/SwitchableOutput/0/Settings/Group', '/Settings/Relay/0/Group', "", 0, 0),
 			('/SwitchableOutput/0/Settings/CustomName', '/Settings/Relay/0/CustomName', "", 0, 0),
-			('/SwitchableOutput/0/Settings/ShowUIControl', '/Settings/Relay/0/ShowUIControl', 0, 0, 1),
+			('/SwitchableOutput/0/Settings/ShowUIControl', '/Settings/Relay/0/ShowUIControl', 1, 0, 1),
 
 			('/Relay/1/State', '/Settings/Relay/1/InitialState', 0, 0, 1),
 			('/SwitchableOutput/1/Settings/Group', '/Settings/Relay/1/Group', "", 0, 0),
 			('/SwitchableOutput/1/Settings/CustomName', '/Settings/Relay/1/CustomName', "", 0, 0),
-			('/SwitchableOutput/1/Settings/ShowUIControl', '/Settings/Relay/1/ShowUIControl', 0, 0, 1),
+			('/SwitchableOutput/1/Settings/ShowUIControl', '/Settings/Relay/1/ShowUIControl', 1, 0, 1),
 		]
 
 	def _relay_function(self, idx):
