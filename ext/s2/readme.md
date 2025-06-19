@@ -93,7 +93,7 @@ followed by `kill PID` - the service will restart the mock process.
 
 ![image](https://github.com/user-attachments/assets/988ada2b-fa6d-42af-9827-0eb392d7f93e)
 
-### Fine Tuning with operational constraints
+# Fine Tuning with operational constraints
 Shelly RMs are "unified", so they run without constraints. To account for this, and give a little bit of control,
 each RM will create a path like `/s2Mock/815/Devices/0/S2/Auto` that is writable.
 
