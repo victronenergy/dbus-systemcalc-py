@@ -97,7 +97,7 @@ followed by `kill PID` - the service will restart the mock process.
 Shelly RMs are "unified", so they run without constraints. To account for this, and give a little bit of control,
 each RM will create a path like `/s2Mock/815/Devices/0/S2/Auto` that is writable.
 
-You can use anything (dbus, mqtt, nodered) to turn that Value from 1 to 0. 
+While it's final purpose is to add a Auto/Off Toggle in VRM, you can ofc. use anything (dbus, mqtt, nodered) to turn that Value from 1 to 0. 
 - When the value is `1`, the RM will request the unified On-Off-OMBC-Control, and HEMS will accept and manage the consumer. 
 - When the value is `0`, the RM will only request NOCONTROL, HEMS will accept and NOT control that consumer. 
 
