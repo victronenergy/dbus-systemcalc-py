@@ -1,59 +1,7 @@
-Required dependencies:
+### Before Setup
 
-(if beta release)
-```
-/opt/victronenergy/swupdate-scripts/set-feed.sh candidate
-```
-
-Always
-```
-opkg update
-opkg install python3-pip
-```
-
-pip stuff
-```
-python -m pip install s2-python
-python -m pip install tzdata
-```
-
-Missing module "zoneinfo" (dev env):
-
-1.) Download https://www.python.org/ftp/python/3.12.0/Python-3.12.0.tgz
-
-2.) Copy `Python-3.12.0/Lib/zoneinfo` to `/usr/lib/python3.12/site-packages/`
-
-3.) Alternatively copy `.../ext/s2/zoneinfo` to `/usr/lib/python3.12/site-packages/`
-
-From repository to cerbo:
-```
-dbus_systemcalc.py (make sure to Upload with CR only, not CRLF)
-delegates/__init__.py
-delegates/hems.py
-ext/aiovelib/*
-ext/s2/*
-```
-
-Finally, download the latest `s2-python` from github: [src/s2python](https://github.com/flexiblepower/s2-python/archive/refs/heads/main.zip)
-and copy `src/s2python` to `usr/lib/python3.12/site-packages`
-
-To setup a mock as service: 
-```
-chmod a+x /opt/victronenergy/dbus-systemcalc-py/ext/s2/shellyMock_OMBC_Dual_heaterL1L2_service/run
-chmod 755 /opt/victronenergy/dbus-systemcalc-py/ext/s2/shellyMock_OMBC_Dual_heaterL1L2_service/run
-ln -s /opt/victronenergy/dbus-systemcalc-py/ext/s2/shellyMock_OMBC_Dual_heaterL1L2_service /service/shellyMock_OMBC_Dual_heaterL1L2_service
-```
-
-(last line probably shoud be added to /data/rc.local as well.)
-
-All mocks will log to `/data/log/S2/{filename}`
-
-### Fake BMS ###
-For development purpose, I've created the service `fake_bms`. It creates a number of BMS-Services, which have their `CustomName`, `Soc`, and `Dc/0/Power` Value writeable. 
-The number of Fake-BMS to be created can be adjusted in the file and should be adjusted in the delegate as well. (Simple lists like `[0,1,2,3,...]` where bms 0 is used for
-representation of the battery reservation active.)
-
-This is only used if `USE_FAKE_BMS` inside `hems.py` is set to true. 
+HEMS debug mode supports to use a FAKE-BMS-Service to get visualization into VRM. 
+It creates a number of BMS-Services, which have their `CustomName`, `Soc`, and `Dc/0/Power` Value writeable.
 
 When enabling, three configurations in the gx should be performed: 
 
@@ -74,3 +22,48 @@ VRM now outlines every controllable consumer and some information about the stat
 the Battery Reservation BMS displays the following values: 
 
 <img src="https://github.com/user-attachments/assets/8d65359d-0c55-4dfb-8f8f-eac94f2ff9a1" width="800">
+
+### Setup HEMS
+
+Run the following lines on your gx: 
+This will install and/or update your HEMS and required dependencies.
+
+```
+rm -f /tmp/update_hems.sh
+wget -P /tmp https://github.com/victronenergy/dbus-systemcalc-py/raw/refs/heads/dmanner/hems/ext/s2/update_hems.sh
+chmod a+x /tmp/update_hems.sh
+chmod 755 /tmp/update_hems.sh
+/tmp/update_hems.sh
+```
+
+### After Setup
+HEMS is initially left in a disabled state, as there is not yet anything todo. 
+
+# Configure Battery Reservation Equation
+This can be a simple (fixed) number, or any legit python expression. `SOC` is a wildcard that can be used to create SoC-Dependent reservations.
+
+Examples: 
+
+Fixed Value:
+`dbus -y com.victronenergy.settings /Settings/HEMS/BatteryReservationEquation SetValue "5000"`
+
+10.000, lowered by 100 per SOC gained:
+`dbus -y com.victronenergy.settings /Settings/HEMS/BatteryReservationEquation SetValue "10000 - SOC * 100"`
+
+5.000, lowered by 50 per SOC gained and already 0 when SOC is reaching 98%:
+`dbus -y com.victronenergy.settings /Settings/HEMS/BatteryReservationEquation SetValue "5000 - SOC * 50 if SOC < 98 else 0"`
+
+# Enable Hems
+`dbus -y com.victronenergy.settings /Settings/HEMS/Mode SetValue 1`
+
+# Configure Shelly Mocks
+In the file `/opt/victronenergy/dbus-systemcalc-py/ext/s2/shellyMock_OMBC_Multi.py`, line 393, you can add your shellies. 
+The mock uses http (no auth) and works with any gen2+ shelly.
+
+![image](https://github.com/user-attachments/assets/dedcc3f6-b2b4-410d-9675-49fe809dec2f)
+
+# Usefull information
+The debug environment is creating more logging than usual: 
+`/data/log/S2/hems.py_info.log` - Just incremental logging. Good to review a days events.
+`/data/log/S2/hems.py_debug.log` - Debug log. Nough said :-)
+`/data/log/S2/shellyMock_OMBC_Multi.py.log` - logs of the mock service
