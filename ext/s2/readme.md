@@ -77,8 +77,44 @@ The mock uses http (no auth) and works with any gen2+ shelly.
 
 ![image](https://github.com/user-attachments/assets/dedcc3f6-b2b4-410d-9675-49fe809dec2f)
 
-# Usefull information
+### Usefull information / commands
+# Logs
 The debug environment is creating more logging than usual: 
 - `/data/log/S2/hems.py_info.log` - Just incremental logging. Good to review a days events.
 - `/data/log/S2/hems.py_debug.log` - Debug log. Nough said :-)
 - `/data/log/S2/shellyMock_OMBC_Multi.py.log` - logs of the mock service
+
+# Restart Mock
+do a 
+```
+ps | greb OMBC
+```
+followed by `kill PID` - the service will restart the mock process. 
+
+![image](https://github.com/user-attachments/assets/988ada2b-fa6d-42af-9827-0eb392d7f93e)
+
+### Fine Tuning with operational constraints
+Shelly RMs are "unified", so they run without constraints. To account for this, and give a little bit of control,
+each RM will create a path like `/s2Mock/815/Devices/0/S2/Auto` that is writable.
+
+You can use anything (dbus, mqtt, nodered) to turn that Value from 1 to 0. 
+- When the value is `1`, the RM will request the unified On-Off-OMBC-Control, and HEMS will accept and manage the consumer. 
+- When the value is `0`, the RM will only request NOCONTROL, HEMS will accept and NOT control that consumer. 
+
+For example, i'm using a powershell script on my server to turn the heaters to "NOCONTROL" as soon as a certain temperature is reached,
+or i'm setting them into manual mode on purpose:
+
+```
+#Heater Values
+$rodTemp = Get-ESVar -Key "Devices/d1Watering1/Sensors/HEATING_ROD_TEMP/Value" -AsDouble
+$resTemp = Get-ESVar -Key "Devices/EbusEvaluator/Sensors/ReservoirMiddle/Value" -AsDouble
+$manualMode = Get-ESVar -Key "Devices/shellyPro2PMPVHeat1/IO/ManualOverride/State" -AsBoolean
+
+#Heater L1 Automatic, that is RM 1 - allowed upto 70/90°
+if (!$manualMode -and $resTemp -lt 70 -and $rodTemp -lt 90){
+    $global:cerboMqttClient.Publish("W/c0619ab4a585/s2Mock/815/Devices/1/S2/Auto", (Encode "{""value"":1}"))
+}else{
+    $global:cerboMqttClient.Publish("W/c0619ab4a585/s2Mock/815/Devices/1/S2/Auto", (Encode "{""value"":0}"))
+}
+...
+```
