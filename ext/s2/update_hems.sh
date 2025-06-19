@@ -3,9 +3,9 @@
 # Install-Script for beta-hems. This file should take care to download all required dependencies and get
 # HEMS up and running on any gx device. Data is pulled from github, so Internet-Connection is required. 
 
-echo "============================"
+echo "==================================================================================================================="
 echo "HEMS development Updater 1.0"
-echo "============================"
+echo "==================================================================================================================="
 echo ""
 echo "!!! If you want to use FAKE-BMS for display purpose, please read the docu and configure your system accordingly before proceeding !!!"
 echo "    Doku: https://github.com/victronenergy/dbus-systemcalc-py/blob/dmanner/hems/ext/s2/readme.md"
@@ -115,5 +115,15 @@ grep -qxF "$line" "$file" || echo "$line" >> "$file"
 echo " > Starting Shelly-Mock service ..."
 svc -u /service/shellyMock_OMBC_Multi_service
 
+echo " > Updating /opt/victronenergy/dbus-systemcalc-py/delegates/__init__.py if required..."
+line="from delegates.hems import HEMS"
+file="/opt/victronenergy/dbus-systemcalc-py/delegates/__init__.py"
+grep -qxF "$line" "$file" || echo "$line" >> "$file"
+
+echo " > Updating /opt/victronenergy/dbus-systemcalc-py/dbus_systemcalc.py if required..."
+grep -qF "delegates.HEMS()," "/opt/victronenergy/dbus-systemcalc-py/dbus_systemcalc.py" || sed -Ei 's/^[[:space:]]*delegates\.DynamicEss\(\),$/\t\t\tdelegates.DynamicEss(),\n\t\t\tdelegates.HEMS(),/' /opt/victronenergy/dbus-systemcalc-py/dbus_systemcalc.py
+
 echo ""
-echo "Setup done. HEMS is set to a disabled state for now. Steps to proceed:"
+echo "==================================================================================================================="
+echo ""
+echo "Setup done. HEMS is set to a disabled state for now. Please view the docu on how to proceed from here :)"
