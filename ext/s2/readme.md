@@ -37,6 +37,13 @@ chmod 755 /tmp/update_hems.sh
 ```
 
 ### After Setup
+# Restart systemcalc
+After setup, you need to restart systemcalc, so the required config paths are created. 
+
+```
+svc -t /service/dbus-systemcalc-py
+```
+
 HEMS is initially left in a disabled state, as there is not yet anything todo. 
 
 # Configure Battery Reservation Equation
@@ -62,12 +69,6 @@ dbus -y com.victronenergy.settings /Settings/HEMS/BatteryReservationEquation Set
 # Enable Hems
 ```
 dbus -y com.victronenergy.settings /Settings/HEMS/Mode SetValue 1
-```
-
-# Restart systemcalc
-After initial configuration, you need to restart systemcalc
-```
-svc -t /service/dbus-systemcalc-py
 ```
 
 # Configure Shelly Mocks
