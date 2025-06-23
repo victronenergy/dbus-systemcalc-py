@@ -1251,7 +1251,7 @@ class DbusSystemCalc(SystemCalc):
 		return DbusMonitor(*args, **kwargs)
 
 	def _create_settings(self, *args, **kwargs):
-		bus = dbus.SessionBus() if 'DBUS_SESSION_BUS_ADDRESS' in os.environ else dbus.SystemBus()
+		bus = dbus.SessionBus(private=True) if 'DBUS_SESSION_BUS_ADDRESS' in os.environ else dbus.SystemBus(private=True)
 		return SettingsDevice(bus, *args, timeout=10, **kwargs)
 
 	def _create_dbus_service(self):
