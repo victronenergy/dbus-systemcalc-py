@@ -1107,6 +1107,7 @@ class HEMS(SystemCalcDelegate):
 			self.counter_secondary.by_phase[l] = settings["hems_secondary_l{}_forward".format(l)]
 
 		self._dbusservice.add_path('/HEMS/Active', value=0, gettextcallback=lambda p, v: Modes(v))
+		self._dbusservice.add_path('/HEMS/Debug/LoopTime', value=0)
 		self._dbusservice.add_path('/HEMS/BatteryReservation', value=0)
 		self._dbusservice.add_path('/HEMS/BatteryReservationState', value=None)
 		self._dbusservice.add_path('/HEMS/SystemType', value=0, gettextcallback=lambda p, v: SystemType(v))
@@ -1494,6 +1495,7 @@ class HEMS(SystemCalcDelegate):
 			duration = (now2 - now).total_seconds() * 1000
 			
 			logger.debug("Loop took {}ms".format(duration))
+			self._dbusservice["/HEMS/Debug/LoopTime"] = duration
 			logger.debug("^------------------- LOOP -------------------^")
 
 			if (self.mode == 1):

@@ -41,6 +41,9 @@ yes | opkg install python3-pip > /dev/null 2>&1
 echo " > Installing tzdata through PIP..."
 python -m pip install tzdata > /dev/null 2>&1
 
+echo " > Installing aiohttp through PIP..."
+python -m pip install aiohttp > /dev/null 2>&1
+
 echo " > Installing s2python through PIP (dependency purpose)..."
 python -m pip install s2-python > /dev/null 2>&1
 

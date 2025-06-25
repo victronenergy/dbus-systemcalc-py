@@ -25,6 +25,7 @@ sys.path.insert(1, '/opt/victronenergy/dbus-systemcalc-py/ext/aiovelib')
 
 from aiovelib.service import IntegerItem, TextItem, DoubleItem
 from aiovelib.service import Service
+import aiohttp
 
 #s2 related stuff
 from s2 import S2ResourceManagerItem
@@ -60,21 +61,14 @@ from s2python.ombc import (
     OMBCTimerStatus
 )
 
-def spam_web_request(url)->str:
-    """
-        Sometimes web requests on wifi shellies time out.
-        This is a dirty helper to repeat such a request until successfull,
-        to ensure successfull on/off toggling.
-    """
-    while True:
-        try:
-            response = requests.get(url)
-            if response.status_code == 200:
-                return response.content
-                break
-        
-        except Exception as ex:
-            logger.warning("Web request failed,retrying:{}".format(url))
+def fire_and_forget(url):
+    loop = asyncio.get_event_loop()
+    loop.create_task(async_fire_and_forget(url))
+
+async def async_fire_and_forget(url):
+    async with aiohttp.request('GET', url) as response:
+        if response.status == 200:
+            await response.json()
 
 class OMBCT(OMBCControlType):
     
@@ -158,31 +152,32 @@ class OMBCT(OMBCControlType):
         
         #OMBC has just been activated. Check, which state our shelly has, 
         #report the proper state initially. 
-        response = spam_web_request("http://{}/rpc/Switch.GetStatus?id={}".format(
+        response = requests.get("http://{}/rpc/Switch.GetStatus?id={}".format(
             self.rm.ip_address, self.rm.shelly_port)
         )
-
-        jresponse = json.loads(response)
-        if jresponse["output"]:
-            #device is on
-            #FIXME: OMBCStatus is having a wrong datatype for active_operation_mode_id. Need to format as string.
-            self.rm.publish_power_report(jresponse["apower"])
-            self.rm.send_msg_and_await_reception_status_sync(
-                OMBCStatus(
-                    message_id=uuid.uuid4(),
-                    active_operation_mode_id="{}".format(self.op_mode_on.id),
-                    operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+        
+        if response.status_code == 200:
+            jresponse = json.loads(response.content)
+            if jresponse["output"]:
+                #device is on
+                #FIXME: OMBCStatus is having a wrong datatype for active_operation_mode_id. Need to format as string.
+                self.rm.publish_power_report(jresponse["apower"])
+                self.rm.send_msg_and_await_reception_status_sync(
+                    OMBCStatus(
+                        message_id=uuid.uuid4(),
+                        active_operation_mode_id="{}".format(self.op_mode_on.id),
+                        operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+                    )
                 )
-            )
-        else:
-            #device is off.
-            self.rm.send_msg_and_await_reception_status_sync(
-                OMBCStatus(
-                    message_id=uuid.uuid4(),
-                    active_operation_mode_id="{}".format(self.op_mode_off.id),
-                    operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+            else:
+                #device is off.
+                self.rm.send_msg_and_await_reception_status_sync(
+                    OMBCStatus(
+                        message_id=uuid.uuid4(),
+                        active_operation_mode_id="{}".format(self.op_mode_off.id),
+                        operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+                    )
                 )
-            )
 
 
         #That's it. reaction to switching opmodes by the EMS will happen in handle_instruction.
@@ -218,11 +213,11 @@ class OMBCT(OMBCControlType):
                 #Here we actually do, what we are supposed to do. Reporting Power is handled by the loop.
                 #We just reuse the diagnostic label to determine which operation type was selected by the ems. 
                 if self.active_operation_mode.diagnostic_label == "On":
-                    spam_web_request("http://{}/rpc/Switch.Set?on=true&id={}".format(
+                    fire_and_forget("http://{}/rpc/Switch.Set?on=true&id={}".format(
                         self.rm.ip_address, self.rm.shelly_port))
                     
                 if self.active_operation_mode.diagnostic_label == "Off":
-                    spam_web_request("http://{}/rpc/Switch.Set?on=false&id={}".format(
+                    fire_and_forget("http://{}/rpc/Switch.Set?on=false&id={}".format(
                         self.rm.ip_address, self.rm.shelly_port))
                     
         except Exception as ex:
@@ -241,7 +236,7 @@ class NOCTRL(NoControlControlType):
            #Switched to NOCTRL because Operation Constraints no longer work out. 
            #In that case, we turn off the consumer, in case it was enabled. 
            self.rm.log_info("-> deactivating consumer.")
-           spam_web_request("http://{}/rpc/Switch.Set?on=false&id={}".format(
+           fire_and_forget("http://{}/rpc/Switch.Set?on=false&id={}".format(
                 self.rm.ip_address, self.rm.shelly_port))
     
     def deactivate(self, conn):
@@ -299,14 +294,15 @@ class UnifiedHttpShellyRM(S2ResourceManagerItem):
     async def loop_power_report(self):
         #report consumption. 
         if self.is_connected:
-            response = spam_web_request("http://{}/rpc/Switch.GetStatus?id={}".format(
-                self.ip_address, self.shelly_port)
-            )
-
-            jresponse = json.loads(response)
-            await self.publish_power_report(jresponse["apower"])
+            async with aiohttp.request('GET', "http://{}/rpc/Switch.GetStatus?id={}".format(
+                self.ip_address, self.shelly_port)) as response:
+                if response.status == 200:
+                    jresponse = await response.json()
+                    #self.log_info("Power is {}".format(jresponse["apower"]))
+                    await self.publish_power_report(jresponse["apower"])
 
     async def publish_power_report(self, v):
+        self.log_info("Publishing Power: {}".format(v))
         self.last_power_reported = v
 
         await self.send_msg_and_await_reception_status(
@@ -432,7 +428,8 @@ class ShellyMockService(Service):
     async def _loop_power_report(self):
         while True:
             for rm in self.shelly_ios:
-                asyncio.create_task(rm.loop_power_report())
+                await rm.loop_power_report()
+                await asyncio.sleep(0.1) #distribute load a bit
             await asyncio.sleep(2) #yes indention is right, this should process every rm every 2 seconds :)
 
     async def _loop_check_conditions(self):
