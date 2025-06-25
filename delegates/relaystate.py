@@ -85,9 +85,9 @@ class RelayState(SystemCalcDelegate):
 					onchangecallback=partial(self._on_relay_setting_changed, idx, typ))
 
 			self._dbusservice.add_path(f'/SwitchableOutput/{idx}/Settings/Type',
-				value=1, writeable=True, onchangecallback=(lambda p, v: v == 1)) # R/W, but only accepts latching
+				value=1, writeable=True, onchangecallback=(lambda p, v: v == 1)) # R/W, but only accepts toggle
 			self._dbusservice.add_path(f'/SwitchableOutput/{idx}/Settings/ValidTypes',
-				value=2) # Latching
+				value=2) # Toggle
 
 			# All functions for first relay, Manual and temperature for the rest
 			functions = 0b111111 if idx == 0 else 0b10100
