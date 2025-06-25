@@ -8,6 +8,7 @@ import os
 import platform
 import subprocess
 import uuid
+import threading
 import requests #type:ignore
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -64,6 +65,9 @@ from s2python.ombc import (
 def fire_and_forget(url):
     loop = asyncio.get_event_loop()
     loop.create_task(async_fire_and_forget(url))
+
+def aio_fire_and_forget(url):
+    asyncio.run(async_fire_and_forget(url))
 
 async def async_fire_and_forget(url):
     async with aiohttp.request('GET', url) as response:
@@ -235,8 +239,8 @@ class NOCTRL(NoControlControlType):
        if not self.rm.can_be_controlled():
            #Switched to NOCTRL because Operation Constraints no longer work out. 
            #In that case, we turn off the consumer, in case it was enabled. 
-           self.rm.log_info("-> deactivating consumer.")
-           fire_and_forget("http://{}/rpc/Switch.Set?on=false&id={}".format(
+           self.rm.log_info("Cannot be controlled currently-> deactivating consumer.")
+           aio_fire_and_forget("http://{}/rpc/Switch.Set?on=false&id={}".format(
                 self.rm.ip_address, self.rm.shelly_port))
     
     def deactivate(self, conn):
@@ -302,7 +306,7 @@ class UnifiedHttpShellyRM(S2ResourceManagerItem):
                     await self.publish_power_report(jresponse["apower"])
 
     async def publish_power_report(self, v):
-        self.log_info("Publishing Power: {}".format(v))
+        #self.log_info("Publishing Power: {}".format(v))
         self.last_power_reported = v
 
         await self.send_msg_and_await_reception_status(
@@ -352,7 +356,7 @@ class UnifiedHttpShellyRM(S2ResourceManagerItem):
                 self.log_error("Error in loop_conditions", ex)
 
     def log_info(self, msg):
-        logger.info("[{} @ RM{}]: {}".format(self.custom_name, self.rm_no, msg))
+        logger.info("[{} @ RM{}] in {}: {}".format(self.custom_name, self.rm_no, threading.current_thread().name, msg))
 
     def log_error(self, msg, exception):
         logger.error("[{} @ RM{}]: {}".format(self.custom_name, self.rm_no, msg), exc_info=exception)
@@ -436,7 +440,7 @@ class ShellyMockService(Service):
         while True:
             for rm in self.shelly_ios:
                 asyncio.create_task(rm.loop_conditions())
-                await asyncio.sleep(2) #yes indention is right, this should process one rm every 2 seconds :)       
+            await asyncio.sleep(5) 
 
 if __name__ == "__main__":
     try:

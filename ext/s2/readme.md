@@ -66,6 +66,13 @@ dbus -y com.victronenergy.settings /Settings/HEMS/BatteryReservationEquation Set
 dbus -y com.victronenergy.settings /Settings/HEMS/BatteryReservationEquation SetValue "5000 - SOC * 50 if SOC < 98 else 0"
 ```
 
+# Configure Continuous Inverter Power
+Total per phase, made a setting, so it can be set depending on various environment conditions. 
+Default value tbd.
+```
+dbus -y com.victronenergy.settings /Settings/HEMS/ContinuousInverterPower SetValue 4000
+```
+
 # Enable Hems
 ```
 dbus -y com.victronenergy.settings /Settings/HEMS/Mode SetValue 1
@@ -95,7 +102,7 @@ followed by `kill PID` - the service will restart the mock process.
 
 # Fine Tuning with operational constraints
 Shelly RMs are "unified", so they run without constraints. To account for this, and give a little bit of control,
-each RM will create a path like `/s2Mock/815/Devices/0/S2/Auto` that is writable.
+each RM will create a path like `/switch/815/Devices/0/S2/Auto` that is writable.
 
 While it's final purpose is to add a Auto/Off Toggle in VRM, you can ofc. use anything (dbus, mqtt, nodered) to turn that Value from 1 to 0. 
 - When the value is `1`, the RM will request the unified On-Off-OMBC-Control, and HEMS will accept and manage the consumer. 
@@ -112,9 +119,9 @@ $manualMode = Get-ESVar -Key "Devices/shellyPro2PMPVHeat1/IO/ManualOverride/Stat
 
 #Heater L1 Automatic, that is RM 1 - allowed upto 70/90°
 if (!$manualMode -and $resTemp -lt 70 -and $rodTemp -lt 90){
-    $global:cerboMqttClient.Publish("W/c0619ab4a585/s2Mock/815/Devices/1/S2/Auto", (Encode "{""value"":1}"))
+    $global:cerboMqttClient.Publish("W/c0619ab4a585/switch/815/Devices/1/S2/Auto", (Encode "{""value"":1}"))
 }else{
-    $global:cerboMqttClient.Publish("W/c0619ab4a585/s2Mock/815/Devices/1/S2/Auto", (Encode "{""value"":0}"))
+    $global:cerboMqttClient.Publish("W/c0619ab4a585/switch/815/Devices/1/S2/Auto", (Encode "{""value"":0}"))
 }
 ...
 ```

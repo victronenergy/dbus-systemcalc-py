@@ -16,7 +16,7 @@ import logging
 import platform
 import dbus #type:ignore
 import uuid
-from typing import Dict, cast
+from typing import Dict, cast, Callable
 from ve_utils import wrap_dbus_value, unwrap_dbus_value
 
 from s2python.common import (
@@ -347,7 +347,7 @@ class SolarOverhead():
 		#to be able to calculate consumption later.
 		self.power_request = PhaseAwareFloat(claim_target.l1, claim_target.l2, claim_target.l3)
 		
-		#TODO: However, when getting energy from DC or any other phase, we need to respect inverter-capabilities for certain system types.  
+		#TODO: When getting energy from DC or any other phase, we need to respect inverter-capabilities for certain system types.  
 
 		#calculate the claim_factor as OMBC needs it. Other control types don't need this, but doesn't hurt either. 
 		power_factor = (maxv - minv) / claim_target_total if claim_target_total > 0 else 0
@@ -535,6 +535,7 @@ class S2RMDelegate():
 		self._message_receiver=None
 		self._disconnect_receiver=None
 		self._keep_alive_timer=None
+		self._reply_handler_dict:Dict[uuid.UUID, Callable[[ReceptionStatus], None]]={}
 		
 		#Generic value holder
 		self.rm_details=None
@@ -546,7 +547,7 @@ class S2RMDelegate():
 		self._ombc_next_operation_mode = None
 		self.ombc_active_instruction = None
 
-		#TODO: RM can change timer status by sending a OMBC.TimerStatus update. Need a handler for that.
+		#TODO: RM can change timer status by sending a OMBC.TimerStatus update. Need a handler for that?
 		self.ombc_timers:dict[str, Timer] = {}
 		self.ombc_timer_starts:dict[str, datetime] = {}
 
@@ -592,7 +593,7 @@ class S2RMDelegate():
 
 	def _keep_alive_loop(self):
 		"""
-			Sends the keepalive and monitors for success. 
+			Sends the keepalive and monitors for success.
 		"""
 		def reply_handler(result): 
 			if result:
@@ -608,7 +609,6 @@ class S2RMDelegate():
 										reply_handler=reply_handler, error_handler=error_handler)
 		
 		if self._keep_alive_missed < 2: 
-			#logger.debug("Keepalive OK for {}".format(self.unique_identifier))
 			return True
 		else:
 			logger.warning("Keepalive MISSED for {} ({})".format(self.unique_identifier, self._keep_alive_missed))
@@ -659,7 +659,10 @@ class S2RMDelegate():
 						self._s2_on_power_measurement(self.s2_parser.parse_as_message(msg, PowerMeasurement))
 					elif jmsg["message_type"] == "ReceptionStatus":
 						p = self.s2_parser.parse_as_message(msg, ReceptionStatus)
-						#logger.debug("Received ReceptionStatus from {}: {} -> {} ({})".format(self.unique_identifier, jmsg["message_type"], p.status, p.diagnostic_label))
+						if p.subject_message_id in self._reply_handler_dict:
+							logger.info("Invoking reply handler for {}".format(p))
+							self._reply_handler_dict[p.subject_message_id](p)
+							del self._reply_handler_dict[p.subject_message_id]
 					else:
 						#Not yet implemented! 
 						logger.warning("Received an unknown Message: {} from {}".format(jmsg["message_type"], self.unique_identifier))
@@ -744,40 +747,45 @@ class S2RMDelegate():
 		#       User convinience, for a offgrid-situation they are not really feasible (long term scheduling)
 		# if there is only 1 mode (and that is NOCTRL) we can select that right away. RM doesn't want to be controlled currently. 
 		if len(message.available_control_types) == 1 and ControlType.NOT_CONTROLABLE in message.available_control_types:
+			def noctrl_reply_handler(reply:ReceptionStatus):
+				if reply.status == ReceptionStatusValues.OK:
+					self.active_control_type = ControlType.NOT_CONTROLABLE
+			
+					if USE_FAKE_BMS:
+						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{}: {} [NOCTRL] ".format(
+							self.priority, self.rm_details.name
+						))
+
+			logger.warning("RM {} only offered NOCTRL, accepting.".format(self.unique_identifier))
+			
 			self._s2_send_message(
 				SelectControlType(
 					message_id=uuid.uuid4(),
 					control_type=ControlType.NOT_CONTROLABLE
-				)
+				),noctrl_reply_handler
 			)
-			
-			#TODO: This should be set, if transmission of the above message is confirmed. Need Async Continuation + callback.
-			self.active_control_type = ControlType.NOT_CONTROLABLE
-			logger.warning("RM {} only offered NOCTRL, accepting.".format(self.unique_identifier))
-
-			if USE_FAKE_BMS:
-				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{}: {} [NOCTRL] ".format(
-					self.priority, self.rm_details.name
-				))
 
 		else:
 			#Check if OMBC is available, that is our prefered mode as of now.
+			def ombc_reply_handler(reply:ReceptionStatus):
+				if reply.status == ReceptionStatusValues.OK:
+					self.active_control_type = ControlType.OPERATION_MODE_BASED_CONTROL
+
+					if USE_FAKE_BMS:
+						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{}: {} [OMBC] ".format(
+							self.priority, self.rm_details.name
+						))
+
+			logger.info("RM {} offered OMBC, accepting.".format(self.unique_identifier))
+
 			if ControlType.OPERATION_MODE_BASED_CONTROL in message.available_control_types:
 				self._s2_send_message(
 					SelectControlType(
 						message_id=uuid.uuid4(),
 						control_type=ControlType.OPERATION_MODE_BASED_CONTROL
-					)
+					), ombc_reply_handler
 				)
 				
-				#TODO: This should be set, if transmission of the above message is confirmed. Need Async Continuation + callback.
-				self.active_control_type = ControlType.OPERATION_MODE_BASED_CONTROL
-				logger.info("RM {} offered OMBC, accepting.".format(self.unique_identifier))
-
-				if USE_FAKE_BMS:
-					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{}: {} [OMBC] ".format(
-						self.priority, self.rm_details.name
-					))
 			else:
 				#TODO: Implement other controltypes.
 				#Any Other controltype is currenetly not implemented, we just can reject. 
@@ -818,15 +826,22 @@ class S2RMDelegate():
 		)
 		self._s2_send_message(resp)
 
-	def _s2_send_message(self, message:S2MessageComponent):
-		#logger.debug("Send Message to {}: {}".format(self.unique_identifier, message.to_dict()["message_type"]))
+	def _s2_send_message(self, message:S2MessageComponent, reply_handler: Callable[[ReceptionStatus], None] = None):
+		'''
+			Sends a s2 message. If a reply_handler is passed, this method will track for the response arriving
+			and invoke the handler with the ReceptionStatus object as parameter.
+		'''
+		if reply_handler is not None:
+			self._reply_handler_dict[message.model_dump()["message_id"]] = reply_handler
+
 		try:
-			#TODO: Eventually we want to do something with replies here? Handler?
 			self._dbusmonitor.dbusConn.call_async(self.service, self.s2path, S2_IFACE, method='Message', signature='ss', 
 					args=[wrap_dbus_value(self.unique_identifier), wrap_dbus_value(message.to_json())], 
 					reply_handler=None, error_handler=None)
 		except Exception as ex:
 			logger.error("Error sending a S2 Message.", exc_info=ex)
+			logger.error("Mesesage was: {}".format(message.model_dump()))
+			del self._reply_handler_dict[message.model_dump()["message_id"]]
 	
 	def self_assign_overhead(self, overhead:SolarOverhead) -> SolarOverhead:
 		"""
@@ -1133,18 +1148,20 @@ class HEMS(SystemCalcDelegate):
 	def get_settings(self):
 		# Settings for HEMS
 		path = '/Settings/HEMS'
-		#EnergyCounters are stored in settings. Values will be written every 15 min, meanwhile run out of memory.
+		#EnergyCounters are stored in settings.
+
 		settings = [
 			("hems_mode", path + "/Mode", 0, 0, 1),
 			("hems_clinterval", path + "/ControlLoopInterval", 5, 1, 60),
 			("hems_balancingthreshold", path + '/BalancingThreshold', 98, 2, 98),
-			("hems_batteryreservation", path + '/BatteryReservationEquation', "15000.0 * (100.0-SOC)/100.0", "", ""),
+			("hems_batteryreservation", path + '/BatteryReservationEquation', "10000", "", ""),
 			("hems_primary_l1_forward", path + "/Energy/Primary/L1/Forward", 0.0, 0.0, 999999.9),
 			("hems_primary_l2_forward", path + "/Energy/Primary/L2/Forward", 0.0, 0.0, 999999.9),
 			("hems_primary_l3_forward", path + "/Energy/Primary/L3/Forward", 0.0, 0.0, 999999.9),
 			("hems_secondary_l1_forward", path + "/Energy/Secondary/L1/Forward", 0.0, 0.0, 999999.9),
 			("hems_secondary_l2_forward", path + "/Energy/Secondary/L2/Forward", 0.0, 0.0, 999999.9),
 			("hems_secondary_l3_forward", path + "/Energy/Secondary/L3/Forward", 0.0, 0.0, 999999.9),
+			("hems_cip", path + "/ContinuousInverterPower", 4000.0, 0, 150000.0)
 		]
 
 		return settings
@@ -1236,6 +1253,10 @@ class HEMS(SystemCalcDelegate):
 	@property
 	def mode(self):
 		return self._settings['hems_mode']
+	
+	@property
+	def continuous_inverter_power(self):
+		return self._settings['hems_cip']
 
 	@property
 	def control_loop_interval(self):
@@ -1418,7 +1439,6 @@ class HEMS(SystemCalcDelegate):
 	def _on_timer(self):
 		try:
 			logger.debug("v------------------- LOOP -------------------v")
-			# TODO: Add temporary performance counters for loop method, so we can figure out, how intense HEMS is.
 			# Control loop timer.
 			now = self._get_time()
 			self.system_type = self._determine_system_type()
@@ -1555,8 +1575,8 @@ class HEMS(SystemCalcDelegate):
 			round(dcpv, 1),
 			self.current_battery_reservation,
 			batrate,
-			4000, #TODO: Nominal Inverter Power(s). this needs to be queried "somehow".
-			4000,
-			4000,
+			self.continuous_inverter_power,
+			self.continuous_inverter_power,
+			self.continuous_inverter_power,
 			self
 		)
