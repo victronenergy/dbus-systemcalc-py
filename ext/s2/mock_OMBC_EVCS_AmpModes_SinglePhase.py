@@ -544,7 +544,7 @@ if __name__ == "__main__":
         configure_logger()
         instance = 920
         bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
-        service = EVCSMock(bus, 'com.victronenergy.s2Mock', instance)
+        service = EVCSMock(bus, 'com.victronenergy.switch', instance)
         
         service.add_item(TextItem("/ProductName", "ShellyMock"))
         service.add_item(IntegerItem("/DeviceInstance", instance))
