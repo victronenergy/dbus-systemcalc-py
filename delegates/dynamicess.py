@@ -431,7 +431,6 @@ class VebusDevice(EssDevice):
 		return None
 
 	def self_consume(self, restrictions, allow_feedin):
-		batteryexport = not restrictions & 1
 		batteryimport = not restrictions & 2
 
 		self._set_feedin(allow_feedin)
@@ -444,12 +443,9 @@ class VebusDevice(EssDevice):
 		# be imported into battery.
 		self._set_charge_power(None if batteryimport else self.acpv)
 
-		# If exporting battery to grid is restricted, then limit DC-AC
-		# conversion to pvpower plus consumption. Otherwise unrestricted
-		# and even a negative ESS grid setpoint will cause power to go to
-		# the grid.
-		dcp = -1.0 if batteryexport else max(self.pvpower + self.consumption, 1.0)
-		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', dcp)
+		# Don't limit the MaxDischargePower. If a User opts to select a negative setpoint
+		# Same behaviour as regular ESS should apply, despite a bat2grid limitation. (possible)
+		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1.0)
 
 	def deactivate(self):
 		self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None)
