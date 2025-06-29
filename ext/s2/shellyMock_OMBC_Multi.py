@@ -306,7 +306,7 @@ class UnifiedHttpShellyRM(S2ResourceManagerItem):
                     await self.publish_power_report(jresponse["apower"])
 
     async def publish_power_report(self, v):
-        #self.log_info("Publishing Power: {}".format(v))
+        self.log_info("Publishing Power: {}".format(v))
         self.last_power_reported = v
 
         await self.send_msg_and_await_reception_status(
@@ -400,7 +400,7 @@ class ShellyMockService(Service):
             logger.info("Loading shellies for Daniels Environment.")
             self.shelly_ios:list[UnifiedHttpShellyRM] = [
                 UnifiedHttpShellyRM(
-                    self, 0, "10.10.20.90", "Waterplay Filter", 0, 5, 0, CommodityQuantity.ELECTRIC_POWER_L3, 70.0, 60, 60
+                    self, 0, "10.10.20.90", "Waterplay Filter", 0, 5, 0, CommodityQuantity.ELECTRIC_POWER_L3, 70.0, 600, 60
                 ),
                 UnifiedHttpShellyRM(
                     self, 1, "10.10.20.57", "Heater L1", 1, 40, 1, CommodityQuantity.ELECTRIC_POWER_L1, 1150.0, 60, 30

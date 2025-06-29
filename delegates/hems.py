@@ -506,6 +506,7 @@ class S2RMDelegate():
 	def __init__(self, monitor, service, instance, rmno, priority, consumer_type, hems):
 		#General
 		self.initialized = False
+		self.is_active_hems_control = False
 		self.service = service
 		self.instance = instance
 		self.rmno = rmno
@@ -535,11 +536,11 @@ class S2RMDelegate():
 		self._message_receiver=None
 		self._disconnect_receiver=None
 		self._keep_alive_timer=None
-		self._reply_handler_dict:Dict[uuid.UUID, Callable[[ReceptionStatus], None]]={}
+		self._reply_handler_dict:Dict[uuid.UUID, Callable[[ReceptionStatus], None]]={} #TODO Needs handling, when replies are never received?
 		
 		#Generic value holder
 		self.rm_details=None
-		self.active_control_type=None
+		self.active_control_type:ControlType=None
 		
 		#OMBC related stuff.
 		self.ombc_system_description = None
@@ -589,6 +590,7 @@ class S2RMDelegate():
 			self._keep_alive_timer = None
 
 		self.initialized=False
+		self.is_active_hems_control=False
 		logger.info("RMDelegate is now uninitialized: {}".format(self.unique_identifier))
 
 	def _keep_alive_loop(self):
@@ -674,6 +676,8 @@ class S2RMDelegate():
 						
 	def _s2_on_power_measurement(self, message:PowerMeasurement):
 		#RM reported Powermeasurement. Track internally, until HEMS requests an update.
+		#logger.debug("Received power emasurement from {}: {}".format(self.unique_identifier, message))
+		
 		#TODO: If the underlaying Service is reporting a building Ac/Energy/Forward, use that counter.
 		def increase_counter(self:S2RMDelegate, commodity:CommodityQuantity, value:float, timestamp):
 			if self._current_timestamps.by_commodity[commodity]==0:
@@ -687,18 +691,25 @@ class S2RMDelegate():
 				self.current_power.by_commodity[commodity] = value
 				self._current_timestamps.by_commodity[commodity] = timestamp
 
-		total = 0
-		for pv in message.values:
-			if pv.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC:
-				for c in [CommodityQuantity.ELECTRIC_POWER_L1, CommodityQuantity.ELECTRIC_POWER_L2, CommodityQuantity.ELECTRIC_POWER_L3]:
-					increase_counter(self, c, pv.value / 3.0, message.measurement_timestamp)
-					total += pv.value / 3.0
-			else:
-				increase_counter(self,pv.commodity_quantity,pv.value, message.measurement_timestamp)
-				total += pv.value
-
-		if USE_FAKE_BMS:
-			self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/Dc/0/Power", total)		
+		#only accept power reports, when the consumer is actually actively hems controlled. Else we don't care and assume 0. 
+		#FIXME: Exception: If a consumer is stuck in Transition to off, it is under HEMS Control, so power reports shall be accepted.
+		if self.is_active_hems_control:
+			total = 0
+			for pv in message.values:
+				if pv.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC:
+					for c in [CommodityQuantity.ELECTRIC_POWER_L1, CommodityQuantity.ELECTRIC_POWER_L2, CommodityQuantity.ELECTRIC_POWER_L3]:
+						increase_counter(self, c, pv.value / 3.0, message.measurement_timestamp)
+						total += pv.value / 3.0
+				else:
+					increase_counter(self,pv.commodity_quantity,pv.value, message.measurement_timestamp)
+					total += pv.value
+			
+			if USE_FAKE_BMS:
+				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/Dc/0/Power", total)
+		else:
+			self.current_power.l1 = self.current_power.l2 = self.current_power.l3 = self.current_power.dc = 0		
+			if USE_FAKE_BMS:
+				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/Dc/0/Power", 0)
 		
 		self._s2_send_reception_message(ReceptionStatusValues.OK, message)
 
@@ -722,6 +733,11 @@ class S2RMDelegate():
 				self.ombc_active_operation_mode = opm
 
 				logger.info("{} reported operation mode: '{}'".format(self.unique_identifier, self.ombc_active_operation_mode.diagnostic_label))
+
+				#if the initial reported status is consuming power, we take over control. 
+				#TODO: What if multiple power ranges?
+				if (self.ombc_active_operation_mode.power_ranges[0].end_of_range > 0):
+					self.is_active_hems_control=True
 
 				if USE_FAKE_BMS:
 					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{}: {} [OMBC] @ {}".format(
@@ -899,6 +915,7 @@ class S2RMDelegate():
 		for opm in eligible_operation_modes:
 			overhead.begin()
 			for pr in opm.power_ranges:
+				#TODO: Verify why there are multiple ranges?
 				claim_success = overhead.claim(pr.commodity_quantity, pr.start_of_range, pr.end_of_range, 
 					self.consumer_type==ConsumerType.Primary, opm.id == forced_state.id)
 				
@@ -941,6 +958,10 @@ class S2RMDelegate():
 					#good to go, this will happen. keep the new claim. 
 					self.power_claim = new_power_claim
 					self.power_request = overhead.power_request
+
+					#flag for active control, if power > 0
+					self.is_active_hems_control = self.power_request.total > 0
+					#logger.debug("Flaging consumer to be under hems control: {} for {}".format(self.is_active_hems_control, self.unique_identifier))
 				break
 		
 		#FIXME: If we are here, and didn't find a proper operation mode with 0Watt - the client probably didn't report
@@ -1090,10 +1111,13 @@ class S2RMDelegate():
 						consumption = (self.power_request.by_phase[l] * duration / 3600.0) / 1000.0
 						self._current_counter.by_phase[l] = consumption
 
-		result = (self.current_power, self._current_counter)
-		self._current_counter = PhaseAwareFloat()
-		self._last_pop_powerstats = now
-		return result
+		if self.current_power is not None:
+			result = (self.current_power, self._current_counter)
+			self._current_counter = PhaseAwareFloat()
+			self._last_pop_powerstats = now
+			return result
+		
+		return None
 
 class HEMS(SystemCalcDelegate):
 	#TODO: Refactor dateTime usage to _get_time everywhere, as this required for unit testing to time travel.
@@ -1212,7 +1236,6 @@ class HEMS(SystemCalcDelegate):
 				priority = self._dbusmonitor.get_value(service, "/Devices/{}/S2/Priority".format(i)) or 50
 				ct_raw = self._dbusmonitor.get_value(service, "/Devices/{}/S2/ConsumerType".format(i))
 				consumer_type = ConsumerType(1 if ct_raw is None else ct_raw)
-				logger.debug("priority and ct: {} {}:{}".format(priority, ct_raw, consumer_type))
 				delegate = S2RMDelegate(self._dbusmonitor, service, instance, i, priority, consumer_type, self)
 				self.managed_rms[delegate.unique_identifier] = delegate
 				logger.info("Identified S2 RM {} on {}. Added to managed RMs as {}".format(i, service, delegate.unique_identifier))
@@ -1411,13 +1434,14 @@ class HEMS(SystemCalcDelegate):
 				if delegate.initialized:
 					values = delegate.pop_powerstats(self._get_time(timezone.utc))
 
-					if delegate.consumer_type == ConsumerType.Primary:
-						self.power_primary += values[0]
-						self.counter_primary += values[1]
+					if values is not None:
+						if delegate.consumer_type == ConsumerType.Primary:
+							self.power_primary += values[0]
+							self.counter_primary += values[1]
 
-					elif delegate.consumer_type == ConsumerType.Secondary:
-						self.power_secondary += values[0]
-						self.counter_secondary += values[1]
+						elif delegate.consumer_type == ConsumerType.Secondary:
+							self.power_secondary += values[0]
+							self.counter_secondary += values[1]
 			
 			#dump on dbus
 			for l in [1,2,3]:
@@ -1474,39 +1498,45 @@ class HEMS(SystemCalcDelegate):
 				except:
 					pass
 
-			#Iterate over all known RMs, check their requirement and assign them a suitable Budget. 
-			#The RMDelegate is responsible to communicate with it's rm upon .comit() beeing called. 
-			#(Will be called after finishing all power assignments to avoid instructions beeing send out immediately)
-			#sort RMs by priority before iterating.
-			for unique_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority):
-				logger.debug("=============================================================================================================")  
-				if delegate.initialized and delegate.rm_details is not None:
-					if delegate.active_control_type is not None and delegate.active_control_type != ControlType.NOT_CONTROLABLE:
-						logger.debug("===== RM {} ({}) is controllable: {} =====".format(unique_identifier, delegate.rm_details.name, delegate.active_control_type))	
-						available_overhead = delegate.self_assign_overhead(available_overhead)
-						logger.debug("==> Remaining overhead: {}".format(available_overhead))
+			#only iterate when we have solar-overhead, OR Hems-caused consumption (then we may need to turn a consumer off.)
+			if (available_overhead.power.total > 0 or 
+	   			(self._dbusservice["/HEMS/PrimaryConsumer/Ac/Power"] or 0) > 0 or 
+				(self._dbusservice["/HEMS/SecondaryConsumer/Ac/Power"] or 0) > 0):
+				
+				#Iterate over all known RMs, check their requirement and assign them a suitable Budget. 
+				#The RMDelegate is responsible to communicate with it's rm upon .comit() beeing called. 
+				#(Will be called after finishing all power assignments to avoid instructions beeing send out immediately)
+				#sort RMs by priority before iterating.
+				for unique_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority):
+					logger.debug("=============================================================================================================")  
+					if delegate.initialized and delegate.rm_details is not None:
+						if delegate.active_control_type is not None and delegate.active_control_type != ControlType.NOT_CONTROLABLE:
+							logger.debug("===== RM {} ({}) is controllable: {} =====".format(unique_identifier, delegate.rm_details.name, delegate.active_control_type))	
+							available_overhead = delegate.self_assign_overhead(available_overhead)
+							logger.debug("==> Remaining overhead: {}".format(available_overhead))
+						else:
+							logger.debug("===== RM {} ({}) is uncontrollable: {} =====".format(unique_identifier, delegate.rm_details.name, delegate.active_control_type))	
 					else:
-						logger.debug("===== RM {} ({}) is uncontrollable: {} =====".format(unique_identifier, delegate.rm_details.name, delegate.active_control_type))	
-				else:
-					logger.debug("===== RM {} is not yet initialized. =====".format(unique_identifier))
+						logger.debug("===== RM {} is not yet initialized. =====".format(unique_identifier))
 
-			logger.debug("All assignments done. Comiting states.")
-			for unique_identifier, delegate in self.managed_rms.items():
-				if delegate.initialized:
-					delegate.comit()
-					
-			logger.debug("SOC={}%, RSRV={}/{}W ({}), L1o={}W, L2o={}W, L3o={}W, dcpvo={}W, totalo={}W".format(
-					self.soc,
-					available_overhead.battery_rate,
-					self.current_battery_reservation,
-					self._dbusservice["/HEMS/BatteryReservationState"],
-					available_overhead.power.l1,
-					available_overhead.power.l2,
-					available_overhead.power.l3,
-					available_overhead.power.dc,
-					available_overhead.power.total,
+				for unique_identifier, delegate in self.managed_rms.items():
+					if delegate.initialized:
+						delegate.comit()
+						
+				logger.debug("SOC={}%, RSRV={}/{}W ({}), L1o={}W, L2o={}W, L3o={}W, dcpvo={}W, totalo={}W".format(
+						self.soc,
+						available_overhead.battery_rate,
+						self.current_battery_reservation,
+						self._dbusservice["/HEMS/BatteryReservationState"],
+						available_overhead.power.l1,
+						available_overhead.power.l2,
+						available_overhead.power.l3,
+						available_overhead.power.dc,
+						available_overhead.power.total,
+					)
 				)
-			)
+			else:
+				logger.debug("ZzZzZzz...")
 
 			if USE_FAKE_BMS:
 				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Current", available_overhead.power.total)
@@ -1542,9 +1572,8 @@ class HEMS(SystemCalcDelegate):
 		#if the device is sourcing from DCPV it can be ignored, that will also be "ac-consumption" beeing reported, which we need to cancel out. 
 		#current_power will still report AC consumption based on phase-allocation of the consumer. 
 		for unique_identifier, delegate in self.managed_rms.items():
-			if delegate.initialized:
-				#FIXME: If a consumer is running manually, it's power should not be considered available overhread.
-				#       Also, HEMS consumption counters should not count. -> implement delegate.is_hems_controlled()
+			#If a consumer is not having a power_request above 0, it may run manually. So we don't consider it as overhead. 
+			if delegate.is_active_hems_control:
 				if delegate.current_power is not None:
 					l1 += delegate.current_power.l1
 					l2 += delegate.current_power.l2
