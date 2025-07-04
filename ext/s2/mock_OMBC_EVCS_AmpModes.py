@@ -71,7 +71,7 @@ from s2python.ombc import (
 
 DBusGMainLoop(set_as_default=True)
 
-EVCS_SERVICE = "com.victronenergy.evcharger.evc_HQ2326FEAJW"
+EVCS_SERVICE = "com.victronenergy.evcharger"
 
 class OMBCT(OMBCControlType):
     
@@ -180,7 +180,13 @@ class RM0(S2ResourceManagerItem):
         })
 
         super().__init__(self.s2_path, [self.ct_noctrl, self.ct_ombc], self.asset_details)
-        
+
+        #find the ev charger, we have: 
+        for (sn, instance) in self.dbus_monitor.get_service_list().items():
+            if (sn.startswith("com.victronenergy.evcharger")):
+                logger.info("Found EVCS: {}".format(sn))
+                EVCS_SERVICE = sn
+
     def _dbusValueChanged(self, dbusServiceName, dbusPath, dict, changes, deviceInstance):
         try:
             logger.info(self, "Change on dbus for {0} (new value: {1})".format(dbusServiceName, changes['Value'])) 
