@@ -8,7 +8,7 @@ from delegates.dvcc import Dvcc
 from delegates.batterylife import BatteryLife
 from delegates.batterylife import State as BatteryLifeState
 from delegates.chargecontrol import ChargeControl
-from enum import Enum
+from enum import Enum, IntFlag
 from time import time
 import json
 import logging
@@ -49,9 +49,10 @@ class OperatingMode(int, Enum):
 	TRADEMODE = 0
 	GREENMODE = 1
 
-class Flags(int, Enum):
+class Flags(IntFlag):
 	NONE = 0
 	FASTCHARGE = 1
+	DISABLE_PV = 2
 
 class Restrictions(int, Enum):
 	NONE = 0
@@ -340,7 +341,7 @@ class VebusDevice(EssDevice):
 		#minus once more dcpv, as the discharge-method will internally add dcpv again.
 		# that'll be self.pvpower - rate - self.pvpower, hence comes down to rate * -1
 		# or in other words: we leave the portion of rate * -1 from dcpv available for the battery.
-		fast_charge_requested = flags & int(Flags.FASTCHARGE)
+		fast_charge_requested = Flags.FASTCHARGE in flags
 
 		#don't forward fastcharge. That means "max power", so no forced discharge. 
 		if rate < self.pvpower and not fast_charge_requested:
@@ -390,7 +391,7 @@ class VebusDevice(EssDevice):
 			# to DC-coupled PV plus local consumption.
 			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
 
-			if flags & Flags.FASTCHARGE:
+			if Flags.FASTCHARGE in flags:
 				self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
 				return None
 			else:
@@ -489,7 +490,7 @@ class MultiRsDevice(EssDevice):
 		#minus once more dcpv, as the discharge-method will internally add dcpv again.
 		# that'll be self.pvpower - rate - self.pvpower, hence comes down to rate * -1
 		# or in other words: we leave the portion of rate * -1 from dcpv available for the battery.
-		fast_charge_requested = flags & int(Flags.FASTCHARGE)
+		fast_charge_requested = Flags.FASTCHARGE in flags
 
 		#don't forward fastcharge. That means "max power", so no forced discharge. 
 		if rate < self.pvpower and not fast_charge_requested:
@@ -527,7 +528,7 @@ class MultiRsDevice(EssDevice):
 			# making. If exporting the battery is not allowed, then limit that
 			# to DC-coupled PV plus local consumption.
 			self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
-			if flags & Flags.FASTCHARGE:
+			if Flags.FASTCHARGE in flags:
 				self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', -15000)
 				return None
 			else:
@@ -572,7 +573,7 @@ class DynamicEssWindow(ScheduledWindow):
 		self.allow_feedin = allow_feedin
 		self.restrictions = restrictions
 		self.strategy = strategy
-		self.flags = flags
+		self.flags:Flags = Flags(flags)
 		self.duration = duration
 
 	def get_window_progress(self, now) -> float:
@@ -636,7 +637,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		#               4 = supports fast-charge strategy
 		#               8 = values set on Venus (Battery balancing, capacity, operation mode)
 		#              16 = DESS split coping capability
-		self._dbusservice.add_path('/DynamicEss/Capabilities', value=31)
+		#			   32 = Disable PV.	
+		self._dbusservice.add_path('/DynamicEss/Capabilities', value=63)
 		self._dbusservice.add_path('/DynamicEss/NumberOfSchedules', value=NUM_SCHEDULES)
 		self._dbusservice.add_path('/DynamicEss/Active', value=0,
 			gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
@@ -657,6 +659,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 		if self.mode > 0:
 			self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value=None)
+			logger.info("DESS timer started after init.")
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
 		else:
 			self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value = ReactiveStrategy.DESS_DISABLED.value)
@@ -690,11 +693,11 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			settings.append(("dess_discharge_{}".format(i),
 				path + "/Schedule/{}/AllowGridFeedIn".format(i), 0, 0, 1))
 			settings.append(("dess_restrictions_{}".format(i),
-				path + "/Schedule/{}/Restrictions".format(i), 0, 0, 3))
+				path + "/Schedule/{}/Restrictions".format(i), 0, 0, sum(e.value for e in Restrictions)))
 			settings.append(("dess_strategy_{}".format(i),
-				path + "/Schedule/{}/Strategy".format(i), 0, 0, 3))
+				path + "/Schedule/{}/Strategy".format(i), 0, 0, max(e.value for e in Strategy)))
 			settings.append(("dess_flags_{}".format(i),
-				path + "/Schedule/{}/Flags".format(i), 0, 0, 1))
+				path + "/Schedule/{}/Flags".format(i), 0, 0, sum(e.value for e in Flags)))
 
 		return settings
 
@@ -779,6 +782,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 	def settings_changed(self, setting, oldvalue, newvalue):
 		if setting == 'dess_mode':
 			if oldvalue == 0 and newvalue > 0:
+				logger.info("DESS timer started after settings changed.")
 				self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
 			if newvalue == 0:
 				self._dbusservice['/DynamicEss/ReactiveStrategy'] = ReactiveStrategy.DESS_DISABLED.value
@@ -986,11 +990,11 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 						next_window = w
 						break # out of for loop
 
-				#As of now, one common handler is enough. Hence, we don't need to validate the operation mode 
-				final_strategy = self._determine_reactive_strategy(current_window, next_window, restrictions, now)
+				# validate solar-system state
+				self._disable_pv(Flags.DISABLE_PV in current_window.flags)
 
-				if (self.chargerate or 0) != self._dbusservice['/DynamicEss/ChargeRate']:
-					logger.log(logging.DEBUG, "Anticipated chargerate is now: {}".format(self.chargerate or 0))
+				# As of now, one common handler is enough. Hence, we don't need to validate the operation mode 
+				final_strategy = self._determine_reactive_strategy(current_window, next_window, restrictions, now)
 
 				self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate or 0 #Always set the anticipated chargerate on dbus.
 			else:
@@ -1018,6 +1022,18 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			self._device.self_consume(restrictions, None)
 
 		return True
+
+	def _disable_pv(self, disabled:bool):
+		'''
+			Checks, if pv should be enabled or disabled and ensures that state.
+		'''
+		#if pv shall be disabled, we need to recuringly set that path. 
+		if disabled:
+			self._dbusservice["/Pv/Disabled"] = 1
+		else:
+			#only need to set to 0 once. 
+			if self._dbusservice["/Pv/Disabled"] == 1:
+				self._dbusservice["/Pv/Disabled"] = 0
 
 	def _determine_reactive_strategy(self, w: DynamicEssWindow, nw: DynamicEssWindow, restrictions, now) -> ReactiveStrategy:
 		'''
@@ -1274,6 +1290,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			self._device.deactivate()
 		except AttributeError:
 			pass
+
+		self._disable_pv(False) #enable pv, if it was disabled.
 		self.release_control()
 		self.active = 0 # Off
 		self.errorcode = reason

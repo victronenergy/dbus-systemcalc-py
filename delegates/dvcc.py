@@ -13,6 +13,7 @@ from ve_utils import exit_on_error
 from delegates.base import SystemCalcDelegate
 from delegates.batteryservice import BatteryService
 from delegates.multi import Multi as MultiService
+from delegates.pvopmon import PvOpMon
 
 # Adjust things this often (in seconds)
 # solar chargers has to switch to HEX mode each time we write a value to its
@@ -1186,9 +1187,14 @@ class Dvcc(SystemCalcDelegate):
 			_max_charge_current = ceil(_max_charge_current - vebus_dc_current)
 
 		# Try to push the solar chargers to the vebus-compensated value
+		# check if pv is disabled.
+		pv_disabled = PvOpMon.instance.pv_disabled
+		_max_charge_current_for_chargers = _max_charge_current if not pv_disabled else 0
+		feedback_allowed = feedback_allowed if not pv_disabled else False
+
 		voltage_written, current_written, effective_charge_voltage = \
 			self._update_solarchargers_and_vecan(has_bms, charge_voltage,
-			_max_charge_current, feedback_allowed, stop_on_mcc0)
+			_max_charge_current_for_chargers, feedback_allowed, stop_on_mcc0)
 		update_solarcharger_control_flags(voltage_written, current_written, effective_charge_voltage)
 
 		# The Multi gets the remainder after subtracting what the solar
