@@ -25,6 +25,10 @@ parser.add_argument("-i", "--instance",
 	help="DeviceInstance",
 	type=int, default=0)
 
+parser.add_argument("-p", "--product-id",
+	help="ProductId",
+	type=lambda x: int(x, 0), default=0)
+
 args = parser.parse_args()
 
 print(__file__ + " is starting up, use -h argument to see optional arguments")
@@ -36,6 +40,7 @@ DBusGMainLoop(set_as_default=True)
 s = DbusDummyService(
     servicename=args.name,
     deviceinstance=args.instance,
+    productid=args.product_id,
     paths={
         '/Alarms/CellImbalance': {'initial': 0},
         '/Alarms/HighChargeCurrent': {'initial': 0},
@@ -49,6 +54,7 @@ s = DbusDummyService(
         '/Alarms/LowVoltage': {'initial': 0},
 
         '/Soc': {'initial': 40},
+        '/Capacity': {'initial': 200},
         '/Dc/0/Voltage': {'initial': 25},
         '/Dc/0/Current': {'initial': 20},
         '/Dc/0/Power': {'initial': 500},
@@ -63,6 +69,10 @@ s = DbusDummyService(
         '/System/NrOfModulesBlockingDischarge': {'initial': 0},
         '/System/NrOfModulesOffline': {'initial': 0},
         '/System/NrOfModulesOnline': {'initial': 2},
+
+        '/SystemSwitch': {'initial': 1},
+        '/Io/AllowToCharge': {'initial': 1},
+        '/Io/AllowToDischarge': {'initial': 1},
 
         '/Diagnostics/Module0/Id': {'initial': 'a'},
         '/Diagnostics/Module1/Id': {'initial': 'b'},
