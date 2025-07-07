@@ -3,6 +3,7 @@
 # Install-Script for beta-hems. This file should take care to download all required dependencies and get
 # HEMS up and running on any gx device. Data is pulled from github, so Internet-Connection is required. 
 
+mount -o remount,rw /dev/root
 echo "==================================================================================================================="
 echo "HEMS development Updater 1.0"
 echo "==================================================================================================================="
@@ -15,6 +16,16 @@ read num
 
 if [[ "$num" =~ ^-?[0-9]+$ ]]; then
     echo "You entered : $num"
+else
+    echo "Invalid input. Not an integer."
+    exit
+fi
+
+echo -n "Setup EVCS mock? 0=No, 1=SinglePhase, 3=ThreePhase:"
+read num_evcs
+
+if [[ "$num_evcs" =~ ^-?[0-9]+$ ]]; then
+    echo "You entered (EVCS): $num_evcs"
 else
     echo "Invalid input. Not an integer."
     exit
@@ -91,7 +102,7 @@ if [ "$num" -gt 0 ]; then
 else
     echo " > Removing FAKE-BMS service from rc.local..."
     line="ln -s /opt/victronenergy/dbus-systemcalc-py/ext/s2/fake_bms_service /service/fake_bms_service"
-    file="filename.txt"
+    file="/data/rc.local"
 
     sed -i "/^$(printf '%s' "$line" | sed 's/[^^]/[&]/g; s/\^/\\^/g')$/d" "$file"
 
@@ -101,6 +112,61 @@ else
 
     echo " > Removing FAKE-BMS service if existing..."
     rm "/service/fake_bms_service"
+fi
+
+echo " > Stopic EVCS service if running..."
+svc -d /service/mock_OMBC_EVCS_AmpModes_service
+svc -k /service/mock_OMBC_EVCS_AmpModes_service
+
+echo " > Removing EVCS Services if installed."
+line="ln -s /opt/victronenergy/dbus-systemcalc-py/ext/s2/mock_OMBC_EVCS_AmpModes_service /service/mock_OMBC_EVCS_AmpModes_service"
+file="/data/rc.local"
+sed -i "/^$(printf '%s' "$line" | sed 's/[^^]/[&]/g; s/\^/\\^/g')$/d" "$file"
+
+line="ln -s /opt/victronenergy/dbus-systemcalc-py/ext/s2/mock_OMBC_EVCS_AmpModes_SinglePhase_service /service/mock_OMBC_EVCS_AmpModes_service"
+file="/data/rc.local"
+sed -i "/^$(printf '%s' "$line" | sed 's/[^^]/[&]/g; s/\^/\\^/g')$/d" "$file"
+
+rm "/service/mock_OMBC_EVCS_AmpModes_service"
+
+if [ "$num_evcs" -eq 1 ]; then
+    echo " > Installing asyncio_glib through PIP..."
+    python -m pip install asyncio_glib > /dev/null 2>&1
+
+    echo " > Setting UP EVCS Service (1 Phase)..."
+    chmod a+x /opt/victronenergy/dbus-systemcalc-py/ext/s2/mock_OMBC_EVCS_AmpModes_service_SinglePhase/run
+    chmod 755 /opt/victronenergy/dbus-systemcalc-py/ext/s2/mock_OMBC_EVCS_AmpModes_service_SinglePhase/run
+
+    echo " > Symlinking EVCS Service as /service/mock_OMBC_EVCS_AmpModes_service ..."
+    ln -s /opt/victronenergy/dbus-systemcalc-py/ext/s2/mock_OMBC_EVCS_AmpModes_service_SinglePhase /service/mock_OMBC_EVCS_AmpModes_service
+
+    echo " > Adding EVCS Service  to rc.local..."
+    line="ln -s /opt/victronenergy/dbus-systemcalc-py/ext/s2/mock_OMBC_EVCS_AmpModes_service_SinglePhase /service/mock_OMBC_EVCS_AmpModes_service"
+    file="/data/rc.local"
+    grep -qxF "$line" "$file" || echo "$line" >> "$file"
+
+    echo " > Starting EVCS Service ..."
+    svc -u /service/mock_OMBC_EVCS_AmpModes_service
+fi
+
+if [ "$num_evcs" -eq 3 ]; then
+    echo " > Installing asyncio_glib through PIP..."
+    python -m pip install asyncio_glib > /dev/null 2>&1
+    
+    echo " > Setting UP EVCS Service (3 Phase)..."
+    chmod a+x /opt/victronenergy/dbus-systemcalc-py/ext/s2/mock_OMBC_EVCS_AmpModes_service/run
+    chmod 755 /opt/victronenergy/dbus-systemcalc-py/ext/s2/mock_OMBC_EVCS_AmpModes_service/run
+
+    echo " > Symlinking EVCS Service as /service/mock_OMBC_EVCS_AmpModes_service ..."
+    ln -s /opt/victronenergy/dbus-systemcalc-py/ext/s2/mock_OMBC_EVCS_AmpModes_service /service/mock_OMBC_EVCS_AmpModes_service
+
+    echo " > Adding EVCS Service  to rc.local..."
+    line="ln -s /opt/victronenergy/dbus-systemcalc-py/ext/s2/mock_OMBC_EVCS_AmpModes_service /service/mock_OMBC_EVCS_AmpModes_service"
+    file="/data/rc.local"
+    grep -qxF "$line" "$file" || echo "$line" >> "$file"
+
+    echo " > Starting EVCS Service ..."
+    svc -u /service/mock_OMBC_EVCS_AmpModes_service
 fi
 
 echo " > Making Shelly-Mock service runnable..."

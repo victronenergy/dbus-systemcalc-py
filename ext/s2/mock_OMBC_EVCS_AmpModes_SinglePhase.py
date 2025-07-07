@@ -185,6 +185,7 @@ class RM0(S2ResourceManagerItem):
         for (sn, instance) in self.dbus_monitor.get_service_list().items():
             if (sn.startswith("com.victronenergy.evcharger")):
                 logger.info("Found EVCS: {}".format(sn))
+                global EVCS_SERVICE
                 EVCS_SERVICE = sn
         
     def _dbusValueChanged(self, dbusServiceName, dbusPath, dict, changes, deviceInstance):
