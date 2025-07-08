@@ -226,7 +226,6 @@ class ScheduledCharging(SystemCalcDelegate, ChargeControl):
 		self.active = False
 		self.hysteresis = True
 		self.devices = []
-		self._timer = GLib.timeout_add(5000, exit_on_error, self._on_timer)
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(ScheduledCharging, self).set_sources(dbusmonitor, settings, dbusservice)
@@ -239,6 +238,8 @@ class ScheduledCharging(SystemCalcDelegate, ChargeControl):
 		# Assume a VE.Bus device is present. If not, check_conditions() will
 		# return non-zero.
 		self.devices.append(VebusDevice(self, dbusmonitor, None))
+
+		self._timer = GLib.timeout_add(5000, exit_on_error, self._on_timer)
 
 	def get_input(self):
 		return [
