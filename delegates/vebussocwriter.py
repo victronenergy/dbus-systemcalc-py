@@ -22,8 +22,6 @@ class VebusSocWriter(SystemCalcDelegate):
 
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)
-		GLib.idle_add(exit_on_error, lambda: not self._write_vebus_soc())
-		GLib.timeout_add(10000, exit_on_error, self._write_vebus_soc)
 
 	def get_input(self):
 		return [('com.victronenergy.vebus', [
@@ -38,6 +36,9 @@ class VebusSocWriter(SystemCalcDelegate):
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 		self._dbusservice.add_path('/Control/VebusSoc', value=0)
+
+		GLib.idle_add(exit_on_error, lambda: not self._write_vebus_soc())
+		GLib.timeout_add(10000, exit_on_error, self._write_vebus_soc)
 
 	def update_values(self, newvalues):
 		vebus_service = newvalues.get('/VebusService')
