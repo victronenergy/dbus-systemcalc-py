@@ -7,9 +7,6 @@ from ve_utils import exit_on_error
 from sc_utils import safeadd
 
 class CanBatterySense(SystemCalcDelegate):
-	def __init__(self):
-		super(CanBatterySense, self).__init__()
-
 	def get_input(self):
 		return [
 			('com.victronenergy.battery', [

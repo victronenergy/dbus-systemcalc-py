@@ -20,9 +20,6 @@ class VebusSocWriter(SystemCalcDelegate):
 	_hub2_assistant_ids = \
 		{0x0134, 0x0135, 0x0137, 0x0138, 0x013A, 0x141, 0x0146, 0x014D, 0x015F, 0x0160, 0x0165}
 
-	def __init__(self):
-		SystemCalcDelegate.__init__(self)
-
 	def get_input(self):
 		return [('com.victronenergy.vebus', [
 			'/Devices/0/Assistants',
