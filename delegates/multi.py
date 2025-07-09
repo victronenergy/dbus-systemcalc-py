@@ -72,14 +72,15 @@ class Multi(SystemCalcDelegate):
 		self.multi = None # The actual Multi that is connected and working
 		self.vebus_service = None # The VE.Bus service, Multi could be offline
 		self.othermultis = [] # Second and third devices
+		self.has_onboard_mkx = True
+
+	def set_sources(self, dbusmonitor, settings, dbusservice):
+		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 
 		# Determine if this platform has a built-in MK2/3. Maxi-GX
 		# and generic (Raspberry Pi) does not.
 		self.has_onboard_mkx = get_product_id() not in (
 			'C009', 'C00D', 'C010', 'C003')
-
-	def set_sources(self, dbusmonitor, settings, dbusservice):
-		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 
 	def get_input(self):
 		return [('com.victronenergy.vebus', [
