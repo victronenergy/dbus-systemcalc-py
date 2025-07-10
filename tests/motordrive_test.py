@@ -40,3 +40,21 @@ class MotorDriveTest(TestSystemCalcBase):
 		self._check_values({
 			'/MotorDrive/Power': 120
 		})
+
+	def test_power_inference_with_invalid_values(self):
+		self._check_values({
+			'/MotorDrive/0/Service': 'com.victronenergy.motordrive.ttyX1',
+			'/MotorDrive/Voltage': 24,
+			'/MotorDrive/Current': 10,
+			'/MotorDrive/Power': 240,
+			'/MotorDrive/0/RPM': 1000
+		})
+
+		self._monitor.set_value('com.victronenergy.motordrive.ttyX1', '/Dc/0/Voltage', None)
+		self._monitor.set_value('com.victronenergy.motordrive.ttyX1', '/Dc/0/Current', None)
+		self._monitor.set_value('com.victronenergy.motordrive.ttyX1', '/Dc/0/Power', None)
+
+		self._update_values()
+		self._check_values({
+			'/MotorDrive/Power': None
+		})
