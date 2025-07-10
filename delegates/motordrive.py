@@ -39,7 +39,7 @@ class MotorDrive(SystemCalcDelegate):
 
 			# Not sure power is available, calculate it if not
 			newvalues[PREFIX + '/Power'] = self._dbusmonitor.get_value(service, '/Dc/0/Power')
-			if newvalues[PREFIX + '/Power'] is None:
+			if newvalues[PREFIX + '/Power'] is None and newvalues[PREFIX + '/Voltage'] is not None and newvalues[PREFIX + '/Current'] is not None:
 				newvalues[PREFIX + '/Power'] = newvalues[PREFIX + '/Voltage'] * newvalues[PREFIX + '/Current']
 
 			break
