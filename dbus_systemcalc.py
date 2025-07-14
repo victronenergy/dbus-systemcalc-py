@@ -16,7 +16,7 @@ from gi.repository import GLib
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), 'ext', 'velib_python'))
 from vedbus import VeDbusService
 from ve_utils import get_vrm_portal_id, exit_on_error
-from dbusmonitor import DbusMonitor
+from dbusmonitor import AsyncDbusMonitor
 from settingsdevice import SettingsDevice
 from logger import setup_logging
 import delegates
@@ -243,9 +243,6 @@ class SystemCalc:
 				for path in paths:
 					s[path] = dummy
 
-		self._dbusmonitor = self._create_dbus_monitor(dbus_tree, valueChangedCallback=self._dbus_value_changed,
-			deviceAddedCallback=self._device_added, deviceRemovedCallback=self._device_removed)
-
 		# Connect to localsettings
 		supported_settings = {
 			'batteryservice': ['/Settings/SystemSetup/BatteryService', self.BATSERVICE_DEFAULT, 0, 0],
@@ -274,11 +271,7 @@ class SystemCalc:
 				supported_settings[setting[0]] = list(setting[1:])
 
 		self._settings = self._create_settings(supported_settings, self._handlechangedsetting)
-
 		self._dbusservice = self._create_dbus_service()
-
-		for m in self._modules:
-			m.set_sources(self._dbusmonitor, self._settings, self._dbusservice)
 
 		# At this moment, VRM portal ID is the MAC address of the CCGX. Anyhow, it should be string uniquely
 		# identifying the CCGX.
@@ -371,22 +364,20 @@ class SystemCalc:
 		for path in self._summeditems.keys():
 			self._dbusservice.add_path(path, value=None, gettextcallback=self._gettext)
 
+		# Now start monitoring services, and complete initialisation of
+		# delegates
 		self._batteryservice = None
-		self._determinebatteryservice()
+		self._dbusmonitor = self._create_dbus_monitor(dbus_tree,
+			valueChangedCallback=self._dbus_value_changed,
+			deviceAddedCallback=self._device_added_early,
+			deviceRemovedCallback=self._device_removed,
+			scanCompleteCallback=self._scan_complete)
 
-		if self._batteryservice is None:
-			logger.info("Battery service initialized to None (setting == %s)" %
-				self._settings['batteryservice'])
+		# Perform second phase of delegate initialisation
+		for m in self._modules:
+			m.set_sources(self._dbusmonitor, self._settings, self._dbusservice)
 
 		self._changed = True
-		for service, instance in self._dbusmonitor.get_service_list().items():
-			self._device_added(service, instance, do_service_change=False)
-
-		self._handleservicechange()
-		self._updatevalues()
-
-		self._dbusservice.register()
-		GLib.timeout_add(1000, exit_on_error, self._handletimertick)
 
 	def _create_dbus_monitor(self, *args, **kwargs):
 		raise Exception("This function should be overridden")
@@ -1189,18 +1180,37 @@ class SystemCalc:
 				os.environ['TZ'] = tz
 				time.tzset()
 
-	def _device_added(self, service, instance, do_service_change=True):
-		if do_service_change:
-			self._handleservicechange()
-
+	def _device_added_early(self, service, instance):
 		for m in self._modules:
-			m.device_added(service, instance, do_service_change)
+			m.device_added(service, instance)
+
+	def _device_added(self, service, instance):
+		self._handleservicechange()
+		for m in self._modules:
+			m.device_added(service, instance)
 
 	def _device_removed(self, service, instance):
 		self._handleservicechange()
 
 		for m in self._modules:
 			m.device_removed(service, instance)
+
+	def _scan_complete(self, monitor):
+		# Replace the early device_added handler with the runtime handler
+		monitor.set_device_added_callback(self._device_added)
+
+		# Initial battery service selection
+		self._determinebatteryservice()
+		if self._batteryservice is None:
+			logger.info("Battery service initialized to None (setting == %s)" %
+				self._settings['batteryservice'])
+
+		# Finalise values, put service on dbus, start timer
+		self._handleservicechange()
+		self._updatevalues()
+		self._dbusservice.register()
+		GLib.timeout_add(1000, exit_on_error, self._handletimertick)
+		logger.info("Startup scan complete")
 
 	def _gettext(self, path, value):
 		item = self._summeditems.get(path)
@@ -1248,7 +1258,7 @@ class SystemCalc:
 
 class DbusSystemCalc(SystemCalc):
 	def _create_dbus_monitor(self, *args, **kwargs):
-		return DbusMonitor(*args, **kwargs)
+		return AsyncDbusMonitor(*args, **kwargs)
 
 	def _create_settings(self, *args, **kwargs):
 		bus = dbus.SessionBus(private=True) if 'DBUS_SESSION_BUS_ADDRESS' in os.environ else dbus.SystemBus(private=True)

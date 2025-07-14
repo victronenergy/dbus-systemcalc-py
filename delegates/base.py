@@ -63,7 +63,7 @@ class SystemCalcDelegate(object, metaclass=TrackInstance):
 	def update_values(self, newvalues):
 		pass
 
-	def device_added(self, service, instance, do_service_change=True):
+	def device_added(self, service, instance, *args, **kwargs):
 		pass
 
 	def device_removed(self, service, instance):

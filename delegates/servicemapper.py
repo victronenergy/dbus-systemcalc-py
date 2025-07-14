@@ -3,7 +3,7 @@ from sc_utils import service_instance_name
 from delegates.base import SystemCalcDelegate
 
 class ServiceMapper(SystemCalcDelegate):
-	def device_added(self, service, instance, do_service_change=True):
+	def device_added(self, service, instance, *args, **kwargs):
 		path = ServiceMapper._get_service_mapping_path(service, instance)
 		if path in self._dbusservice:
 			self._dbusservice[path] = service

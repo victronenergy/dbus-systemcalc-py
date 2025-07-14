@@ -7,6 +7,10 @@ from mock_settings_device import MockSettingsDevice
 
 
 class MockSystemCalc(dbus_systemcalc.SystemCalc):
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+		self._scan_complete(self._dbusmonitor)
+
 	def _create_dbus_monitor(self, *args, **kwargs):
 		return MockDbusMonitor(*args, **kwargs)
 

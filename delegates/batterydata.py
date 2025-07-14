@@ -212,7 +212,7 @@ class BatteryData(SystemCalcDelegate):
 				'/ProductName'])
 		]
 
-	def device_added(self, service, instance, do_service_change=True):
+	def device_added(self, service, instance, *args, **kwargs):
 		self.deviceschanged = True
 		self.changed = True
 		if service.startswith('com.victronenergy.battery.'):

@@ -12,7 +12,7 @@ class LgCircuitBreakerDetect(SystemCalcDelegate):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 		self._dbusservice.add_path('/Dc/Battery/Alarms/CircuitBreakerTripped', value=None)
 
-	def device_added(self, service, instance, do_service_change=True):
+	def device_added(self, service, instance, *args, **kwargs):
 		service_type = service.split('.')[2]
 		if service_type == 'battery' and self._dbusmonitor.get_value(service, '/ProductId') == 0xB004:
 			logging.info('LG battery service appeared: %s' % service)

@@ -975,7 +975,7 @@ class Dvcc(SystemCalcDelegate):
 		self._dbusservice.add_path('/Dvcc/Alarms/FirmwareInsufficient', value=0)
 		self._dbusservice.add_path('/Dvcc/Alarms/MultipleBatteries', value=0)
 
-	def device_added(self, service, instance, do_service_change=True):
+	def device_added(self, service, instance, *args, **kwargs):
 		service_type = service.split('.')[2]
 		if service_type == 'solarcharger':
 			self._chargesystem.add_solar_charger(service)
