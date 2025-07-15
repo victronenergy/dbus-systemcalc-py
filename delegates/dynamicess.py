@@ -87,6 +87,7 @@ class ReactiveStrategy(int, Enum):
 	KEEP_BATTERY_CHARGED = 18
 	SCHEDULED_DISCHARGE_SMOOTH_TRANSITION = 19
 	SELF_CONSUME_ACCEPT_BELOW_TSOC = 20
+	IDLE_NO_DISCHARGE_OPPORTUNITY = 21
 
 	DESS_DISABLED = 92
 	SELFCONSUME_UNEXPECTED_EXCEPTION = 93
@@ -618,7 +619,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self.selfconsume_states = (ReactiveStrategy.SELFCONSUME_ACCEPT_CHARGE, ReactiveStrategy.SELFCONSUME_ACCEPT_DISCHARGE, 
 							 ReactiveStrategy.SELFCONSUME_NO_GRID, ReactiveStrategy.SELFCONSUME_INCREASED_DISCHARGE, ReactiveStrategy.SELF_CONSUME_ACCEPT_BELOW_TSOC)
 		self.idle_states = (ReactiveStrategy.IDLE_SCHEDULED_FEEDIN, ReactiveStrategy.IDLE_MAINTAIN_SURPLUS, ReactiveStrategy.IDLE_MAINTAIN_TARGETSOC, 
-					  ReactiveStrategy.IDLE_NO_OPPORTUNITY)
+					  ReactiveStrategy.IDLE_NO_OPPORTUNITY, ReactiveStrategy.IDLE_NO_DISCHARGE_OPPORTUNITY)
 		self.discharge_states = (ReactiveStrategy.SCHEDULED_DISCHARGE, ReactiveStrategy.SCHEDULED_MINIMUM_DISCHARGE, ReactiveStrategy.SCHEDULED_DISCHARGE_SMOOTH_TRANSITION)
 		self.error_selfconsume_states = (ReactiveStrategy.NO_WINDOW, ReactiveStrategy.UNKNOWN_OPERATING_MODE, ReactiveStrategy.SELFCONSUME_UNPREDICTED,
 								    ReactiveStrategy.SELFCONSUME_UNMAPPED_STATE, ReactiveStrategy.SELFCONSUME_FAULTY_CHARGERATE, 
@@ -1166,7 +1167,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 							reactive_strategy =  ReactiveStrategy.SCHEDULED_MINIMUM_DISCHARGE
 
 					# left over discharge cases:
-					#   - bat2grid restricted -> self consume
+					#	FIXME: When we have pro Grid and a battery restriction but Solar > consumption, self-consume states are not suitable - it will charge. Idle Instead.
+					#   - bat2grid restricted -> Selfconsume to drive loads, or Idle
 					#   - EXCESSTOBAT and MISSINGTOBAT -> self consume
 					#   - EXCESSTOBAT and MISSINGTOGRID:
 					#     Technically that means, we should have a MAXIMUM dischargerate and punish the energy above that to the grid
@@ -1176,7 +1178,12 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					#     load during that window to the grid. -> also self consume
 					# BUT: we are only doing this, If our next window has a smaller, equal or no target soc
 					elif self.soc - self.discharge_hysteresis > max(w.soc, self._device.minsoc):
-						reactive_strategy = ReactiveStrategy.SELFCONSUME_ACCEPT_DISCHARGE
+						# we are supposed to drive loads only to achieve the indendet discharge. However, if solar > consumption and a bat2grid restriction,
+						# we have no discharge opportunity, Then, we ultimately only can idle to stay close to target soc.
+						if available_solar_plus > 0 and (int(restrictions) & int(Restrictions.BAT2GRID)):
+							reactive_strategy = ReactiveStrategy.IDLE_NO_DISCHARGE_OPPORTUNITY
+						else:
+							reactive_strategy = ReactiveStrategy.SELFCONSUME_ACCEPT_DISCHARGE
 
 					else:
 						# Here we are:

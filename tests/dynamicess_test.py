@@ -456,6 +456,99 @@ class TestDynamicEss(TestSystemCalcBase):
 
 		self.validate_self_consume()
 
+	def test_7_SELF_CONSUME_ACCEPT_DISCHARGE(self):
+		now = timer_manager.datetime
+		stamp = int(now.timestamp())
+
+		self._set_setting('/Settings/DynamicEss/BatteryCapacity', 10.0)
+		self._monitor.set_value(self.vebus, '/Soc', 50.0)
+
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 40)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
+
+		timer_manager.run(5000)
+
+		#pretend there is consumption, beside we want to charge.
+		#System should enter 7:SELF_Consume_ACCEPT_DISCHARGE due to PROGRID (3) Strategy, bat2grid restriction and NO solar present.
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L1/Power", 0)
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L2/Power", 0)
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L3/Power", 0)
+
+		self._add_device('com.victronenergy.pvinverter.mock31', {
+			'/Ac/L1/Power': 0,
+			'/Ac/L2/Power': 0,
+			'/Ac/L3/Power': 0,
+			'/Position': 0,
+			'/Connected': 1,
+			'/DeviceInstance': 31,
+		})
+
+		self._update_values()
+
+		#check internal values
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ReactiveStrategy': 7,
+			'/DynamicEss/LastScheduledStart': stamp,
+			'/Ac/Consumption/L1/Power': 0,
+			'/Ac/Consumption/L2/Power': 0,
+			'/Ac/Consumption/L3/Power': 0,
+		})
+
+		self.validate_self_consume(None, -1.0) #-1.0 should be the result, when no consumption present.
+
+	def test_21_IDLE_NO_DISCHARGE_OPPORTUNITY(self):
+		now = timer_manager.datetime
+		stamp = int(now.timestamp())
+
+		self._set_setting('/Settings/DynamicEss/BatteryCapacity', 10.0)
+		self._monitor.set_value(self.vebus, '/Soc', 50.0)
+
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 40)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
+
+		timer_manager.run(5000)
+
+		#pretend there is consumption, beside we want to charge.
+		#System should enter 7:SELF_Consume_ACCEPT_DISCHARGE due to PROGRID (3) Strategy, bat2grid restriction and NO solar present.
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L1/Power", -300)
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L2/Power", -300)
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L3/Power", 0) #pretend 300 consumption as well.
+
+		self._add_device('com.victronenergy.pvinverter.mock31', {
+			'/Ac/L1/Power': 300,
+			'/Ac/L2/Power': 300,
+			'/Ac/L3/Power': 300,
+			'/Position': 0,
+			'/Connected': 1,
+			'/DeviceInstance': 31,
+		})
+
+		self._update_values()
+		timer_manager.run(5000)
+
+		#check internal values
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ReactiveStrategy': 21,
+			'/DynamicEss/LastScheduledStart': stamp,
+			'/Ac/Consumption/L1/Power': 0,
+			'/Ac/Consumption/L2/Power': 0,
+			'/Ac/Consumption/L3/Power': 300,
+		})
+
+		self.validate_idle_state()
+
 	def test_17_SELFCONSUME_INCREASED_DISCHARGE(self):
 		# keep battery charged should be entered, when we have 100 soc = 100 tsoc and
 		# 250 Watt solar plus.
@@ -770,15 +863,18 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Overrides/FeedInExcess': 0 #for the NO_WINDOW Test, should default to system configuration. 
 		}})
 
-	def validate_self_consume(self, maxChargePower=None):
+	def validate_self_consume(self, maxChargePower=None, maxDischargePower=None):
 		from delegates import Dvcc
+
+		if maxDischargePower is None:
+			maxDischargePower = -1
 
 		#validate external values
 		self._check_external_values({
 			'com.victronenergy.hub4': {
 				'/Overrides/ForceCharge': 0,
 				'/Overrides/Setpoint': None,
-				'/Overrides/MaxDischargePower': -1
+				'/Overrides/MaxDischargePower': maxDischargePower
 		}})
 
 		self.assertEqual(maxChargePower, Dvcc.instance.internal_maxchargepower)
