@@ -3,7 +3,7 @@ import json
 from collections import defaultdict
 from itertools import chain
 from functools import partial
-from sc_utils import reify, smart_dict
+from sc_utils import reify
 from delegates.base import SystemCalcDelegate
 
 # Victron packages

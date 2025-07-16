@@ -1,7 +1,4 @@
 # Base class for classes that wants to control charging via hub4control
-import logging
-logger = logging.getLogger(__name__)
-
 class ChargeControl(object):
 	controller = None
 	control_priority = 0

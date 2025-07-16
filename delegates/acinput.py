@@ -1,4 +1,3 @@
-from itertools import count
 from delegates.base import SystemCalcDelegate
 from delegates.multi import Multi
 

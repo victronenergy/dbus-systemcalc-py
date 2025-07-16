@@ -1,10 +1,5 @@
-import logging
-from gi.repository import GLib
-from dbus.exceptions import DBusException
 from delegates.base import SystemCalcDelegate
 from delegates.batteryservice import BatteryService
-from ve_utils import exit_on_error
-from sc_utils import safeadd
 
 class CanBatterySense(SystemCalcDelegate):
 	def get_input(self):

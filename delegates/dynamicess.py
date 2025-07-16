@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta
-import random
 from gi.repository import GLib # type: ignore
 from delegates.base import SystemCalcDelegate
 from delegates.batterysoc import BatterySoc

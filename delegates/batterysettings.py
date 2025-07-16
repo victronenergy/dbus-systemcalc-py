@@ -1,5 +1,4 @@
 from delegates.base import SystemCalcDelegate
-from delegates.dvcc import Dvcc
 from delegates.batteryservice import BatteryService
 
 # Battery IDs

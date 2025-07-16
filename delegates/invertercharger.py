@@ -1,4 +1,3 @@
-import dbus
 from delegates.base import SystemCalcDelegate
 from delegates.multi import Multi
 from sc_utils import safeadd

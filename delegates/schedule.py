@@ -1,8 +1,6 @@
-from __future__ import division
 from enum import IntEnum
-import logging
 from gi.repository import GLib
-from datetime import datetime, timedelta, time, date
+from datetime import datetime, timedelta, time
 
 # Victron packages
 from ve_utils import exit_on_error

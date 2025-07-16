@@ -1,13 +1,11 @@
 from dbus.exceptions import DBusException
 from gi.repository import GLib
-import logging
-from math import pi, floor, ceil
-import traceback
+from math import pi, ceil
 from itertools import count, chain
-from functools import partial, wraps
+from functools import partial
 
 # Victron packages
-from sc_utils import safeadd, copy_dbus_value, reify, ExpiringValue
+from sc_utils import safeadd, copy_dbus_value, ExpiringValue
 from ve_utils import exit_on_error
 
 from delegates.base import SystemCalcDelegate
