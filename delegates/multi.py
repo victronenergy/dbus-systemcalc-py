@@ -1,3 +1,4 @@
+from gi.repository import GLib
 import dbus
 from ve_utils import get_product_id
 from delegates.base import SystemCalcDelegate
@@ -105,7 +106,7 @@ class Multi(SystemCalcDelegate):
 		if service.startswith('com.victronenergy.vebus.'):
 			self.multis[service] = Service(self._dbusmonitor, service, instance)
 			self._dbusmonitor.track_value(service, "/Connected", self._set_multi)
-			self._set_multi()
+			GLib.idle_add(self._set_multi)
 
 	def device_removed(self, service, instance):
 		if service in self.multis:

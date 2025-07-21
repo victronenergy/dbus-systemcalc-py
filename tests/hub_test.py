@@ -1367,6 +1367,8 @@ class TestHubSystem(TestSystemCalcBase):
 					'/Info/MaxChargeVoltage': 53.2,
 					'/Info/MaxDischargeCurrent': 25,
 					'/ProductId': 0xB009})
+
+		self._update_values()
 		self._check_values({'/ActiveBatteryService': None})
 		self.assertEqual(len(BatteryService.instance.bmses), 3)
 
