@@ -762,10 +762,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		if service.startswith('com.victronenergy.vebus.'):
 			self._devices[service] = VebusDevice(self, self._dbusmonitor, service)
 			self._dbusmonitor.track_value(service, "/Connected", self._set_device)
-			self._set_device()
+			GLib.idle_add(self._set_device)
 		elif service.startswith('com.victronenergy.acsystem.'):
 			self._devices[service] = MultiRsDevice(self, self._dbusmonitor, service)
-			self._set_device()
+			GLib.idle_add(self._set_device)
 
 	def device_removed(self, service, instance):
 		try:

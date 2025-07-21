@@ -216,13 +216,13 @@ class BatterySense(SystemCalcDelegate):
 				'/Dc/0/Temperature', instance,
 				lambda s=service: self._dbusmonitor.get_value(s, '/Dc/0/Temperature') is not None)
 			self._dbusmonitor.track_value(service, '/Dc/0/Temperature', self.update_temperature_sensors)
-			self.update_temperature_sensors()
+			GLib.idle_add(self.update_temperature_sensors)
 		elif service.startswith('com.victronenergy.temperature.'):
 			self.temperaturesensors[service] = DedicatedSensor(service,
 				'/Temperature', instance,
 				lambda s=service: self._dbusmonitor.get_value(s, '/TemperatureType') == 0)
 			self._dbusmonitor.track_value(service, '/TemperatureType', self.update_temperature_sensors)
-			self.update_temperature_sensors()
+			GLib.idle_add(self.update_temperature_sensors)
 
 	def device_removed(self, service, instance):
 		if service in self.temperaturesensors:

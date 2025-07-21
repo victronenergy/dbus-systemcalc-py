@@ -1,3 +1,4 @@
+from gi.repository import GLib
 from delegates.base import SystemCalcDelegate
 
 class Battery(object):
@@ -127,7 +128,10 @@ class BatteryService(SystemCalcDelegate):
 			self._batteries[instance] = Battery(self._dbusmonitor, service, instance)
 			self._dbusmonitor.track_value(service, "/Info/MaxChargeVoltage", self._set_bms)
 			self._dbusmonitor.track_value(service, "/CustomName", self._set_bms)
-			self._set_bms()
+			# If you call _set_bms directly now, changes to MaxChargeVoltage
+			# that is still in the pipeline will not reflect yet. Instead
+			# schedule it for as soon as everything settles.
+			GLib.idle_add(self._set_bms)
 
 	def device_removed(self, service, instance):
 		if service.startswith('com.victronenergy.battery.') and instance in self._batteries:

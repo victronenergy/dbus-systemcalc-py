@@ -1,3 +1,4 @@
+from gi.repository import GLib
 from delegates.base import SystemCalcDelegate
 
 class Gps(SystemCalcDelegate):
@@ -16,7 +17,7 @@ class Gps(SystemCalcDelegate):
 		if service.startswith('com.victronenergy.gps.'):
 			self.gpses.add((instance, service))
 			self._dbusmonitor.track_value(service, "/Fix", self.update)
-			self.update()
+			GLib.idle_add(self.update)
 
 	def device_removed(self, service, instance):
 		self.gpses.discard((instance, service))
