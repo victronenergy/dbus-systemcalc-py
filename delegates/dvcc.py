@@ -804,11 +804,6 @@ class Multi(object):
 		return self.monitor.get_value(self.service, '/State')
 
 	@property
-	def feedin_enabled(self):
-		return self.monitor.get_value(self.service,
-			'/Hub4/L1/DoNotFeedInOvervoltage') == 0
-
-	@property
 	def firmwareversion(self):
 		return self.monitor.get_value(self.service, '/FirmwareVersion')
 
