@@ -2067,7 +2067,6 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/ChargeVoltage': None,
 			'/Link/ChargeCurrent': None,
 			'/Settings/ChargeCurrentLimit': 50,
-			'/Dc/0/Voltage': 14.0,
 			'/Dc/0/Current': 33,
 			'/FirmwareVersion': 0 },
 			connection='VE.Direct')
@@ -2109,7 +2108,6 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/ChargeVoltage': None,
 			'/Link/ChargeCurrent': None,
 			'/Settings/ChargeCurrentLimit': 50,
-			'/Dc/0/Voltage': 14.0,
 			'/Dc/0/Current': 33,
 			'/FirmwareVersion': 0 },
 			connection='VE.Direct')
@@ -2135,7 +2133,6 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/ChargeVoltage': None,
 			'/Link/ChargeCurrent': None,
 			'/Settings/ChargeCurrentLimit': 25,
-			'/Dc/0/Voltage': 14.0,
 			'/Dc/0/Current': 20,
 			'/FirmwareVersion': 0 },
 			connection='VE.Direct')
@@ -2145,7 +2142,6 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/ChargeVoltage': None,
 			'/Link/ChargeCurrent': None,
 			'/Settings/ChargeCurrentLimit': 50,
-			'/Dc/0/Voltage': 14.0,
 			'/Dc/0/Current': 20,
 			'/FirmwareVersion': 0 },
 			connection='VE.Direct')
@@ -2180,7 +2176,6 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/ChargeVoltage': None,
 			'/Link/ChargeCurrent': None,
 			'/Settings/ChargeCurrentLimit': 50,
-			'/Dc/0/Voltage': 14.0,
 			'/Dc/0/Current': 33,
 			'/FirmwareVersion': 0 },
 			connection='VE.Direct')
@@ -2203,7 +2198,6 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Link/ChargeVoltage': None,
 			'/Link/ChargeCurrent': None,
 			'/Settings/ChargeCurrentLimit': 50,
-			'/Dc/0/Voltage': 14.0,
 			'/Dc/0/Current': 33,
 			'/FirmwareVersion': 0 },
 			connection='VE.Direct')

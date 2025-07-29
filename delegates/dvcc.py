@@ -896,7 +896,6 @@ class Dvcc(SystemCalcDelegate):
 				'/Settings/BmsPresent']),
 			('com.victronenergy.alternator', [
 				'/ProductId',
-				'/Dc/0/Voltage',
 				'/Dc/0/Current',
 				'/Link/NetworkMode',
 				'/Link/ChargeVoltage',

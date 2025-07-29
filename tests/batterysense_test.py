@@ -1025,7 +1025,6 @@ class VoltageSenseTest(TestSystemCalcBase):
 			'/Link/VoltageSense': None,
 			'/Link/TemperatureSense': None,
 			'/Link/BatteryCurrent': None,
-			'/Dc/0/Voltage': 12.2,
 			'/Dc/0/Current': 9.7,
 			'/Dc/0/Temperature': None},
 			connection='VE.Direct')

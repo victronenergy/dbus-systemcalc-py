@@ -1168,7 +1168,6 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._add_device('com.victronenergy.alternator.ttyO1',
 						product_name='alternator',
 						values={
-								'/Dc/0/Voltage': 12.8,
 								'/Dc/0/Power': 139,
 								'/Dc/0/Current': 11.3 })
 		self._update_values()
