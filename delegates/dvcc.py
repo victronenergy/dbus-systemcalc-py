@@ -632,73 +632,41 @@ class ChargerSubsystem(object):
 		# Return flags of what we did
 		return voltage_written, int(network_mode_written and max_charge_current is not None), network_mode
 
-	# The math for the below is as follows. Let c be the total capacity of the
-	# charger, l be the current limit, a the actual current it produces, k the
-	# total current limit for the two chargers, and m the margin (l - a)
-	# between the limit and what is produced.
-	#
-	# We want m/c to be the same for all our chargers.
-	#
-	# Expression 1: (l1-a1)/c1 == (l2-a2)/c2
-	# Expression 2: l1 + l2 == k
-	#
-	# Solving that yields the expression below.
-	@staticmethod
-	def _balance_chargers(charger1, charger2, l1, l2):
-		c1, c2 = charger1.currentlimit, charger2.currentlimit
-		a1 = min(charger1.smoothed_current, c1)
-		a2 = min(charger2.smoothed_current, c2)
-		k = l1 + l2
-
-		try:
-			l1 = round((c2 * a1 - c1 * a2 + k * c1)/(c1 + c2), 1)
-		except ArithmeticError:
-			return l1, l2 # unchanged
-		else:
-			l1 = max(min(l1, c1), 0)
-			return l1, k - l1
-
 	@staticmethod
 	def _distribute_current(chargers, max_charge_current):
-		""" This is called if there are two or more solar chargers. It
-		    distributes the charge current over all of them. """
+		# For all chargers, the (a)ctual vs (l)imit vs (c)apacity
+		# is such that a <= l <= c. This is also true for the total
+		# actual current, vs limit, vs capacity. To make all the
+		# chargers the same, first calculate what the ratio of the
+		# requested limit max_charge_current is to the overal actual
+		# current and capacity, and then set all chargers to have
+		# the same ratio, which should result in a fair spread.
+		# The individual limits should then also add up to the total
+		# because of the distributive law.
+		#
+		# The ratio P = (l-a)/(c-a), with c < a. The function is
+		# not defined when c=a, but that will only happen if the chargers
+		# are running flat out, and can be handled separately.
 
-		# Take the difference between the values and spread it over all
-		# the chargers. The maxchargecurrents of the chargers should ideally
-		# always add up to the whole.
-		limits = [c.maxchargecurrent for c in chargers]
-		ceilings = [c.currentlimit for c in chargers]
+		capacity = sum(c.currentlimit for c in chargers)
+		limit = sum(c.maxchargecurrent for c in chargers)
+		actual = min(sum(c.smoothed_current for c in chargers), limit)
 
-		# We cannot have a max_charge_current higher than the sum of the
-		# ceilings.
-		max_charge_current = min(sum(ceilings), max_charge_current)
-
-
-		# Check how far we have to move our adjustment. If it doesn't have to
-		# move much (or at all), then just balance the charge limits. Our
-		# threshold for doing an additional distribution of charge is relative
-		# to the number of chargers, as it makes no sense to attempt a
-		# distribution if there is too little to be gained. The chosen value
-		# here is 100mA per charger.
-		delta = max_charge_current - sum(limits)
-		if abs(delta) > 0.1 * len(chargers):
-			limits = distribute(limits, ceilings, delta)
-			for charger, limit in zip(chargers, limits):
-				charger.maxchargecurrent = limit
+		try:
+			P = (max_charge_current - actual) / max(capacity - actual, 0.0)
+		except ZeroDivisionError:
+			P = 1.0 # C == a, then give it all the beans
 		else:
-			# Balance the limits so they have the same headroom at the top.
-			# Each charger is balanced against its neighbour, the one at the
-			# end is paired with the one at the start.
-			limits = []
-			r = chargers[0].maxchargecurrent
-			for c1, c2 in zip(chargers, chargers[1:]):
-				l, r = ChargerSubsystem._balance_chargers(c1, c2, r, c2.maxchargecurrent)
-				limits.append(l)
-			l, limits[0] = ChargerSubsystem._balance_chargers(c2, chargers[0], r, limits[0])
-			limits.append(l)
+			spillover = 0.0
+			for charger in chargers:
+				l = max((a := charger.smoothed_current) + P * (
+					charger.currentlimit - a) + spillover, 0.0)
 
-			for charger, limit in zip(chargers, limits):
-				charger.maxchargecurrent = limit
+				# The vreg is only capable of the nearest 100mA, so round
+				# it, and keep the remainder for the next iteration,
+				# so the max error is 100mA at the last charger.
+				spillover = l - (r := round(l, 1))
+				charger.maxchargecurrent = r
 
 	def update_values(self):
 		# This is called periodically from a timer to update contained

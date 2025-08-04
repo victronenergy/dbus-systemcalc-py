@@ -386,17 +386,17 @@ class TestHubSystem(TestSystemCalcBase):
 		for _ in range(3):
 			ChargerSubsystem._distribute_current(chargers, 120)
 
-		self.assertAlmostEqual(c1.maxchargecurrent, 78.7)
+		self.assertAlmostEqual(c1.maxchargecurrent, 79.7)
 		self.assertAlmostEqual(c2.maxchargecurrent, 28.0)
-		self.assertAlmostEqual(c3.maxchargecurrent, 13.3)
+		self.assertAlmostEqual(c3.maxchargecurrent, 12.3)
 
 		# One charger starts doing better, requiring a rebalance
 		c2.smoothed_current = 14.5
 		for _ in range(3):
 			ChargerSubsystem._distribute_current(chargers, 120)
-		self.assertAlmostEqual(c1.maxchargecurrent, 72.6)
-		self.assertAlmostEqual(c2.maxchargecurrent, 35.0)
-		self.assertAlmostEqual(c3.maxchargecurrent, 12.4)
+		self.assertAlmostEqual(c1.maxchargecurrent, 78.0)
+		self.assertAlmostEqual(c2.maxchargecurrent, 29.9)
+		self.assertAlmostEqual(c3.maxchargecurrent, 12.1)
 
 		# Push Close to limit
 		c1.smoothed_current = 70.0
@@ -404,16 +404,16 @@ class TestHubSystem(TestSystemCalcBase):
 		c3.smoothed_current = 12.0
 		for _ in range(3):
 			ChargerSubsystem._distribute_current(chargers, 120)
-		self.assertAlmostEqual(c1.maxchargecurrent, 75.3)
-		self.assertAlmostEqual(c2.maxchargecurrent, 31.9)
-		self.assertAlmostEqual(c3.maxchargecurrent, 12.8)
+		self.assertAlmostEqual(c1.maxchargecurrent, 76.3)
+		self.assertAlmostEqual(c2.maxchargecurrent, 31.1)
+		self.assertAlmostEqual(c3.maxchargecurrent, 12.6)
 
 		c3.smoothed_current = 12.8
 		for _ in range(3):
 			ChargerSubsystem._distribute_current(chargers, 120)
-		self.assertAlmostEqual(c1.maxchargecurrent, 74.8)
-		self.assertAlmostEqual(c2.maxchargecurrent, 31.7)
-		self.assertAlmostEqual(c3.maxchargecurrent, 13.5)
+		self.assertAlmostEqual(c1.maxchargecurrent, 75.8)
+		self.assertAlmostEqual(c2.maxchargecurrent, 31.0)
+		self.assertAlmostEqual(c3.maxchargecurrent, 13.2)
 
 		# Two are running full power, do not restrict them
 		c2.smoothed_current = 35.0
@@ -438,9 +438,9 @@ class TestHubSystem(TestSystemCalcBase):
 		for _ in range(3):
 			ChargerSubsystem._distribute_current(chargers, 105)
 
-		# Both have roughly 62.5% margin (l-a)/c
-		self.assertAlmostEqual(c1.maxchargecurrent, 92.6)
-		self.assertAlmostEqual(c2.maxchargecurrent, 12.4)
+		# Both have roughly 87% margin (l-a)/(c-a)
+		self.assertAlmostEqual(c1.maxchargecurrent, 91.5)
+		self.assertAlmostEqual(c2.maxchargecurrent, 13.5)
 
 	def test_control_vedirect_solarcharger_bms_ess_feedback(self):
 		# When feedback is allowed we do not limit MPPTs
@@ -1726,15 +1726,15 @@ class TestHubSystem(TestSystemCalcBase):
 		self._update_values(interval=3000)
 
 		# Check that inverter and solarcharger share charge current limit. Both have a 17.5A margin
-		# and the total is 100A.
+		# and the total is 100A. Margin (l-a)/(c-a) == 0.46.
 		self._check_external_values({
 			'com.victronenergy.inverter.ttyO1': {
-				'/Link/ChargeCurrent': 82.5,
+				'/Link/ChargeCurrent': 67.7,
 				'/Link/ChargeVoltage': 58.2,
 			},
 			'com.victronenergy.solarcharger.ttyO2': {
 				'/Link/ChargeVoltage': 58.2,
-				'/Link/ChargeCurrent': 17.5
+				'/Link/ChargeCurrent': 32.3
 			}
 		})
 		self._check_values({
