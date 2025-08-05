@@ -994,7 +994,6 @@ class SystemCalc:
 			c = None
 			a = None
 			user_consumption = None
-			user_consumption_current = None
 			if use_ac_out:
 				c = newvalues.get('/Ac/PvOnOutput/%s/Power' % phase)
 				a = newvalues.get('/Ac/PvOnOutput/%s/Current' % phase)
