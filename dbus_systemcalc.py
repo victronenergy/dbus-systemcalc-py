@@ -126,6 +126,9 @@ class SystemCalc:
 				'/Ac/L3/Current': dummy,
 				'/StarterVoltage': dummy},
 			'com.victronenergy.settings' : {
+				'/Settings/SystemSetup/Ac/Out/L1/Power' : dummy,
+				'/Settings/SystemSetup/Ac/Out/L2/Power' : dummy,
+				'/Settings/SystemSetup/Ac/Out/L3/Power' : dummy,
 				'/Settings/SystemSetup/AcInput1' : dummy,
 				'/Settings/SystemSetup/AcInput2' : dummy,
 				'/Settings/CGwacs/RunWithoutGridMeter' : dummy,
@@ -247,6 +250,10 @@ class SystemCalc:
 		supported_settings = {
 			'batteryservice': ['/Settings/SystemSetup/BatteryService', self.BATSERVICE_DEFAULT, 0, 0],
 			'hasdcsystem': ['/Settings/SystemSetup/HasDcSystem', 0, 0, 1],
+			'hasuserconsumptioncalc': ['/Settings/SystemSetup/HasUserConsumptionCalc', 0, 0, 1],
+			'userAcOutL1consumption': ['/Settings/SystemSetup/Ac/Out/L1/Power', float("inf"), -float("inf"), float("inf")],
+			'userAcOutL2consumption': ['/Settings/SystemSetup/Ac/Out/L2/Power', float("inf"), -float("inf"), float("inf")],
+			'userAcOutL3consumption': ['/Settings/SystemSetup/Ac/Out/L3/Power', float("inf"), -float("inf"), float("inf")],
 			'useacout': ['/Settings/SystemSetup/HasAcOutSystem', 1, 0, 1],
 			'hasacinloads': ['/Settings/SystemSetup/HasAcInLoads', 1, 0, 1],
 			'gaugeautomax': ['/Settings/Gui/Gauges/AutoMax', 1, 0, 1],
@@ -972,6 +979,9 @@ class SystemCalc:
 		# everything must be on AC-out then.
 		has_ac_in_system = self._settings['hasacinloads'] == 1
 
+		# If a system has user consumption calculation enabled.
+		has_user_consumption_calc = self._settings['hasuserconsumptioncalc']
+
 		# If we have an ESS system and RunWithoutGridMeter is set, there cannot be load on the AC-In, so it
 		# must be on AC-Out. Hence we do calculate AC-Out consumption even if 'useacout' is disabled.
 		# Similarly all load are by definition on the output if this is not an ESS system.
@@ -983,6 +993,8 @@ class SystemCalc:
 		for phase in consumption:
 			c = None
 			a = None
+			user_consumption = None
+			user_consumption_current = None
 			if use_ac_out:
 				c = newvalues.get('/Ac/PvOnOutput/%s/Power' % phase)
 				a = newvalues.get('/Ac/PvOnOutput/%s/Current' % phase)
@@ -1008,6 +1020,7 @@ class SystemCalc:
 					a = _safeadd(a, i_out)
 				c = _safemax(0, c)
 				a = _safemax(0, a)
+			
 			newvalues['/Ac/ConsumptionOnOutput/%s/Power' % phase] = c
 			newvalues['/Ac/ConsumptionOnOutput/%s/Current' % phase] = a
 			newvalues['/Ac/Consumption/%s/Power' % phase] = _safeadd(consumption[phase], c)
@@ -1015,6 +1028,24 @@ class SystemCalc:
 			if has_ac_in_system:
 				newvalues['/Ac/ConsumptionOnInput/%s/Power' % phase] = consumption[phase]
 				newvalues['/Ac/ConsumptionOnInput/%s/Current' % phase] = currentconsumption[phase]
+
+			if has_user_consumption_calc:
+				# /Settings/SystemSetup/Ac/Out/L1/Power
+				# Example of getter self._dbusmonitor.get_value('com.victronenergy.settings', '/Settings/CGwacs/RunWithoutGridMeter')
+
+				user_consumption = self._dbusmonitor.get_value('com.victronenergy.settings', '/Settings/SystemSetup/Ac/Out/%s/Power' % phase)
+				#user_consumption_current = self._dbusmonitor.get_value('com.victronenergy.settings', '/Settings/SystemSetup/Ac/Out/%s/Current' % phase)
+				user_consumption = _safemax(0, user_consumption)
+				#user_consumption_current = _safemax(0, user_consumption_current)
+
+				#if user_consumption is not None:
+				newvalues['/Ac/ConsumptionOnOutput/%s/Power' % phase] = user_consumption
+				newvalues['/Ac/Consumption/%s/Power' % phase] = user_consumption
+
+				# newvalues['/Ac/ConsumptionOnOutput/%s/Power' % phase] = self._dbusmonitor.get_value('com.victronenergy.settings', '/Settings/SystemSetup/Ac/Out/%s/Power' % phase)
+				# newvalues['/Ac/ConsumptionOnOutput/%s/Current' % phase] = a
+				# newvalues['/Ac/Consumption/%s/Power' % phase] = self._dbusmonitor.get_value('com.victronenergy.settings', '/Settings/SystemSetup/Ac/Out/%s/Power' % phase)
+				# newvalues['/Ac/Consumption/%s/Current' % phase] = _safeadd(currentconsumption[phase], a)
 
 		self._compute_number_of_phases('/Ac/Consumption', newvalues)
 		self._compute_number_of_phases('/Ac/ConsumptionOnOutput', newvalues)
