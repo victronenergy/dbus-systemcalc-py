@@ -509,16 +509,6 @@ class ChargerSubsystem(object):
 		return safeadd(*(c.smoothed_current for c in chain(
 			self._solarchargers.values(), self._inverterchargers.values()))) or 0
 
-	def maximize_charge_current(self):
-		""" Max out all chargers. """
-		for charger in self:
-			charger.maximize_charge_current()
-
-	def shutdown_chargers(self):
-		""" Shut down all chargers. """
-		for charger in self:
-			charger.maxchargecurrent = 0
-
 	def set_networked(self, has_bms, bms_charge_voltage, charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0):
 		""" This is the main entry-point into the solar charger subsystem. This
 		    sets all chargers to the same charge_voltage, and distributes
@@ -564,27 +554,19 @@ class ChargerSubsystem(object):
 		#
 		# Additionally, don't bother with chargers that are disconnected.
 		chargers = [x for x in chain(self._solarchargers.values(),
-			self._inverterchargers.values()) if x.active and x.maxchargecurrent is not None and x.n2k_device_instance in (0, None)]
+			self._inverterchargers.values()) if x.active and x.maxchargecurrent is not None and x.currentlimit is not None and x.n2k_device_instance in (0, None)]
 		if len(chargers) > 0:
 			if stop_on_mcc0 and max_charge_current == 0:
-				self.shutdown_chargers()
-			elif feedback_allowed:
-				self.maximize_charge_current()
-			elif max_charge_current is not None:
-				if len(chargers) == 1:
-					# The simple case: Only one charger. Simply assign the
-					# limit to the charger
-					sc = chargers[0]
-					cc = min(ceil(max_charge_current), sc.currentlimit)
-					sc.maxchargecurrent = cc
-				elif max_charge_current > self.totalcapacity * 0.95:
-					# Another simple case, we're asking for more than our
-					# combined capacity (with a 5% margin)
-					self.maximize_charge_current()
-				else:
-					# The hard case, we have more than one CC and we want
-					# less than our capacity.
-					self._distribute_current(chargers, max_charge_current)
+				for charger in chargers:
+					charger.maxchargecurrent = 0
+			elif max_charge_current is None:
+				for charger in chargers:
+					charger.maximize_charge_current()
+			elif feedback_allowed: # but max_charge_current is not None
+				for charger in chargers:
+					charger.maximize_charge_current()
+			else: # feedback not allowed, max_charge_current is not None
+				self._set_charge_current(chargers, max_charge_current)
 
 		# Split remainder over other chargers, according to individual
 		# capacity. Only consider controllable devices.
@@ -603,6 +585,22 @@ class ChargerSubsystem(object):
 
 		# Return flags of what we did
 		return voltage_written, int(network_mode_written and max_charge_current is not None), network_mode
+
+	def _set_charge_current(self, chargers, max_charge_current):
+		if len(chargers) == 1:
+			# The simple case: Only one charger. Simply assign the
+			# limit to the charger
+			sc = chargers[0]
+			sc.maxchargecurrent = min(ceil(max_charge_current), sc.currentlimit)
+		elif max_charge_current > sum(c.currentlimit for c in chargers) * 0.95:
+			# Another simple case, we're asking for more than our
+			# combined capacity (with a 5% margin)
+			for charger in chargers:
+				charger.maximize_charge_current()
+		else:
+			# The hard case, we have more than one CC and we want
+			# less than our capacity.
+			self._distribute_current(chargers, max_charge_current)
 
 	@staticmethod
 	def _distribute_current(chargers, max_charge_current):
@@ -906,9 +904,6 @@ class Dvcc(SystemCalcDelegate):
 			self._chargesystem.add_solar_charger(service)
 		elif service_type in ('inverter', 'multi'):
 			if self._dbusmonitor.get_value(service, '/IsInverterCharger') == 1:
-				# Add to both the solarcharger and inverter collections.
-				# add_invertercharger returns an object that can be directly
-				# added to the inverter collection.
 				self._inverters._add_inverter(
 					self._chargesystem.add_invertercharger(service))
 		elif service_type == 'vecan':
