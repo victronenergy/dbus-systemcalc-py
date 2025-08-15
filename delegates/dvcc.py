@@ -707,15 +707,7 @@ class Multi(object):
 
 	@property
 	def has_ess_assistant(self):
-		# We do not analyse the content of /Devices/0/Assistants, because that
-		# would require us to keep a list of ESS assistant version numbers (see
-		# VebusSocWriter._hub2_assistant_ids). Because that list is expected to
-		# change (unlike the list of hub-2 assistants), we use
-		# /Hub4/AssistantId to check the presence. It is guaranteed that
-		# /Hub4/AssistantId will be published before /Devices/0/Assistants.
-		assistants = self.monitor.get_value(self.service, '/Devices/0/Assistants')
-		return assistants is not None and \
-			self.monitor.get_value(self.service, '/Hub4/AssistantId') == 5
+		return self.monitor.get_value(self.service, '/Hub4/AssistantId') == 5
 
 	@property
 	def dc_current(self):
