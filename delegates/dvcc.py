@@ -126,44 +126,6 @@ QUIRKS = {
 	0xA3E7: _lynx_smart_bms_quirk,
 }
 
-def distribute(current_values, max_values, increment):
-	""" current_values and max_values are lists of equal size containing the
-	    current limits, and the maximum they can be increased to. increment
-	    contains the amount by which we want to increase the total, ie the sum
-	    of the values in current_values, while staying below max_values.
-
-	    This is done simply by first attempting to spread the increment
-	    equally. If a value exceeds the max in that process, the remainder is
-	    thrown back into the pot and distributed equally among the rest.
-
-	    Negative values are also handled, and zero is assumed to be the
-	    implicit lower limit. """
-	n = cn = len(current_values)
-	new_values = [-1] * n
-	for j in range(0, n):
-		for i, mv, av in zip(count(), max_values, current_values):
-			assert mv >= 0
-			if new_values[i] == mv or new_values[i] == 0:
-				continue
-			nv = av + float(increment) / cn
-
-			if nv >= mv:
-				increment += av - mv
-				cn -= 1
-				new_values[i] = mv
-				break
-			elif nv < 0:
-				increment += av
-				cn -= 1
-				new_values[i] = 0
-				break
-
-			new_values[i] = nv
-		else:
-			break
-		continue
-	return new_values
-
 class LowPassFilter(object):
 	""" Low pass filter, with a cap. """
 	def __init__(self, omega, value):
