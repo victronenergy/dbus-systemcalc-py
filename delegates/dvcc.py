@@ -27,26 +27,26 @@ VECAN_FIRMWARE_REQUIRED = 0x10200 # 1.02, 24-bit version
 # This is a place to account for some BMS quirks where we may have to ignore
 # the BMS value and substitute our own.
 
-def _byd_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
+def _byd_quirk(dvcc, bms, charge_voltage, charge_current):
 	""" Quirk for the BYD batteries. When the battery sends CCL=0, float it at
 	   55V. """
 	if charge_current == 0:
-		return (min(55.0, charge_voltage), 40, feedback_allowed, False)
-	return (charge_voltage, charge_current, feedback_allowed, False)
+		return (min(55.0, charge_voltage), 40, False)
+	return (charge_voltage, charge_current, False)
 
-def _lg_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
+def _lg_quirk(dvcc, bms, charge_voltage, charge_current):
 	""" Quirk for LG batteries. The hard limit is 58V. Above that you risk
 	    tripping on high voltage. The batteries publish a charge voltage of 57.7V
 	    but we need to make room for an 0.4V overvoltage when feed-in is enabled.
 	"""
 	# Make room for a potential 0.4V at the top
-	return (min(charge_voltage, 57.3), charge_current, feedback_allowed, False)
+	return (min(charge_voltage, 57.3), charge_current, False)
 
 class _pylontech_quirk(object):
 	def __init__(self):
 		self._chargevoltage = 52.5
 
-	def __call__(self, dvcc, bms, charge_voltage, charge_current, feedback_allowed):
+	def __call__(self, dvcc, bms, charge_voltage, charge_current):
 		""" Quirk for Pylontech. Make a bit of room at the top. Pylontech says that
 			at 51.8V the battery is 95% full, and that balancing starts at 90%.
 			53.2V is normally considered 100% full, and 54V raises an alarm. By
@@ -62,7 +62,7 @@ class _pylontech_quirk(object):
 		# See https://github.com/victronenergy/venus/issues/536
 		if charge_voltage > 55:
 			# 48V battery (16 cells.) Assume BMS knows what it's doing.
-			return (charge_voltage, charge_current, feedback_allowed, False)
+			return (charge_voltage, charge_current, False)
 		if charge_voltage > 20:
 			# 48V battery (15 cells) or 24V battery (8 cells). We want to halve
 			# the charge current limit when CCL=0 is sent. Normally the limit is
@@ -91,12 +91,12 @@ class _pylontech_quirk(object):
 				except TypeError:
 					charge_voltage = min(charge_voltage, 52.4)
 
-			return (charge_voltage, charge_current, feedback_allowed, False)
+			return (charge_voltage, charge_current, False)
 
 		# Not known, probably a 12V battery.
-		return (charge_voltage, charge_current, feedback_allowed, False)
+		return (charge_voltage, charge_current, False)
 
-def _pylontech_pelio_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
+def _pylontech_pelio_quirk(dvcc, bms, charge_voltage, charge_current):
 	""" Quirk for Pelio-L batteries. This is a 16-cell battery. 56V is 3.5V per
 	    cell which is where this battery registers 100% SOC. Battery sends
 	    CCL=0 at 3.55V per cell, to ensure good feed-in of excess DC coupled
@@ -106,12 +106,12 @@ def _pylontech_pelio_quirk(dvcc, bms, charge_voltage, charge_current, feedback_a
 	capacity = bms.capacity or 100.0
 	charge_current = max(charge_current, round(capacity/5.0))
 	if charge_current < 0.1:
-		return (min(charge_voltage, 55.2), charge_current, feedback_allowed, False)
-	return (min(charge_voltage, 56.0), charge_current, feedback_allowed, False)
+		return (min(charge_voltage, 55.2), charge_current, False)
+	return (min(charge_voltage, 56.0), charge_current, False)
 
-def _lynx_smart_bms_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
+def _lynx_smart_bms_quirk(dvcc, bms, charge_voltage, charge_current):
 	""" When the Lynx Smart BMS sends CCL=0, it wants all chargers to stop. """
-	return (charge_voltage, charge_current, feedback_allowed, True)
+	return (charge_voltage, charge_current, True)
 
 QUIRKS = {
 	0xB004: _lg_quirk,
@@ -1050,12 +1050,11 @@ class Dvcc(SystemCalcDelegate):
 		# If there is a BMS, get the charge voltage and current from it
 		max_charge_current = None
 		charge_voltage = None
-		feedback_allowed = self.feedback_allowed
 		stop_on_mcc0 = False
 		has_bms = bms_service is not None
 		if has_bms:
-			charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0 = \
-				self._adjust_battery_operational_limits(bms_service, feedback_allowed)
+			charge_voltage, max_charge_current, stop_on_mcc0 = \
+				self._adjust_battery_operational_limits(bms_service)
 
 		# Check /Bms/AllowToCharge on the VE.Bus service, and set
 		# max_charge_current to zero if charging is not allowed.  Skip this if
@@ -1110,7 +1109,7 @@ class Dvcc(SystemCalcDelegate):
 		# Try to push the solar chargers to the vebus-compensated value
 		voltage_written, current_written, effective_charge_voltage = \
 			self._update_solarchargers_and_vecan(has_bms, charge_voltage,
-			_max_charge_current, feedback_allowed, stop_on_mcc0)
+			_max_charge_current, stop_on_mcc0)
 		update_solarcharger_control_flags(voltage_written, current_written, effective_charge_voltage)
 
 		# The Multi gets the remainder after subtracting what the solar
@@ -1157,7 +1156,7 @@ class Dvcc(SystemCalcDelegate):
 
 		return True
 
-	def _adjust_battery_operational_limits(self, bms_service, feedback_allowed):
+	def _adjust_battery_operational_limits(self, bms_service):
 		""" Take the charge voltage and maximum charge current from the BMS
 		    and adjust it as necessary. For now we only implement quirks
 		    for batteries known to have them.
@@ -1170,14 +1169,14 @@ class Dvcc(SystemCalcDelegate):
 		if quirk is not None:
 			# If any quirks are registered for this battery, use that
 			# instead.
-			cv, mcc, feedback_allowed, stop_on_mcc0 = quirk(self, bms_service, cv, mcc, feedback_allowed)
+			cv, mcc, stop_on_mcc0 = quirk(self, bms_service, cv, mcc)
 
 		# Add debug offsets
 		if cv is not None:
 			cv = safeadd(cv, self.invertervoltageoffset)
 		if mcc is not None:
 			mcc = safeadd(mcc, self.currentoffset)
-		return cv, mcc, feedback_allowed, stop_on_mcc0
+		return cv, mcc, stop_on_mcc0
 
 	def _update_battery_operational_limits(self, bms_service, cv, mcc):
 		""" This function writes the bms parameters across to the Multi
@@ -1230,7 +1229,7 @@ class Dvcc(SystemCalcDelegate):
 			self._dbusmonitor.get_value('com.victronenergy.settings',
 				'/Settings/CGwacs/OvervoltageFeedIn') == 1
 
-	def _update_solarchargers_and_vecan(self, has_bms, bms_charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0):
+	def _update_solarchargers_and_vecan(self, has_bms, bms_charge_voltage, max_charge_current, stop_on_mcc0):
 		""" This function updates the solar chargers and VE.Can connected
 		    devices such as Multi-RS. Parameters related to the Multi are
 		    handled elsewhere. """
@@ -1270,7 +1269,7 @@ class Dvcc(SystemCalcDelegate):
 
 		voltage_written, current_written, network_mode = self._chargesystem.set_networked(
 			has_bms, bms_charge_voltage, charge_voltage,
-			max_charge_current, feedback_allowed, stop_on_mcc0)
+			max_charge_current, self.feedback_allowed, stop_on_mcc0)
 
 		# Write the voltage to VE.Can. Also update the networkmode. If there is
 		# no voltage to write to VE.Can, then still set the networkmode so that
