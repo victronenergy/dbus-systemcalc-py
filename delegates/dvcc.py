@@ -445,6 +445,7 @@ class ChargerSubsystem(object):
 		self.monitor = monitor
 		self._solarchargers = {}
 		self._inverterchargers = {}
+		self._acsystem0 = None
 		self._otherchargers = {}
 
 	def add_solar_charger(self, service):
@@ -462,6 +463,13 @@ class ChargerSubsystem(object):
 	def add_invertercharger(self, service):
 		self._inverterchargers[service] = inverter = InverterCharger(self.monitor, service)
 		return inverter
+
+	def add_acsystem(self, service):
+		self._acsystem0 = acsystem = AcSystem(self.monitor, service)
+		return acsystem
+
+	def remove_acsystem(self, service):
+		self._acsystem0 = None
 
 	def remove_charger(self, service):
 		for di in (self._solarchargers, self._inverterchargers, self._otherchargers):
@@ -781,6 +789,15 @@ class Multi(object):
 				c = max(c, -limit)
 			self._dc_current.update(c)
 
+class AcSystem(object):
+	def __init__(self, monitor, service):
+		self.monitor = monitor
+		self.service = service
+
+	@property
+	def feedback_enabled(self):
+		return self.monitor.get_value(self.service, '/Ac/NoFeedInReason') == 0
+
 class Dvcc(SystemCalcDelegate):
 	""" This is the main DVCC delegate object. """
 	def __init__(self, sc):
@@ -869,13 +886,18 @@ class Dvcc(SystemCalcDelegate):
 				'/State',
 				'/N2kDeviceInstance',
 				'/Mgmt/Connection',
-				'/Settings/BmsPresent']),
+				'/Settings/BmsPresent',
+				'/Yield/Power']),
 			('com.victronenergy.vecan',	[
 				'/Link/ChargeVoltage',
 				'/Link/NetworkMode']),
 			('com.victronenergy.settings', [
 				 '/Settings/CGwacs/OvervoltageFeedIn',
-				 '/Settings/Services/Bol'])]
+				 '/Settings/Services/Bol']),
+			('com.victronenergy.acsystem', [
+				'/DeviceInstance',
+				'/Ac/NoFeedInReason',
+			])]
 
 	def get_settings(self):
 		return [
@@ -920,6 +942,10 @@ class Dvcc(SystemCalcDelegate):
 			self._chargesystem.add_dcgenset(service)
 		elif service_type == 'battery':
 			pass # install timer below
+		elif service_type == 'acsystem':
+			if self._dbusmonitor.get_value(service, '/DeviceInstance') == 0:
+				self._chargesystem.add_acsystem(service)
+			return # skip timer
 		else:
 			# Skip timer code below
 			return
@@ -937,6 +963,8 @@ class Dvcc(SystemCalcDelegate):
 			self._vecan_services.remove(service)
 		elif service in self._inverters:
 			self._inverters.remove_inverter(service)
+		elif self._chargesystem.remove_acsystem(service):
+			pass
 		if len(self._chargesystem) == 0 and len(self._vecan_services) == 0 and \
 			len(BatteryService.instance.batteries) == 0 and self._timer is not None:
 			GLib.source_remove(self._timer)
