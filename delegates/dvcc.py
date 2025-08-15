@@ -339,6 +339,16 @@ class InverterCharger(SolarCharger):
 	def solaroffset(self):
 		return self._get_path('/Link/ChargeVoltageSolarOffset')
 
+	def update_values(self):
+		# Override the one in SolarCharger, as our PV yield has to be
+		# derived differently.
+		p = self.monitor.get_value(self.service, '/Yield/Power')
+		v = self.monitor.get_value(self.service, '/Dc/0/Voltage')
+		try:
+			self._smoothed_current.update(p/v)
+		except (TypeError, ZeroDivisionError):
+			pass
+
 class DcGenset(BaseCharger):
 	""" Encapsulates a DC genset on dbus. Exposes dbus paths as convenient
 	    attributes. """
@@ -849,7 +859,8 @@ class Dvcc(SystemCalcDelegate):
 				'/State',
 				'/N2kDeviceInstance',
 				'/Mgmt/Connection',
-				'/Settings/BmsPresent']),
+				'/Settings/BmsPresent',
+				'/Yield/Power']),
 			('com.victronenergy.multi', [
 				'/ProductId',
 				'/Dc/0/Current',
