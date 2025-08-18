@@ -184,6 +184,13 @@ class BaseCharger(object):
 		return self._get_path('/State') != 0
 
 	@property
+	def controllable(self):
+		return (self.active
+			and self.maxchargecurrent is not None
+			and self.currentlimit is not None
+			and self.n2k_device_instance in (0, None))
+
+	@property
 	def has_externalcontrol_support(self):
 		""" Override this to implement detection of external control support.
 		"""
@@ -225,6 +232,7 @@ class BaseCharger(object):
 			copy_dbus_value(self.monitor,
 				self.service, '/Settings/ChargeCurrentLimit',
 				self.service, '/Link/ChargeCurrent')
+		return self.currentlimit
 
 	@property
 	def smoothed_current(self):
@@ -471,6 +479,12 @@ class ChargerSubsystem(object):
 	def remove_acsystem(self, service):
 		self._acsystem0 = None
 
+	@property
+	def acsystem_allows_feedback(self):
+		return (self._acsystem0 is not None
+			and self._acsystem0.feedback_enabled
+			and self._acsystem0.discharge_capacity is not None)
+
 	def remove_charger(self, service):
 		for di in (self._solarchargers, self._inverterchargers, self._otherchargers):
 			try:
@@ -567,20 +581,43 @@ class ChargerSubsystem(object):
 		# current.
 		#
 		# Additionally, don't bother with chargers that are disconnected.
-		chargers = [x for x in chain(self._solarchargers.values(),
-			self._inverterchargers.values()) if x.active and x.maxchargecurrent is not None and x.currentlimit is not None and x.n2k_device_instance in (0, None)]
-		if len(chargers) > 0:
-			if stop_on_mcc0 and max_charge_current == 0:
-				for charger in chargers:
-					charger.maxchargecurrent = 0
-			elif max_charge_current is None:
-				for charger in chargers:
-					charger.maximize_charge_current()
-			elif feedback_allowed: # but max_charge_current is not None
-				for charger in chargers:
-					charger.maximize_charge_current()
-			else: # feedback not allowed, max_charge_current is not None
-				self._set_charge_current(chargers, max_charge_current)
+		solarchargers = [x for x in self._solarchargers.values() if x.controllable]
+		inverterchargers = [x for x in self._inverterchargers.values() if x.controllable]
+		chargers = solarchargers + inverterchargers
+
+		if stop_on_mcc0 and max_charge_current == 0:
+			for charger in chargers:
+				charger.maxchargecurrent = 0
+		elif max_charge_current is None:
+			for charger in chargers:
+				charger.maximize_charge_current()
+		elif self.acsystem_allows_feedback: # By Multi-RS
+			# The maximum to generate, is what the battery can take, plus
+			# what the inverter/charger can take off our hands.
+			m = max_charge_current + self._acsystem0.discharge_capacity
+
+			# The total charge current, somewhat smoothed, that the external
+			# solar chargers are making.
+			solarcurrent = min(
+				self._set_charge_current(solarchargers, m), # assigned to chargers
+				safeadd(*(c.smoothed_current for c in solarchargers)) or 0) # What they actually do
+
+			# The inverter/charger gets what remains after subtracting
+			# the current made by the solar chargers
+			mm = max_charge_current - solarcurrent
+			self._set_charge_current(inverterchargers, max(0.0, mm))
+
+			# And when mm becomes negative, that is when we have overcurrent,
+			# feed that to the grid.
+			self._acsystem0.discharge_setpoint = max(0.0, round(-mm, 1))
+		elif feedback_allowed: # by VE.Bus Multi, max_charge_current is not None
+			# Maximise all chargers, as we have always done, and let the Multi
+			# feed it in using overvoltage-feedin.
+			for charger in chargers:
+				charger.maximize_charge_current()
+
+		elif len(chargers): # no feedback, max_charge_current is not None
+			self._set_charge_current(chargers, max_charge_current)
 
 		# Split remainder over other chargers, according to individual
 		# capacity. Only consider controllable devices.
@@ -601,20 +638,25 @@ class ChargerSubsystem(object):
 		return voltage_written, int(network_mode_written and max_charge_current is not None), network_mode
 
 	def _set_charge_current(self, chargers, max_charge_current):
+		""" Set the charge current over a group of chargers. Return the
+		    ammount of unassigned charge capacity. """
 		if len(chargers) == 1:
 			# The simple case: Only one charger. Simply assign the
 			# limit to the charger
 			sc = chargers[0]
-			sc.maxchargecurrent = min(ceil(max_charge_current), sc.currentlimit)
+			sc.maxchargecurrent = assigned = min(ceil(max_charge_current), sc.currentlimit)
+			return min(max_charge_current, assigned)
 		elif max_charge_current > sum(c.currentlimit for c in chargers) * 0.95:
 			# Another simple case, we're asking for more than our
 			# combined capacity (with a 5% margin)
+			assigned = 0.0
 			for charger in chargers:
-				charger.maximize_charge_current()
+				assigned += charger.maximize_charge_current()
+			return min(max_charge_current, assigned)
 		else:
 			# The hard case, we have more than one CC and we want
 			# less than our capacity.
-			self._distribute_current(chargers, max_charge_current)
+			return self._distribute_current(chargers, max_charge_current)
 
 	@staticmethod
 	def _distribute_current(chargers, max_charge_current):
@@ -639,8 +681,10 @@ class ChargerSubsystem(object):
 		try:
 			P = (max_charge_current - actual) / max(capacity - actual, 0.0)
 		except ZeroDivisionError:
-			P = 1.0 # C == a, then give it all the beans
+			# Already at capacity, leave it alone for now
+			return min(max_charge_current, capacity)
 		else:
+			assigned = 0.0
 			spillover = 0.0
 			for charger in chargers:
 				l = max((a := charger.smoothed_current) + P * (
@@ -651,6 +695,8 @@ class ChargerSubsystem(object):
 				# so the max error is 100mA at the last charger.
 				spillover = l - (r := round(l, 1))
 				charger.maxchargecurrent = r
+				assigned += r
+			return min(max_charge_current, assigned)
 
 	def update_values(self):
 		# This is called periodically from a timer to update contained
@@ -798,6 +844,19 @@ class AcSystem(object):
 	def feedback_enabled(self):
 		return self.monitor.get_value(self.service, '/Ac/NoFeedInReason') == 0
 
+	@property
+	def discharge_capacity(self):
+		return self.monitor.get_value(self.service, '/Ess/BatteryDischargeCapacity')
+
+	@property
+	def discharge_setpoint(self):
+		return self.monitor.get_value(self.service, '/Ess/BatteryDischargeSetpoint')
+
+	@discharge_setpoint.setter
+	def discharge_setpoint(self, v):
+		self.monitor.set_value_async(self.service,
+			'/Ess/BatteryDischargeSetpoint', v)
+
 class Dvcc(SystemCalcDelegate):
 	""" This is the main DVCC delegate object. """
 	def __init__(self, sc):
@@ -897,6 +956,8 @@ class Dvcc(SystemCalcDelegate):
 			('com.victronenergy.acsystem', [
 				'/DeviceInstance',
 				'/Ac/NoFeedInReason',
+				'/Ess/BatteryDischargeCapacity',
+				'/Ess/BatteryDischargeSetpoint',
 			])]
 
 	def get_settings(self):

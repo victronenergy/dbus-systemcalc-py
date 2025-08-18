@@ -2455,3 +2455,126 @@ class TestHubSystem(TestSystemCalcBase):
 			}
 		})
 		self._check_values({ '/Control/EffectiveChargeVoltage': 53.2 })
+
+	def test_current_distribution_solarchargers_multirs(self):
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+
+		self._add_device('com.victronenergy.multi.ttyO1', {
+			'/Ac/Out/L1/P': -530,
+			'/Ac/Out/L1/V': 234.2,
+			'/Dc/0/Voltage': 53.1,
+			'/Dc/0/Current': -10,
+			'/Dc/0/Power': -54,
+			'/Dc/0/Temperature': 24.5,
+			'/DeviceInstance': 0,
+			'/Soc': 53.2,
+			'/State': 9,
+			'/IsInverterCharger': 1,
+			'/Link/ChargeCurrent': None,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Yield/Power': 531},
+			product_name='Multi RS', connection='VE.Direct')
+
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+				'/State': 4,
+				'/Link/NetworkMode': 0,
+				'/Link/ChargeVoltage': None,
+				'/Link/ChargeCurrent': 100,
+				'/Link/VoltageSense': None,
+				'/Dc/0/Voltage': 12.4,
+				'/Dc/0/Current': 20.0,
+				'/FirmwareVersion': 0x129,
+				'/Settings/ChargeCurrentLimit': 100 },
+				connection='VE.Direct')
+
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 58.0,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 120.0,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
+
+		self._add_device('com.victronenergy.acsystem.socketcan_can0_sys0',
+			product_name=None,
+			values={
+				'/DeviceInstance': 0,
+				'/Ac/NoFeedInReason': 0,
+				'/Ess/BatteryDischargeCapacity': None, # old firmware
+				'/Ess/BatteryDischargeSetpoint': None
+			})
+
+		self._update_values(interval=3000)
+		self._check_external_values({ # Charge current adds up to 120A
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeCurrent': 63.7,
+			},
+			'com.victronenergy.multi.ttyO1': {
+				'/Link/ChargeCurrent': 56.3,
+			}
+		})
+
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeCurrent', 200)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeCurrent': 100,
+			},
+			'com.victronenergy.multi.ttyO1': {
+				'/Link/ChargeCurrent': 100,
+			}
+		})
+
+		# Update the firmware on the RS so it supports BatteryDischargeSetpoint
+		self._monitor.set_value('com.victronenergy.acsystem.socketcan_can0_sys0',
+			'/Ess/BatteryDischargeCapacity', 100.0)
+
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeCurrent', 80)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeCurrent': 100, # maximised, for feedback
+			},
+			'com.victronenergy.multi.ttyO1': {
+				'/Link/ChargeCurrent': 60, # 20A from local charger
+			}
+		})
+
+		# Set lower CCL
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeCurrent', 10)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeCurrent': 100, # maximised, for feedback
+			},
+			'com.victronenergy.multi.ttyO1': {
+				'/Link/ChargeCurrent': 0, # All PV to grid, none to battery
+			},
+			'com.victronenergy.acsystem.socketcan_can0_sys0': {
+				# 20A from local charger, 10A into battery, 10A into grid
+				'/Ess/BatteryDischargeSetpoint': 10,
+			}
+		})
+
+		# Can't feed in, then normal split. Expect 10A for battery total,
+		# 50/50 split since toh are doing 4A.
+		self._monitor.set_value('com.victronenergy.acsystem.socketcan_can0_sys0',
+			'/Ac/NoFeedInReason', 1)
+		self._monitor.set_value('com.victronenergy.solarcharger.ttyO1',
+			'/Dc/0/Current', 4)
+		self._monitor.set_value('com.victronenergy.multi.ttyO1',
+			'/Yield/Power', 212.4)
+		self._update_values(interval=15000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeCurrent': 5.0,
+			},
+			'com.victronenergy.multi.ttyO1': {
+				'/Link/ChargeCurrent': 5.0,
+			}
+		})
