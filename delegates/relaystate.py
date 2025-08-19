@@ -20,8 +20,10 @@ class RelayState(SystemCalcDelegate):
 	def get_input(self):
 		return [
 			('com.victronenergy.settings', [
-				 '/Settings/Relay/Function', # Managed by the gui
-				 '/Settings/Relay/1/Function'])]
+				 '/Settings/Relay/Function',
+				 '/Settings/Relay/1/Function',
+				 '/Settings/Relay/Polarity',
+				 '/Settings/Relay/1/Polarity'])] # Managed by venus-platform
 
 	def get_settings(self):
 		return [
@@ -54,6 +56,16 @@ class RelayState(SystemCalcDelegate):
 	@property
 	def relay_function(self):
 		return self._relay_function(0)
+
+	def _relay_polarity(self, idx):
+		# Only manual polarity is flipped here. Alarm polarity is flipped
+		# in venus-platform
+		if self._relay_function(idx) == 2:
+			# This ensures it can only ever return 0 or 1
+			return int(self._dbusmonitor.get_value('com.victronenergy.settings',
+				('/Settings/Relay/Polarity' if idx == 0 else
+				 f'/Settings/Relay/{idx}/Polarity')) == 1)
+		return 0
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
@@ -122,11 +134,12 @@ class RelayState(SystemCalcDelegate):
 		return False
 
 	def _update_relay_state(self):
-		# @todo EV Do we still need this? Maybe only at startup?
 		for idx, file_path in self._relays.items():
 			try:
 				with open(file_path, 'rt') as r:
 					state = int(r.read().strip())
+					# Flip state if polarity is NC and function is manual
+					state = state ^ self._relay_polarity(idx)
 					self._set_relay_dbus_state(idx, state)
 			except (IOError, ValueError):
 				traceback.print_exc()
@@ -143,6 +156,8 @@ class RelayState(SystemCalcDelegate):
 
 	def __on_relay_state_changed(self, idx, state):
 		try:
+			# Flip state if polarity is NC and function is manual
+			state = state ^ self._relay_polarity(idx)
 			path = self._relays[idx]
 			with open(path, 'wt') as w:
 				w.write(str(state))

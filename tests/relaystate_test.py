@@ -36,6 +36,9 @@ class RelayStateTest(TestSystemCalcBase):
 
 		self._add_device('com.victronenergy.settings', values={
 			'/Settings/Relay/Function': 1, # Generator
+			'/Settings/Relay/Polarity': 0, # N/O
+			'/Settings/Relay/1/Function': 2, # manual
+			'/Settings/Relay/1/Polarity': 0,
 		})
 
 		self.gpio_dir = tempfile.mkdtemp()
@@ -122,3 +125,39 @@ class RelayStateTest(TestSystemCalcBase):
 		self._update_values(5000)
 		self.assertEqual(self._service['/Relay/0/State'], 1) # Unaffected
 		self.assertEqual(open(self.gpio1_state, 'rt').read(), '1') # Unaffected
+
+	def test_relay_manual_polarity(self):
+		rs = RelayState()
+		rs.set_sources(self._monitor, self._system_calc._settings, self._service)
+
+		self._monitor.set_value('com.victronenergy.settings',
+			'/Settings/Relay/Function', 2) # Manual
+		self._monitor.set_value('com.victronenergy.settings',
+			'/Settings/Relay/1/Function', 2) # Manual
+
+		# Polarity is N/O
+		self._update_values(5000)
+		self.assertEqual(self._service['/Relay/0/State'], 0)
+		self.assertEqual(self._service['/Relay/1/State'], 0)
+		self.assertEqual(open(self.gpio1_state, 'rt').read(), '0')
+		self.assertEqual(open(self.gpio2_state, 'rt').read(), '0')
+
+		# Polarity is N/C
+		self._monitor.set_value('com.victronenergy.settings', '/Settings/Relay/Polarity', 1)
+		self._monitor.set_value('com.victronenergy.settings', '/Settings/Relay/1/Polarity', 1)
+		self._update_values(5000) # dbus follows actual state after update
+		self.assertEqual(self._service['/Relay/0/State'], 1)
+		self.assertEqual(self._service['/Relay/1/State'], 1)
+		self.assertEqual(open(self.gpio1_state, 'rt').read(), '0')
+		self.assertEqual(open(self.gpio2_state, 'rt').read(), '0')
+
+		# Flip state to 0, which should be inverted
+		self._service.set_value('/Relay/0/State', 0)
+		self._service.set_value('/Relay/1/State', 0)
+		self.assertEqual(open(self.gpio1_state, 'rt').read(), '1')
+		self.assertEqual(open(self.gpio2_state, 'rt').read(), '1')
+
+		self._service.set_value('/Relay/0/State', 1)
+		self._service.set_value('/Relay/1/State', 1)
+		self.assertEqual(open(self.gpio1_state, 'rt').read(), '0')
+		self.assertEqual(open(self.gpio2_state, 'rt').read(), '0')
