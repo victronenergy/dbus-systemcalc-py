@@ -79,36 +79,6 @@ class RelayState(SystemCalcDelegate):
 			for i, r in enumerate(relays) })
 
 		GLib.idle_add(exit_on_error, self._init_relay_state)
-		for idx in self._relays.keys():
-			self._dbusservice.add_path(f'/Relay/{idx}/State', value=None, writeable=True,
-				onchangecallback=partial(self._on_relay_state_changed, idx))
-
-			# Switchable output paths
-			self._dbusservice.add_path(f'/SwitchableOutput/{idx}/State', value=None,
-				writeable=True, onchangecallback=partial(self._on_relay_state_changed, idx))
-
-			self._dbusservice.add_path(f'/SwitchableOutput/{idx}/Name', f'GX internal relay {idx+1}')
-			self._dbusservice.add_path(f'/SwitchableOutput/{idx}/Status', value=None)
-
-			# Switchable output settings
-			for setting, typ in (('Group', str), ('CustomName', str), ('ShowUIControl', bool)):
-				self._dbusservice.add_path(p := f'/SwitchableOutput/{idx}/Settings/{setting}',
-					value=self._settings[p], writeable=True,
-					onchangecallback=partial(self._on_relay_setting_changed, idx, typ))
-
-			self._dbusservice.add_path(f'/SwitchableOutput/{idx}/Settings/Type',
-				value=1, writeable=True, onchangecallback=(lambda p, v: v == 1)) # R/W, but only accepts toggle
-			self._dbusservice.add_path(f'/SwitchableOutput/{idx}/Settings/ValidTypes',
-				value=2) # Toggle
-
-			# All functions for first relay, Manual and temperature for the rest
-			functions = 0b111111 if idx == 0 else 0b10100
-			self._dbusservice.add_path(f'/SwitchableOutput/{idx}/Settings/Function',
-				value=self._relay_function(idx), writeable=True,
-				onchangecallback=lambda p, v, f=functions, idx=idx: self.set_relay_function(f, idx, int(v)))
-			self._dbusservice.add_path(f'/SwitchableOutput/{idx}/Settings/ValidFunctions',
-				value=functions)
-
 		logging.info('Relays found: {}'.format(', '.join(self._relays.values())))
 
 	def _init_relay_state(self):
@@ -116,6 +86,37 @@ class RelayState(SystemCalcDelegate):
 			return True # Try again on the next idle event
 
 		for idx, path in self._relays.items():
+			with self._dbusservice as s:
+				s.add_path(f'/Relay/{idx}/State', value=None, writeable=True,
+					onchangecallback=partial(self._on_relay_state_changed, idx))
+
+				# Switchable output paths
+				s.add_path(f'/SwitchableOutput/{idx}/State', value=None,
+					writeable=True, onchangecallback=partial(self._on_relay_state_changed, idx))
+
+				s.add_path(f'/SwitchableOutput/{idx}/Name', f'GX internal relay {idx+1}')
+				s.add_path(f'/SwitchableOutput/{idx}/Status', value=None)
+
+				# Switchable output settings
+				for setting, typ in (('Group', str), ('CustomName', str), ('ShowUIControl', bool)):
+					s.add_path(p := f'/SwitchableOutput/{idx}/Settings/{setting}',
+						value=self._settings[p], writeable=True,
+						onchangecallback=partial(self._on_relay_setting_changed, idx, typ))
+
+				s.add_path(f'/SwitchableOutput/{idx}/Settings/Type',
+					value=1, writeable=True, onchangecallback=(lambda p, v: v == 1)) # R/W, but only accepts toggle
+				s.add_path(f'/SwitchableOutput/{idx}/Settings/ValidTypes',
+					value=2) # Toggle
+
+				# All functions for first relay, Manual and temperature for the rest
+				functions = 0b111111 if idx == 0 else 0b10100
+				s.add_path(f'/SwitchableOutput/{idx}/Settings/Function',
+					value=self._relay_function(idx), writeable=True,
+					onchangecallback=lambda p, v, f=functions, idx=idx: self.set_relay_function(f, idx, int(v)))
+				s.add_path(f'/SwitchableOutput/{idx}/Settings/ValidFunctions',
+					value=functions)
+
+			# Restore previous state of relay
 			if self.relay_function != 2 and idx == 0:
 				continue # Skip primary relay if function is not manual
 			try:

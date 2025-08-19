@@ -80,6 +80,7 @@ class RelayStateTest(TestSystemCalcBase):
 	def test_stored_state(self):
 		rs = RelayState()
 		rs.set_sources(self._monitor, self._system_calc._settings, self._service)
+		self._update_values()
 
 		self._service.set_value('/Relay/0/State', 0)
 		self._service.set_value('/Relay/1/State', 1)
