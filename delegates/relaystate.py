@@ -116,44 +116,63 @@ class RelayState(SystemCalcDelegate):
 				s.add_path(f'/SwitchableOutput/{idx}/Settings/ValidFunctions',
 					value=functions)
 
-			# Restore previous state of relay
-			if self.relay_function != 2 and idx == 0:
-				continue # Skip primary relay if function is not manual
-			try:
-				state = self._settings[f'/Relay/{idx}/State']
-			except KeyError:
-				pass
+			# If relay is manual, restore previous state. Otherwise the
+			# controlling service will set it correctly once it comes up.
+			if (f := self._relay_function(idx)) == 2:
+				try:
+					state = self._settings[f'/Relay/{idx}/State']
+				except KeyError:
+					pass
+				else:
+					self._set_relay_dbus_state(idx, state) # set dbus
+					self.__on_relay_state_changed(idx, state) # set hardware
+			elif f < 0:
+				# relay is disabled, switch it off
+				self._disable_relay(idx)
+				self.__on_relay_state_changed(idx, 0)
 			else:
-				self._set_relay_dbus_state(idx, state)
-				self.__on_relay_state_changed(idx, state)
-
-		# Sync state back to dbus
-		self._update_relay_state()
+				self.__update_relay_state(idx, path)
 
 		# Watch changes and update dbus. Do we still need this?
 		GLib.timeout_add(5000, exit_on_error, self._update_relay_state)
 		return False
 
 	def _update_relay_state(self):
+		""" Maintenance tasked called periodically to make sure everything
+		    remains in sync. """
 		for idx, file_path in self._relays.items():
-			try:
-				with open(file_path, 'rt') as r:
-					state = int(r.read().strip())
-					# Flip state if polarity is NC and function is manual
-					state = state ^ self._relay_polarity(idx)
-					self._set_relay_dbus_state(idx, state)
-			except (IOError, ValueError):
-				traceback.print_exc()
+			if self._relay_function(idx) < 0: # disabled
+				self._disable_relay(idx)
+				continue
+
+			self.__update_relay_state(idx, file_path)
 
 			# Make sure updates to relay function in settings is reflected here
 			self._dbusservice[f'/SwitchableOutput/{idx}/Settings/Function'] = self._relay_function(idx)
 
 		return True
 
+	def __update_relay_state(self, idx, file_path):
+		""" Sync back the actual state of the relay to dbus. """
+		try:
+			with open(file_path, 'rt') as r:
+				state = int(r.read().strip())
+		except (IOError, ValueError):
+			traceback.print_exc()
+		else:
+			# Flip state if polarity is NC and function is manual
+			state = state ^ self._relay_polarity(idx)
+			self._set_relay_dbus_state(idx, state)
+
 	def _set_relay_dbus_state(self, idx, state):
 		self._dbusservice[f'/Relay/{idx}/State'] = state
 		self._dbusservice[f'/SwitchableOutput/{idx}/State'] = state
 		self._dbusservice[f'/SwitchableOutput/{idx}/Status'] = 0x09 if state else 0x00
+
+	def _disable_relay(self, idx):
+		self._dbusservice[f'/Relay/{idx}/State'] = None
+		self._dbusservice[f'/SwitchableOutput/{idx}/State'] = None
+		self._dbusservice[f'/SwitchableOutput/{idx}/Status'] = 0x20
 
 	def __on_relay_state_changed(self, idx, state):
 		try:
@@ -168,6 +187,10 @@ class RelayState(SystemCalcDelegate):
 		return True
 
 	def _on_relay_state_changed(self, idx, dbus_path, value):
+		""" This is called when a write is done from dbus. """
+		if self._relay_function(idx) < 0:
+			return False # No writes to disabled relays
+
 		try:
 			state = int(bool(value))
 		except ValueError:
