@@ -143,9 +143,8 @@ class RelayState(SystemCalcDelegate):
 		for idx, file_path in self._relays.items():
 			if self._relay_function(idx) < 0: # disabled
 				self._disable_relay(idx)
-				continue
-
-			self.__update_relay_state(idx, file_path)
+			else:
+				self.__update_relay_state(idx, file_path)
 
 			# Make sure updates to relay function in settings is reflected here
 			self._dbusservice[f'/SwitchableOutput/{idx}/Settings/Function'] = self._relay_function(idx)
