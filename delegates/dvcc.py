@@ -1200,7 +1200,7 @@ class Dvcc(SystemCalcDelegate):
 
 		# Control secondary Multis (systems with more than one) if configured
 		if self._settings['bolsecondary']:
-			self._update_secondary_multis(cv, bms_service.maxdischargecurrent)
+			self._update_secondary_multis(cv, mcc, bms_service.maxdischargecurrent)
 
 		# Also control inverters if BMS stops discharge
 		if len(self._inverters):
@@ -1209,11 +1209,16 @@ class Dvcc(SystemCalcDelegate):
 
 		return written
 
-	def _update_secondary_multis(self, cv, dcl):
+	def _update_secondary_multis(self, cv, mcc, dcl):
 		if cv is not None:
 			for m in MultiService.instance.othermultis:
 				self._dbusmonitor.set_value_async(m.service,
 					'/BatteryOperationalLimits/MaxChargeVoltage', cv)
+
+		if mcc is not None:
+			self._dbusmonitor.set_value_async(m.service,
+				'/BatteryOperationalLimits/MaxChargeCurrent', mcc)
+
 		if dcl is not None:
 			for m in MultiService.instance.othermultis:
 				self._dbusmonitor.set_value_async(m.service,

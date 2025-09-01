@@ -2270,7 +2270,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50 },
 			'com.victronenergy.vebus.ttyUSB0': {
 				'/BatteryOperationalLimits/BatteryLowVoltage': None,
-				'/BatteryOperationalLimits/MaxChargeCurrent': None,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 45,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50 },
 		})
@@ -2347,7 +2347,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyUSB0': {
 				'/BatteryOperationalLimits/BatteryLowVoltage': None,
-				'/BatteryOperationalLimits/MaxChargeCurrent': None,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 45,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50 },
 		})
