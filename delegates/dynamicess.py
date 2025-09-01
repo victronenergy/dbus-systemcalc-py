@@ -86,7 +86,7 @@ class ReactiveStrategy(int, Enum):
 	SELFCONSUME_INCREASED_DISCHARGE = 17
 	KEEP_BATTERY_CHARGED = 18
 	SCHEDULED_DISCHARGE_SMOOTH_TRANSITION = 19
-	SELF_CONSUME_ACCEPT_BELOW_TSOC = 20
+	SELFCONSUME_ACCEPT_BELOW_TSOC = 20
 	IDLE_NO_DISCHARGE_OPPORTUNITY = 21
 
 	DESS_DISABLED = 92
@@ -617,7 +617,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION, ReactiveStrategy.UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC,
 					ReactiveStrategy.KEEP_BATTERY_CHARGED)
 		self.selfconsume_states = (ReactiveStrategy.SELFCONSUME_ACCEPT_CHARGE, ReactiveStrategy.SELFCONSUME_ACCEPT_DISCHARGE, 
-							 ReactiveStrategy.SELFCONSUME_NO_GRID, ReactiveStrategy.SELFCONSUME_INCREASED_DISCHARGE, ReactiveStrategy.SELF_CONSUME_ACCEPT_BELOW_TSOC)
+							 ReactiveStrategy.SELFCONSUME_NO_GRID, ReactiveStrategy.SELFCONSUME_INCREASED_DISCHARGE, ReactiveStrategy.SELFCONSUME_ACCEPT_BELOW_TSOC)
 		self.idle_states = (ReactiveStrategy.IDLE_SCHEDULED_FEEDIN, ReactiveStrategy.IDLE_MAINTAIN_SURPLUS, ReactiveStrategy.IDLE_MAINTAIN_TARGETSOC, 
 					  ReactiveStrategy.IDLE_NO_OPPORTUNITY, ReactiveStrategy.IDLE_NO_DISCHARGE_OPPORTUNITY)
 		self.discharge_states = (ReactiveStrategy.SCHEDULED_DISCHARGE, ReactiveStrategy.SCHEDULED_MINIMUM_DISCHARGE, ReactiveStrategy.SCHEDULED_DISCHARGE_SMOOTH_TRANSITION)
@@ -1118,7 +1118,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					# 5.) Ultimate case: No Grid charge possible, no solar. We can't charge.
 					#     However, when we have missing_to_bat, we allow to go bellow target soc. 
 					elif available_solar_plus <= 0 and (missing_to_bat or (w.restrictions & Restrictions.GRID2BAT)):
-						reactive_strategy = ReactiveStrategy.SELF_CONSUME_ACCEPT_BELOW_TSOC
+						reactive_strategy = ReactiveStrategy.SELFCONSUME_ACCEPT_BELOW_TSOC
 
 		else:
 			# if we are currently in any SCHEDULED_CHARGE_* State and our next window outlines an even higher target soc, 
@@ -1214,7 +1214,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 								# Forced discharges are already handled, so we simply let self-consume handle the required amount
 								# of discharge here.
 								if missing_to_bat:
-									reactive_strategy = ReactiveStrategy.SELF_CONSUME_ACCEPT_BELOW_TSOC
+									reactive_strategy = ReactiveStrategy.SELFCONSUME_ACCEPT_BELOW_TSOC
 								else:
 									# else we ultimately idle.
 									reactive_strategy = ReactiveStrategy.IDLE_MAINTAIN_TARGETSOC
@@ -1241,11 +1241,13 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				self.discharge_hysteresis = 1 #avoid discharging, when overshooting targetsoc.
 
 			elif reactive_strategy in self.selfconsume_states:
+				self.chargerate = None #self consume has no chargerate, despite any calculation.
 				self._device.self_consume(restrictions, w.allow_feedin)
 				self.charge_hysteresis = 0 #no hysteresis.
 				self.discharge_hysteresis = 0 #no hysteresis.
 
 			elif reactive_strategy in self.idle_states:
+				self.chargerate = None #idle has no chargerate, despite any calculation.
 				self._device.idle(w.allow_feedin)
 				self.charge_hysteresis = 1 #avoid rapid changes.
 				self.discharge_hysteresis = 1 #avoid rapid changes.
@@ -1258,6 +1260,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 			elif reactive_strategy in self.error_selfconsume_states:
 				#errorstates are handled outside this method. Seperate return to avoid else-case.
+				self.chargerate = None #self consume has no chargerate, despite any calculation.
 				self.charge_hysteresis = 0 #no hysteresis.
 				self.discharge_hysteresis = 0 #no hysteresis.
 				return reactive_strategy

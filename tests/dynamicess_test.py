@@ -598,11 +598,7 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp,
 		})
 
-		#	(percent * capacity * 36000) / duration	
-		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600) * -1
-		
 		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
 		self.validate_self_consume()
 
 	def test_18_KEEP_BATTERY_CHARGED(self):
@@ -878,6 +874,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		}})
 
 		self.assertEqual(maxChargePower, Dvcc.instance.internal_maxchargepower)
+		self.validate_chargerate_plausibility()
 
 	def validate_charge_state(self, rate):
 		from delegates import Dvcc
@@ -891,6 +888,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		}})
 
 		self.assertAlmostEqual(rate/100.0, Dvcc.instance.internal_maxchargepower/100.0,1)
+		self.validate_chargerate_plausibility()
 	
 	def validate_discharge_state(self, rate):
 		from delegates import Dvcc
@@ -904,6 +902,7 @@ class TestDynamicEss(TestSystemCalcBase):
 
 		self.assertAlmostEqual(rate/100.0, self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower')/-100.0,1)
 		self.assertEqual(None, Dvcc.instance.internal_maxchargepower)
+		self.validate_chargerate_plausibility()
 	
 	def validate_idle_state(self):
 		#validate external values
@@ -912,7 +911,24 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Overrides/ForceCharge': 0,
 				'/Overrides/MaxDischargePower':1
 		}})
-		#TODO check more settings to validate idle state.
+		
+		self.validate_chargerate_plausibility()
+
+	def validate_chargerate_plausibility(self):
+		charge_rate = self._service["/DynamicEss/ChargeRate"]
+		reactive_strategy = self._service["/DynamicEss/ReactiveStrategy"]
+
+		# Self consume and idle states should be 0 or None.
+		if reactive_strategy in DynamicEss.instance.selfconsume_states or reactive_strategy in DynamicEss.instance.idle_states:
+			self.assertEqual(charge_rate or 0, 0)
+
+		# Charge States should be > 0
+		if reactive_strategy in DynamicEss.instance.charge_states:
+			self.assertGreater(charge_rate, 0)
+
+		# Discharge States should be < 0
+		if reactive_strategy in DynamicEss.instance.discharge_states:
+			self.assertLess(charge_rate, 0)
 
 	def test_hysteresis(self):
 		#Test case for batteries that don't report whole numbers, but
