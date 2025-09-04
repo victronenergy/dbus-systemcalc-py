@@ -31,6 +31,7 @@ BATTERY_SUNWODA = 0xB01F
 BATTERY_BATRIUM_D = 0xB038
 BATTERY_SOLUNA = 0xB02F
 BATTERY_TAB = 0xB052
+BATTERY_SSS = 0xB054
 
 class BatterySettings(SystemCalcDelegate):
 	""" Manages battery settings for known batteries. At present
@@ -62,7 +63,8 @@ class BatterySettings(SystemCalcDelegate):
 			self._settings['bol'] = 3 # Forced on
 		elif pid in (BATTERY_LYNX_SMART_BMS_500, BATTERY_LYNX_SMART_BMS_1000,
 				BATTERY_LYNX_SMART_BMS_500_NG, BATTERY_LYNX_SMART_BMS_1000_NG,
-				BATTERY_PARALLEL_BMS, BATTERY_METERBOOST, BATTERY_BATRIUM_D, BATTERY_SOLUNA):
+				BATTERY_PARALLEL_BMS, BATTERY_METERBOOST, BATTERY_BATRIUM_D,
+				BATTERY_SOLUNA, BATTERY_SSS):
 			self._settings['vsense'] = 3 # Forced on
 			self._settings['tsense'] = 2 # Forced Off
 			self._settings['bol'] = 3 # Forced on
