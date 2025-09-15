@@ -113,7 +113,7 @@ if [ "$num" -gt 0 ]; then
     grep -qxF "$line" "$file" || echo "$line" >> "$file"
 
     echo " > Altering fake_bms.py to enable FAKE-BMS usage with a count of $num"
-    sed -Ei "s/^available_fake_bms\s*=.*/available_fake_bms = range(1, $num)/" /opt/victronenergy/dbus-systemcalc-py/ext/s2/fake_bms.py
+    sed -Ei "s/^available_fake_bms\s*=.*/available_fake_bms = range(0, $num)/" /opt/victronenergy/dbus-systemcalc-py/ext/s2/fake_bms.py
 
     echo " > Starting FAKE-BMS service ..."
     svc -u /service/fake_bms_service

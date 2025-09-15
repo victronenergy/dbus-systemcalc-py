@@ -587,9 +587,9 @@ class S2RMDelegate():
 		
 		#OMBC related stuff.
 		self.ombc_system_description = None
+		self.ombc_active_instruction = None
 		self.ombc_active_operation_mode = None
 		self._ombc_next_operation_mode = None
-		self.ombc_active_instruction = None
 
 		#TODO: RM can change timer status by sending a OMBC.TimerStatus update. Need a handler for that?
 		self.ombc_timers:dict[str, Timer] = {}
@@ -1068,7 +1068,8 @@ class S2RMDelegate():
 											break
 
 					self._s2_send_message(self.ombc_active_instruction)
-					self.ombc_active_operation_mode = self._ombc_next_operation_mode
+					#This has to be confirmed by the resource-manager, not assume it "worked".
+					#self.ombc_active_operation_mode = self._ombc_next_operation_mode
 					self._ombc_next_operation_mode = None
 
 					if USE_FAKE_BMS:
@@ -1621,8 +1622,8 @@ class EMS(SystemCalcDelegate):
 			now2 = self._get_time()
 			duration = (now2 - now).total_seconds() * 1000
 			
-			logger_debug_proxy("Loop took {}ms".format(duration))
-			logger.info("Loop took {}ms".format(duration)) #double log that for now.
+			#logger_debug_proxy("Loop took {}ms".format(duration))
+			#logger.info("Loop took {}ms".format(duration)) #double log that for now.
 			self._dbusservice["/Ems/Debug/LoopTime"] = duration
 			logger_debug_proxy("^------------------- LOOP -------------------^")
 
