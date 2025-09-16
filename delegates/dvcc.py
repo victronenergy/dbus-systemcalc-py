@@ -1216,8 +1216,9 @@ class Dvcc(SystemCalcDelegate):
 					'/BatteryOperationalLimits/MaxChargeVoltage', cv)
 
 		if mcc is not None:
-			self._dbusmonitor.set_value_async(m.service,
-				'/BatteryOperationalLimits/MaxChargeCurrent', mcc)
+			for m in MultiService.instance.othermultis:
+				self._dbusmonitor.set_value_async(m.service,
+					'/BatteryOperationalLimits/MaxChargeCurrent', mcc)
 
 		if dcl is not None:
 			for m in MultiService.instance.othermultis:

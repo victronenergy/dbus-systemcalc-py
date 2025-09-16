@@ -2351,3 +2351,34 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50 },
 		})
+
+	def test_dvcc_with_multiple_multis_no_extra_multis(self):
+		from delegates.multi import Multi
+		Multi.instance.has_onboard_mkx = True # Force it true
+		self._set_setting('/Settings/SystemSetup/DvccControlAllMultis', 1)
+
+		# This space intentionally left not adding an extra Multi
+
+		# Add managed battery
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 58.1,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 45,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
+		self._update_values(interval=3000)
+
+		# First Multi still got the values
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 45,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': 50 },
+		})
