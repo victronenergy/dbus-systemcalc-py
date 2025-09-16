@@ -89,6 +89,7 @@ class OMBCT(OMBCControlType):
         #that is implemented in the loop, because the car state may change
         #during OMBC beeing active as well.
         self.rm_item.car_connected = None 
+        self.rm_item.evcs_status = None
         logger.info("OMBC deactivated.")
     
     async def handle_instruction(self, conn, msg, send_okay):
@@ -110,31 +111,30 @@ class OMBCT(OMBCControlType):
                     logger.info("Instruction received: {}".format(op_mode.diagnostic_label))
                     break
 
-            if self.active_operation_mode is not None:
-                #Here we actually do, what we are supposed to do. Reporting Power is handled by loop.
-                if msg.operation_mode_id == self.rm_item.stand_by_id or msg.operation_mode_id == self.rm_item.no_car_id:
-                    #if charging, stop.
-                    if self.rm_item.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L1/Power") or 0 > 0:
-                        logger.info("Sending Stop (P>0W on L1 detected)!")
+            #Here we actually do, what we are supposed to do. Reporting Power is handled by loop.
+            if msg.operation_mode_id == self.rm_item.stand_by_id or msg.operation_mode_id == self.rm_item.no_car_id:
+                #if charging, stop.
+                if (self.rm_item.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L1/Power") or 0) > 0:
+                    logger.info("Sending Stop (P>0W on L1 detected)!")
+                    self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/StartStop", False)
+                else:
+                    #0 power, we can confirm the state now.
+                    confirm_state_change = True
+            else:
+                #check, if a chargemode is selected - then verify the EVCS is running and select the proper amps.
+                amps = self.rm_item.charge_mode_map[msg.operation_mode_id]
+                if amps is not None:
+                    logger.info("Setting amps to {}".format(amps))
+                    self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/SetCurrent", amps)
+
+                    #verify we are charging, else send Start.
+                    if (self.rm_item.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L1/Power") or 0) == 0:
+                        logger.info("Sending Start (0W on L1 detected)!")
                         self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/StartStop", True)
                     else:
-                        #0 power, we can confirm the state now.
+                        #As soon as we have ANY power, we can confirm charging. Whether the very detailed amp setting was 
+                        #transferred correctly, we can't tell easily, ignore that.
                         confirm_state_change = True
-                else:
-                    #check, if a chargemode is selected - then verify the EVCS is running and select the proper amps.
-                    amps = self.rm_item.charge_mode_map[msg.operation_mode_id]
-                    if amps is not None:
-                        logger.info("Setting amps to {}".format(amps))
-                        self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/SetCurrent", amps)
-
-                        #verify we are charging, else send Start.
-                        if self.rm_item.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L1/Power") or 0 == 0:
-                            logger.info("Sending Start (0W on L1 detected)!")
-                            self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/StartStop", True)
-                        else:
-                            #As soon as we have ANY power, we can confirm charging. Whether the very detailed amp setting was 
-                            #transferred correctly, we can't tell easily, ignore that.
-                            confirm_state_change = True
             
             #first confirm reception and processing.
             await send_okay
@@ -143,7 +143,7 @@ class OMBCT(OMBCControlType):
             logger.info("State confirm is: {}".format(confirm_state_change))
             if confirm_state_change:
                 self.active_operation_mode = confirmed_state
-                self.rm_item.send_msg_and_await_reception_status(
+                await self.rm_item.send_msg_and_await_reception_status(
                     OMBCStatus(
                         message_id=uuid.uuid4(),
                         active_operation_mode_id="{}".format(self.active_operation_mode.id),
@@ -156,7 +156,7 @@ class OMBCT(OMBCControlType):
         except Exception as ex:
             logger.error("Error in handle_instructions", exc_info=ex)
 
-class CTNOCTRL(NoControlControlType):#
+class CTNOCTRL(NoControlControlType):
     def __init__(self, rm_item:S2ResourceManagerItem):
         self.rm_item = rm_item
         super().__init__()
@@ -215,62 +215,67 @@ class RM0(S2ResourceManagerItem):
         except Exception as ex:
             logger.error("Exception", exc_info=ex)
 
-    async def _destroy_connection(self):
-        await super()._destroy_connection()
-
-        #debug purpose: When we have a disconnect, simply restart the service. 
-        #this ensures the services are restarted with an eventually updated file.
-        logger.info("Connection destroyed, ending execution to allow service to restart.")
-        sys.exit(0)
-
     async def loop(self):
         try:
-            # check if the EVCS status has changed, based on that, we may need to offer different OMBC states available. 
-            evcs_status = self.dbus_monitor.get_value(EVCS_SERVICE, "/Status")
-            
-            if (evcs_status != self.evcs_status):
-                old_evcs_status = self.evcs_status
-                self.evcs_status = evcs_status
+            if self.is_connected:
+                # check if the EVCS status has changed, based on that, we may need to offer different OMBC states available. 
+                evcs_status = self.dbus_monitor.get_value(EVCS_SERVICE, "/Status")
                 
-                #has changed, determine a suitable model to be send. 
-                if (self.evcs_status == 3):
-                    await self.enter_charged_state()
+                if (evcs_status != self.evcs_status):
+                    old_evcs_status = self.evcs_status
+                    self.evcs_status = evcs_status
+                    
+                    #has changed, determine a suitable model to be send. 
+                    if (self.evcs_status == 3):
+                        await self.enter_charged_state()
 
-                elif self.evcs_status == 0:
-                    await self.enter_nocar_state()
+                    elif self.evcs_status == 0:
+                        await self.enter_nocar_state()
 
-                elif (old_evcs_status is None or old_evcs_status==0 or old_evcs_status==3):
-                    await self.enter_operational_state()
+                    elif (old_evcs_status is None or old_evcs_status==0 or old_evcs_status==3):
+                        await self.enter_operational_state()
 
-            #report power while in OMBC mode.
-            if self._current_control_type == self.ct_ombc:
-                l1_power = self.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L1/Power") or 0.0
-                l2_power = self.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L2/Power") or 0.0
-                l3_power = self.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L3/Power") or 0.0
-                set_current = self.dbus_monitor.get_value(EVCS_SERVICE, "/SetCurrent") or 0
+                #report power while in OMBC mode.
+                if self._current_control_type == self.ct_ombc:
+                    l1_power = self.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L1/Power") or 0.0
+                    l2_power = self.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L2/Power") or 0.0
+                    l3_power = self.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L3/Power") or 0.0
+                    set_current = self.dbus_monitor.get_value(EVCS_SERVICE, "/SetCurrent") or 0
 
-                logger.info("Reporting power: {}/{}/{} (Current: {})".format(l1_power, l2_power, l3_power, set_current))
+                    logger.info("Reporting power: {}/{}/{} (Current: {})".format(l1_power, l2_power, l3_power, set_current))
 
-                await self.send_msg_and_await_reception_status(
-                    PowerMeasurement(
-                        message_id=uuid.uuid4(),
-                        measurement_timestamp=datetime.now(timezone.utc),
-                        values = [
-                            PowerValue(
-                                commodity_quantity=CommodityQuantity.ELECTRIC_POWER_L1,
-                                value=l1_power
-                            ),
-                            PowerValue(
-                                commodity_quantity=CommodityQuantity.ELECTRIC_POWER_L2,
-                                value=l2_power
-                            ),
-                            PowerValue(
-                                commodity_quantity=CommodityQuantity.ELECTRIC_POWER_L3,
-                                value=l3_power
-                            )
-                        ]
+                    await self.send_msg_and_await_reception_status(
+                        PowerMeasurement(
+                            message_id=uuid.uuid4(),
+                            measurement_timestamp=datetime.now(timezone.utc),
+                            values = [
+                                PowerValue(
+                                    commodity_quantity=CommodityQuantity.ELECTRIC_POWER_L1,
+                                    value=l1_power
+                                ),
+                                PowerValue(
+                                    commodity_quantity=CommodityQuantity.ELECTRIC_POWER_L2,
+                                    value=l2_power
+                                ),
+                                PowerValue(
+                                    commodity_quantity=CommodityQuantity.ELECTRIC_POWER_L3,
+                                    value=l3_power
+                                )
+                            ]
+                        )
                     )
-                )
+            else:
+                logger.warning("No S2 connection. ZzzZzz")
+
+                #reset some props to make sure, we requery, once connection is up again. 
+                self.evcs_status = None
+                self.car_connected = None
+
+                #If S2 Control is lost, also stop charging. 
+                l1_power = self.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L1/Power") or 0.0
+                if l1_power > 0:
+                    logger.warning("Sending Connection-Loss-Stop to EV (P>0W on L1 detected)!")
+                    self.dbus_monitor.set_value(EVCS_SERVICE, "/StartStop", False)
                 
         except Exception as ex:
             logger.error("Exception in loop: ", exc_info=ex)
@@ -304,7 +309,7 @@ class RM0(S2ResourceManagerItem):
             operation_modes_temp.append(
                 OMBCOperationMode(
                     id=op_mode_id,
-                    diagnostic_label="Charge {} A".format(a),
+                    diagnostic_label="{} A".format(a),
                     abnormal_condition_only=False,
                     power_ranges=[
                         PowerRange(
@@ -442,7 +447,9 @@ class RM0(S2ResourceManagerItem):
         )
 
         logger.info("Only offering 'NoCar' Mode.")
-        await self.send_msg_and_await_reception_status(self.system_description)
+        await self.send_msg_and_await_reception_status(
+            self.system_description
+        )
 
         await self.send_msg_and_await_reception_status(
             OMBCStatus(
