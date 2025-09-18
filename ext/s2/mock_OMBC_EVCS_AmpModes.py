@@ -182,9 +182,11 @@ class RM0(S2ResourceManagerItem):
         self.car_connected = None
         self.charge_mode_map = {}
         self.evcs_status = None
-        self.stand_by_id = None
-        self.no_car_id = None
-        self.charged_id = None
+        self.stand_by_id = uuid.uuid4()
+        self.no_car_id = uuid.uuid4()
+        self.charged_id = uuid.uuid4()
+        self.on_off_timer_id = uuid.uuid4()
+        self.amp_switch_timer_id = uuid.uuid4()
 
         #we don't need a change handler, we read when required.
         dummy = {'code': None, 'whenToLog': 'configChange', 'accessLevel': None}
@@ -222,6 +224,7 @@ class RM0(S2ResourceManagerItem):
                 evcs_status = self.dbus_monitor.get_value(EVCS_SERVICE, "/Status")
                 
                 if (evcs_status != self.evcs_status):
+                    logger.info("EVCS status has changed to: {}".format(evcs_status))
                     old_evcs_status = self.evcs_status
                     self.evcs_status = evcs_status
                     
@@ -229,7 +232,7 @@ class RM0(S2ResourceManagerItem):
                     if (self.evcs_status == 3):
                         await self.enter_charged_state()
 
-                    elif self.evcs_status == 0:
+                    elif self.evcs_status == 0 or self.evcs_status is None:
                         await self.enter_nocar_state()
 
                     elif (old_evcs_status is None or old_evcs_status==0 or old_evcs_status==3):
@@ -283,7 +286,7 @@ class RM0(S2ResourceManagerItem):
     async def enter_operational_state(self):
         #Car state is anything but disconnected / fully charged. Offer Chargemodes.
         #This should only be send, when comming from 0 or 3 state,  
-        self.stand_by_id = uuid.uuid4()
+       
         logger.info("Car connected. Offering Standby and a State per Amp")
 
         operation_modes_temp=[
@@ -321,8 +324,7 @@ class RM0(S2ResourceManagerItem):
                 )   
             )
         
-        self.on_off_timer_id = uuid.uuid4()
-        self.amp_switch_timer_id = uuid.uuid4()
+        
 
         timers_temp = [
             Timer(
@@ -420,8 +422,6 @@ class RM0(S2ResourceManagerItem):
 
     async def enter_nocar_state(self):
         #Car has just disconnected, only offer no car. 
-        self.no_car_id = uuid.uuid4()
-
         operation_modes_temp=[
             OMBCOperationMode(
                 id=self.no_car_id,
@@ -464,9 +464,6 @@ class RM0(S2ResourceManagerItem):
                 self.active_operation_mode = opm
 
     async def enter_charged_state(self):
-        #Only offer Charged.
-        self.charged_id = uuid.uuid4()
-
         operation_modes_temp=[
             OMBCOperationMode(
                 id=self.charged_id,
@@ -590,7 +587,7 @@ if __name__ == "__main__":
         #Some to be discussed items. Suspect to User-Configuration.
         #Actual (generic) rm may use more here, like Power and Phase(s) used by the RSS.
         #(Because a generic RM controlling a shelly / switchable output can't know.)
-        service.add_item(IntegerItem('/Devices/0/S2/Priority', 25)) #Priority , EMS will read
+        service.add_item(IntegerItem('/Devices/0/S2/Priority', 23)) #Priority , EMS will read
         service.add_item(IntegerItem('/Devices/0/S2/ConsumerType', 1)) # 0=primary load, 1=secondary load, EMS will read
         service.setup_rm0()
 

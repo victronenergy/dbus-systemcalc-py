@@ -556,10 +556,11 @@ class S2RMDelegate():
 		self.s2_parser = S2Parser()
 		self.priority = priority
 		self.consumer_type = consumer_type
+		self._commit_count = 0 #to ensure responsibility if consumers don't react.
 		self._ems:EMS=ems
 		self.current_state_confirmed=True #will be reset, when new instructions are send. 
 		self._reported_as_blocked = False
-		self.transition_info = None
+		self.ombc_transition_info = None
 		
 		if USE_FAKE_BMS:
 			self._ems.available_fake_bms = sorted(self._ems.available_fake_bms)
@@ -603,6 +604,14 @@ class S2RMDelegate():
 			Updates the Fake BMS display option with current values. 
 		"""
 		try:
+			if not self.initialized:
+				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/Dc/0/Power", 0)
+				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/Soc", 0)
+				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "Uninitialized: {}".format(
+						self.unique_identifier.replace("com.victronenergy", "")
+					))
+				return
+			
 			if self.current_power is not None:
 				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/Dc/0/Power", self.current_power.total)
 				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/Soc", 0)
@@ -610,15 +619,21 @@ class S2RMDelegate():
 				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/Dc/0/Power", 0)
 				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/Soc", 0)
 
-			if self.transition_info is None:
-				if self.ombc_active_operation_mode is not None:
-					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{}: {} [OMBC] @ {}".format(
-						self.priority, self.rm_details.name, self.ombc_active_operation_mode.diagnostic_label
-					))
-			else:
-				if self.ombc_active_operation_mode is not None and self._ombc_next_operation_mode is not None:
-					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{}: {} [OMBC] @ {}".format(
-						self.priority, self.rm_details.name, self.transition_info
+			if self.rm_details is not None:
+				# Setting info based on Control Type. 
+				if self.active_control_type == ControlType.OPERATION_MODE_BASED_CONTROL:
+					if self.ombc_transition_info is None:
+						if self.ombc_active_operation_mode is not None:
+							self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{}: {} [OMBC] @ {}".format(
+								self.priority, self.rm_details.name, self.ombc_active_operation_mode.diagnostic_label
+							))
+					else:
+						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{}: {} [OMBC] @ {}".format(
+							self.priority, self.rm_details.name, self.ombc_transition_info
+						))
+				elif self.active_control_type == ControlType.NOT_CONTROLABLE:
+					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{}: {} [NOCTRL]".format(
+						self.priority, self.rm_details.name
 					))
 		except Exception as ex: 
 			logger.error("Exception during fake bms publish. This may be temporary", exc_info=ex)
@@ -641,6 +656,8 @@ class S2RMDelegate():
 		"""
 			To be called when the RM leaves the dbus or an s2 timeout occurs. 
 		"""
+		self._s2_send_disconnect()
+
 		if self._message_receiver is not None:
 			self._dbusmonitor.dbusConn.remove_signal_receiver(self._s2_on_message_handler, path=self.s2path, signal_name="Message", dbus_interface=S2_IFACE)
 			self._message_receiver = None
@@ -761,6 +778,7 @@ class S2RMDelegate():
 
 	def _s2_on_ombc_system_description(self, message:OMBCSystemDescription):
 		#sort opmodes based on their powerranges. most expensive topmost.
+		logger.info("{} | New system description received. Reseting state tracking.".format(self.unique_identifier))
 		def sum_key(i:OMBCOperationMode):
 			sum = 0
 			for r in i.power_ranges:
@@ -769,6 +787,10 @@ class S2RMDelegate():
 
 		message.operation_modes.sort(key=sum_key, reverse=True)
 		self.ombc_system_description = message
+		#reset active state, so transitioning doesn't cause issues. There might be no transition between different system descriptions. 
+		self.ombc_active_instruction = None
+		self.ombc_active_operation_mode = None
+		self._ombc_next_operation_mode = None
 		self._s2_send_reception_message(ReceptionStatusValues.OK, message)
 	
 	def _s2_on_ombc_status(self, message:OMBCStatus):
@@ -785,6 +807,7 @@ class S2RMDelegate():
 						logger.info("{} | Confirmed next operation mode: '{}'".format(self.unique_identifier, self.ombc_active_operation_mode.diagnostic_label))	
 						self.current_state_confirmed=True
 						self._ombc_next_operation_mode = None
+						self._commit_count = 0 #reset, we got response. 
 					elif self._ombc_next_operation_mode is None:
 						# status reported without change-request, accept.
 						self.ombc_active_operation_mode = opm
@@ -812,6 +835,10 @@ class S2RMDelegate():
 					return
 
 			#Operationmode is not known. This may be a temporary error.
+			logger.error("Unknown operationmode-id reported: {}, expecting any of: {}".format(
+				message.active_operation_mode_id,
+				["{}=>{}".format(mode.id, mode.diagnostic_label) for mode in self.ombc_system_description.operation_modes]
+			))
 			self._s2_send_reception_message(ReceptionStatusValues.TEMPORARY_ERROR, message, "Unknown operationmode-id: {}".format(message.active_operation_mode_id))
 		except Exception as ex:
 			logger.error("Exception during status reception. This may be temporary", exc_info=ex)
@@ -921,6 +948,19 @@ class S2RMDelegate():
 			logger.error("Mesesage was: {}".format(message.model_dump()))
 			del self._reply_handler_dict[message.model_dump()["message_id"]]
 	
+	def _s2_send_disconnect(self):
+		"""
+			Sends a disconnect message to the RM. Will use fire and forget, as we don't
+			care about if the message is receiving the rm, nor what he has to say about it. 
+		"""
+		try:
+			logger.warning("{} | Sending disconnect.".format(self.unique_identifier))
+			self._dbusmonitor.dbusConn.call_async(self.service, self.s2path, S2_IFACE, method='Disconnect', signature='s', 
+					args=[wrap_dbus_value(self.unique_identifier)], 
+					reply_handler=None, error_handler=None)
+		except Exception as ex:
+			logger.error("Error sending a S2 Message.", exc_info=ex)
+
 	def self_assign_overhead(self, overhead:SolarOverhead) -> tuple[SolarOverhead, bool]:
 		"""
 			RM Delegate is claiming power that matches it's requirements.
@@ -968,7 +1008,11 @@ class S2RMDelegate():
 															[mode.diagnostic_label for mode in eligible_operation_modes]))
 
 		if len(eligible_operation_modes) == 0:
-			logger.error("No valid operationmodes to choose from.")
+			logger.error("{} | No valid operationmodes to choose from. Active is: {} / Selection is: {}".format(
+				self.unique_identifier, 
+				"{}=>{}".format(self.ombc_active_operation_mode.diagnostic_label, self.ombc_active_operation_mode.id) if self.ombc_active_operation_mode is not None else "None",
+				["{}=>{}".format(mode.diagnostic_label, mode.id) for mode in self.ombc_system_description.operation_modes])
+			)
 			return overhead, was_change
 		
 		#this is our last resort.
@@ -990,25 +1034,27 @@ class S2RMDelegate():
 			
 			if overhead.transaction_running:
 				#Managed to verify all power ranges and transaction still running? This mode is eligible! 
-				new_power_claim = overhead.comit()
-				logger_debug_proxy("{} | Operation Mode selected: '{}'. (Power-Claim: {})".format(self.unique_identifier, opm.diagnostic_label, new_power_claim))
-
-				#store this operation_mode as beeing the next one to be send. EMS will call comit() on the RM-Delegate, 
-				#once it should inform the actual RM and send out a new instruction, if required. RM-Delegate has to 
-				#track if a (re-)send is required. 
-				self._ombc_next_operation_mode = opm
-
-				# When a consumer is going from a high to a low claim, but stuck in transition time - the overhead will already be considered
-				# unclaimed, other consumers will be enabled. This shouldn't happen, overhead needs to stay "blocked" until the consumer managed
-				# to reduce it's power consumption. Therefore, if the transition is blocked AND the new claim is smaller, we keep the target mode
-				# but revert the claim.  
-				if self._ombc_check_timer_block() == 0:
-					#good to go, this will happen. keep the new claim. 
+				#Probe, if we are trapped in a transition timer, then we cannot do it anyway. 
+				if self._ombc_check_timer_block(opm) == 0:
+					#all good, commit. Deduct from budget, what we claim. 
+					new_power_claim = overhead.comit()
 					self.power_claim = new_power_claim
 					self.power_request = overhead.power_request
+					
+					logger_debug_proxy("{} | Operation Mode selected: '{}'. (Power-Claim: {})".format(self.unique_identifier, opm.diagnostic_label, new_power_claim))
+
+					#store this operation_mode as beeing the next one to be send. EMS will call comit() on the RM-Delegate, 
+					#once it should inform the actual RM and send out a new instruction, if required. RM-Delegate has to 
+					#track if a (re-)send is required. 
+					self._ombc_next_operation_mode = opm
+	
 				else:
-					#cannot change, trapped in timer. 
-					self._ombc_next_operation_mode = None
+					# cannot change, trapped in timer. Thus, we need to revert the overhead
+					# and lower it by the consumers active claim (if any)
+					overhead.rollback()
+
+					if (self.power_claim is not None):
+						overhead.power -= self.power_claim
 
 				break
 		
@@ -1042,40 +1088,43 @@ class S2RMDelegate():
 		if self.active_control_type == ControlType.OPERATION_MODE_BASED_CONTROL:
 			#Transitioning may be based on timers. So, check if our transition is suspect to be delayed currently. 
 			if self._ombc_next_operation_mode is not None and self._ombc_next_operation_mode.id != self.ombc_active_operation_mode.id:
-				#check, if transition is blocked. Else we will retry later, no problem. 
-				seconds_blocked = self._ombc_check_timer_block()
-				if seconds_blocked <= 0.0:
-					#send out op mode selection, as operation mode changed. 
-					self.current_state_confirmed=False
-					self.ombc_active_instruction = OMBCInstruction(
-						message_id = uuid.uuid4(),
-						id = uuid.uuid4(),
-						execution_time= datetime.now(timezone.utc),
-						operation_mode_factor=1.0, #TODO: This needs to be adjusted, along with the factor determined by power allocation. 
-						operation_mode_id= self._ombc_next_operation_mode.id,
-						abnormal_condition=False
-					)
+				#send out op mode selection, as operation mode changed. 
+				self.current_state_confirmed=False
+				self.ombc_active_instruction = OMBCInstruction(
+					message_id = uuid.uuid4(),
+					id = uuid.uuid4(),
+					execution_time= datetime.now(timezone.utc),
+					operation_mode_factor=1.0, #TODO: This needs to be adjusted, along with the factor determined by power allocation. 
+					operation_mode_id= self._ombc_next_operation_mode.id,
+					abnormal_condition=False
+				)
 
-					logger.info("{} | Instruction send: OMBC = {} (Power-Claim: {})".format(self.unique_identifier, self._ombc_next_operation_mode.diagnostic_label, self.power_claim))
+				logger.info("{} | Instruction send: OMBC = {} (Power-Claim: {})".format(self.unique_identifier, self._ombc_next_operation_mode.diagnostic_label, self.power_claim))
 
-					self._s2_send_message(self.ombc_active_instruction)
-					#This has to be confirmed by the resource-manager, not assume it "worked".
-					#self.ombc_active_operation_mode = self._ombc_next_operation_mode
+				self._s2_send_message(self.ombc_active_instruction)
+				self._commit_count += 1
+				#This has to be confirmed by the resource-manager, not assume it "worked".
+				#self.ombc_active_operation_mode = self._ombc_next_operation_mode
 
-	def _ombc_check_timer_block(self) ->float:
+				if self._commit_count >= 7:
+					#Consumer is not reacting. That is odd. Only escape we have is to drop off and reconnect. 
+					logger.warning("{} | RM didn't respond after 6 commits. Assuming stale, disconnecting.".format(self.unique_identifier))
+					self.end()
+
+	def _ombc_check_timer_block(self, target_operation_mode:OMBCOperationMode) -> float:
 		"""
 			Checks if there is a blocking timer, if there is, returns the amount of seconds to go. 
 		"""
 		#if the current mode is unknown, we have no block. 
 		#if the next operation mode is unknown, it's no block at all.
-		if self.ombc_active_operation_mode is None or self._ombc_next_operation_mode is None:
-			self.transition_info = None
+		if self.ombc_active_operation_mode is None or target_operation_mode is None:
+			self.ombc_transition_info = None
 			return 0
 		
 		#attempting to transist between 2 operation modes. See, if there is a defined transition
 		timer_to_invalidate = []
 		for t in self.ombc_system_description.transitions:
-			if t.from_ == self.ombc_active_operation_mode.id and t.to == self._ombc_next_operation_mode.id:
+			if t.from_ == self.ombc_active_operation_mode.id and t.to == target_operation_mode.id:
 				#transition found, timer required?
 				if len(t.blocking_timers) > 0:
 					#yes, at least one blocking timer. Do we have timers running at all?
@@ -1092,13 +1141,13 @@ class S2RMDelegate():
 										seconds_remaining = round(((self.ombc_timer_starts[blocking_timer_id] + running_timer.duration.to_timedelta()) 
 									 		- datetime.now(timezone.utc)).total_seconds(),0)
 										
-										self.transition_info = "{} -> {} ({}s)".format(
+										self.ombc_transition_info = "{} -> {} ({}s)".format(
 											self.ombc_active_operation_mode.diagnostic_label, 
-											self._ombc_next_operation_mode.diagnostic_label, seconds_remaining
+											target_operation_mode.diagnostic_label, seconds_remaining
 										)
 										logger_debug_proxy("{} | Timer '{}' is preventing to transition from '{}' to '{}' currently. ({}s)".format(
 											self.unique_identifier, running_timer.diagnostic_label, self.ombc_active_operation_mode.diagnostic_label, 
-											self._ombc_next_operation_mode.diagnostic_label, seconds_remaining
+											target_operation_mode.diagnostic_label, seconds_remaining
 										))
 										return seconds_remaining
 		
@@ -1107,7 +1156,7 @@ class S2RMDelegate():
 			del self.ombc_timer_starts[id]
 
 		#no timer, reset transition info.
-		self.transition_info = None
+		self.ombc_transition_info = None
 		return 0
 
 	def pop_powerstats(self, now:datetime) -> PhaseAwareFloat:
@@ -1129,6 +1178,7 @@ class EMS(SystemCalcDelegate):
 		super(EMS, self).__init__()
 		self.system_type_flags = SystemTypeFlag.None_
 		self.managed_rms: Dict[str, S2RMDelegate] = {}
+		self.rms_to_drop: list[str] = []
 		self.continuous_inverter_power_per_phase = None #calculated after determining the systemtype.
 
 		#consumption counters and momentary power values
@@ -1247,20 +1297,15 @@ class EMS(SystemCalcDelegate):
 		known_rms = list(self.managed_rms.keys()) 
 		for key in known_rms:
 			if key.startswith(service):
-				logger.info("Removing RM {} from managed RMs.".format(key))
-				self.managed_rms[key].end()
-
 				if USE_FAKE_BMS:
 					if self.managed_rms[key]._fake_bms_no not in self.available_fake_bms:
 						no= self.managed_rms[key]._fake_bms_no
 						self.available_fake_bms.append(no)
+				
+				self.managed_rms[key].end()
 
-						#reset that fake BMS to defaults.
-						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(no), "/Dc/0/Power", 0.0)
-						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(no), "/Dc/0/Soc", 0)
-						self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(no), "/CustomName", "EMS Fake BMS {}".format(no))
-
-				del self.managed_rms[key]
+				#if device is gone, remove it as managed rm. 
+				del self.managed_rms [key]
 
 	def settings_changed(self, setting, oldvalue, newvalue):
 		if setting == 'ems_mode':
@@ -1446,6 +1491,7 @@ class EMS(SystemCalcDelegate):
 
 		except Exception as ex:
 			logger.warning("Unable to determine SystemTypeFlags by now. Retrying later...")
+			logger.error("Exception was: ", exc_info=ex)
 			#may happen during startup, until all delegates have populated their initial values. 
 			pass
 
@@ -1560,7 +1606,7 @@ class EMS(SystemCalcDelegate):
 				#Ask the RM to kindly resend.
 				state_change_pending = False
 				for unique_identifier, delegate in self.managed_rms.items():
-					if not delegate.current_state_confirmed:
+					if not delegate.current_state_confirmed and delegate.initialized:
 						#TODO: Does successfull state change require a power report to be present as well? There may be huge delays until first report. Currently observing. 
 						delegate.comit()
 						logger.warning("{} | State change to '{}' pending. Skipping calculation round.".format(unique_identifier, delegate._ombc_next_operation_mode.diagnostic_label))
@@ -1581,6 +1627,7 @@ class EMS(SystemCalcDelegate):
 								if was_change:
 									#There was a change in at least 1 consumer. So, we break, commit and await the change to happen, before we do more changes.
 									#Else a system made out of many consumers will become to unstable due to reaction latencies all over the place. 
+									logger.info("{} | Comiting change of assignment".format(delegate.unique_identifier))
 									delegate.comit()
 									break
 							else:
@@ -1607,8 +1654,27 @@ class EMS(SystemCalcDelegate):
 				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Current", available_overhead.power.total)
 				
 				for unique_identifier, delegate in self.managed_rms.items():
-					if delegate.initialized:
-						delegate.publish_fake_bms_values()
+					delegate.publish_fake_bms_values()
+
+			#drop any RM, if we have to.
+			for rm_to_drop in self.rms_to_drop:
+				if rm_to_drop in self.managed_rms.keys():
+					logger.warning("{} | Dropping RM from managed RMs.".format(rm_to_drop))
+					
+					if USE_FAKE_BMS:
+						if self.managed_rms[rm_to_drop]._fake_bms_no not in self.available_fake_bms:
+							no = self.managed_rms[rm_to_drop]._fake_bms_no
+							self.available_fake_bms.append(no)
+			
+			self.rms_to_drop = []
+				
+			#reset unused fake BMS any time (for now, debug only)
+			if USE_FAKE_BMS:
+				for no in self.available_fake_bms:
+					#reset that fake BMS to defaults.
+					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(no), "/Dc/0/Power", 0.0)
+					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(no), "/Dc/0/Soc", 0)
+					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(no), "/CustomName", "EMS Fake BMS {}".format(no))
 
 			now2 = self._get_time()
 			duration = (now2 - now).total_seconds() * 1000
@@ -1642,7 +1708,7 @@ class EMS(SystemCalcDelegate):
 
 		# now, we need to ADD power that is already beeing consumed by S2 Devices, because it will also be deducted in the Consumption-Values.
 		for unique_identifier, delegate in self.managed_rms.items():
-			if delegate.current_power is not None:
+			if delegate.current_power is not None and delegate.initialized:
 				#current power needs only be added to ac. It is real consumption and needs to be deducted where the unmanaged consumption is causing a deduction.
 				l1 += delegate.current_power.l1
 				l2 += delegate.current_power.l2
