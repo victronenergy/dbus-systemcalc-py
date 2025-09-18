@@ -643,14 +643,7 @@ class S2RMDelegate():
 		"""
 			Initializes the RM, establishes connection, handshake, etc. 
 		"""
-		if self._s2_connect():
-			#Set KeepAlive Timer. 
-			self._keep_alive_timer = GLib.timeout_add(KEEP_ALIVE_INTERVAL_S * 1000, self._keep_alive_loop)
-
-			#RM is now ready to be managed.
-			self.initialized = True
-		else:
-			self.initialized = False #will be retried in retry loop. 
+		self._s2_connect_async()
 	
 	def end(self):
 		"""
@@ -697,25 +690,34 @@ class S2RMDelegate():
 			self.end()
 			return False
 
-	def _s2_connect(self) -> bool:
+	def _s2_connect_async(self):
 		"""
 			Establishes Connection to the RM via S2. 
 		"""
-		#start to monitor for Signals: Message and Disconnect. 
+		#start to monitor for Signals: Message and Disconnect. Yes, we need to do this, before connection 
+		#is successfull, else we have a race-condition on catching the first reply, if any. 
 		self._message_receiver = self._dbusmonitor.dbusConn.add_signal_receiver(self._s2_on_message_handler,
 			dbus_interface=S2_IFACE, signal_name='Message', path=self.s2path)
 
 		self._disconnect_receiver = self._dbusmonitor.dbusConn.add_signal_receiver(self._s2_on_disconnect_handler,
 			dbus_interface=S2_IFACE, signal_name='Disconnect', path=self.s2path)
 		
-		if self._dbusmonitor.dbusConn.call_blocking(self.service, self.s2path, S2_IFACE, method='Connect', signature='si', 
-										   args=[wrap_dbus_value(self.unique_identifier), wrap_dbus_value(KEEP_ALIVE_INTERVAL_S)]):
-			logger.info("{} | S2-Connection established with Keep-Alive {}".format(self.unique_identifier, KEEP_ALIVE_INTERVAL_S))
-			return True
-		else:
-			logger.warning("{} | S2-Connection failed. Operation will be retried in {}s".format(self.unique_identifier, CONNECTION_RETRY_INTERVAL_MS))
-			self.end() #clean handlers and stuff.
-			return False
+		self._dbusmonitor.dbusConn.call_async(self.service, self.s2path, S2_IFACE, method='Connect', signature='si', 
+			args=[wrap_dbus_value(self.unique_identifier), wrap_dbus_value(KEEP_ALIVE_INTERVAL_S)],
+			reply_handler=self._s2_connect_callback_ok, error_handler=self._s2_connect_callback_error)
+
+	def _s2_connect_callback_ok(self, result):
+		logger.info("{} | S2-Connection established with Keep-Alive {}".format(self.unique_identifier, KEEP_ALIVE_INTERVAL_S))
+		
+		#Set KeepAlive Timer. 
+		self._keep_alive_timer = GLib.timeout_add(KEEP_ALIVE_INTERVAL_S * 1000, self._keep_alive_loop)
+
+		#RM is now ready to be managed.
+		self.initialized = True
+
+	def _s2_connect_callback_error(self, result):
+		logger.warning("{} | S2-Connection failed. Operation will be retried in {}s".format(self.unique_identifier, CONNECTION_RETRY_INTERVAL_MS))
+		self.end() #clean handlers and stuff.
 
 	def _s2_on_message_handler(self, client_id, msg:str):
 		if self.unique_identifier == client_id:
@@ -811,6 +813,8 @@ class S2RMDelegate():
 					elif self._ombc_next_operation_mode is None:
 						# status reported without change-request, accept.
 						self.ombc_active_operation_mode = opm
+						self.current_state_confirmed=True
+						self._commit_count = 0 #reset, we got a RM triggered state change.
 						logger.info("{} | Reported operation mode: '{}'".format(self.unique_identifier, self.ombc_active_operation_mode.diagnostic_label))
 
 					#Check, if this transition starts any timer. Only required if we leave a well known operation mode. 
@@ -1606,10 +1610,13 @@ class EMS(SystemCalcDelegate):
 				#Ask the RM to kindly resend.
 				state_change_pending = False
 				for unique_identifier, delegate in self.managed_rms.items():
-					if not delegate.current_state_confirmed and delegate.initialized:
+					if not delegate.current_state_confirmed and delegate.initialized and delegate._ombc_next_operation_mode is not None :
 						#TODO: Does successfull state change require a power report to be present as well? There may be huge delays until first report. Currently observing. 
 						delegate.comit()
-						logger.warning("{} | State change to '{}' pending. Skipping calculation round.".format(unique_identifier, delegate._ombc_next_operation_mode.diagnostic_label))
+						logger.warning("{} | State change to '{}' pending. Skipping calculation round.".format(
+							unique_identifier, 
+							delegate._ombc_next_operation_mode.diagnostic_label if delegate._ombc_next_operation_mode is not None else "UNKNOWN"
+						))
 						state_change_pending = True
 
 				if not state_change_pending:

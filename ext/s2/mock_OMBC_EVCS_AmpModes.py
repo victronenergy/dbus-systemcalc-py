@@ -186,7 +186,8 @@ class RM0(S2ResourceManagerItem):
         self.no_car_id = uuid.uuid4()
         self.charged_id = uuid.uuid4()
         self.on_off_timer_id = uuid.uuid4()
-        self.amp_switch_timer_id = uuid.uuid4()
+        self.amp_switch_timer_id_10 = uuid.uuid4()
+        self.amp_switch_timer_id_30 = uuid.uuid4()
 
         #we don't need a change handler, we read when required.
         dummy = {'code': None, 'whenToLog': 'configChange', 'accessLevel': None}
@@ -333,9 +334,14 @@ class RM0(S2ResourceManagerItem):
                 duration=300*1000
             ),
             Timer(
-                id = self.amp_switch_timer_id,
-                diagnostic_label="Amp Switch Delay",
-                duration=15*1000
+                id = self.amp_switch_timer_id_10,
+                diagnostic_label="Amp Switch Delay 10s",
+                duration=10*1000
+            ),
+            Timer(
+                id = self.amp_switch_timer_id_30,
+                diagnostic_label="Amp Switch Delay 30s",
+                duration=30*1000
             )
         ]
 
@@ -388,14 +394,28 @@ class RM0(S2ResourceManagerItem):
                         right_amp = self.charge_mode_map[right.id]
 
                         if (abs(left_amp - right_amp) == 1):
-                            logger.info("Creating transition from '{}' to '{}' with 15s Hysteresis".format(left.diagnostic_label, right.diagnostic_label))
+                            logger.info("Creating transition from '{}' to '{}' with 10s Hysteresis".format(left.diagnostic_label, right.diagnostic_label))
                             transitions_temp.append(
                                 Transition(
                                     id=uuid.uuid4(),
                                     from_=left.id,
                                     to=right.id,
-                                    start_timers=[self.amp_switch_timer_id],
-                                    blocking_timers=[self.amp_switch_timer_id],
+                                    start_timers=[self.amp_switch_timer_id_10],
+                                    blocking_timers=[self.amp_switch_timer_id_10],
+                                    transition_duration=2000,
+                                    abnormal_condition_only=False,
+                                    transition_costs=None
+                                ) 
+                            )
+                        else:
+                            logger.info("Creating transition from '{}' to '{}' with 30s Hysteresis".format(left.diagnostic_label, right.diagnostic_label))
+                            transitions_temp.append(
+                                Transition(
+                                    id=uuid.uuid4(),
+                                    from_=left.id,
+                                    to=right.id,
+                                    start_timers=[self.amp_switch_timer_id_30],
+                                    blocking_timers=[self.amp_switch_timer_id_30],
                                     transition_duration=2000,
                                     abnormal_condition_only=False,
                                     transition_costs=None
@@ -587,7 +607,7 @@ if __name__ == "__main__":
         #Some to be discussed items. Suspect to User-Configuration.
         #Actual (generic) rm may use more here, like Power and Phase(s) used by the RSS.
         #(Because a generic RM controlling a shelly / switchable output can't know.)
-        service.add_item(IntegerItem('/Devices/0/S2/Priority', 23)) #Priority , EMS will read
+        service.add_item(IntegerItem('/Devices/0/S2/Priority', 25)) #Priority , EMS will read
         service.add_item(IntegerItem('/Devices/0/S2/ConsumerType', 1)) # 0=primary load, 1=secondary load, EMS will read
         service.setup_rm0()
 
