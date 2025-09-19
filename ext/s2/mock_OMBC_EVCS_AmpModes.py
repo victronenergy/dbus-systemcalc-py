@@ -186,6 +186,7 @@ class RM0(S2ResourceManagerItem):
         self.no_car_id = uuid.uuid4()
         self.charged_id = uuid.uuid4()
         self.on_off_timer_id = uuid.uuid4()
+        self.on_off_timer_always_id = uuid.uuid4()
         self.amp_switch_timer_id_10 = uuid.uuid4()
         self.amp_switch_timer_id_30 = uuid.uuid4()
 
@@ -334,6 +335,11 @@ class RM0(S2ResourceManagerItem):
                 duration=300*1000
             ),
             Timer(
+                id = self.on_off_timer_always_id,
+                diagnostic_label="On/Off Hysteresis 60s",
+                duration=60*1000
+            ),
+            Timer(
                 id = self.amp_switch_timer_id_10,
                 diagnostic_label="Amp Switch Delay 10s",
                 duration=10*1000
@@ -354,13 +360,12 @@ class RM0(S2ResourceManagerItem):
             for right in operation_modes_temp:
                 if left.id != right.id: #transitions to self, we don't need.
                     if left.id == self.stand_by_id:
-                        #transition to or from standby, use 5 min hysteresis.
+                        #transition to from standby, use 5 min hysteresis.
                         #only legit to the 6A State.
                         if self.charge_mode_map[right.id] == 6:
                             logger.info("Creating transition from '{}' to '{}' with 5min Hysteresis".format(left.diagnostic_label, right.diagnostic_label))
                             transitions_temp.append(
-                                Transition(
-                                    id=uuid.uuid4(),
+                                Transition(id=uuid.uuid4(),
                                     from_=left.id,
                                     to=right.id,
                                     start_timers=[self.on_off_timer_id],
@@ -371,7 +376,9 @@ class RM0(S2ResourceManagerItem):
                                 ) 
                             )
                     elif right.id == self.stand_by_id:
-                        #transition to or from standby, use 5 min hysteresis.
+                        #transition to standby, use 5 min hysteresis.
+                        #also blocked by the 60s On/Off Hysteresis. Note: The on_off_timer_always_id is started, when ANY State transitions into 6A
+                        #to achieve a final "resting" in 6A for 60s before finally switching to standby (off)
                         #only legit to the 6A State.
                         if self.charge_mode_map[left.id] == 6:
                             logger.info("Creating transition from '{}' to '{}' with 5min Hysteresis".format(left.diagnostic_label, right.diagnostic_label))
@@ -381,46 +388,45 @@ class RM0(S2ResourceManagerItem):
                                     from_=left.id,
                                     to=right.id,
                                     start_timers=[self.on_off_timer_id],
-                                    blocking_timers=[self.on_off_timer_id],
+                                    blocking_timers=[self.on_off_timer_id, self.on_off_timer_always_id],
                                     transition_duration=10000,
                                     abnormal_condition_only=False,
                                     transition_costs=None
                                 ) 
                             )
                     else:
-                        #transition between ampstates, use 30 seconds hysteris.
-                        #only legit, if amp difference is 1 between both states. 
+                        #transition between ampstates, use 30 or 10 seconds hysteris.
                         left_amp = self.charge_mode_map[left.id]
                         right_amp = self.charge_mode_map[right.id]
 
+                        start_timers = []
+                        blocking_timers = []
+                        
+                        #1A step? 
                         if (abs(left_amp - right_amp) == 1):
-                            logger.info("Creating transition from '{}' to '{}' with 10s Hysteresis".format(left.diagnostic_label, right.diagnostic_label))
-                            transitions_temp.append(
-                                Transition(
-                                    id=uuid.uuid4(),
-                                    from_=left.id,
-                                    to=right.id,
-                                    start_timers=[self.amp_switch_timer_id_10],
-                                    blocking_timers=[self.amp_switch_timer_id_10],
-                                    transition_duration=2000,
-                                    abnormal_condition_only=False,
-                                    transition_costs=None
-                                ) 
-                            )
+                            start_timers.append(self.amp_switch_timer_id_10)
+                            blocking_timers.append(self.amp_switch_timer_id_10)
                         else:
-                            logger.info("Creating transition from '{}' to '{}' with 30s Hysteresis".format(left.diagnostic_label, right.diagnostic_label))
-                            transitions_temp.append(
-                                Transition(
-                                    id=uuid.uuid4(),
-                                    from_=left.id,
-                                    to=right.id,
-                                    start_timers=[self.amp_switch_timer_id_30],
-                                    blocking_timers=[self.amp_switch_timer_id_30],
-                                    transition_duration=2000,
-                                    abnormal_condition_only=False,
-                                    transition_costs=None
-                                ) 
-                            )
+                            start_timers.append(self.amp_switch_timer_id_30)
+                            blocking_timers.append(self.amp_switch_timer_id_30)
+
+                        #if the target state is 6A, we additionally have to start the on_off_timer_always_id timer.
+                        if (right_amp == 6):
+                            start_timers.append(self.on_off_timer_always_id)
+
+                        logger.info("Creating transition from '{}' to '{}' with {} start-timers".format(left.diagnostic_label, right.diagnostic_label, len(start_timers)))
+                        transitions_temp.append(
+                            Transition(
+                                id=uuid.uuid4(),
+                                from_=left.id,
+                                to=right.id,
+                                start_timers=start_timers,
+                                blocking_timers=blocking_timers,
+                                transition_duration=2000,
+                                abnormal_condition_only=False,
+                                transition_costs=None
+                            ) 
+                        )
 
         self.system_description = OMBCSystemDescription(
             message_id=uuid.uuid4(),

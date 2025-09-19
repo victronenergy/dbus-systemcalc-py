@@ -1008,7 +1008,7 @@ class S2RMDelegate():
 			if self._ombc_can_transition(self.ombc_active_operation_mode, opm):
 				eligible_operation_modes.append(opm)
 
-		logger_debug_proxy("{} | Eligible States: {}".format(self.unique_identifier, 
+		logger_debug_proxy("Eligible States: {}".format(self.unique_identifier, 
 															[mode.diagnostic_label for mode in eligible_operation_modes]))
 
 		if len(eligible_operation_modes) == 0:
@@ -1021,11 +1021,21 @@ class S2RMDelegate():
 		
 		#this is our last resort.
 		forced_state = eligible_operation_modes[len(eligible_operation_modes) -1]
-		logger_debug_proxy("{} | Forced State: {}".format(self.unique_identifier, forced_state.diagnostic_label))
+		logger_debug_proxy("Forced State: {}".format(self.unique_identifier, forced_state.diagnostic_label))
 
 		for opm in eligible_operation_modes:
-			overhead.begin()
 			for pr in opm.power_ranges:
+				#First check: If the power_claim is exceeding available total - it won't fit after considering efficiency losses. 
+				#thus, for these states, we can directly omit to validate them througly and simple skip them. We basically start
+				#above the state that may eventually fit.
+				if (pr.start_of_range > overhead.power.total):
+					logger_debug_proxy("Skipping detailed check on '{}'. {}W vs {}W raw available won't fit for sure.".format(
+						self.unique_identifier, opm.diagnostic_label, pr.start_of_range, overhead.power.total
+					))
+					continue
+
+				overhead.begin()	
+
 				#TODO: Verify why there are multiple ranges?
 				claim_success = overhead.claim(pr.commodity_quantity, pr.start_of_range, pr.end_of_range, 
 					self.consumer_type==ConsumerType.Primary, opm.id == forced_state.id)
@@ -1673,6 +1683,7 @@ class EMS(SystemCalcDelegate):
 							no = self.managed_rms[rm_to_drop]._fake_bms_no
 							self.available_fake_bms.append(no)
 			
+			#clean drop list, gone by now.
 			self.rms_to_drop = []
 				
 			#reset unused fake BMS any time (for now, debug only)
