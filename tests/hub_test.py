@@ -2123,6 +2123,52 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Link/ChargeCurrent': 25 + 8}, # 25A limit, 8A VEBus
 		})
 
+	def test_dvcc_alternator_no_maxcurrent(self):
+		""" Don't crash when alternator has no /Settings/ChargeCurrentLimit. """
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 14.0,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 56,
+				'/Soc': 15.3,
+				'/DeviceInstance': 0,
+				'/Info/BatteryLowVoltage': 11,
+				'/Info/MaxChargeCurrent': 0,
+				'/Info/MaxChargeVoltage': 14.2,
+				'/Info/MaxDischargeCurrent': 50,
+				'/ProductId': 0xA3E5 }) # Lynx
+		self._add_device('com.victronenergy.solarcharger.ttyUSB0', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Dc/0/Voltage': 14.0,
+			'/Dc/0/Current': 4.0,
+			'/FirmwareVersion': 0x0129},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.alternator.ttyO4', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Settings/ChargeCurrentLimit': None,
+			'/Dc/0/Current': 33,
+			'/FirmwareVersion': 0 },
+			connection='VE.Direct')
+		self._update_values(interval=30000)
+		self._check_external_values({
+			'com.victronenergy.alternator.ttyO4': {
+				'/Link/ChargeVoltage': 14.2,
+				'/Link/ChargeCurrent': None },
+			'com.victronenergy.solarcharger.ttyUSB0': {
+				'/Link/ChargeVoltage': 14.2,
+				'/Link/ChargeCurrent': 0 },
+		})
+
 	def test_internal_maxchargecurrent(self):
 		""" The DVCC assistant allows other assistants to set an internal limit
 		    for the Multi. """
