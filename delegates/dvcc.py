@@ -547,7 +547,12 @@ class ChargerSubsystem(object):
 	def shutdown_chargers(self):
 		""" Shut down all chargers. """
 		for charger in self:
-			charger.maxchargecurrent = 0
+			try:
+				charger.maxchargecurrent = 0
+			except TypeError:
+				# happens if for some reason
+				# /Settings/ChargeCurrentLimit is not defined
+				pass
 
 	def set_networked(self, has_bms, bms_charge_voltage, charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0):
 		""" This is the main entry-point into the solar charger subsystem. This
