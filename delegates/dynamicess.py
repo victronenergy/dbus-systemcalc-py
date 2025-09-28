@@ -1115,10 +1115,16 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					elif available_solar_plus > 0 and (missing_to_bat or (w.restrictions & Restrictions.GRID2BAT)): 
 						reactive_strategy = ReactiveStrategy.SELFCONSUME_NO_GRID
 
-					# 5.) Ultimate case: No Grid charge possible, no solar. We can't charge.
+					# 5.) No Grid charge possible, no solar. We can't charge.
 					#     However, when we have missing_to_bat, we allow to go bellow target soc. 
-					elif available_solar_plus <= 0 and (missing_to_bat or (w.restrictions & Restrictions.GRID2BAT)):
+					elif available_solar_plus <= 0 and missing_to_bat:
 						reactive_strategy = ReactiveStrategy.SELF_CONSUME_ACCEPT_BELOW_TSOC
+
+					# 5.) No Grid charge possible, no solar. We can't charge.
+					#     with missing2grid, but grid2bat restriction we can only idle now.
+					#     missing2grid with no restriction is already handled in case 3.
+					elif available_solar_plus <= 0 and missing_to_grid and (w.restrictions & Restrictions.GRID2BAT):
+						reactive_strategy = ReactiveStrategy.IDLE_NO_OPPORTUNITY
 
 		else:
 			# if we are currently in any SCHEDULED_CHARGE_* State and our next window outlines an even higher target soc, 
