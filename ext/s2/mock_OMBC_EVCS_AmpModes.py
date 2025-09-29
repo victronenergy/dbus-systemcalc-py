@@ -72,7 +72,7 @@ from s2python.ombc import (
 
 DBusGMainLoop(set_as_default=True)
 EVCS_SERVICE = "com.victronenergy.evcharger"
-PHASE_MODE_CONFIG = 3
+PHASE_MODE_CONFIG = 1
 
 class OMBCT(OMBCControlType):
     def __init__(self, rm_item:S2ResourceManagerItem):
@@ -289,6 +289,8 @@ class RM0(S2ResourceManagerItem):
     async def enter_operational_state(self):
         #Car state is anything but disconnected / fully charged. Offer Chargemodes.
         #This should only be send, when comming from 0 or 3 state,  
+        #If the EVCS disconnects while charging, it is important that we pick up, where we lost the connection. 
+        #Hence send a proper initial state, if charging. 
        
         logger.info("Car connected. Offering Standby and a State per Amp")
 
@@ -310,7 +312,13 @@ class RM0(S2ResourceManagerItem):
         #EVCS would get this from settings. (Charging with 6-32A)
         self.charge_mode_map.clear()
         com_q = CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC if PHASE_MODE_CONFIG == 3 else CommodityQuantity.ELECTRIC_POWER_L1
-        for a in range(6,17):
+        rng = None
+        if PHASE_MODE_CONFIG == 1:
+            rng = range(6,25) #25A
+        else:
+            rng = range(6,17) #16A
+
+        for a in rng:
             op_mode_id = uuid.uuid4()
             self.charge_mode_map[op_mode_id] = a
             operation_modes_temp.append(
@@ -320,8 +328,8 @@ class RM0(S2ResourceManagerItem):
                     abnormal_condition_only=False,
                     power_ranges=[
                         PowerRange(
-                            start_of_range = a * 240 * PHASE_MODE_CONFIG,
-                            end_of_range = a * 240 * PHASE_MODE_CONFIG,
+                            start_of_range = a * 235 * PHASE_MODE_CONFIG,
+                            end_of_range = a * 235 * PHASE_MODE_CONFIG,
                             commodity_quantity = com_q
                         )
                     ]
@@ -438,13 +446,28 @@ class RM0(S2ResourceManagerItem):
 
         await self.send_msg_and_await_reception_status(self.system_description)
 
-        await self.send_msg_and_await_reception_status(
-            OMBCStatus(
-                message_id=uuid.uuid4(),
-                active_operation_mode_id="{}".format(self.stand_by_id),
-                operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+        if (self.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L1/Power") or 0) > 0:
+            #We are charging. Send the proper Amp State, so EMS knows where we are currently.
+            for id, amps in self.charge_mode_map.items():
+                if amps == self.dbus_monitor.get_value(EVCS_SERVICE, "/SetCurrent"):
+                    logger.debug("Reporting initial state as {}A".format(amps))
+                    await self.send_msg_and_await_reception_status(
+                        OMBCStatus(
+                            message_id=uuid.uuid4(),
+                            active_operation_mode_id="{}".format(id),
+                            operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+                        )
+                    )
+                    break
+        else:
+            logger.debug("Reporting initial state as Standby (No Power on L1)")
+            await self.send_msg_and_await_reception_status(
+                OMBCStatus(
+                    message_id=uuid.uuid4(),
+                    active_operation_mode_id="{}".format(self.stand_by_id),
+                    operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+                )
             )
-        )
 
     async def enter_nocar_state(self):
         #Car has just disconnected, only offer no car. 
