@@ -72,7 +72,7 @@ from s2python.ombc import (
 
 DBusGMainLoop(set_as_default=True)
 EVCS_SERVICE = "com.victronenergy.evcharger"
-PHASE_MODE_CONFIG = 3
+PHASE_MODE_CONFIG = 1
 
 class OMBCT(OMBCControlType):
     def __init__(self, rm_item:S2ResourceManagerItem):
@@ -86,13 +86,15 @@ class OMBCT(OMBCControlType):
         #nothing todo here, loop will handle.
     
     def deactivate(self, conn):
-        #reset, so loop is resending information, when OMBC is enabled.
-        #that is implemented in the loop, because the car state may change
-        #during OMBC beeing active as well.
+        # When OMBC is disabled, this can only mean that the connection to the EVCS was lost or some other undesired thing happened.
+        # This is a unfavourable situation, because that will remove any dbusmonitor subscriptions and we would need to resub
+        # to the freshly connected EVCS.
+        # For the purpose of the mock, we just restart the service and attempt to reconnect. 
         self.rm_item.car_connected = None 
         self.rm_item.evcs_status = None
-        logger.info("OMBC deactivated.")
-    
+        logger.info("OMBC deactivated. Ending event loop to restart service.")
+        asyncio.get_event_loop().stop()
+
     async def handle_instruction(self, conn, msg, send_okay):
         try:
             # Generally the EMS is supposed to send a instruction ONCE, then the RM has to report back with the proper state
@@ -117,7 +119,7 @@ class OMBCT(OMBCControlType):
                 #if charging, stop.
                 if (self.rm_item.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L1/Power") or 0) > 0:
                     logger.info("Sending Stop (P>0W on L1 detected)!")
-                    self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/StartStop", False)
+                    self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/StartStop", 0)
                 else:
                     #0 power, we can confirm the state now.
                     confirm_state_change = True
@@ -131,7 +133,7 @@ class OMBCT(OMBCControlType):
                     #verify we are charging, else send Start.
                     if (self.rm_item.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L1/Power") or 0) == 0:
                         logger.info("Sending Start (0W on L1 detected)!")
-                        self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/StartStop", True)
+                        self.rm_item.dbus_monitor.set_value(EVCS_SERVICE, "/StartStop", 1)
                     else:
                         #As soon as we have ANY power, we can confirm charging. Whether the very detailed amp setting was 
                         #transferred correctly, we can't tell easily, ignore that.
@@ -213,6 +215,10 @@ class RM0(S2ResourceManagerItem):
                 logger.info("Found EVCS: {}".format(sn))
                 global EVCS_SERVICE
                 EVCS_SERVICE = sn
+        
+        if EVCS_SERVICE == "com.victronenergy.evcharger":
+            logger.error("Unable to find any EVCS. Restarting service.")
+            asyncio.get_event_loop().stop()
 
     def _dbusValueChanged(self, dbusServiceName, dbusPath, dict, changes, deviceInstance):
         try:
@@ -230,6 +236,11 @@ class RM0(S2ResourceManagerItem):
                     logger.info("EVCS status has changed to: {}".format(evcs_status))
                     old_evcs_status = self.evcs_status
                     self.evcs_status = evcs_status
+
+                    if (evcs_status is None):
+                        logger.warning("Apparently lost connection to EVCS. Restarting mock.")
+                        asyncio.get_event_loop().stop()
+                        return False
                     
                     #has changed, determine a suitable model to be send. 
                     if (self.evcs_status == 3):
@@ -248,7 +259,7 @@ class RM0(S2ResourceManagerItem):
                     l3_power = self.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L3/Power") or 0.0
                     set_current = self.dbus_monitor.get_value(EVCS_SERVICE, "/SetCurrent") or 0
 
-                    logger.info("Reporting power: {}/{}/{} (Current: {})".format(l1_power, l2_power, l3_power, set_current))
+                    #logger.info("Reporting power: {}/{}/{} (Current: {})".format(l1_power, l2_power, l3_power, set_current))
 
                     await self.send_msg_and_await_reception_status(
                         PowerMeasurement(
@@ -289,6 +300,8 @@ class RM0(S2ResourceManagerItem):
     async def enter_operational_state(self):
         #Car state is anything but disconnected / fully charged. Offer Chargemodes.
         #This should only be send, when comming from 0 or 3 state,  
+        #If the EVCS disconnects while charging, it is important that we pick up, where we lost the connection. 
+        #Hence send a proper initial state, if charging. 
        
         logger.info("Car connected. Offering Standby and a State per Amp")
 
@@ -310,7 +323,15 @@ class RM0(S2ResourceManagerItem):
         #EVCS would get this from settings. (Charging with 6-32A)
         self.charge_mode_map.clear()
         com_q = CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC if PHASE_MODE_CONFIG == 3 else CommodityQuantity.ELECTRIC_POWER_L1
-        for a in range(6,17):
+        rng = None
+        if PHASE_MODE_CONFIG == 1:
+            rng = range(6,26) #25A
+        else:
+            rng = range(6,17) #16A
+
+        logger.info("Mock configured for {} phases, and amp states: {}".format(PHASE_MODE_CONFIG, rng))
+
+        for a in rng:
             op_mode_id = uuid.uuid4()
             self.charge_mode_map[op_mode_id] = a
             operation_modes_temp.append(
@@ -320,8 +341,8 @@ class RM0(S2ResourceManagerItem):
                     abnormal_condition_only=False,
                     power_ranges=[
                         PowerRange(
-                            start_of_range = a * 240 * PHASE_MODE_CONFIG,
-                            end_of_range = a * 240 * PHASE_MODE_CONFIG,
+                            start_of_range = a * 235 * PHASE_MODE_CONFIG, #FIXME: Instead of using 235, we should read Voltage somewhere from the system. (Grid / Vebus / multirs)
+                            end_of_range = a * 235 * PHASE_MODE_CONFIG, #FIXME: Instead of using 235, we should read Voltage somewhere from the system. (Grid / Vebus / multirs)
                             commodity_quantity = com_q
                         )
                     ]
@@ -363,7 +384,7 @@ class RM0(S2ResourceManagerItem):
                         #transition to from standby, use 5 min hysteresis.
                         #only legit to the 6A State.
                         if self.charge_mode_map[right.id] == 6:
-                            logger.info("Creating transition from '{}' to '{}' with 5min Hysteresis".format(left.diagnostic_label, right.diagnostic_label))
+                            #logger.info("Creating transition from '{}' to '{}' with 5min Hysteresis".format(left.diagnostic_label, right.diagnostic_label))
                             transitions_temp.append(
                                 Transition(id=uuid.uuid4(),
                                     from_=left.id,
@@ -381,7 +402,7 @@ class RM0(S2ResourceManagerItem):
                         #to achieve a final "resting" in 6A for 60s before finally switching to standby (off)
                         #only legit to the 6A State.
                         if self.charge_mode_map[left.id] == 6:
-                            logger.info("Creating transition from '{}' to '{}' with 5min Hysteresis".format(left.diagnostic_label, right.diagnostic_label))
+                            #logger.info("Creating transition from '{}' to '{}' with 5min Hysteresis".format(left.diagnostic_label, right.diagnostic_label))
                             transitions_temp.append(
                                 Transition(
                                     id=uuid.uuid4(),
@@ -395,7 +416,10 @@ class RM0(S2ResourceManagerItem):
                                 ) 
                             )
                     else:
-                        #transition between ampstates, use 30 or 10 seconds hysteris.
+                        #transition between ampstates, we only allow a single amp
+                        #with each transition. This makes sure the EVCS can always
+                        #scale up, so there is no "pending change" blocking it and causing
+                        #higherpriority consumers to be enabled. 
                         left_amp = self.charge_mode_map[left.id]
                         right_amp = self.charge_mode_map[right.id]
 
@@ -404,9 +428,13 @@ class RM0(S2ResourceManagerItem):
                         
                         #1A step? 
                         if (abs(left_amp - right_amp) == 1):
-                            start_timers.append(self.amp_switch_timer_id_10)
-                            blocking_timers.append(self.amp_switch_timer_id_10)
+                            # Experimental:No start, no block for single amp steps.
+                            pass
+                            # start_timers.append(self.amp_switch_timer_id_10)
+                            # blocking_timers.append(self.amp_switch_timer_id_10)
                         else:
+                            #dissallow any other step size for now.
+                            continue
                             start_timers.append(self.amp_switch_timer_id_30)
                             blocking_timers.append(self.amp_switch_timer_id_30)
 
@@ -414,7 +442,7 @@ class RM0(S2ResourceManagerItem):
                         if (right_amp == 6):
                             start_timers.append(self.on_off_timer_always_id)
 
-                        logger.info("Creating transition from '{}' to '{}' with {} start-timers".format(left.diagnostic_label, right.diagnostic_label, len(start_timers)))
+                        #logger.info("Creating transition from '{}' to '{}' with {} start-timers".format(left.diagnostic_label, right.diagnostic_label, len(start_timers)))
                         transitions_temp.append(
                             Transition(
                                 id=uuid.uuid4(),
@@ -438,13 +466,28 @@ class RM0(S2ResourceManagerItem):
 
         await self.send_msg_and_await_reception_status(self.system_description)
 
-        await self.send_msg_and_await_reception_status(
-            OMBCStatus(
-                message_id=uuid.uuid4(),
-                active_operation_mode_id="{}".format(self.stand_by_id),
-                operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+        if (self.dbus_monitor.get_value(EVCS_SERVICE, "/Ac/L1/Power") or 0) > 0:
+            #We are charging. Send the proper Amp State, so EMS knows where we are currently.
+            for id, amps in self.charge_mode_map.items():
+                if amps == self.dbus_monitor.get_value(EVCS_SERVICE, "/SetCurrent"):
+                    logger.debug("Reporting initial state as {}A".format(amps))
+                    await self.send_msg_and_await_reception_status(
+                        OMBCStatus(
+                            message_id=uuid.uuid4(),
+                            active_operation_mode_id="{}".format(id),
+                            operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+                        )
+                    )
+                    break
+        else:
+            logger.debug("Reporting initial state as Standby (No Power on L1)")
+            await self.send_msg_and_await_reception_status(
+                OMBCStatus(
+                    message_id=uuid.uuid4(),
+                    active_operation_mode_id="{}".format(self.stand_by_id),
+                    operation_mode_factor=1.0, # hmmm? doesn't matter at this point.
+                )
             )
-        )
 
     async def enter_nocar_state(self):
         #Car has just disconnected, only offer no car. 
@@ -533,11 +576,11 @@ class EVCSMock(Service):
     
     def __init__(self, bus, name, instance):
         self.instance = instance
-        super().__init__(bus, "{}.m_{}".format(name, instance))
+        super().__init__(bus, "{}.evcs_mock_{}".format(name, instance))
 
     def setup_rm0(self):
         self.rm0 = RM0(
-            '/Devices/0/S2', 
+            '/S2/0', 
             AssetDetails(
                 uuid.uuid4(),
                 False,
@@ -582,10 +625,13 @@ if __name__ == "__main__":
         from dbus_next.constants import BusType
 
     async def main():
+        
         from dbus.mainloop.glib import DBusGMainLoop # type: ignore
         DBusGMainLoop(set_as_default=True)
 
         configure_logger()
+
+        logger.info("*** Starting EVCS OMBC Mock ***")
 
         def restart_service(signum, frame):
             logger.info("Received sigterm, ending service.")
@@ -597,12 +643,12 @@ if __name__ == "__main__":
         bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
         service = EVCSMock(bus, 'com.victronenergy.switch', instance)
         
-        service.add_item(TextItem("/ProductName", "ShellyMock"))
+        service.add_item(TextItem("/ProductName", "EVCS Mock"))
         service.add_item(IntegerItem("/DeviceInstance", instance))
         service.add_item(TextItem("/Mgmt/ProcessVersion", "1.0"))
         service.add_item(TextItem("/Mgmt/Connection", "dbus via aiovelib"))
         service.add_item(IntegerItem("/Connected", 1))
-        service.add_item(TextItem('/CustomName', "Mock {}".format(instance)))
+        service.add_item(TextItem('/CustomName', "EVCS Mock {} Phase".format(PHASE_MODE_CONFIG)))
 
         service.add_item(IntegerItem('/Devices/0/DeviceInstance', instance))
         service.add_item(TextItem('/Devices/0/ServiceName', service.name))
@@ -613,8 +659,7 @@ if __name__ == "__main__":
         #Some to be discussed items. Suspect to User-Configuration.
         #Actual (generic) rm may use more here, like Power and Phase(s) used by the RSS.
         #(Because a generic RM controlling a shelly / switchable output can't know.)
-        service.add_item(IntegerItem('/Devices/0/S2/Priority', 25)) #Priority , EMS will read
-        service.add_item(IntegerItem('/Devices/0/S2/ConsumerType', 1)) # 0=primary load, 1=secondary load, EMS will read
+        service.add_item(IntegerItem('/S2/0/Priority', 2)) #Priority , EMS will read
         service.setup_rm0()
 
         #finally register our service.
@@ -623,4 +668,7 @@ if __name__ == "__main__":
         
         await service.bus.wait_for_disconnect()
     
-    asyncio.get_event_loop().run_until_complete(main())
+    try:
+        asyncio.get_event_loop().run_until_complete(main())
+    finally:
+        asyncio.get_event_loop().close()

@@ -168,7 +168,7 @@ if [ "$num_evcs" -eq 1 ]; then
     chmod 755 /opt/victronenergy/dbus-systemcalc-py/ext/s2/mock_OMBC_EVCS_AmpModes_service/run
 
     #set desired phases
-    sed -Ei '/PHASE_MODE_CONFIG\s*=\s*(\d+)/c\PHASE_MODE_CONFIG = 1' /opt/victronenergy/dbus-systemcalc-py/ext/s2/mock_OMBC_EVCS_AmpModes_service.py
+    sed -Ei '/PHASE_MODE_CONFIG\s*=\s*([0-9])/c\PHASE_MODE_CONFIG = 1' /opt/victronenergy/dbus-systemcalc-py/ext/s2/mock_OMBC_EVCS_AmpModes.py
 
     echo " > Symlinking EVCS Service as /service/mock_OMBC_EVCS_AmpModes_service ..."
     ln -s /opt/victronenergy/dbus-systemcalc-py/ext/s2/mock_OMBC_EVCS_AmpModes_service /service/mock_OMBC_EVCS_AmpModes_service
@@ -191,7 +191,7 @@ if [ "$num_evcs" -eq 3 ]; then
     chmod 755 /opt/victronenergy/dbus-systemcalc-py/ext/s2/mock_OMBC_EVCS_AmpModes_service/run
 
     #set desired phases
-    sed -Ei '/PHASE_MODE_CONFIG\s*=\s*(\d+)/c\PHASE_MODE_CONFIG = 1' /opt/victronenergy/dbus-systemcalc-py/ext/s2/mock_OMBC_EVCS_AmpModes_service.py
+    sed -Ei '/PHASE_MODE_CONFIG\s*=\s*([0-9])/c\PHASE_MODE_CONFIG = 3' /opt/victronenergy/dbus-systemcalc-py/ext/s2/mock_OMBC_EVCS_AmpModes.py
 
     echo " > Symlinking EVCS Service as /service/mock_OMBC_EVCS_AmpModes_service ..."
     ln -s /opt/victronenergy/dbus-systemcalc-py/ext/s2/mock_OMBC_EVCS_AmpModes_service /service/mock_OMBC_EVCS_AmpModes_service

@@ -31,6 +31,7 @@ from s2python.common import (
 	CommodityQuantity,
 	PowerMeasurement,
 	PowerValue,
+	PowerRange,
 	Timer
 )
 
@@ -105,7 +106,7 @@ HUB4_SERVICE = "com.victronenergy.hub4"
 S2_IFACE = "com.victronenergy.S2"
 KEEP_ALIVE_INTERVAL_S = 30 #seconds
 COUNTER_PERSIST_INTERVAL_MS = 60000 #milli-seconds
-CONNECTION_RETRY_INTERVAL_MS = 35000 #milli-seconds
+CONNECTION_RETRY_INTERVAL_MS = 90000 #milli-seconds
 INVERTER_LIMIT_MONITOR_INTERVAL_MS = 250 #milli-seconds
 AC_DC_EFFICIENCY = 0.925 #Experimental Value.
 USE_FAKE_BMS = True
@@ -206,6 +207,20 @@ class PhaseAwareFloat():
 			other.dc
 		)
 
+	@classmethod
+	def from_power_ranges(clazz, power_ranges:list[PowerRange]):
+		'''
+			Creates a PhaseAwareFloat out of the given list of PowerRanges.
+		'''
+		res = PhaseAwareFloat()
+		for pr in power_ranges:
+			if pr.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC:
+				for l in [1,2,3]:
+					res.by_phase[l] += pr.end_of_range / 3.0
+			else:
+				res.by_commodity[pr.commodity_quantity] += pr.end_of_range
+		return res
+
 	def __iadd__(self, other):
 		if not isinstance(other, PhaseAwareFloat):
 			raise TypeError("Only PhaseAwareFloats can be added.")
@@ -290,6 +305,59 @@ class PhaseAwareFloat():
 		return "PhaseAwareFloat[{}, {}, {}, {}, {}]".format(
 			self.total, self._l1, self._l2, self._l3, self._dc
 		)
+	
+#Helper Classes for Configurable items. 
+class Configurable():
+	def __init__(self, system_path:str, settings_path:str, settings_key:str, default_value, min_value, max_value) :
+		self._system_path = system_path
+		self._settings_path = settings_path
+		self._settings_key = settings_key
+		self._default_value = default_value
+		self._current_value = default_value #init to default
+		self._min_value = min_value
+		self._max_value = max_value
+
+		global CONFIGURABLES
+		CONFIGURABLES.append(self)
+	
+	@property
+	def system_path(self) -> str:
+		return self._system_path
+	
+	@property
+	def settings_path(self) -> str:
+		return self._settings_path
+	
+	@property
+	def settings_key(self) -> str:
+		return self._settings_key
+	
+	@property
+	def default_value(self):
+		return self._default_value
+	
+	@property
+	def min_value(self):
+		return self._min_value
+
+	@property
+	def max_value(self):
+		return self._max_value
+
+	@property
+	def current_value(self):
+		return self._current_value
+
+CONFIGURABLES:list[Configurable] = []
+C_MODE = Configurable('/OpportunityLoads/Mode', '/Settings/OpportunityLoads/Mode', 'ems_mode', 0, 0, 1)
+C_DEBUG_LOGS = Configurable(None, '/Settings/OpportunityLoads/Debug/WriteDebugLogs', 'ems_debug', 0, 0, 1)
+C_BALANCING_THRESHOLD = Configurable('/OpportunityLoads/BalancingThreshold', '/Settings/OpportunityLoads/BalancingThreshold', 'ems_balancingthreshold', 98, 2, 98)
+C_RESERVATION_BASE_POWER = Configurable('/OpportunityLoads/ReservationBasePower', '/Settings/OpportunityLoads/ReservationBasePower', 'ems_battery_base', 10000.0, 0.0, 100000.0)
+C_RESERVATION_DECREMENT = Configurable('/OpportunityLoads/ReservationDecrement', '/Settings/OpportunityLoads/ReservationDecrement', 'ems_battery_decrement', 100.0, 0.0, 100000.0)
+C_RESERVATION_EQUATION = Configurable(None, '/Settings/OpportunityLoads/BatteryReservationEquation', 'ems_batteryreservation', "RBP - SOC * RD","","")
+C_BATTERY_PRIORITY = Configurable('/OpportunityLoads/BatteryPriority', '/Settings/OpportunityLoads/BatteryPriority', 'ems_batterypriority', 0, 0, 1000)
+C_CONTINIOUS_INVERTER_POWER = Configurable(None, '/Settings/OpportunityLoads/ContinuousInverterPower', 'ems_cip', 30000.0, 0.0, 300000.0)
+C_CONTROL_LOOP_INTERVAL = Configurable(None, '/Settings/OpportunityLoads/ControlLoopInterval', 'ems_clinterval', 5, 5, 15)
 
 class SolarOverhead():
 	def __init__(self, l1:float, l2:float, l3:float, dcpv:float, reservation:float, battery_rate:float, 
@@ -343,7 +411,7 @@ class SolarOverhead():
 		self.power_claim = PhaseAwareFloat()
 		self.transaction_running = True
 	
-	def claim(self, commodity_quantity:CommodityQuantity, minv:float, maxv:float, primary:bool, force:bool=False)->bool:
+	def claim(self, power_request:PhaseAwareFloat, primary:bool, force:bool=False)->bool:
 		"""
 			Claims a bunch of power. Returns true on success, false on error. If the requirements of an RM are satisfied,
 			call comit() which returns a PhaseAwareFloat representing the powerclaim of the transaction.
@@ -354,25 +422,12 @@ class SolarOverhead():
 		#First, start to determine the actual amount we want to claim. It needs to be between min and max, as close to max as possible.
 		#Also check, if reservation needs to be applied for this claim. If there is enough "total", we can drive the consumer. 
 		#The claim however may source from any available Power theren is.
-		claim_target_total = maxv
-		
-		#Build the PhaseAwareFloat representing the claim split onto individual phases.
-		claim_target = PhaseAwareFloat()
-		if commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC:
-			for l in [1,2,3]:
-				claim_target.by_phase[l] = claim_target_total / 3.0
-		else:
-			claim_target.by_commodity[commodity_quantity] = claim_target_total
-
-		#if the consumer is not providing Powermeasurements, we store this as power_request
-		#to be able to calculate consumption later.
-		self.power_request = PhaseAwareFloat(claim_target.l1, claim_target.l2, claim_target.l3)
 		
 		#TODO: calculate the claim_factor as OMBC needs it. Other control types don't need this, but doesn't hurt either. 
-		power_factor = (maxv - minv) / claim_target_total if claim_target_total > 0 else 0
+		#power_factor = (maxv - minv) / claim_target_total if claim_target_total > 0 else 0
 
 		#now, deduct energy from the proper source. We start by allocating direct ACPV.
-		claim_target = self._try_claim_ac(claim_target)
+		claim_target = self._try_claim_ac(PhaseAwareFloat.from_phase_aware_float(power_request))
 		
 		if claim_target.total > 0:
 			#Based on the system type we now proceed with DC or ACDCAC. If the system has a saldating measurement method,
@@ -544,24 +599,35 @@ class SolarOverhead():
 		return power_claim
 
 class S2RMDelegate():
-	def __init__(self, monitor, service, instance, rmno, priority, consumer_type, ems):
+	def __init__(self, monitor, service, instance, rmno, ems):
 		#General
 		self.initialized = False
 		self.service = service
 		self.instance = instance
 		self.rmno = rmno
-		self.s2path = "/Devices/{}/S2".format(rmno)
+		self.s2path = "/S2/0"
 		self._dbusmonitor = monitor
 		self._keep_alive_missed = 0
 		self.s2_parser = S2Parser()
-		self.priority = priority
-		self.consumer_type = consumer_type
 		self._commit_count = 0 #to ensure responsibility if consumers don't react.
+		self._no_desc_count = 0 #connection will be dropped after 6 updates with no system description.
 		self._ems:EMS=ems
 		self.current_state_confirmed=True #will be reset, when new instructions are send. 
 		self._reported_as_blocked = False
 		self.ombc_transition_info = None
+		self.unique_identifier = None
+		self.technical_identifier = "{}_{}".format(self.service, self.instance)
 		
+		#Build a static unique_identifier. Has to be unchanged during connection. 
+		#If the service has a customname, use that as foundation, else use the service type. 
+		custom_name = monitor.get_value(service, "/CustomName", None)
+
+		#FIXME: Unique Identifier has to change, S2 path will now default to "/0/", making the S2 path an invalid unique ientifier part.
+		if custom_name is not None and custom_name != "":
+			self.unique_identifier = "{}_{}".format(custom_name.replace(" ", "_") , self.instance)
+		else:
+			self.unique_identifier = self.technical_identifier
+
 		if USE_FAKE_BMS:
 			self._ems.available_fake_bms = sorted(self._ems.available_fake_bms)
 			self._fake_bms_no = self._ems.available_fake_bms.pop(0)
@@ -569,11 +635,10 @@ class S2RMDelegate():
 
 		#power tracking values
 		self.power_claim:PhaseAwareFloat=PhaseAwareFloat()
+		self.prior_power_claim:PhaseAwareFloat=PhaseAwareFloat()
 		self.power_request:PhaseAwareFloat=PhaseAwareFloat()
+		self.prior_power_request:PhaseAwareFloat=PhaseAwareFloat()
 		self.current_power:PhaseAwareFloat = None
-		self._current_counter:PhaseAwareFloat = PhaseAwareFloat()
-		self._current_timestamps:PhaseAwareFloat = PhaseAwareFloat()
-		self._last_pop_powerstats:datetime = None
 
 		#Generic Handler
 		self._message_receiver=None
@@ -596,9 +661,28 @@ class S2RMDelegate():
 		self.ombc_timer_starts:dict[str, datetime] = {}
 
 	@property
-	def unique_identifier(self):
-		return "{}_RM{}".format(self.service, self.rmno)
-	
+	def priority(self) -> float:
+		"""
+			priority of this consumer
+		"""
+		priority = self._dbusmonitor.get_value(self.service, "/S2/0/Priority".format(self.rmno))
+		return priority if priority is not None else 100
+
+	@property
+	def priority_sort(self) -> float:
+		"""
+			priority * 1000 of this consumer and secondary sorting by device instance.
+		"""
+		priority = self._dbusmonitor.get_value(self.service, "/S2/0/Priority".format(self.rmno))
+		return (priority * 1000 +  self.instance) if priority is not None else 10000
+
+	@property
+	def consumer_type(self) -> ConsumerType:
+		"""
+			Returns the consumer type. Primary consumers have a higher priority (lower value) than the battery.
+		"""
+		return ConsumerType.Primary if self.priority < C_BATTERY_PRIORITY.current_value else ConsumerType.Secondary
+
 	def publish_fake_bms_values(self):
 		"""
 			Updates the Fake BMS display option with current values. 
@@ -609,7 +693,7 @@ class S2RMDelegate():
 				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/Soc", 0)
 				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "Uninitialized: {}".format(
 						self.unique_identifier.replace("com.victronenergy", "")
-					))
+				))
 				return
 			
 			if self.current_power is not None:
@@ -620,6 +704,7 @@ class S2RMDelegate():
 				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/Soc", 0)
 
 			if self.rm_details is not None:
+				self._no_desc_count = 0
 				# Setting info based on Control Type. 
 				if self.active_control_type == ControlType.OPERATION_MODE_BASED_CONTROL:
 					if self.ombc_transition_info is None:
@@ -635,9 +720,18 @@ class S2RMDelegate():
 					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "{}: {} [NOCTRL]".format(
 						self.priority, self.rm_details.name
 					))
+			else:
+				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(self._fake_bms_no), "/CustomName", "NoDesc: {}".format(
+						self.unique_identifier.replace("com.victronenergy", "")
+				))
+				if self._no_desc_count < 6:
+					self._no_desc_count += 1
+				else:
+					logger.warning("{} | Didn't receive a system description by now. Dropping connection.".format(self.unique_identifier))
+					self.end()
+
 		except Exception as ex: 
 			logger.error("Exception during fake bms publish. This may be temporary", exc_info=ex)
-
 
 	def begin(self):
 		"""
@@ -756,11 +850,6 @@ class S2RMDelegate():
 					self._s2_send_reception_message(ReceptionStatusValues.TEMPORARY_ERROR, jmsg["message_id"], "Connection not yet established.")
 						
 	def _s2_on_power_measurement(self, message:PowerMeasurement):
-		#RM reported Powermeasurement. Track internally, until EMS requests an update.
-		first_report = False
-		if self.current_power == None:
-			first_report = True
-
 		self.current_power = PhaseAwareFloat()
 		for pv in message.values:
 			if pv.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC:
@@ -769,13 +858,6 @@ class S2RMDelegate():
 			else:
 				self.current_power.by_commodity[pv.commodity_quantity] = pv.value
 		
-		# if total is 0, remove the current_power and power_request. 
-		if self.current_power.total == 0:
-			self.current_power = None
-		else:
-			if first_report:
-				logger.info("{} | First power report received: {}".format(self.unique_identifier, self.current_power))
-
 		self._s2_send_reception_message(ReceptionStatusValues.OK, message)
 
 	def _s2_on_ombc_system_description(self, message:OMBCSystemDescription):
@@ -804,17 +886,26 @@ class S2RMDelegate():
 					
 					#Confirm, if we have the state confirmed and received a first power report about it. 
 					prior_operation_mode = self.ombc_active_operation_mode
+
+					#logger.info("Received OMBC Status Update: {}; Expected next State: {}".format(
+					#	opm.diagnostic_label,
+					#	self._ombc_next_operation_mode.diagnostic_label if self._ombc_next_operation_mode is not None else "None"
+					#))
+
 					if self._ombc_next_operation_mode is not None and opm.id == self._ombc_next_operation_mode.id:
 						self.ombc_active_operation_mode = opm
 						logger.info("{} | Confirmed next operation mode: '{}'".format(self.unique_identifier, self.ombc_active_operation_mode.diagnostic_label))	
 						self.current_state_confirmed=True
 						self._ombc_next_operation_mode = None
 						self._commit_count = 0 #reset, we got response. 
-					elif self._ombc_next_operation_mode is None:
-						# status reported without change-request, accept.
+					else:
+						# status reported without change-request, accept to stay in sync with RM.
 						self.ombc_active_operation_mode = opm
 						self.current_state_confirmed=True
 						self._commit_count = 0 #reset, we got a RM triggered state change.
+						self.power_request = PhaseAwareFloat.from_power_ranges(opm.power_ranges)
+						self.prior_power_request = PhaseAwareFloat.from_power_ranges(opm.power_ranges)
+
 						logger.info("{} | Reported operation mode: '{}'".format(self.unique_identifier, self.ombc_active_operation_mode.diagnostic_label))
 
 					#Check, if this transition starts any timer. Only required if we leave a well known operation mode. 
@@ -965,13 +1056,16 @@ class S2RMDelegate():
 		except Exception as ex:
 			logger.error("Error sending a S2 Message.", exc_info=ex)
 
-	def self_assign_overhead(self, overhead:SolarOverhead) -> tuple[SolarOverhead, bool]:
+	def self_assign_overhead(self, overhead:SolarOverhead) -> SolarOverhead:
 		"""
 			RM Delegate is claiming power that matches it's requirements.
 			RMDelegate is waiting for comit() of EMS, before sending new instructions to RM.
 		"""
 		try:
+			self.prior_power_claim = PhaseAwareFloat.from_phase_aware_float(self.power_claim) if self.power_claim is not None else None
+			self.prior_power_request = PhaseAwareFloat.from_phase_aware_float(self.power_request) if self.power_request is not None else None
 			self.power_claim = None
+			
 			#based on control type, this is different.
 			if self.active_control_type == ControlType.OPERATION_MODE_BASED_CONTROL:
 				return self._ombc_self_assign_overhead(overhead)
@@ -980,19 +1074,36 @@ class S2RMDelegate():
 			logger.error("Exception during Power assignment. This may be temporary", exc_info=ex)
 			overhead.rollback() #restore state before claiming power values. 
 
-		return overhead, False
+		return overhead
 	
-	def _ombc_self_assign_overhead(self, overhead:SolarOverhead) -> tuple[SolarOverhead, bool]:
+	@property
+	def expected_power_change(self):
+		'''
+			Compares the current and last power_request and judges, how big the power change of this 
+			consumer will be this round. Required to determine order of comiting changes across delegates.
+		'''
+		if (self.prior_power_request is None and self.power_request is None):
+			return 0
+		
+		if (self.prior_power_request is None and self.power_request is not None):
+			return self.power_request.total
+		
+		if (self.prior_power_request is not None and self.power_request is None):
+			return self.prior_power_request.total * -1
+		
+		return self.power_request.total - self.prior_power_request.total
+
+	def _ombc_self_assign_overhead(self, overhead:SolarOverhead) -> SolarOverhead:
 		#check all Operation modes, and if one fits. op modes have been sorted
 		#when retrieved, so first one is most expensive and should be selected
 		#if possible. 
 		if self.ombc_system_description is None:
 			logger.warning("{} | No System Description available".format(self.unique_identifier))	
-			return overhead, False
+			return overhead
 		
 		if self.ombc_active_operation_mode is None:
 			logger.warning("{} | No active operation mode known".format(self.unique_identifier))	
-			return overhead, False
+			return overhead
 
 		#Not every state may be reachable from within the current operation mode. 
 		#So, what we will do here is: 
@@ -1003,13 +1114,11 @@ class S2RMDelegate():
 		#      - There isn't enough overhead to keep the current state. 
 		#      - hence, the last state in the list - cheapest one - is the one we will choose. 
 		eligible_operation_modes:list[OMBCOperationMode] = []
-		was_change = False #Needs to be set to true, when assignment changes. 
 		for opm in self.ombc_system_description.operation_modes:
 			if self._ombc_can_transition(self.ombc_active_operation_mode, opm):
 				eligible_operation_modes.append(opm)
 
-		logger_debug_proxy("Eligible States: {}".format(self.unique_identifier, 
-															[mode.diagnostic_label for mode in eligible_operation_modes]))
+		logger_debug_proxy("Eligible States: {}".format([mode.diagnostic_label for mode in eligible_operation_modes]))
 
 		if len(eligible_operation_modes) == 0:
 			logger.error("{} | No valid operationmodes to choose from. Active is: {} / Selection is: {}".format(
@@ -1017,45 +1126,42 @@ class S2RMDelegate():
 				"{}=>{}".format(self.ombc_active_operation_mode.diagnostic_label, self.ombc_active_operation_mode.id) if self.ombc_active_operation_mode is not None else "None",
 				["{}=>{}".format(mode.diagnostic_label, mode.id) for mode in self.ombc_system_description.operation_modes])
 			)
-			return overhead, was_change
+			return overhead
 		
 		#this is our last resort.
 		forced_state = eligible_operation_modes[len(eligible_operation_modes) -1]
-		logger_debug_proxy("Forced State: {}".format(self.unique_identifier, forced_state.diagnostic_label))
+		logger_debug_proxy("Forced State: {}".format(forced_state.diagnostic_label))
 
 		for opm in eligible_operation_modes:
-			for pr in opm.power_ranges:
-				#First check: If the power_claim is exceeding available total - it won't fit after considering efficiency losses. 
-				#thus, for these states, we can directly omit to validate them througly and simple skip them. We basically start
-				#above the state that may eventually fit.
-				if (pr.start_of_range > overhead.power.total):
-					logger_debug_proxy("Skipping detailed check on '{}'. {}W vs {}W raw available won't fit for sure.".format(
-						self.unique_identifier, opm.diagnostic_label, pr.start_of_range, overhead.power.total
-					))
-					continue
+			#combine all power ranges into a power_request
+			power_request = PhaseAwareFloat.from_power_ranges(opm.power_ranges)
+		
+			#First check: If the power_claim is exceeding available total - it won't fit after considering efficiency losses. 
+			#thus, for these states, we can directly omit to validate them througly and simple skip them. We basically start
+			#above the state that may eventually fit. Check on force state always needs to be performed. 
+			if (power_request.total > overhead.power.total and not opm.id == forced_state.id):
+				logger_debug_proxy("Skipping detailed check on '{}'. {}W vs {}W raw available won't fit for sure.".format(
+					opm.diagnostic_label, power_request.total, overhead.power.total
+				))
+				continue
 
-				overhead.begin()	
-
-				#TODO: Verify why there are multiple ranges?
-				claim_success = overhead.claim(pr.commodity_quantity, pr.start_of_range, pr.end_of_range, 
-					self.consumer_type==ConsumerType.Primary, opm.id == forced_state.id)
-				
-				if not claim_success:
-					#maximum assignment for this powerrange failed for at least one powerrange requested. This OperationMode is currently not eligible. 
-					logger_debug_proxy("{} | Operation Mode not eligible: '{}' due to missing availability on commodity: {}".format(self.unique_identifier, opm.diagnostic_label, pr.commodity_quantity))
-					overhead.rollback()
-					break
+			overhead.begin()
+			claim_success = overhead.claim(power_request, self.consumer_type==ConsumerType.Primary, opm.id == forced_state.id)
 			
-			if overhead.transaction_running:
-				#Managed to verify all power ranges and transaction still running? This mode is eligible! 
+			if not claim_success:
+				#maximum assignment for this powerrange failed for at least one powerrange requested. This OperationMode is currently not eligible. 
+				logger_debug_proxy("Operation Mode not eligible: '{}'".format(opm.diagnostic_label))
+				overhead.rollback()
+			
+			else:
 				#Probe, if we are trapped in a transition timer, then we cannot do it anyway. 
 				if self._ombc_check_timer_block(opm) == 0:
 					#all good, commit. Deduct from budget, what we claim. 
 					new_power_claim = overhead.comit()
+					self.power_request = power_request
 					self.power_claim = new_power_claim
-					self.power_request = overhead.power_request
 					
-					logger_debug_proxy("{} | Operation Mode selected: '{}'. (Power-Claim: {})".format(self.unique_identifier, opm.diagnostic_label, new_power_claim))
+					logger_debug_proxy("Operation Mode selected: '{}'. (Power-Claim: {})".format(opm.diagnostic_label, new_power_claim))
 
 					#store this operation_mode as beeing the next one to be send. EMS will call comit() on the RM-Delegate, 
 					#once it should inform the actual RM and send out a new instruction, if required. RM-Delegate has to 
@@ -1066,16 +1172,21 @@ class S2RMDelegate():
 					# cannot change, trapped in timer. Thus, we need to revert the overhead
 					# and lower it by the consumers active claim (if any)
 					overhead.rollback()
+					self.power_request = PhaseAwareFloat.from_phase_aware_float(self.prior_power_request)
 
+					# FIXME: Three things to fix on overhead budget: 
+					#        When a device is running and reporting power, the claim should only be lowerd by the actual power required. 
+					#        When a device is supposed to turn off, but stuck in an off hysteresis, it's power claim should remain valid,
+					#          preventing lower priority consumers from eventually already turning on. 
+					#        When a device is supposed to turn on, but stuck in an on hysteresis, it's power claim should already be considered valie,
+					#          preventing lower priority consumers from eventually turning on for a split moment. 
 					if (self.power_claim is not None):
 						overhead.power -= self.power_claim
 
-				break
+				return overhead
 		
-		if self._ombc_next_operation_mode is not None and self._ombc_next_operation_mode.id != self.ombc_active_operation_mode.id:
-			was_change = True
-
-		return overhead, was_change
+		logger.warning("{} | Checked all operation modes, none is eligible. This should never happen!".format(self.unique_identifier))
+		return overhead
 
 	def _ombc_can_transition(self, active_operation_mode:OMBCOperationMode, candidate:OMBCOperationMode)->bool:
 		"""
@@ -1093,37 +1204,6 @@ class S2RMDelegate():
 				return True
 		
 		return False
-
-	def comit(self):
-		"""
-			To be called, when all consumers have claimed their power share. If no new instruction is required 
-			for the rm, there will be none. 
-		"""
-		if self.active_control_type == ControlType.OPERATION_MODE_BASED_CONTROL:
-			#Transitioning may be based on timers. So, check if our transition is suspect to be delayed currently. 
-			if self._ombc_next_operation_mode is not None and self._ombc_next_operation_mode.id != self.ombc_active_operation_mode.id:
-				#send out op mode selection, as operation mode changed. 
-				self.current_state_confirmed=False
-				self.ombc_active_instruction = OMBCInstruction(
-					message_id = uuid.uuid4(),
-					id = uuid.uuid4(),
-					execution_time= datetime.now(timezone.utc),
-					operation_mode_factor=1.0, #TODO: This needs to be adjusted, along with the factor determined by power allocation. 
-					operation_mode_id= self._ombc_next_operation_mode.id,
-					abnormal_condition=False
-				)
-
-				logger.info("{} | Instruction send: OMBC = {} (Power-Claim: {})".format(self.unique_identifier, self._ombc_next_operation_mode.diagnostic_label, self.power_claim))
-
-				self._s2_send_message(self.ombc_active_instruction)
-				self._commit_count += 1
-				#This has to be confirmed by the resource-manager, not assume it "worked".
-				#self.ombc_active_operation_mode = self._ombc_next_operation_mode
-
-				if self._commit_count >= 7:
-					#Consumer is not reacting. That is odd. Only escape we have is to drop off and reconnect. 
-					logger.warning("{} | RM didn't respond after 6 commits. Assuming stale, disconnecting.".format(self.unique_identifier))
-					self.end()
 
 	def _ombc_check_timer_block(self, target_operation_mode:OMBCOperationMode) -> float:
 		"""
@@ -1173,16 +1253,53 @@ class S2RMDelegate():
 		self.ombc_transition_info = None
 		return 0
 
-	def pop_powerstats(self, now:datetime) -> PhaseAwareFloat:
+	def comit(self) -> bool:
 		"""
-			Returns a PhaseAwareFloat, representing momentary consumption.
+			To be called, when all consumers have claimed their power share. If no new instruction is required 
+			for the rm, there will be none. 
 		"""
-		if self.current_power is not None:
-			result = self.current_power
-			self._last_pop_powerstats = now
-			return result
-		
-		return None
+		if self.active_control_type == ControlType.OPERATION_MODE_BASED_CONTROL:
+			#Transitioning may be based on timers. So, check if our transition is suspect to be delayed currently. 
+			#FIXME: Sommetimes this stucks, because is_Confirmed is false, but next op mode is equal current mode? 
+			if self._ombc_next_operation_mode is not None and self._ombc_next_operation_mode.id != self.ombc_active_operation_mode.id:
+				#send out op mode selection, as operation mode changed. 
+				self.current_state_confirmed=False
+				self.ombc_active_instruction = OMBCInstruction(
+					message_id = uuid.uuid4(),
+					id = uuid.uuid4(),
+					execution_time= datetime.now(timezone.utc),
+					operation_mode_factor=1.0, #TODO: This needs to be adjusted, along with the factor determined by power allocation. 
+					operation_mode_id= self._ombc_next_operation_mode.id,
+					abnormal_condition=False
+				)
+
+				logger.info("{} | Instruction send: OMBC = {} (Power-Claim: {})".format(self.unique_identifier, self._ombc_next_operation_mode.diagnostic_label, self.power_claim))
+
+				self._s2_send_message(self.ombc_active_instruction)
+
+				self._commit_count += 1
+				#This has to be confirmed by the resource-manager, not assume it "worked".
+				#self.ombc_active_operation_mode = self._ombc_next_operation_mode
+
+				if self._commit_count >= 7:
+					#Consumer is not reacting. That is odd. Only escape we have is to drop off and reconnect. 
+					logger.warning("{} | RM didn't respond after 6 commits. Assuming stale, disconnecting.".format(self.unique_identifier))
+					self.end()
+					return False
+
+				return True
+			
+			else:
+				logger.warning("{} | Comit called, but current state equals desired state or next mode is none: {}->{}".format(
+					self.unique_identifier, 
+					self.ombc_active_operation_mode.diagnostic_label if self.ombc_active_operation_mode is not None else "None",
+					self._ombc_next_operation_mode.diagnostic_label if self._ombc_next_operation_mode is not None else "None"
+					))
+
+		else:
+			logger.warning("{} | No comit logic implemented for Control Type: {}".format(self.unique_identifier, self.active_control_type.name if self.active_control_type is not None else "None"))
+
+		return False
 
 class EMS(SystemCalcDelegate):
 	#TODO: Refactor dateTime usage to _get_time everywhere, as this required for unit testing to time travel.
@@ -1208,55 +1325,61 @@ class EMS(SystemCalcDelegate):
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(EMS, self).set_sources(dbusmonitor, settings, dbusservice)
 
-		self._dbusservice.add_path('/Ems/Active', value=0, gettextcallback=lambda p, v: Modes(v))
-		self._dbusservice.add_path('/Ems/Debug/LoopTime', value=0)
-		self._dbusservice.add_path('/Ems/BatteryReservation', value=0)
-		self._dbusservice.add_path('/Ems/BatteryReservationState', value=None)
-		self._dbusservice.add_path('/Ems/SystemTypeFlags', value=0)
+		#initialize configurables with eventually stored settings. 
+		for c in CONFIGURABLES:
+			try:
+				v = settings[c.settings_key]
+				if v is not None:
+					#write internal backing field to bypass setter triggering a config update.
+					c._current_value = v
+			except Exception:
+				logger.warning("Couldn't load setting for Configurable {}:{}; Fine if not yet persisted something.".format(c.settings_key, c.settings_path))
+
+		#Output Paths we use. 
+		self._dbusservice.add_path('/OpportunityLoads/Active', value=0, gettextcallback=lambda p, v: Modes(v))
+		self._dbusservice.add_path('/OpportunityLoads/BatteryReservation', value=0)
+		self._dbusservice.add_path('/OpportunityLoads/BatteryReservationState', value=None)
+		self._dbusservice.add_path('/OpportunityLoads/SystemTypeFlags', value=0)
+		self._dbusservice.add_path('/OpportunityLoads/AvailableServices', value="[]") #empty json array.
+		self._dbusservice.add_path('/OpportunityLoads/PrimaryConsumer/Ac/Power', value=None)
+		self._dbusservice.add_path('/OpportunityLoads/SecondaryConsumer/Ac/Power', value=None)
 
 		for l in [1,2,3]:
-			self._dbusservice.add_path('/Ems/PrimaryConsumer/Ac/L{}/Power'.format(l), value=None)
-			self._dbusservice.add_path('/Ems/SecondaryConsumer/Ac/L{}/Power'.format(l), value=None)
+			self._dbusservice.add_path('/OpportunityLoads/PrimaryConsumer/Ac/L{}/Power'.format(l), value=None)
+			self._dbusservice.add_path('/OpportunityLoads/SecondaryConsumer/Ac/L{}/Power'.format(l), value=None)
 		
-		self._dbusservice.add_path('/Ems/PrimaryConsumer/Ac/Power', value=None)
-		self._dbusservice.add_path('/Ems/SecondaryConsumer/Ac/Power', value=None)
+		#Configurables may produce a Output/Input Path as well. Configurables are writable as per definition. 
+		for c in CONFIGURABLES:
+			if c.system_path is not None:
+				self._dbusservice.add_path(c.system_path, value=c.current_value or c.default_value, writeable=True)	
 
 		self.system_type_flags = self._determine_system_type_flags()
 
 		#enable, if setting indicates enabled. 
-		if self.mode == 1:
+		if C_MODE.current_value == 1:
 			self._enable()
 		else:
 			self._disable()
 
 		#configure logging as requested. 
-		if self.write_debug_logs:
+		if C_DEBUG_LOGS.current_value == 1:
 			global logger_debug_proxy
 			logger.info("Enabled debug logging for EMS.")
 			logger_debug_proxy = logger.debug
 
 	def get_settings(self):
 		# Settings for EMS
-		path = '/Settings/Ems'
-		#EnergyCounters are stored in settings.
-
-		settings = [
-			("ems_mode", path + "/Mode", 0, 0, 1),
-			("ems_debug", path + "/Debug/WriteDebugLogs", 0, 0, 1),
-			("ems_clinterval", path + "/ControlLoopInterval", 5, 1, 60),
-			("ems_balancingthreshold", path + '/BalancingThreshold', 98, 2, 98),
-			("ems_batteryreservation", path + '/BatteryReservationEquation', "10000", "", ""),
-			("ems_cip", path + "/ContinuousInverterPower", 4000.0, 0, 150000.0)
-		]
+		settings = []
+		for c in CONFIGURABLES:
+			settings.append((c.settings_key, c.settings_path, c.default_value, c.min_value, c.max_value))
 
 		return settings
 
 	def get_input(self):
 		#Subscribe to 10 possible devices per service for now
 		topic_list = []
-		for i in range(0, 9):
-			topic_list.append('/Devices/{}/S2/Priority'.format(i))
-			topic_list.append('/Devices/{}/S2/ConsumerType'.format(i))
+		topic_list.append('/S2/0/Priority')
+		topic_list.append('/CustomName')
 
 		return [
 			('com.victronenergy.settings', [
@@ -1271,6 +1394,7 @@ class EMS(SystemCalcDelegate):
 		]
 
 	def get_output(self):
+		#delegate is publishing to _dbusservice directly, when output is required.
 		return []
 
 	def _check_s2_rm(self, serviceName, objectPath)->bool:
@@ -1287,22 +1411,23 @@ class EMS(SystemCalcDelegate):
 		logger_debug_proxy("Device added: {}".format(service))
 		i = 0
 		while True:
-			s2_rm_exists = self._check_s2_rm(service, "/Devices/{}/S2".format(i))
+			s2_rm_exists = self._check_s2_rm(service, "/S2/0")
 
 			if s2_rm_exists:
-				priority = self._dbusmonitor.get_value(service, "/Devices/{}/S2/Priority".format(i)) or 50
-				ct_raw = self._dbusmonitor.get_value(service, "/Devices/{}/S2/ConsumerType".format(i))
-				consumer_type = ConsumerType(1 if ct_raw is None else ct_raw)
-				delegate = S2RMDelegate(self._dbusmonitor, service, instance, i, priority, consumer_type, self)
-				self.managed_rms[delegate.unique_identifier] = delegate
-				logger.info("{} | Identified S2 RM {} on {}. Added to managed RMs".format(delegate.unique_identifier, i, service))
+				delegate = S2RMDelegate(self._dbusmonitor, service, instance, i, self)
+				self.managed_rms[delegate.technical_identifier] = delegate
+				logger.info("{} | Identified S2 RM on {}. Added to managed RMs".format(delegate.unique_identifier, service))
 				delegate.begin()
 			
 			i += 1 #probe next one.
 			
 			#if we don't find anything within 10 rms, stop scanning. 
-			if (i >= 10):
+			#for now, there will only be 1 rm per service. So, leave the loop, just break for now.
+			if (i >= 1):
 				break
+		
+		#let config ui know, if something changed. 
+		self.publish_available_services()
 
 	def device_removed(self, service, instance):
 		logger_debug_proxy("Device removed: {}".format(service))
@@ -1313,16 +1438,31 @@ class EMS(SystemCalcDelegate):
 			if key.startswith(service):
 				if USE_FAKE_BMS:
 					if self.managed_rms[key]._fake_bms_no not in self.available_fake_bms:
-						no= self.managed_rms[key]._fake_bms_no
+						no = self.managed_rms[key]._fake_bms_no
 						self.available_fake_bms.append(no)
 				
 				self.managed_rms[key].end()
 
 				#if device is gone, remove it as managed rm. 
 				del self.managed_rms [key]
+		
+		#let config ui know, if something changed. 
+		self.publish_available_services()
 
 	def settings_changed(self, setting, oldvalue, newvalue):
-		if setting == 'ems_mode':
+		#generic setting handling
+		for c in CONFIGURABLES:
+			if c.settings_key == setting:
+				c._current_value = newvalue
+
+				#write back to system path, if that's not the origin of the change.
+				if self._dbusservice[c.system_path] != newvalue:
+					self._dbusservice[c.system_path] = newvalue
+
+				break
+		
+		#some dedicated handling to make sure immediate effect.
+		if setting == C_MODE.settings_key:
 			if oldvalue == 0 and newvalue == 1:
 				self._enable()
 			if oldvalue == 1 and newvalue == 0:
@@ -1330,7 +1470,7 @@ class EMS(SystemCalcDelegate):
 		
 		#Check, if debug logging has been enabled, then setup our debug proxy.
 		#Else set it to the pass-proxy.
-		if setting == 'ems_debug':
+		if setting == C_DEBUG_LOGS.settings_key:
 			global logger_debug_proxy
 			if newvalue == 1:
 				logger.info("Enabled debug logging for EMS.")
@@ -1338,27 +1478,9 @@ class EMS(SystemCalcDelegate):
 			else:
 				logger.info("Disabled debug logging for EMS.")
 				logger_debug_proxy = logger_debug_proxy_pass
-
-
-	@property
-	def mode(self):
-		return self._settings['ems_mode']
-	
-	@property
-	def write_debug_logs(self):
-		return self._settings['ems_debug']
-	
-	@property
-	def continuous_inverter_power(self):
-		return self._settings['ems_cip']
-
-	@property
-	def control_loop_interval(self):
-		return self._settings['ems_clinterval']
-	
-	@property
-	def balancing_threshold(self):
-		return self._settings['ems_balancingthreshold']
+		
+		#accept change
+		return True
 
 	@property
 	def soc(self) -> float:
@@ -1366,10 +1488,13 @@ class EMS(SystemCalcDelegate):
 			current soc 0 - 100
 		"""
 		return BatterySoc.instance.soc
-		
+	
 	def calculate_soc_res_map(self, equation:str) -> Dict[int,float]:
 		"""
-			Calculates the soc map 0 - 100 for the given equation.
+			DEPRECATED: Needs fix to new calculations. Will be updated if this ever will be used. Calculates the soc map 0 - 100 for the given equation.
+		"""
+		return {}
+		
 		"""
 		res = {}
 		for i in range(0,101):
@@ -1379,17 +1504,25 @@ class EMS(SystemCalcDelegate):
 			except:
 				return None
 		return res
+		"""
 
 	@property
 	def current_battery_reservation(self) -> float:
 		"""
 			returns the current desired battery reservation based on the user equation in watts.
-			0 if error in equation. /Ems/BatteryReservationState will indicate if there is an error with the equation,
+			0 if error in equation. /OpportunityLoads/BatteryReservationState will indicate if there is an error with the equation,
 			or if the reservation is lowered by BMS capabilities.
 		"""
 		reservation = 0.0
 		try:
-			reservation = round(eval(self._settings['ems_batteryreservation'].replace("SOC", str(self.soc))))
+			# The Default equation is "RBP - SOC * RD"
+			# RBP = ReservationBasePower
+			# SOC = SOC
+			# RD  = ReservationDecrement
+			number_equation = C_RESERVATION_EQUATION.current_value.replace("SOC", str(self.soc))
+			number_equation = number_equation.replace("RBP", str(C_RESERVATION_BASE_POWER.current_value))
+			number_equation = number_equation.replace("RD", str(C_RESERVATION_DECREMENT.current_value))
+			reservation = round(eval(number_equation))
 			capability = self.get_charge_power_capability()
 			dess_charge = self._dbusservice["/DynamicEss/ChargeRate"]
 			dess_rs = self._dbusservice["/DynamicEss/ReactiveStrategy"]
@@ -1397,7 +1530,7 @@ class EMS(SystemCalcDelegate):
 
 			#When we are at BalancingSoc + 1, Reservation can become 0. (ZeroFeedin and Offgrid) to Keep PV Alive 
 			if self.system_type_flags & (SystemTypeFlag.OffGrid | SystemTypeFlag.ZeroFeedin):
-				if self.soc is not None and self.soc >= self.balancing_threshold + 1:
+				if self.soc is not None and self.soc >= C_BALANCING_THRESHOLD.current_value+ 1:
 					reservation = 0
 					reservation_hint = "PVKA"
 
@@ -1420,16 +1553,16 @@ class EMS(SystemCalcDelegate):
 				reservation = 0
 				reservation_hint = "DESS"
 				
-			self._dbusservice["/Ems/BatteryReservationState"] = reservation_hint
+			self._dbusservice["/OpportunityLoads/BatteryReservationState"] = reservation_hint
 
 			if USE_FAKE_BMS:
 				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/CustomName", "Battery Reservation: {}W ({})".format(reservation, reservation_hint))
 
 		except Exception as ex:
 			reservation = 0.0
-			self._dbusservice["/Ems/BatteryReservationState"] = "ERROR"
+			self._dbusservice["/OpportunityLoads/BatteryReservationState"] = "ERROR"
 		
-		self._dbusservice["/Ems/BatteryReservation"] = reservation
+		self._dbusservice["/OpportunityLoads/BatteryReservation"] = reservation
 		return reservation
 	
 	def get_charge_power_capability(self) -> float:
@@ -1457,19 +1590,63 @@ class EMS(SystemCalcDelegate):
 		'''
 			Enables EMS.
 		'''
-		self._timer = GLib.timeout_add(self.control_loop_interval * 1000, self._on_timer) #regular control loop according to configuration.
+		self._timer = GLib.timeout_add(C_CONTROL_LOOP_INTERVAL.current_value * 1000, self._on_timer) #regular control loop according to configuration.
+		self._settings_timer = GLib.timeout_add(5000, self._on_settings_monitor_timer) #Check if settings change.
 		self._limit_timer = GLib.timeout_add(INVERTER_LIMIT_MONITOR_INTERVAL_MS, self._on_timer_check_inverter_limits) #quick monitoring of desired inverter limitations
 		self._timer_track_power = GLib.timeout_add(1000, self._on_timer_track_power)
 		self._timer_retry_connections = GLib.timeout_add(CONNECTION_RETRY_INTERVAL_MS, self._on_timer_retry_connection) #retry connection to devices periodically.
-		self._dbusservice["/Ems/Active"] = 1
-		logger.info("EMS activated with a control loop interval of {}s".format(self.control_loop_interval))
+		self._dbusservice["/OpportunityLoads/Active"] = 1
+		logger.info("EMS activated with a control loop interval of {}s".format(C_CONTROL_LOOP_INTERVAL.current_value))
 
 	def _disable(self):
 		'''
 			Disables EMS.
 		'''
-		self._dbusservice["/Ems/Active"] = 0
+		self._dbusservice["/OpportunityLoads/Active"] = 0
 		logger.info("EMS deactivated.")
+
+	def publish_available_services(self):
+		"""
+			Publishes all known delegates on dbus, so the UI can query this information for configuration purpose.
+		"""
+		delegate_list = []
+
+		#battery is hardcoded placeholder. 
+		battery_instance = {
+			"serviceType": "com.victronenergy.system",
+			"deviceInstance": 0,
+			"configModel": "battery",
+			"label": "Battery",
+			"priority": C_BATTERY_PRIORITY.current_value
+		}
+
+		delegate_list.append(battery_instance)
+
+		for technical_identifier, delegate in self.managed_rms.items():
+			delegate_instance = {}
+
+			#TODO: Once there are other acloads (beside shellies) we need to change this to use another identifier to detect configModel.
+			if delegate.technical_identifier.startswith("com.victronenergy.acload"):
+				delegate_instance = {
+					"serviceType": "com.victronenergy.acload",
+					"deviceInstance": delegate.instance,
+					"configModel": "shelly",
+					"priority": delegate.priority
+				}
+				delegate_list.append(delegate_instance)
+
+			#TODO: EVCharger needs to be added, once the delegate service is clearified. EVCS-Service itself?
+		
+		#sort based on priority
+		delegate_list = sorted(delegate_list, key=lambda x: x["priority"])
+
+		#remove prio, not needed for ui
+		#for entry in delegate_list:
+		#	del entry["priority"]
+
+		#FIXME: UI will update this array, and we have to take care to distribute the updated
+		#       priority to consumers.
+		self._dbusservice["/OpportunityLoads/AvailableServices"] = json.dumps(delegate_list)
 
 	def _determine_system_type_flags(self) -> SystemTypeFlag:
 		'''
@@ -1485,7 +1662,7 @@ class EMS(SystemCalcDelegate):
 
 			# Determine Flags for this system. 
 			if grid_parallel is not None and grid_parallel == 1:
-				self.continuous_inverter_power_per_phase = self.continuous_inverter_power / no_phases_grid
+				self.continuous_inverter_power_per_phase = C_CONTINIOUS_INVERTER_POWER.current_value / no_phases_grid
 				system_type_flags |= SystemTypeFlag.GridConnected
 				if no_phases_grid == 1: system_type_flags |= SystemTypeFlag.SinglePhase
 				elif no_phases_grid == 2: system_type_flags |= SystemTypeFlag.DualPhase
@@ -1497,7 +1674,7 @@ class EMS(SystemCalcDelegate):
 				if multiphase_mode == 0: system_type_flags |= SystemTypeFlag.Individual
 				elif multiphase_mode == 1: system_type_flags |= SystemTypeFlag.Saldating
 			else:
-				self.continuous_inverter_power_per_phase = self.continuous_inverter_power / no_phases_output
+				self.continuous_inverter_power_per_phase = C_CONTINIOUS_INVERTER_POWER.current_value / no_phases_output
 				system_type_flags |= SystemTypeFlag.OffGrid
 				if no_phases_output == 1: system_type_flags |= SystemTypeFlag.SinglePhase
 				elif no_phases_output == 2: system_type_flags |= SystemTypeFlag.DualPhase
@@ -1505,47 +1682,48 @@ class EMS(SystemCalcDelegate):
 
 		except Exception as ex:
 			logger.warning("Unable to determine SystemTypeFlags by now. Retrying later...")
-			logger.error("Exception was: ", exc_info=ex)
+			#logger.error("Exception was: ", exc_info=ex)
 			#may happen during startup, until all delegates have populated their initial values. 
 			pass
 
-		self._dbusservice["/Ems/SystemTypeFlags"] = system_type_flags
+		self._dbusservice["/OpportunityLoads/SystemTypeFlags"] = system_type_flags
 		return system_type_flags
 	
 	def _on_timer_retry_connection(self):
 		'''
 			Retries connection to RMs that are currently in an unitialized state. 
 		'''
-		for unique_identifier, delegate in self.managed_rms.items():
-			if not delegate.initialized:
-				logger.info("{} | Retrying connection".format(unique_identifier))
-				delegate.begin()
-		
-		return True
+		try:
+			for technical_identifier, delegate in self.managed_rms.items():
+				if not delegate.initialized:
+					logger.info("{} | Retrying connection".format(delegate.unique_identifier))
+					delegate.begin()
+			
+			return True
+		except Exception as ex:
+			logger.error("Exception while retrying connection. Skipping attempt.", exc_info=ex)
 
 	def _on_timer_track_power(self):
 		try:
 			self.power_primary = PhaseAwareFloat()
 			self.power_secondary = PhaseAwareFloat()
 
-			for unique_identifier, delegate in self.managed_rms.items():
+			for technical_identifier, delegate in self.managed_rms.items():
 				if delegate.initialized:
-					value = delegate.pop_powerstats(self._get_time(timezone.utc))
-
-					if value is not None:
+					if delegate.current_power is not None:
 						if delegate.consumer_type == ConsumerType.Primary:
-							self.power_primary += value
+							self.power_primary += delegate.current_power
 
 						elif delegate.consumer_type == ConsumerType.Secondary:
-							self.power_secondary += value
+							self.power_secondary += delegate.current_power
 			
 			#dump on dbus
 			for l in [1,2,3]:
-				self._dbusservice["/Ems/PrimaryConsumer/Ac/L{}/Power".format(l)] = self.power_primary.by_phase[l]
-				self._dbusservice["/Ems/SecondaryConsumer/Ac/L{}/Power".format(l)] = self.power_secondary.by_phase[l]
+				self._dbusservice["/OpportunityLoads/PrimaryConsumer/Ac/L{}/Power".format(l)] = self.power_primary.by_phase[l]
+				self._dbusservice["/OpportunityLoads/SecondaryConsumer/Ac/L{}/Power".format(l)] = self.power_secondary.by_phase[l]
 
-			self._dbusservice["/Ems/PrimaryConsumer/Ac/Power"] = self.power_primary.total
-			self._dbusservice["/Ems/SecondaryConsumer/Ac/Power"] = self.power_secondary.total
+			self._dbusservice["/OpportunityLoads/PrimaryConsumer/Ac/Power"] = self.power_primary.total
+			self._dbusservice["/OpportunityLoads/SecondaryConsumer/Ac/Power"] = self.power_secondary.total
 
 		except Exception as ex:
 			logger.error("Exception while publishing power records", exc_info=ex)
@@ -1565,11 +1743,22 @@ class EMS(SystemCalcDelegate):
 		# TODO: Implement.
 		pass
 
+	def _on_settings_monitor_timer(self):
+		#Check if there is a setting write request.
+		for c in CONFIGURABLES:
+			if c.system_path is not None:
+				if c.system_path in self._dbusservice:
+					if c.current_value != self._dbusservice[c.system_path]:
+						logger.debug("Config change request detected: {} -> {}".format(c.system_path, self._dbusservice[c.system_path]))
+						#just update settings device. it'll push back and update the Configurable.
+						self._settings[c.settings_key] = self._dbusservice[c.system_path]
+
 	def _on_timer(self):
 		try:
 			logger_debug_proxy("v------------------- LOOP -------------------v")
 			# Control loop timer.
 			now = self._get_time()
+
 			self.system_type_flags = self._determine_system_type_flags()
 			logger_debug_proxy("System Type Flags are: {}".format(SystemTypeFlag.to_str(self.system_type_flags)))
 
@@ -1585,7 +1774,7 @@ class EMS(SystemCalcDelegate):
 					self.soc,
 					available_overhead.battery_rate,
 					self.current_battery_reservation,
-					self._dbusservice["/Ems/BatteryReservationState"],
+					self._dbusservice["/OpportunityLoads/BatteryReservationState"],
 					available_overhead.power.l1,
 					available_overhead.power.l2,
 					available_overhead.power.l3,
@@ -1613,50 +1802,77 @@ class EMS(SystemCalcDelegate):
 
 			#only iterate when we have solar-overhead, OR EMS-caused consumption (then we may need to turn a consumer off.)
 			if (available_overhead.power.total > 0 or 
-	   			(self._dbusservice["/Ems/PrimaryConsumer/Ac/Power"] or 0) > 0 or 
-				(self._dbusservice["/Ems/SecondaryConsumer/Ac/Power"] or 0) > 0):
+	   			(self._dbusservice["/OpportunityLoads/PrimaryConsumer/Ac/Power"] or 0) > 0 or 
+				(self._dbusservice["/OpportunityLoads/SecondaryConsumer/Ac/Power"] or 0) > 0):
 				
-				#Check, if there is a pending change on one RM. If so, we don't do anything until it's confirmed. 
-				#Ask the RM to kindly resend.
+				#Iterate over all known RMs, check their requirement and assign them a suitable Budget. 
+				#The RMDelegate is responsible to communicate with it's rm upon .comit() beeing called. 
+				#sort RMs by priority before iterating.
+				for technical_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority_sort):
+					logger_debug_proxy("=============================================================================================================")  
+					if delegate.initialized and delegate.rm_details is not None:
+						if delegate.active_control_type is not None and delegate.active_control_type != ControlType.NOT_CONTROLABLE:
+							logger_debug_proxy("===== RM {} ({}) is controllable: {} =====".format(delegate.unique_identifier, delegate.rm_details.name, delegate.active_control_type))	
+							available_overhead = delegate.self_assign_overhead(available_overhead)
+							logger_debug_proxy("==> Remaining overhead: {};".format(available_overhead))
+						else:
+							logger_debug_proxy("===== RM {} ({}) is uncontrollable: {} =====".format(delegate.unique_identifier, delegate.rm_details.name, delegate.active_control_type))	
+					else:
+						logger_debug_proxy("===== RM {} is not yet initialized. =====".format(delegate.unique_identifier))
+
+				# Check, if there is a pending change on one RM. If so, we don't do anything until it's confirmed. 
+				# Ask the RM to kindly recomit the change, in case the consumer did miss it. If it will be missed 6 times,
+				# The offendinc consumer will be dropped. 
 				state_change_pending = False
-				for unique_identifier, delegate in self.managed_rms.items():
+				for technical_identifier, delegate in self.managed_rms.items():
 					if not delegate.current_state_confirmed and delegate.initialized and delegate._ombc_next_operation_mode is not None :
 						#TODO: Does successfull state change require a power report to be present as well? There may be huge delays until first report. Currently observing. 
 						delegate.comit()
-						logger.warning("{} | State change to '{}' pending. Skipping calculation round.".format(
-							unique_identifier, 
+						logger.warning("{} | State change to '{}' pending. Skipping change comits but forcing a re-comit.".format(
+							delegate.unique_identifier, 
 							delegate._ombc_next_operation_mode.diagnostic_label if delegate._ombc_next_operation_mode is not None else "UNKNOWN"
 						))
 						state_change_pending = True
 
+				#each consumer may have a change-plan now. Commit only one per iteration to give 
+				#the system time to react. If one change is pending, we don't commit anything.
+				#to improve expected behaviour on consumer switching, this happens in two iterations: 
+				# first, off commands are processed in low to high priority order. 
+				# second, on commands are processed in high to low priority order.  
+				global_was_change = False
 				if not state_change_pending:
-					#Iterate over all known RMs, check their requirement and assign them a suitable Budget. 
-					#The RMDelegate is responsible to communicate with it's rm upon .comit() beeing called. 
-					#(Will be called after finishing all power assignments to avoid instructions beeing send out immediately)
-					#sort RMs by priority before iterating.
-					for unique_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority):
-						logger_debug_proxy("=============================================================================================================")  
-						if delegate.initialized and delegate.rm_details is not None:
-							if delegate.active_control_type is not None and delegate.active_control_type != ControlType.NOT_CONTROLABLE:
-								logger_debug_proxy("===== RM {} ({}) is controllable: {} =====".format(unique_identifier, delegate.rm_details.name, delegate.active_control_type))	
-								available_overhead, was_change = delegate.self_assign_overhead(available_overhead)
-								logger_debug_proxy("==> Remaining overhead: {}; Was Assignment? {}".format(available_overhead, was_change))
-								if was_change:
-									#There was a change in at least 1 consumer. So, we break, commit and await the change to happen, before we do more changes.
-									#Else a system made out of many consumers will become to unstable due to reaction latencies all over the place. 
-									logger.info("{} | Comiting change of assignment".format(delegate.unique_identifier))
-									delegate.comit()
+					# debug
+					for technical_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority_sort * -1):
+						if delegate.initialized and delegate.expected_power_change < 0:
+							logger.info("{} | Pending transition to a lower energy state: {}".format(delegate.unique_identifier, delegate.expected_power_change))
+					
+					for technical_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority_sort):
+							if delegate.initialized and delegate.expected_power_change > 0:
+								logger.info("{} | Pending transition to a higher energy state: +{}".format(delegate.unique_identifier, delegate.expected_power_change))
+
+					for technical_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority_sort * -1):
+						if delegate.initialized and delegate.expected_power_change < 0:
+							was_change = delegate.comit()
+
+							if (was_change):
+								logger.info("{} | Comited change to transition to a lower energy state ({}). Ending comit round.".format(delegate.unique_identifier, delegate.expected_power_change))
+								global_was_change = True
+								break
+
+					if not global_was_change:
+						for technical_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority_sort):
+							if delegate.initialized and delegate.expected_power_change > 0:
+								was_change = delegate.comit()
+
+								if (was_change):
+									logger.info("{} | Comited change to transition to a higher energy state (+{}). Ending comit round.".format(delegate.unique_identifier, delegate.expected_power_change))
 									break
-							else:
-								logger_debug_proxy("===== RM {} ({}) is uncontrollable: {} =====".format(unique_identifier, delegate.rm_details.name, delegate.active_control_type))	
-						else:
-							logger_debug_proxy("===== RM {} is not yet initialized. =====".format(unique_identifier))
 
 				logger_debug_proxy("SOC={}%, RSRV={}/{}W ({}), L1o={}W, L2o={}W, L3o={}W, dcpvo={}W, totalo={}W".format(
 						self.soc,
 						available_overhead.battery_rate,
 						self.current_battery_reservation,
-						self._dbusservice["/Ems/BatteryReservationState"],
+						self._dbusservice["/OpportunityLoads/BatteryReservationState"],
 						available_overhead.power.l1,
 						available_overhead.power.l2,
 						available_overhead.power.l3,
@@ -1670,7 +1886,7 @@ class EMS(SystemCalcDelegate):
 			if USE_FAKE_BMS:
 				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/Dc/0/Current", available_overhead.power.total)
 				
-				for unique_identifier, delegate in self.managed_rms.items():
+				for technical_identifier, delegate in self.managed_rms.items():
 					delegate.publish_fake_bms_values()
 
 			#drop any RM, if we have to.
@@ -1697,15 +1913,13 @@ class EMS(SystemCalcDelegate):
 			now2 = self._get_time()
 			duration = (now2 - now).total_seconds() * 1000
 			
-			#logger_debug_proxy("Loop took {}ms".format(duration))
-			#logger.info("Loop took {}ms".format(duration)) #double log that for now.
-			self._dbusservice["/Ems/Debug/LoopTime"] = duration
 			logger_debug_proxy("^------------------- LOOP -------------------^")
 
-			if (self.mode == 1):
+			if (C_MODE.current_value== 1):
 				return True	#keep timer up as long as mode is enabled.
 		except Exception as ex:
 			logger.fatal("Exception during control loop", exc_info=ex)
+			return True #keep the loop runing, this may resolve.
 
 		#terminate timer
 		return False
@@ -1725,7 +1939,7 @@ class EMS(SystemCalcDelegate):
 		dcpv = (self._dbusservice["/Dc/Pv/Power"] or 0) * AC_DC_EFFICIENCY #dcpv has a penalty when beeing turned into AC Consumption.
 
 		# now, we need to ADD power that is already beeing consumed by S2 Devices, because it will also be deducted in the Consumption-Values.
-		for unique_identifier, delegate in self.managed_rms.items():
+		for technical_identifier, delegate in self.managed_rms.items():
 			if delegate.current_power is not None and delegate.initialized:
 				#current power needs only be added to ac. It is real consumption and needs to be deducted where the unmanaged consumption is causing a deduction.
 				l1 += delegate.current_power.l1
@@ -1749,13 +1963,13 @@ class EMS(SystemCalcDelegate):
 		#Hence, when we are at balancingSoc + 1, we going to pretend more DCPV than there is, to increase HEMS consumption
 		#and ensure solar is remaining unthrottled. When reaching balancingSoc - 1, we restore normal operation mode. 
 		if self.system_type_flags & (SystemTypeFlag.ZeroFeedin | SystemTypeFlag.OffGrid):
-			if self.soc is not None and self.soc >= self.balancing_threshold + 1:
-				if (batrate > 0 or self.soc == 100) and self.dcpv_balancing_offset < self.continuous_inverter_power:
+			if self.soc is not None and self.soc >= C_BALANCING_THRESHOLD.current_value + 1:
+				if (batrate > 0 or self.soc == 100) and self.dcpv_balancing_offset < C_CONTINIOUS_INVERTER_POWER.current_value:
 					self.dcpv_balancing_offset += 100 #increse 100 Watts per iteration until we reach a negative charge rate
 					logger_debug_proxy("Increasing dcpv balancing offset to {}W".format(self.dcpv_balancing_offset))
 			
 			#reset if applicable.
-			if self.soc is None or self.soc <= self.balancing_threshold - 1:
+			if self.soc is None or self.soc <= C_BALANCING_THRESHOLD.current_value - 1:
 				self.dcpv_balancing_offset = 0
 		else:
 			#System Type is something else, we don't need an offset. (Leave this here, type can change)
