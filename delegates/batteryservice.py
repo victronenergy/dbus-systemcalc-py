@@ -80,6 +80,11 @@ class Battery(object):
 	def maxcellvoltage(self):
 		return self.monitor.get_value(self.service, '/System/MaxCellVoltage')
 
+	@property
+	def has_charge_voltage_control(self):
+		return self.monitor.get_value(self.service,
+			'/Capabilities/ChargeVoltageControl') == 1
+
 class BatteryService(SystemCalcDelegate):
 	""" Keeps track of the (auto-)selected bms service. """
 	BMSSERVICE_DEFAULT = -1
@@ -115,7 +120,8 @@ class BatteryService(SystemCalcDelegate):
 				'/InstalledCapacity',
 				'/Soc',
 				'/System/MinCellVoltage',
-				'/System/MaxCellVoltage']),
+				'/System/MaxCellVoltage',
+				'/Capabilities/ChargeVoltageControl']),
 		]
 
 	def get_settings(self):

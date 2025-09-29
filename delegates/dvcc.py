@@ -56,6 +56,12 @@ class _pylontech_quirk(object):
 			Identify 24-V batteries by the lower charge voltage, and do the same
 			thing with an 8-to-15 cell ratio, +-3.48V per cell.
 		"""
+
+		# Check if the battery can do its own charge voltage control, in which
+		# case just return the values as is
+		if bms.has_charge_voltage_control:
+			return (charge_voltage, charge_current, False)
+
 		# Use 3.48V per cell plus a little, 52.4V for 15 cell 48V batteries.
 		# Use 3.46V per cell plus a little, 27.8V for 24V batteries testing shows that's 100% SOC.
 		# That leaves 1.6V margin for 48V batteries and 1.0V for 24V.

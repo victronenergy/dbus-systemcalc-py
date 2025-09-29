@@ -2428,3 +2428,30 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50 },
 		})
+
+	def test_pylontech_with_voltage_control(self):
+		""" Some Pylontech batteries can control their own charge,
+		    voltage, then pass voltage through. """
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 51.8,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 155.4,
+				'/Soc': 95,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': None,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 53.2,
+				'/Info/MaxDischargeCurrent': 25,
+				'/InstalledCapacity': None,
+				'/Capabilities/ChargeVoltageControl': 1,
+				'/ProductId': 0xB009})
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeVoltage': 53.2,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 25
+			}
+		})
+		self._check_values({ '/Control/EffectiveChargeVoltage': 53.2 })
