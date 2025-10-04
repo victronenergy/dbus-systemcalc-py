@@ -31,6 +31,7 @@ from s2python.common import (
 	CommodityQuantity,
 	PowerMeasurement,
 	PowerValue,
+	PowerRange,
 	Timer
 )
 
@@ -206,6 +207,20 @@ class PhaseAwareFloat():
 			other.dc
 		)
 
+	@classmethod
+	def from_power_ranges(clazz, power_ranges:list[PowerRange]):
+		'''
+			Creates a PhaseAwareFloat out of the given list of PowerRanges.
+		'''
+		res = PhaseAwareFloat()
+		for pr in power_ranges:
+			if pr.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC:
+				for l in [1,2,3]:
+					res.by_phase[l] += pr.end_of_range / 3.0
+			else:
+				res.by_commodity[pr.commodity_quantity] += pr.end_of_range
+		return res
+
 	def __iadd__(self, other):
 		if not isinstance(other, PhaseAwareFloat):
 			raise TypeError("Only PhaseAwareFloats can be added.")
@@ -343,7 +358,7 @@ class SolarOverhead():
 		self.power_claim = PhaseAwareFloat()
 		self.transaction_running = True
 	
-	def claim(self, commodity_quantity:CommodityQuantity, minv:float, maxv:float, primary:bool, force:bool=False)->bool:
+	def claim(self, power_request:PhaseAwareFloat, primary:bool, force:bool=False)->bool:
 		"""
 			Claims a bunch of power. Returns true on success, false on error. If the requirements of an RM are satisfied,
 			call comit() which returns a PhaseAwareFloat representing the powerclaim of the transaction.
@@ -354,25 +369,12 @@ class SolarOverhead():
 		#First, start to determine the actual amount we want to claim. It needs to be between min and max, as close to max as possible.
 		#Also check, if reservation needs to be applied for this claim. If there is enough "total", we can drive the consumer. 
 		#The claim however may source from any available Power theren is.
-		claim_target_total = maxv
-		
-		#Build the PhaseAwareFloat representing the claim split onto individual phases.
-		claim_target = PhaseAwareFloat()
-		if commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC:
-			for l in [1,2,3]:
-				claim_target.by_phase[l] = claim_target_total / 3.0
-		else:
-			claim_target.by_commodity[commodity_quantity] = claim_target_total
-
-		#if the consumer is not providing Powermeasurements, we store this as power_request
-		#to be able to calculate consumption later.
-		self.power_request = PhaseAwareFloat(claim_target.l1, claim_target.l2, claim_target.l3)
 		
 		#TODO: calculate the claim_factor as OMBC needs it. Other control types don't need this, but doesn't hurt either. 
-		power_factor = (maxv - minv) / claim_target_total if claim_target_total > 0 else 0
+		#power_factor = (maxv - minv) / claim_target_total if claim_target_total > 0 else 0
 
 		#now, deduct energy from the proper source. We start by allocating direct ACPV.
-		claim_target = self._try_claim_ac(claim_target)
+		claim_target = self._try_claim_ac(PhaseAwareFloat.from_phase_aware_float(power_request))
 		
 		if claim_target.total > 0:
 			#Based on the system type we now proceed with DC or ACDCAC. If the system has a saldating measurement method,
@@ -582,10 +584,8 @@ class S2RMDelegate():
 		self.power_claim:PhaseAwareFloat=PhaseAwareFloat()
 		self.prior_power_claim:PhaseAwareFloat=PhaseAwareFloat()
 		self.power_request:PhaseAwareFloat=PhaseAwareFloat()
+		self.prior_power_request:PhaseAwareFloat=PhaseAwareFloat()
 		self.current_power:PhaseAwareFloat = None
-		self._current_counter:PhaseAwareFloat = PhaseAwareFloat()
-		self._current_timestamps:PhaseAwareFloat = PhaseAwareFloat()
-		self._last_pop_powerstats:datetime = None
 
 		#Generic Handler
 		self._message_receiver=None
@@ -828,6 +828,9 @@ class S2RMDelegate():
 						self.ombc_active_operation_mode = opm
 						self.current_state_confirmed=True
 						self._commit_count = 0 #reset, we got a RM triggered state change.
+						self.power_request = PhaseAwareFloat.from_power_ranges(opm.power_ranges)
+						self.prior_power_request = PhaseAwareFloat.from_power_ranges(opm.power_ranges)
+
 						logger.info("{} | Reported operation mode: '{}'".format(self.unique_identifier, self.ombc_active_operation_mode.diagnostic_label))
 
 					#Check, if this transition starts any timer. Only required if we leave a well known operation mode. 
@@ -985,7 +988,9 @@ class S2RMDelegate():
 		"""
 		try:
 			self.prior_power_claim = PhaseAwareFloat.from_phase_aware_float(self.power_claim) if self.power_claim is not None else None
+			self.prior_power_request = PhaseAwareFloat.from_phase_aware_float(self.power_request) if self.power_request is not None else None
 			self.power_claim = None
+			
 			#based on control type, this is different.
 			if self.active_control_type == ControlType.OPERATION_MODE_BASED_CONTROL:
 				return self._ombc_self_assign_overhead(overhead)
@@ -999,19 +1004,19 @@ class S2RMDelegate():
 	@property
 	def expected_power_change(self):
 		'''
-			Compares the current and last powerclaim and judges, how big the power change of this 
+			Compares the current and last power_request and judges, how big the power change of this 
 			consumer will be this round. Required to determine order of comiting changes across delegates.
 		'''
-		if (self.prior_power_claim is None and self.power_claim is None):
+		if (self.prior_power_request is None and self.power_request is None):
 			return 0
 		
-		if (self.prior_power_claim is None and self.power_claim is not None):
-			return self.power_claim.total
+		if (self.prior_power_request is None and self.power_request is not None):
+			return self.power_request.total
 		
-		if (self.prior_power_claim is not None and self.power_claim is None):
-			return self.prior_power_claim.total * -1
+		if (self.prior_power_request is not None and self.power_request is None):
+			return self.prior_power_request.total * -1
 		
-		return self.power_claim.total - self.prior_power_claim.total
+		return self.power_request.total - self.prior_power_request.total
 
 	def _ombc_self_assign_overhead(self, overhead:SolarOverhead) -> SolarOverhead:
 		#check all Operation modes, and if one fits. op modes have been sorted
@@ -1053,36 +1058,33 @@ class S2RMDelegate():
 		logger_debug_proxy("Forced State: {}".format(forced_state.diagnostic_label))
 
 		for opm in eligible_operation_modes:
-			for pr in opm.power_ranges:
-				#First check: If the power_claim is exceeding available total - it won't fit after considering efficiency losses. 
-				#thus, for these states, we can directly omit to validate them througly and simple skip them. We basically start
-				#above the state that may eventually fit. Check on force state always needs to be performed. 
-				if (pr.start_of_range > overhead.power.total and not opm.id == forced_state.id):
-					logger_debug_proxy("Skipping detailed check on '{}'. {}W vs {}W raw available won't fit for sure.".format(
-						opm.diagnostic_label, pr.start_of_range, overhead.power.total
-					))
-					continue
+			#combine all power ranges into a power_request
+			power_request = PhaseAwareFloat.from_power_ranges(opm.power_ranges)
+		
+			#First check: If the power_claim is exceeding available total - it won't fit after considering efficiency losses. 
+			#thus, for these states, we can directly omit to validate them througly and simple skip them. We basically start
+			#above the state that may eventually fit. Check on force state always needs to be performed. 
+			if (power_request.total > overhead.power.total and not opm.id == forced_state.id):
+				logger_debug_proxy("Skipping detailed check on '{}'. {}W vs {}W raw available won't fit for sure.".format(
+					opm.diagnostic_label, power_request.total, overhead.power.total
+				))
+				continue
 
-				overhead.begin()	
-
-				#TODO: Verify why there are multiple ranges?
-				claim_success = overhead.claim(pr.commodity_quantity, pr.start_of_range, pr.end_of_range, 
-					self.consumer_type==ConsumerType.Primary, opm.id == forced_state.id)
-				
-				if not claim_success:
-					#maximum assignment for this powerrange failed for at least one powerrange requested. This OperationMode is currently not eligible. 
-					logger_debug_proxy("Operation Mode not eligible: '{}' due to missing availability on commodity: {}".format(opm.diagnostic_label, pr.commodity_quantity))
-					overhead.rollback()
-					break
+			overhead.begin()
+			claim_success = overhead.claim(power_request, self.consumer_type==ConsumerType.Primary, opm.id == forced_state.id)
 			
-			if overhead.transaction_running:
-				#Managed to verify all power ranges and transaction still running? This mode is eligible! 
+			if not claim_success:
+				#maximum assignment for this powerrange failed for at least one powerrange requested. This OperationMode is currently not eligible. 
+				logger_debug_proxy("Operation Mode not eligible: '{}'".format(opm.diagnostic_label))
+				overhead.rollback()
+			
+			else:
 				#Probe, if we are trapped in a transition timer, then we cannot do it anyway. 
 				if self._ombc_check_timer_block(opm) == 0:
 					#all good, commit. Deduct from budget, what we claim. 
 					new_power_claim = overhead.comit()
+					self.power_request = power_request
 					self.power_claim = new_power_claim
-					self.power_request = overhead.power_request
 					
 					logger_debug_proxy("Operation Mode selected: '{}'. (Power-Claim: {})".format(opm.diagnostic_label, new_power_claim))
 
@@ -1095,6 +1097,7 @@ class S2RMDelegate():
 					# cannot change, trapped in timer. Thus, we need to revert the overhead
 					# and lower it by the consumers active claim (if any)
 					overhead.rollback()
+					self.power_request = PhaseAwareFloat.from_phase_aware_float(self.prior_power_request)
 
 					# FIXME: Three things to fix on overhead budget: 
 					#        When a device is running and reporting power, the claim should only be lowerd by the actual power required. 
@@ -1105,8 +1108,9 @@ class S2RMDelegate():
 					if (self.power_claim is not None):
 						overhead.power -= self.power_claim
 
-				break
-
+				return overhead
+		
+		logger.warning("{} | Checked all operation modes, none is eligible. This should never happen!".format(self.unique_identifier))
 		return overhead
 
 	def _ombc_can_transition(self, active_operation_mode:OMBCOperationMode, candidate:OMBCOperationMode)->bool:
@@ -1162,6 +1166,16 @@ class S2RMDelegate():
 
 				return True
 			
+			else:
+				logger.warning("{} | Comit called, but current state equals desired state or next mode is none: {}->{}".format(
+					self.unique_identifier, 
+					self.ombc_active_operation_mode.diagnostic_label if self.ombc_active_operation_mode is not None else "None",
+					self._ombc_next_operation_mode.diagnostic_label if self._ombc_next_operation_mode is not None else "None"
+					))
+
+		else:
+			logger.warning("{} | No comit logic implemented for Control Type: {}".format(self.unique_identifier, self.active_control_type.name if self.active_control_type is not None else "None"))
+
 		return False
 
 	def _ombc_check_timer_block(self, target_operation_mode:OMBCOperationMode) -> float:
@@ -1211,17 +1225,6 @@ class S2RMDelegate():
 		#no timer, reset transition info.
 		self.ombc_transition_info = None
 		return 0
-
-	def pop_powerstats(self, now:datetime) -> PhaseAwareFloat:
-		"""
-			Returns a PhaseAwareFloat, representing momentary consumption.
-		"""
-		if self.current_power is not None:
-			result = self.current_power
-			self._last_pop_powerstats = now
-			return result
-		
-		return None
 
 class EMS(SystemCalcDelegate):
 	#TODO: Refactor dateTime usage to _get_time everywhere, as this required for unit testing to time travel.
@@ -1573,14 +1576,12 @@ class EMS(SystemCalcDelegate):
 
 			for technical_identifier, delegate in self.managed_rms.items():
 				if delegate.initialized:
-					value = delegate.pop_powerstats(self._get_time(timezone.utc))
-
-					if value is not None:
+					if delegate.current_power is not None:
 						if delegate.consumer_type == ConsumerType.Primary:
-							self.power_primary += value
+							self.power_primary += delegate.current_power
 
 						elif delegate.consumer_type == ConsumerType.Secondary:
-							self.power_secondary += value
+							self.power_secondary += delegate.current_power
 			
 			#dump on dbus
 			for l in [1,2,3]:
