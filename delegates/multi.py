@@ -52,6 +52,18 @@ class Service(object):
 		# return False
 		return self.monitor.get_value(self.service, '/Hub4/DoNotFeedInOvervoltage') == 0
 
+	@property
+	def ac_connected(self):
+		return self.monitor.get_value(self.service, '/Ac/ActiveIn/Connected') == 1
+
+	@property
+	def hub_voltage(self):
+		return self.monitor.get_value(self.service, '/Hub/ChargeVoltage')
+
+	@property
+	def maxchargecurrent(self):
+		return self.monitor.get_value(self.service, '/Dc/0/MaxChargeCurrent')
+
 	def set_ignore_ac(self, inp, ignore):
 		if inp not in (0, 1):
 			raise ValueError(inp)

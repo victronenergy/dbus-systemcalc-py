@@ -757,7 +757,7 @@ class Multi(object):
 
 	@property
 	def ac_connected(self):
-		return self.monitor.get_value(self.service, '/Ac/ActiveIn/Connected') == 1
+		return getattr(MultiService.instance.vebus_service, 'ac_connected', False)
 
 	@property
 	def has_bolframe(self):
@@ -765,7 +765,7 @@ class Multi(object):
 
 	@property
 	def has_ess_assistant(self):
-		return self.monitor.get_value(self.service, '/Hub4/AssistantId') == 5
+		return getattr(MultiService.instance.vebus_service, 'has_ess_assistant', False)
 
 	@property
 	def dc_current(self):
@@ -774,11 +774,11 @@ class Multi(object):
 
 	@property
 	def hub_voltage(self):
-		return self.monitor.get_value(self.service, '/Hub/ChargeVoltage')
+		return getattr(MultiService.instance.vebus_service, 'hub_voltage', None)
 
 	@property
 	def maxchargecurrent(self):
-		return self.monitor.get_value(self.service, '/Dc/0/MaxChargeCurrent')
+		return getattr(MultiService.instance.vebus_service, 'maxchargecurrent', None)
 
 	@maxchargecurrent.setter
 	def maxchargecurrent(self, v):
