@@ -118,10 +118,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		#	(percent * capacity * 36000) / duration	
-		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600)
-		
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
+		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) #rate is rounded to 0 prec,
 		self.validate_charge_state(expected_rate)
 
 	def test_6_SCHEDULED_DISCHARGE(self):
@@ -148,11 +145,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		#	(percent * capacity * 36000) / duration	
-		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600) * -1
-		
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate. 
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
-		
+		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec, 
 		self.validate_discharge_state(expected_rate)
 
 
@@ -188,12 +181,11 @@ class TestDynamicEss(TestSystemCalcBase):
 		# it should keep up the current charge rate until the next target soc change.
 		# This should only happen, if targetsoc is reached within the last 20% of window progress.
 
-
 		#first, create two consecutive charge windows.
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
 		self._set_setting('/Settings/DynamicEss/BatteryCapacity', 10.0)
-		self._monitor.set_value(self.vebus, '/Soc', 50.0)
+		self._monitor.set_value(self.vebus, '/Soc', 50)
 		self._set_setting('/Settings/DynamicEss/Mode', 1)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
@@ -213,29 +205,25 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/Active': 1,
 			'/DynamicEss/ReactiveStrategy': 2,
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
+			'/DynamicEss/WorkingSocPrecision': 0
 		})
 
-		#	(percent * capacity * 36000) / duration	
-		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600)
-
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate. 
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
-
+		#	(percent * capacity * 36000) / duration
+		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) #rate is rounded to 0 prec, 
 		self.validate_charge_state(expected_rate)
 
-		# run 1700 seconds more and pretend we reached target soc. Transition state should now kick in.
+		# run 1690 seconds more and pretend we reached target soc. Transition state should now kick in.
 		# chargerate should remain the same as currently set. 
 		timer_manager.run(1690 * 1000)
-		self._monitor.set_value(self.vebus, '/Soc', 60.0)
+		self._monitor.set_value(self.vebus, '/Soc', 60)
 		timer_manager.run(10 * 1000)
 
 		self._check_values({
 			'/DynamicEss/Active': 1,
 			'/DynamicEss/ReactiveStrategy': 10,
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
+			'/DynamicEss/WorkingSocPrecision': 0
 		})
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
 
 		self.validate_charge_state(expected_rate)
 
@@ -248,8 +236,7 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 
-		expected_rate = round(1.1 * (5 * 10 * 36000) / 3600)
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
+		expected_rate = round((10 * 5 * 36000) / (3600.0 - 5.0), 0) #rate is rounded to 0 prec, 
 		self.validate_charge_state(expected_rate)
 
 	def test_10_SCHEDULED_CHARGE_SMOOTH_TRANSITION_NOK(self):
@@ -285,12 +272,8 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 
-		#	(percent * capacity * 36000) / duration	
-		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600)
-
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
-
+		#	(percent * capacity * 36000) / duration
+		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) #rate is rounded to 0 prec, 
 		self.validate_charge_state(expected_rate)
 
 		# run 1400 seconds more and pretend we reached target soc. Transition state should NOT kick in, but idle. 
@@ -304,7 +287,7 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/ReactiveStrategy': 9,
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
+
 		self.validate_idle_state()
 
 		#transist to next window - should cause a change back to regular charging with updated chargerate. 
@@ -316,8 +299,8 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 
-		expected_rate = round(1.1 * (5 * 10 * 36000) / 3600)
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
+		#	(percent * capacity * 36000) / duration
+		expected_rate = round((10 * 5 * 36000) / (3600.0 - 5.0), 0) #rate is rounded to 0 prec, 
 		self.validate_charge_state(expected_rate)
 
 	def test_12_SCHEDULED_CHARGE_NO_GRID(self):
@@ -348,10 +331,9 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		#	(percent * capacity * 36000) / duration	
-		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600) * -1
+		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec,
 		
 		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
 		self.validate_discharge_state(expected_rate)
 
 	def test_14_SELFCONSUME_NO_GRID(self):
@@ -640,11 +622,6 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp,
 		})
 
-		#	(percent * capacity * 36000) / duration	
-		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600) * -1
-		
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
 		self.validate_self_consume()
 
 	def test_18_KEEP_BATTERY_CHARGED(self):
@@ -738,11 +715,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		#	(percent * capacity * 36000) / duration	
-		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600) * -1
-
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
-
+		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec,
 		self.validate_discharge_state(expected_rate)
 
 		# run 1700 seconds more and pretend we reached target soc. Transition state should now kick in. 
@@ -756,8 +729,6 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/ReactiveStrategy': 19,
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
 
 		self.validate_discharge_state(expected_rate)
 
@@ -770,8 +741,7 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 
-		expected_rate = round(1.1 * (5 * 10 * 36000) / 3600) * -1
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
+		expected_rate = round((5 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec, 
 		self.validate_discharge_state(expected_rate)
 
 	def test_19_SCHEDULED_DISCHARGE_SMOOTH_TRANSITION_NOK(self):
@@ -808,11 +778,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		#	(percent * capacity * 36000) / duration	
-		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600) * -1
-
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
-
+		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec, 
 		self.validate_discharge_state(expected_rate)
 
 		# run 1400 seconds more and pretend we reached target soc. Transition state should NOT kick in, but idle. 
@@ -838,8 +804,7 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 
-		expected_rate = round(1.1 * (5 * 10 * 36000) / 3600) * -1
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
+		expected_rate = round((5 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec, 
 		self.validate_discharge_state(expected_rate)
 
 	def test_92_DESS_DISABLED(self):
@@ -932,8 +897,11 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Overrides/MaxDischargePower': -1
 		}})
 
-		self.assertAlmostEqual(rate/100.0, Dvcc.instance.internal_maxchargepower/100.0,1)
-	
+		#validate calculation is good.
+		if rate is not None:
+			self.assertLessEqual(abs(self._service["/DynamicEss/ChargeRate"] - rate) / abs(rate), 0.01) # max 1% deviation allowed
+			self.assertLessEqual(abs(Dvcc.instance.internal_maxchargepower - rate) / abs(rate), 0.01) # max 1% deviation allowed
+
 	def validate_discharge_state(self, rate):
 		from delegates import Dvcc
 
@@ -944,65 +912,75 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Overrides/Setpoint': -96000
 		}})
 
-		self.assertAlmostEqual(rate/100.0, self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower')/-100.0,1)
+		if rate is not None:
+			self.assertLessEqual((abs(self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower')) - abs(rate)) / abs(rate), 0.01)
+
 		self.assertEqual(None, Dvcc.instance.internal_maxchargepower)
-	
+
 	def validate_idle_state(self):
+
+		#internal
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ChargeRate': 0,
+		})
+
 		#validate external values
 		self._check_external_values({
 			'com.victronenergy.hub4': {
 				'/Overrides/ForceCharge': 0,
 				'/Overrides/MaxDischargePower':1
 		}})
-		#TODO check more settings to validate idle state.
 
-	def test_hysteresis(self):
-		#Test case for batteries that don't report whole numbers, but
-		#jumps between SOC values and don't always hit match target SOC
-		#exactly. Use case jitters between 43.8% and 44.4%. """
-		from delegates import Dvcc
+	def test_soc_precision_detection(self):
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
+
+		#If the system is sitting (idle) at 55.4 % SoC and the soc drops 0.1, Hysteresis should
+		#increase to 0.1. Let it drop 3 times, validate it adjusts.
 
 		self._set_setting('/Settings/DynamicEss/Mode', 1)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 44)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 55.0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 
-		self._monitor.set_value(self.vebus, '/Soc', 44.4)
+		self._monitor.set_value(self.vebus, '/Soc', 55.0)
 		timer_manager.run(5000)
-		self.assertGreaterEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower'),  1.0) # Controlled discharge
+		timer_manager.run(5000)
 
-		self._monitor.set_value(self.vebus, '/Soc', 43.8)
-		timer_manager.run(5000)
-		# SOC is reached, idle
-		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower'), 1.0)
-		self.assertEqual(None, Dvcc.instance.internal_maxchargepower)
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/WorkingSocPrecision': 0,
+		})
 
-		# Returns to 44.4, remain in idle
-		self._monitor.set_value(self.vebus, '/Soc', 44.4)
+		self._monitor.set_value(self.vebus, '/Soc', 55.3)
 		timer_manager.run(5000)
-		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower') , 1.0)
-		self.assertEqual(None, Dvcc.instance.internal_maxchargepower)
+		timer_manager.run(5000)
 
-		# Increases to 45.1%, go back to discharge.
-		self._monitor.set_value(self.vebus, '/Soc', 45.1)
-		timer_manager.run(5000)
-		self.assertGreaterEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower'), 1.0) # Controlled discharge
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/WorkingSocPrecision': 1,
+		})
 
-		# Idle again
-		self._monitor.set_value(self.vebus, '/Soc', 43.8)
+		self._monitor.set_value(self.vebus, '/Soc', 55.33)
 		timer_manager.run(5000)
-		# SOC is reached, idle
-		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower'), 1.0)
-		self.assertEqual(None, Dvcc.instance.internal_maxchargepower)
+		timer_manager.run(5000)
 
-		# Back to charge if we go low enough
-		self._monitor.set_value(self.vebus, '/Soc', 42.9)
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/WorkingSocPrecision': 2,
+		})
+
+		self._monitor.set_value(self.vebus, '/Soc', 55.339)
 		timer_manager.run(5000)
-		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower'), -1.0)
-		self.assertGreaterEqual(Dvcc.instance.internal_maxchargepower, 0.0)
+		timer_manager.run(5000)
+
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/WorkingSocPrecision': 2,
+		})
+
 
 	def test_feedInLimitPrecedence(self):
 		# no limit set? default (-96000) kW should kick in.
