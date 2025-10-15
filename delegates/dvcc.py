@@ -477,7 +477,13 @@ class ChargerSubsystem(object):
 		return acsystem
 
 	def remove_acsystem(self, service):
-		self._acsystem0 = None
+		try:
+			if self._acsystem0.service == service:
+				self._acsystem0 = None
+				return True
+		except AttributeError:
+			pass
+		return False
 
 	@property
 	def acsystem_allows_feedback(self):
