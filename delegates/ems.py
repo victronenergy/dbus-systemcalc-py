@@ -546,7 +546,7 @@ class SolarOverhead():
 		return power_claim
 
 class S2RMDelegate():
-	def __init__(self, monitor, service, instance, rmno, priority, consumer_type, ems):
+	def __init__(self, monitor, service, instance, rmno, consumer_type, ems):
 		#General
 		self.initialized = False
 		self.service = service
@@ -556,7 +556,6 @@ class S2RMDelegate():
 		self._dbusmonitor = monitor
 		self._keep_alive_missed = 0
 		self.s2_parser = S2Parser()
-		self.priority = priority
 		self.consumer_type = consumer_type
 		self._commit_count = 0 #to ensure responsibility if consumers don't react.
 		self._no_desc_count = 0 #connection will be dropped after 6 updates with no system description.
@@ -606,7 +605,15 @@ class S2RMDelegate():
 		#TODO: RM can change timer status by sending a OMBC.TimerStatus update. Need a handler for that?
 		self.ombc_timers:dict[str, Timer] = {}
 		self.ombc_timer_starts:dict[str, datetime] = {}
-	
+
+	@property
+	def priority(self) -> float:
+		"""
+			priority of this consumer
+		"""
+		priority = self._dbusmonitor.get_value(self.service, "/Devices/{}/S2/Priority".format(self.rmno))
+		return priority if priority is not None else 100
+		
 	def publish_fake_bms_values(self):
 		"""
 			Updates the Fake BMS display option with current values. 
@@ -1247,6 +1254,13 @@ class EMS(SystemCalcDelegate):
 		if USE_FAKE_BMS:
 			self.available_fake_bms = [1,2,3,4,5,6,7,8,9]
 
+	def _observed_dbus_value_changed(self):
+		"""
+			handles the change of a monitored dbus-service-value.
+		"""
+
+		pass
+
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(EMS, self).set_sources(dbusmonitor, settings, dbusservice)
 
@@ -1255,6 +1269,7 @@ class EMS(SystemCalcDelegate):
 		self._dbusservice.add_path('/Ems/BatteryReservation', value=0)
 		self._dbusservice.add_path('/Ems/BatteryReservationState', value=None)
 		self._dbusservice.add_path('/Ems/SystemTypeFlags', value=0)
+		self._dbusservice.add_path('/Ems/AvailableServices', value="[]") #empty json array.
 
 		for l in [1,2,3]:
 			self._dbusservice.add_path('/Ems/PrimaryConsumer/Ac/L{}/Power'.format(l), value=None)
@@ -1262,6 +1277,14 @@ class EMS(SystemCalcDelegate):
 		
 		self._dbusservice.add_path('/Ems/PrimaryConsumer/Ac/Power', value=None)
 		self._dbusservice.add_path('/Ems/SecondaryConsumer/Ac/Power', value=None)
+
+		#Config should be performed through "/Ems/xxx" as well. (Unified UI-Implementation)
+		self._dbusservice.add_path('/Ems/Mode', value=settings["ems_mode"] or 0, writeable=True)
+		self._dbusservice.add_path('/Ems/WriteDebugLogs', value=settings["ems_debug"] or 0, writeable=True)
+		self._dbusservice.add_path('/Ems/BalancingThreshold', value=settings["ems_balancingthreshold"], writeable=True)
+		self._dbusservice.add_path('/Ems/ReservationBasePower', value=settings["ems_battery_base"], writeable=True)
+		self._dbusservice.add_path('/Ems/ReservationDecrement', value=settings["ems_battery_decrement"], writeable=True)
+		self._dbusservice.add_path('/Ems/BatteryPriority', value=settings["ems_batterypriority"], writeable=True)
 
 		self.system_type_flags = self._determine_system_type_flags()
 
@@ -1283,12 +1306,32 @@ class EMS(SystemCalcDelegate):
 		#EnergyCounters are stored in settings.
 
 		settings = [
+			#Mode can be 0 or 1 currently - enabled or not. 
 			("ems_mode", path + "/Mode", 0, 0, 1),
+
+			#Write debug logs or not
 			("ems_debug", path + "/Debug/WriteDebugLogs", 0, 0, 1),
+
+			#Hidden Setting: Control Loop Interval.
 			("ems_clinterval", path + "/ControlLoopInterval", 5, 1, 60),
+
+			#Threshold for offgrid / zerofeedin PV-KeepAlive
 			("ems_balancingthreshold", path + '/BalancingThreshold', 98, 2, 98),
-			("ems_batteryreservation", path + '/BatteryReservationEquation', "10000", "", ""),
-			("ems_cip", path + "/ContinuousInverterPower", 4000.0, 0, 150000.0)
+
+			#Hidden Setting: Battery Reservation equation. UI will allow to adjust RBP and RD, but users could eventually replace the whole equation
+			("ems_batteryreservation", path + '/BatteryReservationEquation', "{{RBP}} - {{SOC}} * {{RD}}", "", ""),
+
+			#Priority for battery
+			("ems_batterypriority", path + '/BatteryPriority', 0, 0, 100),
+
+			#Hidden Setting: Unused currently
+			("ems_cip", path + "/ContinuousInverterPower", 4000.0, 0, 150000.0),
+
+			#Reservation base amount for default equation.
+			("ems_battery_base", path + "/ReservationBasePower", 0.0, 0, 150000.0),
+
+			#Reservation decrement amount for default equation.
+			("ems_battery_decrement", path + "/ReservationDecrement", 0.0, 0, 150000.0)
 		]
 
 		return settings
@@ -1314,6 +1357,7 @@ class EMS(SystemCalcDelegate):
 		]
 
 	def get_output(self):
+		#delegate is publishing to _dbusservice directly, when output is required.
 		return []
 
 	def _check_s2_rm(self, serviceName, objectPath)->bool:
@@ -1333,10 +1377,9 @@ class EMS(SystemCalcDelegate):
 			s2_rm_exists = self._check_s2_rm(service, "/Devices/{}/S2".format(i))
 
 			if s2_rm_exists:
-				priority = self._dbusmonitor.get_value(service, "/Devices/{}/S2/Priority".format(i)) or 50
 				ct_raw = self._dbusmonitor.get_value(service, "/Devices/{}/S2/ConsumerType".format(i))
 				consumer_type = ConsumerType(1 if ct_raw is None else ct_raw)
-				delegate = S2RMDelegate(self._dbusmonitor, service, instance, i, priority, consumer_type, self)
+				delegate = S2RMDelegate(self._dbusmonitor, service, instance, i, consumer_type, self)
 				self.managed_rms[delegate.technical_identifier] = delegate
 				logger.info("{} | Identified S2 RM {} on {}. Added to managed RMs".format(delegate.unique_identifier, i, service))
 				delegate.begin()
@@ -1346,6 +1389,9 @@ class EMS(SystemCalcDelegate):
 			#if we don't find anything within 10 rms, stop scanning. 
 			if (i >= 10):
 				break
+		
+		#let config ui know, if something changed. 
+		self.publish_available_services()
 
 	def device_removed(self, service, instance):
 		logger_debug_proxy("Device removed: {}".format(service))
@@ -1363,6 +1409,9 @@ class EMS(SystemCalcDelegate):
 
 				#if device is gone, remove it as managed rm. 
 				del self.managed_rms [key]
+		
+		#let config ui know, if something changed. 
+		self.publish_available_services()
 
 	def settings_changed(self, setting, oldvalue, newvalue):
 		if setting == 'ems_mode':
@@ -1402,6 +1451,10 @@ class EMS(SystemCalcDelegate):
 	@property
 	def balancing_threshold(self):
 		return self._settings['ems_balancingthreshold']
+	
+	@property
+	def battery_priority(self):
+		return self._settings['ems_batterypriority']
 
 	@property
 	def soc(self) -> float:
@@ -1513,6 +1566,47 @@ class EMS(SystemCalcDelegate):
 		'''
 		self._dbusservice["/Ems/Active"] = 0
 		logger.info("EMS deactivated.")
+
+	def publish_available_services(self):
+		"""
+			Publishes all known delegates on dbus, so the UI can query this information for configuration purpose.
+		"""
+		delegate_list = []
+
+		#battery is hardcoded placeholder. 
+		battery_instance = {
+			"serviceType": "com.victronenergy.system",
+			"deviceInstance": 0,
+			"configModel": "battery",
+			"label": "Battery",
+			"priority": self.battery_priority
+		}
+
+		delegate_list.append(battery_instance)
+
+		for technical_identifier, delegate in self.managed_rms.items():
+			delegate_instance = {}
+
+			#TODO: Once there are other acloads (beside shellies) we need to change this to use another identifier to detect configModel.
+			if delegate.technical_identifier.startswith("com.victronenergy.acload"):
+				delegate_instance = {
+					"serviceType": "com.victronenergy.acload",
+					"deviceInstance": delegate.instance,
+					"configModel": "shelly",
+					"priority": delegate.priority
+				}
+				delegate_list.append(delegate_instance)
+
+			#TODO: EVCharger needs to be added, once the delegate service is clearified. EVCS-Service itself?
+		
+		#sort based on priority
+		delegate_list = sorted(delegate_list, key=lambda x: x["priority"])
+
+		#remove prio, not needed for ui
+		#for entry in delegate_list:
+		#	del entry["priority"]
+
+		self._dbusservice["/Ems/AvailableServices"] = json.dumps(delegate_list)
 
 	def _determine_system_type_flags(self) -> SystemTypeFlag:
 		'''
