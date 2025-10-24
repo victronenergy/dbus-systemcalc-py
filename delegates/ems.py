@@ -305,6 +305,59 @@ class PhaseAwareFloat():
 		return "PhaseAwareFloat[{}, {}, {}, {}, {}]".format(
 			self.total, self._l1, self._l2, self._l3, self._dc
 		)
+	
+#Helper Classes for Configurable items. 
+class Configurable():
+	def __init__(self, system_path:str, settings_path:str, settings_key:str, default_value, min_value, max_value) :
+		self._system_path = system_path
+		self._settings_path = settings_path
+		self._settings_key = settings_key
+		self._default_value = default_value
+		self._current_value = default_value #init to default
+		self._min_value = min_value
+		self._max_value = max_value
+
+		global CONFIGURABLES
+		CONFIGURABLES.append(self)
+	
+	@property
+	def system_path(self) -> str:
+		return self._system_path
+	
+	@property
+	def settings_path(self) -> str:
+		return self._settings_path
+	
+	@property
+	def settings_key(self) -> str:
+		return self._settings_key
+	
+	@property
+	def default_value(self):
+		return self._default_value
+	
+	@property
+	def min_value(self):
+		return self._min_value
+
+	@property
+	def max_value(self):
+		return self._max_value
+
+	@property
+	def current_value(self):
+		return self._current_value
+
+CONFIGURABLES:list[Configurable] = []
+C_MODE = Configurable('/Ems/Mode', '/Settings/Ems/Mode', 'ems_mode', 0, 0, 1)
+C_DEBUG_LOGS = Configurable('/Ems/WriteDebugLogs', '/Settings/Ems/Debug/WriteDebugLogs', 'ems_debug', 0, 0, 1)
+C_BALANCING_THRESHOLD = Configurable('/Ems/BalancingThreshold', '/Settings/Ems/BalancingThreshold', 'ems_balancingthreshold', 98, 2, 98)
+C_RESERVATION_BASE_POWER = Configurable('/Ems/ReservationBasePower', '/Settings/Ems/ReservationBasePower', 'ems_battery_base', 10000.0, 0.0, 100000.0)
+C_RESERVATION_DECREMENT = Configurable('/Ems/ReservationDecrement', '/Settings/Ems/ReservationDecrement', 'ems_battery_decrement', 100.0, 0.0, 100000.0)
+C_RESERVATION_EQUATION = Configurable(None, '/Settings/Ems/BatteryReservationEquation', 'ems_batteryreservation', "RBP - SOC * RD","","")
+C_BATTERY_PRIORITY = Configurable('/Ems/BatteryPriority', '/Settings/Ems/BatteryPriority', 'ems_batterypriority', 0, 0, 1000)
+C_CONTINIOUS_INVERTER_POWER = Configurable(None, '/Settings/Ems/ContinuousInverterPower', 'ems_cip', 30000.0, 0.0, 300000.0)
+C_CONTROL_LOOP_INTERVAL = Configurable(None, '/Settings/Ems/ControlLoopInterval', 'ems_clinterval', 5, 5, 15)
 
 class SolarOverhead():
 	def __init__(self, l1:float, l2:float, l3:float, dcpv:float, reservation:float, battery_rate:float, 
@@ -663,7 +716,6 @@ class S2RMDelegate():
 
 		except Exception as ex: 
 			logger.error("Exception during fake bms publish. This may be temporary", exc_info=ex)
-
 
 	def begin(self):
 		"""
@@ -1137,54 +1189,6 @@ class S2RMDelegate():
 		
 		return False
 
-	def comit(self) -> bool:
-		"""
-			To be called, when all consumers have claimed their power share. If no new instruction is required 
-			for the rm, there will be none. 
-		"""
-		if self.active_control_type == ControlType.OPERATION_MODE_BASED_CONTROL:
-			#Transitioning may be based on timers. So, check if our transition is suspect to be delayed currently. 
-			#FIXME: Sommetimes this stucks, because is_Confirmed is false, but next op mode is equal current mode? 
-			if self._ombc_next_operation_mode is not None and self._ombc_next_operation_mode.id != self.ombc_active_operation_mode.id:
-				#send out op mode selection, as operation mode changed. 
-				self.current_state_confirmed=False
-				self.ombc_active_instruction = OMBCInstruction(
-					message_id = uuid.uuid4(),
-					id = uuid.uuid4(),
-					execution_time= datetime.now(timezone.utc),
-					operation_mode_factor=1.0, #TODO: This needs to be adjusted, along with the factor determined by power allocation. 
-					operation_mode_id= self._ombc_next_operation_mode.id,
-					abnormal_condition=False
-				)
-
-				logger.info("{} | Instruction send: OMBC = {} (Power-Claim: {})".format(self.unique_identifier, self._ombc_next_operation_mode.diagnostic_label, self.power_claim))
-
-				self._s2_send_message(self.ombc_active_instruction)
-
-				self._commit_count += 1
-				#This has to be confirmed by the resource-manager, not assume it "worked".
-				#self.ombc_active_operation_mode = self._ombc_next_operation_mode
-
-				if self._commit_count >= 7:
-					#Consumer is not reacting. That is odd. Only escape we have is to drop off and reconnect. 
-					logger.warning("{} | RM didn't respond after 6 commits. Assuming stale, disconnecting.".format(self.unique_identifier))
-					self.end()
-					return False
-
-				return True
-			
-			else:
-				logger.warning("{} | Comit called, but current state equals desired state or next mode is none: {}->{}".format(
-					self.unique_identifier, 
-					self.ombc_active_operation_mode.diagnostic_label if self.ombc_active_operation_mode is not None else "None",
-					self._ombc_next_operation_mode.diagnostic_label if self._ombc_next_operation_mode is not None else "None"
-					))
-
-		else:
-			logger.warning("{} | No comit logic implemented for Control Type: {}".format(self.unique_identifier, self.active_control_type.name if self.active_control_type is not None else "None"))
-
-		return False
-
 	def _ombc_check_timer_block(self, target_operation_mode:OMBCOperationMode) -> float:
 		"""
 			Checks if there is a blocking timer, if there is, returns the amount of seconds to go. 
@@ -1233,6 +1237,54 @@ class S2RMDelegate():
 		self.ombc_transition_info = None
 		return 0
 
+	def comit(self) -> bool:
+		"""
+			To be called, when all consumers have claimed their power share. If no new instruction is required 
+			for the rm, there will be none. 
+		"""
+		if self.active_control_type == ControlType.OPERATION_MODE_BASED_CONTROL:
+			#Transitioning may be based on timers. So, check if our transition is suspect to be delayed currently. 
+			#FIXME: Sommetimes this stucks, because is_Confirmed is false, but next op mode is equal current mode? 
+			if self._ombc_next_operation_mode is not None and self._ombc_next_operation_mode.id != self.ombc_active_operation_mode.id:
+				#send out op mode selection, as operation mode changed. 
+				self.current_state_confirmed=False
+				self.ombc_active_instruction = OMBCInstruction(
+					message_id = uuid.uuid4(),
+					id = uuid.uuid4(),
+					execution_time= datetime.now(timezone.utc),
+					operation_mode_factor=1.0, #TODO: This needs to be adjusted, along with the factor determined by power allocation. 
+					operation_mode_id= self._ombc_next_operation_mode.id,
+					abnormal_condition=False
+				)
+
+				logger.info("{} | Instruction send: OMBC = {} (Power-Claim: {})".format(self.unique_identifier, self._ombc_next_operation_mode.diagnostic_label, self.power_claim))
+
+				self._s2_send_message(self.ombc_active_instruction)
+
+				self._commit_count += 1
+				#This has to be confirmed by the resource-manager, not assume it "worked".
+				#self.ombc_active_operation_mode = self._ombc_next_operation_mode
+
+				if self._commit_count >= 7:
+					#Consumer is not reacting. That is odd. Only escape we have is to drop off and reconnect. 
+					logger.warning("{} | RM didn't respond after 6 commits. Assuming stale, disconnecting.".format(self.unique_identifier))
+					self.end()
+					return False
+
+				return True
+			
+			else:
+				logger.warning("{} | Comit called, but current state equals desired state or next mode is none: {}->{}".format(
+					self.unique_identifier, 
+					self.ombc_active_operation_mode.diagnostic_label if self.ombc_active_operation_mode is not None else "None",
+					self._ombc_next_operation_mode.diagnostic_label if self._ombc_next_operation_mode is not None else "None"
+					))
+
+		else:
+			logger.warning("{} | No comit logic implemented for Control Type: {}".format(self.unique_identifier, self.active_control_type.name if self.active_control_type is not None else "None"))
+
+		return False
+
 class EMS(SystemCalcDelegate):
 	#TODO: Refactor dateTime usage to _get_time everywhere, as this required for unit testing to time travel.
 	_get_time = datetime.now
@@ -1254,85 +1306,57 @@ class EMS(SystemCalcDelegate):
 		if USE_FAKE_BMS:
 			self.available_fake_bms = [1,2,3,4,5,6,7,8,9]
 
-	def _observed_dbus_value_changed(self):
-		"""
-			handles the change of a monitored dbus-service-value.
-		"""
-
-		pass
-
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(EMS, self).set_sources(dbusmonitor, settings, dbusservice)
 
+		#initialize configurables with eventually stored settings. 
+		for c in CONFIGURABLES:
+			try:
+				v = settings[c.settings_key]
+				if v is not None:
+					#write internal backing field to bypass setter triggering a config update.
+					c._current_value = v
+			except Exception:
+				logger.warning("Couldn't load setting for Configurable {}:{}; Fine if not yet persisted something.".format(c.settings_key, c.settings_path))
+
+		#Output Paths we use. 
 		self._dbusservice.add_path('/Ems/Active', value=0, gettextcallback=lambda p, v: Modes(v))
 		self._dbusservice.add_path('/Ems/Debug/LoopTime', value=0)
 		self._dbusservice.add_path('/Ems/BatteryReservation', value=0)
 		self._dbusservice.add_path('/Ems/BatteryReservationState', value=None)
 		self._dbusservice.add_path('/Ems/SystemTypeFlags', value=0)
 		self._dbusservice.add_path('/Ems/AvailableServices', value="[]") #empty json array.
+		self._dbusservice.add_path('/Ems/PrimaryConsumer/Ac/Power', value=None)
+		self._dbusservice.add_path('/Ems/SecondaryConsumer/Ac/Power', value=None)
 
 		for l in [1,2,3]:
 			self._dbusservice.add_path('/Ems/PrimaryConsumer/Ac/L{}/Power'.format(l), value=None)
 			self._dbusservice.add_path('/Ems/SecondaryConsumer/Ac/L{}/Power'.format(l), value=None)
 		
-		self._dbusservice.add_path('/Ems/PrimaryConsumer/Ac/Power', value=None)
-		self._dbusservice.add_path('/Ems/SecondaryConsumer/Ac/Power', value=None)
-
-		#Config should be performed through "/Ems/xxx" as well. (Unified UI-Implementation)
-		self._dbusservice.add_path('/Ems/Mode', value=settings["ems_mode"] or 0, writeable=True)
-		self._dbusservice.add_path('/Ems/WriteDebugLogs', value=settings["ems_debug"] or 0, writeable=True)
-		self._dbusservice.add_path('/Ems/BalancingThreshold', value=settings["ems_balancingthreshold"], writeable=True)
-		self._dbusservice.add_path('/Ems/ReservationBasePower', value=settings["ems_battery_base"], writeable=True)
-		self._dbusservice.add_path('/Ems/ReservationDecrement', value=settings["ems_battery_decrement"], writeable=True)
-		self._dbusservice.add_path('/Ems/BatteryPriority', value=settings["ems_batterypriority"], writeable=True)
+		#Configurables may produce a Output/Input Path as well. Configurables are writable as per definition. 
+		for c in CONFIGURABLES:
+			if c.system_path is not None:
+				self._dbusservice.add_path(c.system_path, value=c.current_value or c.default_value, writeable=True)	
 
 		self.system_type_flags = self._determine_system_type_flags()
 
 		#enable, if setting indicates enabled. 
-		if self.mode == 1:
+		if C_MODE.current_value == 1:
 			self._enable()
 		else:
 			self._disable()
 
 		#configure logging as requested. 
-		if self.write_debug_logs:
+		if C_DEBUG_LOGS.current_value == 1:
 			global logger_debug_proxy
 			logger.info("Enabled debug logging for EMS.")
 			logger_debug_proxy = logger.debug
 
 	def get_settings(self):
 		# Settings for EMS
-		path = '/Settings/Ems'
-		#EnergyCounters are stored in settings.
-
-		settings = [
-			#Mode can be 0 or 1 currently - enabled or not. 
-			("ems_mode", path + "/Mode", 0, 0, 1),
-
-			#Write debug logs or not
-			("ems_debug", path + "/Debug/WriteDebugLogs", 0, 0, 1),
-
-			#Hidden Setting: Control Loop Interval.
-			("ems_clinterval", path + "/ControlLoopInterval", 5, 1, 60),
-
-			#Threshold for offgrid / zerofeedin PV-KeepAlive
-			("ems_balancingthreshold", path + '/BalancingThreshold', 98, 2, 98),
-
-			#Hidden Setting: Battery Reservation equation. UI will allow to adjust RBP and RD, but users could eventually replace the whole equation
-			("ems_batteryreservation", path + '/BatteryReservationEquation', "{{RBP}} - {{SOC}} * {{RD}}", "", ""),
-
-			#Priority for battery
-			("ems_batterypriority", path + '/BatteryPriority', 0, 0, 100),
-
-			#Hidden Setting: Unused currently
-			("ems_cip", path + "/ContinuousInverterPower", 4000.0, 0, 150000.0),
-
-			#Reservation base amount for default equation.
-			("ems_battery_base", path + "/ReservationBasePower", 0.0, 0, 150000.0),
-
-			#Reservation decrement amount for default equation.
-			("ems_battery_decrement", path + "/ReservationDecrement", 0.0, 0, 150000.0)
-		]
+		settings = []
+		for c in CONFIGURABLES:
+			settings.append((c.settings_key, c.settings_path, c.default_value, c.min_value, c.max_value))
 
 		return settings
 
@@ -1378,7 +1402,7 @@ class EMS(SystemCalcDelegate):
 
 			if s2_rm_exists:
 				ct_raw = self._dbusmonitor.get_value(service, "/Devices/{}/S2/ConsumerType".format(i))
-				consumer_type = ConsumerType(1 if ct_raw is None else ct_raw)
+				consumer_type = ConsumerType(1 if ct_raw is None else ct_raw) #FIXME remove and make implicit based on battery priority
 				delegate = S2RMDelegate(self._dbusmonitor, service, instance, i, consumer_type, self)
 				self.managed_rms[delegate.technical_identifier] = delegate
 				logger.info("{} | Identified S2 RM {} on {}. Added to managed RMs".format(delegate.unique_identifier, i, service))
@@ -1414,7 +1438,19 @@ class EMS(SystemCalcDelegate):
 		self.publish_available_services()
 
 	def settings_changed(self, setting, oldvalue, newvalue):
-		if setting == 'ems_mode':
+		#generic setting handling
+		for c in CONFIGURABLES:
+			if c.settings_key == setting:
+				c._current_value = newvalue
+
+				#write back to system path, if that's not the origin of the change.
+				if self._dbusservice[c.system_path] != newvalue:
+					self._dbusservice[c.system_path] = newvalue
+
+				break
+		
+		#some dedicated handling to make sure immediate effect.
+		if setting == C_MODE.settings_key:
 			if oldvalue == 0 and newvalue == 1:
 				self._enable()
 			if oldvalue == 1 and newvalue == 0:
@@ -1422,7 +1458,7 @@ class EMS(SystemCalcDelegate):
 		
 		#Check, if debug logging has been enabled, then setup our debug proxy.
 		#Else set it to the pass-proxy.
-		if setting == 'ems_debug':
+		if setting == C_DEBUG_LOGS.settings_key:
 			global logger_debug_proxy
 			if newvalue == 1:
 				logger.info("Enabled debug logging for EMS.")
@@ -1430,31 +1466,9 @@ class EMS(SystemCalcDelegate):
 			else:
 				logger.info("Disabled debug logging for EMS.")
 				logger_debug_proxy = logger_debug_proxy_pass
-
-
-	@property
-	def mode(self):
-		return self._settings['ems_mode']
-	
-	@property
-	def write_debug_logs(self):
-		return self._settings['ems_debug']
-	
-	@property
-	def continuous_inverter_power(self):
-		return self._settings['ems_cip']
-
-	@property
-	def control_loop_interval(self):
-		return self._settings['ems_clinterval']
-	
-	@property
-	def balancing_threshold(self):
-		return self._settings['ems_balancingthreshold']
-	
-	@property
-	def battery_priority(self):
-		return self._settings['ems_batterypriority']
+		
+		#accept change
+		return True
 
 	@property
 	def soc(self) -> float:
@@ -1462,10 +1476,13 @@ class EMS(SystemCalcDelegate):
 			current soc 0 - 100
 		"""
 		return BatterySoc.instance.soc
-		
+	
 	def calculate_soc_res_map(self, equation:str) -> Dict[int,float]:
 		"""
-			Calculates the soc map 0 - 100 for the given equation.
+			DEPRECATED: Needs fix to new calculations. Will be updated if this ever will be used. Calculates the soc map 0 - 100 for the given equation.
+		"""
+		return {}
+		
 		"""
 		res = {}
 		for i in range(0,101):
@@ -1475,6 +1492,7 @@ class EMS(SystemCalcDelegate):
 			except:
 				return None
 		return res
+		"""
 
 	@property
 	def current_battery_reservation(self) -> float:
@@ -1485,7 +1503,14 @@ class EMS(SystemCalcDelegate):
 		"""
 		reservation = 0.0
 		try:
-			reservation = round(eval(self._settings['ems_batteryreservation'].replace("SOC", str(self.soc))))
+			# The Default equation is "RBP - SOC * RD"
+			# RBP = ReservationBasePower
+			# SOC = SOC
+			# RD  = ReservationDecrement
+			number_equation = C_RESERVATION_EQUATION.current_value.replace("SOC", str(self.soc))
+			number_equation = number_equation.replace("RBP", str(C_RESERVATION_BASE_POWER.current_value))
+			number_equation = number_equation.replace("RD", str(C_RESERVATION_DECREMENT.current_value))
+			reservation = round(eval(number_equation))
 			capability = self.get_charge_power_capability()
 			dess_charge = self._dbusservice["/DynamicEss/ChargeRate"]
 			dess_rs = self._dbusservice["/DynamicEss/ReactiveStrategy"]
@@ -1493,7 +1518,7 @@ class EMS(SystemCalcDelegate):
 
 			#When we are at BalancingSoc + 1, Reservation can become 0. (ZeroFeedin and Offgrid) to Keep PV Alive 
 			if self.system_type_flags & (SystemTypeFlag.OffGrid | SystemTypeFlag.ZeroFeedin):
-				if self.soc is not None and self.soc >= self.balancing_threshold + 1:
+				if self.soc is not None and self.soc >= C_BALANCING_THRESHOLD.current_value+ 1:
 					reservation = 0
 					reservation_hint = "PVKA"
 
@@ -1553,12 +1578,13 @@ class EMS(SystemCalcDelegate):
 		'''
 			Enables EMS.
 		'''
-		self._timer = GLib.timeout_add(self.control_loop_interval * 1000, self._on_timer) #regular control loop according to configuration.
+		self._timer = GLib.timeout_add(C_CONTROL_LOOP_INTERVAL.current_value * 1000, self._on_timer) #regular control loop according to configuration.
+		self._settings_timer = GLib.timeout_add(5000, self._on_settings_monitor_timer) #Check if settings change.
 		self._limit_timer = GLib.timeout_add(INVERTER_LIMIT_MONITOR_INTERVAL_MS, self._on_timer_check_inverter_limits) #quick monitoring of desired inverter limitations
 		self._timer_track_power = GLib.timeout_add(1000, self._on_timer_track_power)
 		self._timer_retry_connections = GLib.timeout_add(CONNECTION_RETRY_INTERVAL_MS, self._on_timer_retry_connection) #retry connection to devices periodically.
 		self._dbusservice["/Ems/Active"] = 1
-		logger.info("EMS activated with a control loop interval of {}s".format(self.control_loop_interval))
+		logger.info("EMS activated with a control loop interval of {}s".format(C_CONTROL_LOOP_INTERVAL.current_value))
 
 	def _disable(self):
 		'''
@@ -1579,7 +1605,7 @@ class EMS(SystemCalcDelegate):
 			"deviceInstance": 0,
 			"configModel": "battery",
 			"label": "Battery",
-			"priority": self.battery_priority
+			"priority": C_BATTERY_PRIORITY.current_value
 		}
 
 		delegate_list.append(battery_instance)
@@ -1622,7 +1648,7 @@ class EMS(SystemCalcDelegate):
 
 			# Determine Flags for this system. 
 			if grid_parallel is not None and grid_parallel == 1:
-				self.continuous_inverter_power_per_phase = self.continuous_inverter_power / no_phases_grid
+				self.continuous_inverter_power_per_phase = C_CONTINIOUS_INVERTER_POWER.current_value / no_phases_grid
 				system_type_flags |= SystemTypeFlag.GridConnected
 				if no_phases_grid == 1: system_type_flags |= SystemTypeFlag.SinglePhase
 				elif no_phases_grid == 2: system_type_flags |= SystemTypeFlag.DualPhase
@@ -1634,7 +1660,7 @@ class EMS(SystemCalcDelegate):
 				if multiphase_mode == 0: system_type_flags |= SystemTypeFlag.Individual
 				elif multiphase_mode == 1: system_type_flags |= SystemTypeFlag.Saldating
 			else:
-				self.continuous_inverter_power_per_phase = self.continuous_inverter_power / no_phases_output
+				self.continuous_inverter_power_per_phase = C_CONTINIOUS_INVERTER_POWER.current_value / no_phases_output
 				system_type_flags |= SystemTypeFlag.OffGrid
 				if no_phases_output == 1: system_type_flags |= SystemTypeFlag.SinglePhase
 				elif no_phases_output == 2: system_type_flags |= SystemTypeFlag.DualPhase
@@ -1703,11 +1729,22 @@ class EMS(SystemCalcDelegate):
 		# TODO: Implement.
 		pass
 
+	def _on_settings_monitor_timer(self):
+		#Check if there is a setting write request.
+		for c in CONFIGURABLES:
+			if c.system_path is not None:
+				if c.system_path in self._dbusservice:
+					if c.current_value != self._dbusservice[c.system_path]:
+						logger.debug("Config change request detected: {} -> {}".format(c.system_path, self._dbusservice[c.system_path]))
+						#just update settings device. it'll push back and update the Configurable.
+						self._settings[c.settings_key] = self._dbusservice[c.system_path]
+
 	def _on_timer(self):
 		try:
 			logger_debug_proxy("v------------------- LOOP -------------------v")
 			# Control loop timer.
 			now = self._get_time()
+
 			self.system_type_flags = self._determine_system_type_flags()
 			logger_debug_proxy("System Type Flags are: {}".format(SystemTypeFlag.to_str(self.system_type_flags)))
 
@@ -1867,7 +1904,7 @@ class EMS(SystemCalcDelegate):
 			self._dbusservice["/Ems/Debug/LoopTime"] = duration
 			logger_debug_proxy("^------------------- LOOP -------------------^")
 
-			if (self.mode == 1):
+			if (C_MODE.current_value== 1):
 				return True	#keep timer up as long as mode is enabled.
 		except Exception as ex:
 			logger.fatal("Exception during control loop", exc_info=ex)
@@ -1915,13 +1952,13 @@ class EMS(SystemCalcDelegate):
 		#Hence, when we are at balancingSoc + 1, we going to pretend more DCPV than there is, to increase HEMS consumption
 		#and ensure solar is remaining unthrottled. When reaching balancingSoc - 1, we restore normal operation mode. 
 		if self.system_type_flags & (SystemTypeFlag.ZeroFeedin | SystemTypeFlag.OffGrid):
-			if self.soc is not None and self.soc >= self.balancing_threshold + 1:
-				if (batrate > 0 or self.soc == 100) and self.dcpv_balancing_offset < self.continuous_inverter_power:
+			if self.soc is not None and self.soc >= C_BALANCING_THRESHOLD.current_value + 1:
+				if (batrate > 0 or self.soc == 100) and self.dcpv_balancing_offset < C_CONTINIOUS_INVERTER_POWER.current_value:
 					self.dcpv_balancing_offset += 100 #increse 100 Watts per iteration until we reach a negative charge rate
 					logger_debug_proxy("Increasing dcpv balancing offset to {}W".format(self.dcpv_balancing_offset))
 			
 			#reset if applicable.
-			if self.soc is None or self.soc <= self.balancing_threshold - 1:
+			if self.soc is None or self.soc <= C_BALANCING_THRESHOLD.current_value - 1:
 				self.dcpv_balancing_offset = 0
 		else:
 			#System Type is something else, we don't need an offset. (Leave this here, type can change)
