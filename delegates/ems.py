@@ -599,7 +599,7 @@ class SolarOverhead():
 		return power_claim
 
 class S2RMDelegate():
-	def __init__(self, monitor, service, instance, rmno, consumer_type, ems):
+	def __init__(self, monitor, service, instance, rmno, ems):
 		#General
 		self.initialized = False
 		self.service = service
@@ -609,7 +609,6 @@ class S2RMDelegate():
 		self._dbusmonitor = monitor
 		self._keep_alive_missed = 0
 		self.s2_parser = S2Parser()
-		self.consumer_type = consumer_type
 		self._commit_count = 0 #to ensure responsibility if consumers don't react.
 		self._no_desc_count = 0 #connection will be dropped after 6 updates with no system description.
 		self._ems:EMS=ems
@@ -666,7 +665,14 @@ class S2RMDelegate():
 		"""
 		priority = self._dbusmonitor.get_value(self.service, "/Devices/{}/S2/Priority".format(self.rmno))
 		return priority if priority is not None else 100
-		
+
+	@property
+	def consumer_type(self) -> ConsumerType:
+		"""
+			Returns the consumer type. Primary consumers have a higher priority (lower value) than the battery.
+		"""
+		return ConsumerType.Primary if self.priority < C_BATTERY_PRIORITY.current_value else ConsumerType.Secondary
+
 	def publish_fake_bms_values(self):
 		"""
 			Updates the Fake BMS display option with current values. 
@@ -1402,8 +1408,7 @@ class EMS(SystemCalcDelegate):
 
 			if s2_rm_exists:
 				ct_raw = self._dbusmonitor.get_value(service, "/Devices/{}/S2/ConsumerType".format(i))
-				consumer_type = ConsumerType(1 if ct_raw is None else ct_raw) #FIXME remove and make implicit based on battery priority
-				delegate = S2RMDelegate(self._dbusmonitor, service, instance, i, consumer_type, self)
+				delegate = S2RMDelegate(self._dbusmonitor, service, instance, i, self)
 				self.managed_rms[delegate.technical_identifier] = delegate
 				logger.info("{} | Identified S2 RM {} on {}. Added to managed RMs".format(delegate.unique_identifier, i, service))
 				delegate.begin()
