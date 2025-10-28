@@ -669,6 +669,14 @@ class S2RMDelegate():
 		return priority if priority is not None else 100
 
 	@property
+	def priority_sort(self) -> float:
+		"""
+			priority * 1000 of this consumer and secondary sorting by device instance.
+		"""
+		priority = self._dbusmonitor.get_value(self.service, "/S2/0/Priority".format(self.rmno))
+		return (priority * 1000 +  self.instance) if priority is not None else 10000
+
+	@property
 	def consumer_type(self) -> ConsumerType:
 		"""
 			Returns the consumer type. Primary consumers have a higher priority (lower value) than the battery.
@@ -1636,6 +1644,8 @@ class EMS(SystemCalcDelegate):
 		#for entry in delegate_list:
 		#	del entry["priority"]
 
+		#FIXME: UI will update this array, and we have to take care to distribute the updated
+		#       priority to consumers.
 		self._dbusservice["/OpportunityLoads/AvailableServices"] = json.dumps(delegate_list)
 
 	def _determine_system_type_flags(self) -> SystemTypeFlag:
@@ -1798,7 +1808,7 @@ class EMS(SystemCalcDelegate):
 				#Iterate over all known RMs, check their requirement and assign them a suitable Budget. 
 				#The RMDelegate is responsible to communicate with it's rm upon .comit() beeing called. 
 				#sort RMs by priority before iterating.
-				for technical_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority):
+				for technical_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority_sort):
 					logger_debug_proxy("=============================================================================================================")  
 					if delegate.initialized and delegate.rm_details is not None:
 						if delegate.active_control_type is not None and delegate.active_control_type != ControlType.NOT_CONTROLABLE:
@@ -1832,15 +1842,15 @@ class EMS(SystemCalcDelegate):
 				global_was_change = False
 				if not state_change_pending:
 					# debug
-					for technical_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority * -1):
+					for technical_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority_sort * -1):
 						if delegate.initialized and delegate.expected_power_change < 0:
 							logger.info("{} | Pending transition to a lower energy state: {}".format(delegate.unique_identifier, delegate.expected_power_change))
 					
-					for technical_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority):
+					for technical_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority_sort):
 							if delegate.initialized and delegate.expected_power_change > 0:
 								logger.info("{} | Pending transition to a higher energy state: +{}".format(delegate.unique_identifier, delegate.expected_power_change))
 
-					for technical_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority * -1):
+					for technical_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority_sort * -1):
 						if delegate.initialized and delegate.expected_power_change < 0:
 							was_change = delegate.comit()
 
@@ -1850,7 +1860,7 @@ class EMS(SystemCalcDelegate):
 								break
 
 					if not global_was_change:
-						for technical_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority):
+						for technical_identifier, delegate in sorted(self.managed_rms.items(), key=lambda i: i[1].priority_sort):
 							if delegate.initialized and delegate.expected_power_change > 0:
 								was_change = delegate.comit()
 
