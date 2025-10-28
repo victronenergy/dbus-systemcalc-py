@@ -52,6 +52,7 @@ class SystemCalc:
 				'/Dc/1/Voltage': dummy,
 				'/Dc/0/Current': dummy,
 				'/Dc/0/Power': dummy,
+				'/Capacity': dummy,
 				'/Soc': dummy,
 				'/Sense/Current': dummy,
 				'/TimeToGo': dummy,
@@ -83,7 +84,8 @@ class SystemCalc:
 				'/Dc/0/Voltage': dummy,
 				'/Dc/0/Current': dummy,
 				'/Dc/0/Power': dummy,
-				'/Soc': dummy},
+				'/Soc': dummy,
+				'/Dc/0/Capacity': dummy},
 			'com.victronenergy.fuelcell': {
 				'/Connected': dummy,
 				'/ProductName': dummy,
@@ -342,6 +344,7 @@ class SystemCalc:
 			'/Dc/Battery/TimeToGo': {'gettext': '%.0F s'},
 			'/Dc/Battery/ConsumedAmphours': {'gettext': '%.1F Ah'},
 			'/Dc/Battery/ProductId': {'gettext': '0x%x'},
+			'/Dc/Battery/Capacity': {'gettext': '%.0F Ah'},
 			'/Dc/Charger/Power': {'gettext': '%.0F %%'},
 			'/Dc/FuelCell/Power': {'gettext': '%.0F %%'},
 			'/Dc/Alternator/Power': {'gettext': '%.0F W'},
@@ -697,12 +700,16 @@ class SystemCalc:
 				newvalues['/Dc/Battery/Current'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
 				newvalues['/Dc/Battery/Power'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Power')
 
+				if batteryservicetype == 'battery':
+					newvalues['/Dc/Battery/Capacity'] = self._dbusmonitor.get_value(self._batteryservice, '/Capacity')
+
 			elif batteryservicetype == 'vebus':
 				vebus_voltage = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Voltage')
 				vebus_current = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
 				vebus_power = None if vebus_voltage is None or vebus_current is None else vebus_current * vebus_voltage
 				newvalues['/Dc/Battery/Voltage'] = vebus_voltage
 				newvalues['/Dc/Battery/VoltageService'] = self._batteryservice
+				newvalues['/Dc/Battery/Capacity'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Capacity')
 				if self._settings['hasdcsystem'] == 1 or dcsystems:
 					# hasdcsystem will normally disqualify the multi from being
 					# auto-selected as battery monitor, so the only way we're
