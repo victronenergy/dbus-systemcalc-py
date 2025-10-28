@@ -576,11 +576,11 @@ class EVCSMock(Service):
     
     def __init__(self, bus, name, instance):
         self.instance = instance
-        super().__init__(bus, "{}.m_{}".format(name, instance))
+        super().__init__(bus, "{}.evcs_mock_{}".format(name, instance))
 
     def setup_rm0(self):
         self.rm0 = RM0(
-            '/Devices/0/S2', 
+            '/S2/0', 
             AssetDetails(
                 uuid.uuid4(),
                 False,
@@ -659,8 +659,7 @@ if __name__ == "__main__":
         #Some to be discussed items. Suspect to User-Configuration.
         #Actual (generic) rm may use more here, like Power and Phase(s) used by the RSS.
         #(Because a generic RM controlling a shelly / switchable output can't know.)
-        service.add_item(IntegerItem('/Devices/0/S2/Priority', 25)) #Priority , EMS will read
-        service.add_item(IntegerItem('/Devices/0/S2/ConsumerType', 1)) # 0=primary load, 1=secondary load, EMS will read
+        service.add_item(IntegerItem('/S2/0/Priority', 2)) #Priority , EMS will read
         service.setup_rm0()
 
         #finally register our service.

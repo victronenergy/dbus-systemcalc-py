@@ -349,15 +349,15 @@ class Configurable():
 		return self._current_value
 
 CONFIGURABLES:list[Configurable] = []
-C_MODE = Configurable('/Ems/Mode', '/Settings/Ems/Mode', 'ems_mode', 0, 0, 1)
-C_DEBUG_LOGS = Configurable('/Ems/WriteDebugLogs', '/Settings/Ems/Debug/WriteDebugLogs', 'ems_debug', 0, 0, 1)
-C_BALANCING_THRESHOLD = Configurable('/Ems/BalancingThreshold', '/Settings/Ems/BalancingThreshold', 'ems_balancingthreshold', 98, 2, 98)
-C_RESERVATION_BASE_POWER = Configurable('/Ems/ReservationBasePower', '/Settings/Ems/ReservationBasePower', 'ems_battery_base', 10000.0, 0.0, 100000.0)
-C_RESERVATION_DECREMENT = Configurable('/Ems/ReservationDecrement', '/Settings/Ems/ReservationDecrement', 'ems_battery_decrement', 100.0, 0.0, 100000.0)
-C_RESERVATION_EQUATION = Configurable(None, '/Settings/Ems/BatteryReservationEquation', 'ems_batteryreservation', "RBP - SOC * RD","","")
-C_BATTERY_PRIORITY = Configurable('/Ems/BatteryPriority', '/Settings/Ems/BatteryPriority', 'ems_batterypriority', 0, 0, 1000)
-C_CONTINIOUS_INVERTER_POWER = Configurable(None, '/Settings/Ems/ContinuousInverterPower', 'ems_cip', 30000.0, 0.0, 300000.0)
-C_CONTROL_LOOP_INTERVAL = Configurable(None, '/Settings/Ems/ControlLoopInterval', 'ems_clinterval', 5, 5, 15)
+C_MODE = Configurable('/OpportunityLoads/Mode', '/Settings/OpportunityLoads/Mode', 'ems_mode', 0, 0, 1)
+C_DEBUG_LOGS = Configurable(None, '/Settings/OpportunityLoads/Debug/WriteDebugLogs', 'ems_debug', 0, 0, 1)
+C_BALANCING_THRESHOLD = Configurable('/OpportunityLoads/BalancingThreshold', '/Settings/OpportunityLoads/BalancingThreshold', 'ems_balancingthreshold', 98, 2, 98)
+C_RESERVATION_BASE_POWER = Configurable('/OpportunityLoads/ReservationBasePower', '/Settings/OpportunityLoads/ReservationBasePower', 'ems_battery_base', 10000.0, 0.0, 100000.0)
+C_RESERVATION_DECREMENT = Configurable('/OpportunityLoads/ReservationDecrement', '/Settings/OpportunityLoads/ReservationDecrement', 'ems_battery_decrement', 100.0, 0.0, 100000.0)
+C_RESERVATION_EQUATION = Configurable(None, '/Settings/OpportunityLoads/BatteryReservationEquation', 'ems_batteryreservation', "RBP - SOC * RD","","")
+C_BATTERY_PRIORITY = Configurable('/OpportunityLoads/BatteryPriority', '/Settings/OpportunityLoads/BatteryPriority', 'ems_batterypriority', 0, 0, 1000)
+C_CONTINIOUS_INVERTER_POWER = Configurable(None, '/Settings/OpportunityLoads/ContinuousInverterPower', 'ems_cip', 30000.0, 0.0, 300000.0)
+C_CONTROL_LOOP_INTERVAL = Configurable(None, '/Settings/OpportunityLoads/ControlLoopInterval', 'ems_clinterval', 5, 5, 15)
 
 class SolarOverhead():
 	def __init__(self, l1:float, l2:float, l3:float, dcpv:float, reservation:float, battery_rate:float, 
@@ -605,7 +605,7 @@ class S2RMDelegate():
 		self.service = service
 		self.instance = instance
 		self.rmno = rmno
-		self.s2path = "/Devices/{}/S2".format(rmno)
+		self.s2path = "/S2/0"
 		self._dbusmonitor = monitor
 		self._keep_alive_missed = 0
 		self.s2_parser = S2Parser()
@@ -616,13 +616,15 @@ class S2RMDelegate():
 		self._reported_as_blocked = False
 		self.ombc_transition_info = None
 		self.unique_identifier = None
-		self.technical_identifier = "{}_RM_{}".format(self.service, self.rmno)
+		self.technical_identifier = "{}_{}".format(self.service, self.instance)
 		
 		#Build a static unique_identifier. Has to be unchanged during connection. 
 		#If the service has a customname, use that as foundation, else use the service type. 
 		custom_name = monitor.get_value(service, "/CustomName", None)
+
+		#FIXME: Unique Identifier has to change, S2 path will now default to "/0/", making the S2 path an invalid unique ientifier part.
 		if custom_name is not None and custom_name != "":
-			self.unique_identifier = "{}_RM_{}".format(custom_name.replace(" ", "_") , self.rmno)
+			self.unique_identifier = "{}_{}".format(custom_name.replace(" ", "_") , self.instance)
 		else:
 			self.unique_identifier = self.technical_identifier
 
@@ -663,7 +665,7 @@ class S2RMDelegate():
 		"""
 			priority of this consumer
 		"""
-		priority = self._dbusmonitor.get_value(self.service, "/Devices/{}/S2/Priority".format(self.rmno))
+		priority = self._dbusmonitor.get_value(self.service, "/S2/0/Priority".format(self.rmno))
 		return priority if priority is not None else 100
 
 	@property
@@ -1326,18 +1328,17 @@ class EMS(SystemCalcDelegate):
 				logger.warning("Couldn't load setting for Configurable {}:{}; Fine if not yet persisted something.".format(c.settings_key, c.settings_path))
 
 		#Output Paths we use. 
-		self._dbusservice.add_path('/Ems/Active', value=0, gettextcallback=lambda p, v: Modes(v))
-		self._dbusservice.add_path('/Ems/Debug/LoopTime', value=0)
-		self._dbusservice.add_path('/Ems/BatteryReservation', value=0)
-		self._dbusservice.add_path('/Ems/BatteryReservationState', value=None)
-		self._dbusservice.add_path('/Ems/SystemTypeFlags', value=0)
-		self._dbusservice.add_path('/Ems/AvailableServices', value="[]") #empty json array.
-		self._dbusservice.add_path('/Ems/PrimaryConsumer/Ac/Power', value=None)
-		self._dbusservice.add_path('/Ems/SecondaryConsumer/Ac/Power', value=None)
+		self._dbusservice.add_path('/OpportunityLoads/Active', value=0, gettextcallback=lambda p, v: Modes(v))
+		self._dbusservice.add_path('/OpportunityLoads/BatteryReservation', value=0)
+		self._dbusservice.add_path('/OpportunityLoads/BatteryReservationState', value=None)
+		self._dbusservice.add_path('/OpportunityLoads/SystemTypeFlags', value=0)
+		self._dbusservice.add_path('/OpportunityLoads/AvailableServices', value="[]") #empty json array.
+		self._dbusservice.add_path('/OpportunityLoads/PrimaryConsumer/Ac/Power', value=None)
+		self._dbusservice.add_path('/OpportunityLoads/SecondaryConsumer/Ac/Power', value=None)
 
 		for l in [1,2,3]:
-			self._dbusservice.add_path('/Ems/PrimaryConsumer/Ac/L{}/Power'.format(l), value=None)
-			self._dbusservice.add_path('/Ems/SecondaryConsumer/Ac/L{}/Power'.format(l), value=None)
+			self._dbusservice.add_path('/OpportunityLoads/PrimaryConsumer/Ac/L{}/Power'.format(l), value=None)
+			self._dbusservice.add_path('/OpportunityLoads/SecondaryConsumer/Ac/L{}/Power'.format(l), value=None)
 		
 		#Configurables may produce a Output/Input Path as well. Configurables are writable as per definition. 
 		for c in CONFIGURABLES:
@@ -1369,10 +1370,8 @@ class EMS(SystemCalcDelegate):
 	def get_input(self):
 		#Subscribe to 10 possible devices per service for now
 		topic_list = []
-		for i in range(0, 9):
-			topic_list.append('/Devices/{}/S2/Priority'.format(i))
-			topic_list.append('/Devices/{}/S2/ConsumerType'.format(i))
-		topic_list.append('/CustomName'.format(i))
+		topic_list.append('/S2/0/Priority')
+		topic_list.append('/CustomName')
 
 		return [
 			('com.victronenergy.settings', [
@@ -1404,19 +1403,19 @@ class EMS(SystemCalcDelegate):
 		logger_debug_proxy("Device added: {}".format(service))
 		i = 0
 		while True:
-			s2_rm_exists = self._check_s2_rm(service, "/Devices/{}/S2".format(i))
+			s2_rm_exists = self._check_s2_rm(service, "/S2/0")
 
 			if s2_rm_exists:
-				ct_raw = self._dbusmonitor.get_value(service, "/Devices/{}/S2/ConsumerType".format(i))
 				delegate = S2RMDelegate(self._dbusmonitor, service, instance, i, self)
 				self.managed_rms[delegate.technical_identifier] = delegate
-				logger.info("{} | Identified S2 RM {} on {}. Added to managed RMs".format(delegate.unique_identifier, i, service))
+				logger.info("{} | Identified S2 RM on {}. Added to managed RMs".format(delegate.unique_identifier, service))
 				delegate.begin()
 			
 			i += 1 #probe next one.
 			
 			#if we don't find anything within 10 rms, stop scanning. 
-			if (i >= 10):
+			#for now, there will only be 1 rm per service. So, leave the loop, just break for now.
+			if (i >= 1):
 				break
 		
 		#let config ui know, if something changed. 
@@ -1503,7 +1502,7 @@ class EMS(SystemCalcDelegate):
 	def current_battery_reservation(self) -> float:
 		"""
 			returns the current desired battery reservation based on the user equation in watts.
-			0 if error in equation. /Ems/BatteryReservationState will indicate if there is an error with the equation,
+			0 if error in equation. /OpportunityLoads/BatteryReservationState will indicate if there is an error with the equation,
 			or if the reservation is lowered by BMS capabilities.
 		"""
 		reservation = 0.0
@@ -1546,16 +1545,16 @@ class EMS(SystemCalcDelegate):
 				reservation = 0
 				reservation_hint = "DESS"
 				
-			self._dbusservice["/Ems/BatteryReservationState"] = reservation_hint
+			self._dbusservice["/OpportunityLoads/BatteryReservationState"] = reservation_hint
 
 			if USE_FAKE_BMS:
 				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/CustomName", "Battery Reservation: {}W ({})".format(reservation, reservation_hint))
 
 		except Exception as ex:
 			reservation = 0.0
-			self._dbusservice["/Ems/BatteryReservationState"] = "ERROR"
+			self._dbusservice["/OpportunityLoads/BatteryReservationState"] = "ERROR"
 		
-		self._dbusservice["/Ems/BatteryReservation"] = reservation
+		self._dbusservice["/OpportunityLoads/BatteryReservation"] = reservation
 		return reservation
 	
 	def get_charge_power_capability(self) -> float:
@@ -1588,14 +1587,14 @@ class EMS(SystemCalcDelegate):
 		self._limit_timer = GLib.timeout_add(INVERTER_LIMIT_MONITOR_INTERVAL_MS, self._on_timer_check_inverter_limits) #quick monitoring of desired inverter limitations
 		self._timer_track_power = GLib.timeout_add(1000, self._on_timer_track_power)
 		self._timer_retry_connections = GLib.timeout_add(CONNECTION_RETRY_INTERVAL_MS, self._on_timer_retry_connection) #retry connection to devices periodically.
-		self._dbusservice["/Ems/Active"] = 1
+		self._dbusservice["/OpportunityLoads/Active"] = 1
 		logger.info("EMS activated with a control loop interval of {}s".format(C_CONTROL_LOOP_INTERVAL.current_value))
 
 	def _disable(self):
 		'''
 			Disables EMS.
 		'''
-		self._dbusservice["/Ems/Active"] = 0
+		self._dbusservice["/OpportunityLoads/Active"] = 0
 		logger.info("EMS deactivated.")
 
 	def publish_available_services(self):
@@ -1637,7 +1636,7 @@ class EMS(SystemCalcDelegate):
 		#for entry in delegate_list:
 		#	del entry["priority"]
 
-		self._dbusservice["/Ems/AvailableServices"] = json.dumps(delegate_list)
+		self._dbusservice["/OpportunityLoads/AvailableServices"] = json.dumps(delegate_list)
 
 	def _determine_system_type_flags(self) -> SystemTypeFlag:
 		'''
@@ -1677,7 +1676,7 @@ class EMS(SystemCalcDelegate):
 			#may happen during startup, until all delegates have populated their initial values. 
 			pass
 
-		self._dbusservice["/Ems/SystemTypeFlags"] = system_type_flags
+		self._dbusservice["/OpportunityLoads/SystemTypeFlags"] = system_type_flags
 		return system_type_flags
 	
 	def _on_timer_retry_connection(self):
@@ -1710,11 +1709,11 @@ class EMS(SystemCalcDelegate):
 			
 			#dump on dbus
 			for l in [1,2,3]:
-				self._dbusservice["/Ems/PrimaryConsumer/Ac/L{}/Power".format(l)] = self.power_primary.by_phase[l]
-				self._dbusservice["/Ems/SecondaryConsumer/Ac/L{}/Power".format(l)] = self.power_secondary.by_phase[l]
+				self._dbusservice["/OpportunityLoads/PrimaryConsumer/Ac/L{}/Power".format(l)] = self.power_primary.by_phase[l]
+				self._dbusservice["/OpportunityLoads/SecondaryConsumer/Ac/L{}/Power".format(l)] = self.power_secondary.by_phase[l]
 
-			self._dbusservice["/Ems/PrimaryConsumer/Ac/Power"] = self.power_primary.total
-			self._dbusservice["/Ems/SecondaryConsumer/Ac/Power"] = self.power_secondary.total
+			self._dbusservice["/OpportunityLoads/PrimaryConsumer/Ac/Power"] = self.power_primary.total
+			self._dbusservice["/OpportunityLoads/SecondaryConsumer/Ac/Power"] = self.power_secondary.total
 
 		except Exception as ex:
 			logger.error("Exception while publishing power records", exc_info=ex)
@@ -1765,7 +1764,7 @@ class EMS(SystemCalcDelegate):
 					self.soc,
 					available_overhead.battery_rate,
 					self.current_battery_reservation,
-					self._dbusservice["/Ems/BatteryReservationState"],
+					self._dbusservice["/OpportunityLoads/BatteryReservationState"],
 					available_overhead.power.l1,
 					available_overhead.power.l2,
 					available_overhead.power.l3,
@@ -1793,8 +1792,8 @@ class EMS(SystemCalcDelegate):
 
 			#only iterate when we have solar-overhead, OR EMS-caused consumption (then we may need to turn a consumer off.)
 			if (available_overhead.power.total > 0 or 
-	   			(self._dbusservice["/Ems/PrimaryConsumer/Ac/Power"] or 0) > 0 or 
-				(self._dbusservice["/Ems/SecondaryConsumer/Ac/Power"] or 0) > 0):
+	   			(self._dbusservice["/OpportunityLoads/PrimaryConsumer/Ac/Power"] or 0) > 0 or 
+				(self._dbusservice["/OpportunityLoads/SecondaryConsumer/Ac/Power"] or 0) > 0):
 				
 				#Iterate over all known RMs, check their requirement and assign them a suitable Budget. 
 				#The RMDelegate is responsible to communicate with it's rm upon .comit() beeing called. 
@@ -1863,7 +1862,7 @@ class EMS(SystemCalcDelegate):
 						self.soc,
 						available_overhead.battery_rate,
 						self.current_battery_reservation,
-						self._dbusservice["/Ems/BatteryReservationState"],
+						self._dbusservice["/OpportunityLoads/BatteryReservationState"],
 						available_overhead.power.l1,
 						available_overhead.power.l2,
 						available_overhead.power.l3,
@@ -1904,9 +1903,6 @@ class EMS(SystemCalcDelegate):
 			now2 = self._get_time()
 			duration = (now2 - now).total_seconds() * 1000
 			
-			#logger_debug_proxy("Loop took {}ms".format(duration))
-			#logger.info("Loop took {}ms".format(duration)) #double log that for now.
-			self._dbusservice["/Ems/Debug/LoopTime"] = duration
 			logger_debug_proxy("^------------------- LOOP -------------------^")
 
 			if (C_MODE.current_value== 1):
