@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import random
+import signal
 from gi.repository import GLib # type: ignore
 from delegates.base import SystemCalcDelegate
 from delegates.batterysoc import BatterySoc
@@ -104,6 +105,7 @@ logger.propagate = True
 
 HUB4_SERVICE = "com.victronenergy.hub4"
 S2_IFACE = "com.victronenergy.S2"
+BUSITEM_IFACE = "com.victronenergy.BusItem"
 KEEP_ALIVE_INTERVAL_S = 30 #seconds
 COUNTER_PERSIST_INTERVAL_MS = 60000 #milli-seconds
 CONNECTION_RETRY_INTERVAL_MS = 90000 #milli-seconds
@@ -349,8 +351,8 @@ class Configurable():
 		return self._current_value
 
 CONFIGURABLES:list[Configurable] = []
+DEBUG_LOG = False
 C_MODE = Configurable('/OpportunityLoads/Mode', '/Settings/OpportunityLoads/Mode', 'ems_mode', 0, 0, 1)
-C_DEBUG_LOGS = Configurable(None, '/Settings/OpportunityLoads/Debug/WriteDebugLogs', 'ems_debug', 0, 0, 1)
 C_BALANCING_THRESHOLD = Configurable('/OpportunityLoads/BalancingThreshold', '/Settings/OpportunityLoads/BalancingThreshold', 'ems_balancingthreshold', 98, 2, 98)
 C_RESERVATION_BASE_POWER = Configurable('/OpportunityLoads/ReservationBasePower', '/Settings/OpportunityLoads/ReservationBasePower', 'ems_battery_base', 10000.0, 0.0, 100000.0)
 C_RESERVATION_DECREMENT = Configurable('/OpportunityLoads/ReservationDecrement', '/Settings/OpportunityLoads/ReservationDecrement', 'ems_battery_decrement', 100.0, 0.0, 100000.0)
@@ -1322,6 +1324,23 @@ class EMS(SystemCalcDelegate):
 		if USE_FAKE_BMS:
 			self.available_fake_bms = [1,2,3,4,5,6,7,8,9]
 
+		#temporary: Listen to USRSIG1 to toggle debug logging. 
+		signal.signal(signal.SIGUSR1, self.toggle_debug)
+
+	def toggle_debug(self, signum, frame):
+		"""
+			Toggles verbose debug logging, if SIGUSR1 is received. Use kill -s USR1 <pid>
+		"""
+		global logger_debug_proxy
+		global DEBUG_LOG
+		DEBUG_LOG = not DEBUG_LOG
+		if DEBUG_LOG == 1:
+			logger.info("Enabled debug logging for EMS.")
+			logger_debug_proxy = logger.debug
+		else:
+			logger.info("Disabled debug logging for EMS.")
+			logger_debug_proxy = logger_debug_proxy_pass
+
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(EMS, self).set_sources(dbusmonitor, settings, dbusservice)
 
@@ -1362,7 +1381,7 @@ class EMS(SystemCalcDelegate):
 			self._disable()
 
 		#configure logging as requested. 
-		if C_DEBUG_LOGS.current_value == 1:
+		if DEBUG_LOG:
 			global logger_debug_proxy
 			logger.info("Enabled debug logging for EMS.")
 			logger_debug_proxy = logger.debug
@@ -1399,13 +1418,15 @@ class EMS(SystemCalcDelegate):
 
 	def _check_s2_rm(self, serviceName, objectPath)->bool:
 		"""
-			Checks if the provided service and the provided path are of type S2_IFACE.
+			Checks if the provided service offers an S2 Resource Manager.
 		"""
-		try:
-			self._dbusmonitor.dbusConn.call_blocking(serviceName, objectPath, S2_IFACE, 'GetValue', '', [])
-			return True
-		except dbus.exceptions.DBusException as e:
-			return False
+		for iface in (BUSITEM_IFACE, S2_IFACE):
+			try:
+				self._dbusmonitor.dbusConn.call_blocking(serviceName, objectPath, iface, 'GetValue', '', [])
+				return True
+			except dbus.exceptions.DBusException:
+				continue
+		return False
 		
 	def device_added(self, service, instance, *args):
 		logger_debug_proxy("Device added: {}".format(service))
@@ -1467,17 +1488,6 @@ class EMS(SystemCalcDelegate):
 				self._enable()
 			if oldvalue == 1 and newvalue == 0:
 				self._disable()
-		
-		#Check, if debug logging has been enabled, then setup our debug proxy.
-		#Else set it to the pass-proxy.
-		if setting == C_DEBUG_LOGS.settings_key:
-			global logger_debug_proxy
-			if newvalue == 1:
-				logger.info("Enabled debug logging for EMS.")
-				logger_debug_proxy = logger.debug
-			else:
-				logger.info("Disabled debug logging for EMS.")
-				logger_debug_proxy = logger_debug_proxy_pass
 		
 		#accept change
 		return True
