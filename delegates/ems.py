@@ -365,7 +365,6 @@ class SolarOverhead():
 			  inverterPowerL1:float, inverterPowerL2:float, inverterPowerL3:float, delegate):
 		self.power:PhaseAwareFloat = PhaseAwareFloat(l1,l2,l3,dcpv)
 		self.inverterPower:PhaseAwareFloat = PhaseAwareFloat(inverterPowerL1, inverterPowerL2, inverterPowerL3)
-		self.power_reserved:PhaseAwareFloat = PhaseAwareFloat() #TODO: Power_reserved is not used any longer? Remove it?
 		self._prior_power:PhaseAwareFloat = None
 		self.power_claim:PhaseAwareFloat = None
 		self.power_request:PhaseAwareFloat = None
@@ -373,26 +372,6 @@ class SolarOverhead():
 		self.battery_rate = battery_rate
 		self.battery_reservation = reservation
 		self.transaction_running = False
-
-		if reservation > 0:
-			#first use DCPV to cover the reservation. That is technically what happens anyway, when 
-			#enabling AC Consumers anyway.
-			if reservation <= self.power.dc:
-				#whole reservation can be covered by DCPV.
-				self.power_reserved.dc = reservation
-			else:
-				#need dcpv completly + some of ACPV.
-				self.power_reserved.dc = self.power.dc
-				reservation -= self.power.dc
-
-				for l in [3,2,1]:
-					if reservation > 0:
-						if reservation <= self.power.by_phase[l] * AC_DC_EFFICIENCY:
-							self.power_reserved.by_phase[l] = reservation / AC_DC_EFFICIENCY #need part of this phase
-							reservation = 0
-						else:
-							reservation -= self.power.by_phase[l] * AC_DC_EFFICIENCY
-							self.power_reserved.by_phase[l] = self.power.by_phase[l] #need all of this phase.
 
 	def __repr__(self):
 		return "SolarOverhead[power={}, res={}, tr={}]".format(
@@ -623,7 +602,6 @@ class S2RMDelegate():
 		#If the service has a customname, use that as foundation, else use the service type. 
 		custom_name = monitor.get_value(service, "/CustomName", None)
 
-		#FIXME: Unique Identifier has to change, S2 path will now default to "/0/", making the S2 path an invalid unique ientifier part.
 		if custom_name is not None and custom_name != "":
 			self.unique_identifier = "{}_{}".format(custom_name.replace(" ", "_") , self.instance)
 		else:
@@ -1303,7 +1281,6 @@ class S2RMDelegate():
 		return False
 
 class EMS(SystemCalcDelegate):
-	#TODO: Refactor dateTime usage to _get_time everywhere, as this required for unit testing to time travel.
 	_get_time = datetime.now
 
 	def __init__(self):
@@ -1766,9 +1743,7 @@ class EMS(SystemCalcDelegate):
 			logger_debug_proxy("System Type Flags are: {}".format(SystemTypeFlag.to_str(self.system_type_flags)))
 
 			if SystemTypeFlag.None_ == self.system_type_flags:
-				logger.info("Unknown SystemTypeFlags. Doing nothing.")
-				#TODO: We may come into Unknown-System-Type from another type for whatever reason.
-				#      Thus, we have to make sure to disable all consumers eventually running here.
+				logger.warning("Unknown SystemTypeFlags. Doing nothing.")
 				return True
 
 			available_overhead = self._get_available_overhead()
