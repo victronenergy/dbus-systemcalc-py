@@ -1588,7 +1588,8 @@ class TestSystemCalc(TestSystemCalcBase):
 				'/Soc': 95,
 				'/DeviceInstance': 0,
 				'/ProductId': 0x203,
-				'/Capacity': None })
+				'/Capacity': None,
+				'/InstalledCapacity': None})
 		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.battery/0')
 		self._update_values()
 		self._check_values({
@@ -1599,6 +1600,14 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._update_values()
 		self._check_values({
 			'/Dc/Battery/Capacity': 150.0
+		})
+
+		# InstalledCapacity is fallback
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Capacity', None)
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/InstalledCapacity', 200.0)
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Capacity': 200.0
 		})
 
 if __name__ == '__main__':

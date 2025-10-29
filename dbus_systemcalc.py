@@ -52,6 +52,7 @@ class SystemCalc:
 				'/Dc/1/Voltage': dummy,
 				'/Dc/0/Current': dummy,
 				'/Dc/0/Power': dummy,
+				'/InstalledCapacity': dummy,
 				'/Capacity': dummy,
 				'/Soc': dummy,
 				'/Sense/Current': dummy,
@@ -701,7 +702,10 @@ class SystemCalc:
 				newvalues['/Dc/Battery/Power'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Power')
 
 				if batteryservicetype == 'battery':
-					newvalues['/Dc/Battery/Capacity'] = self._dbusmonitor.get_value(self._batteryservice, '/Capacity')
+					capacity = self._dbusmonitor.get_value(self._batteryservice, '/InstalledCapacity')
+					newvalues['/Dc/Battery/Capacity'] = (
+						capacity if capacity is not None else
+						self._dbusmonitor.get_value(self._batteryservice, '/Capacity'))
 
 			elif batteryservicetype == 'vebus':
 				vebus_voltage = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Voltage')
