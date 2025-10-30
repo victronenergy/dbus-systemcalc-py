@@ -105,7 +105,6 @@ logger.propagate = True
 
 HUB4_SERVICE = "com.victronenergy.hub4"
 S2_IFACE = "com.victronenergy.S2"
-BUSITEM_IFACE = "com.victronenergy.BusItem"
 KEEP_ALIVE_INTERVAL_S = 30 #seconds
 COUNTER_PERSIST_INTERVAL_MS = 60000 #milli-seconds
 CONNECTION_RETRY_INTERVAL_MS = 90000 #milli-seconds
@@ -1388,13 +1387,11 @@ class EMS(SystemCalcDelegate):
 		"""
 			Checks if the provided service offers an S2 Resource Manager.
 		"""
-		for iface in (BUSITEM_IFACE, S2_IFACE):
-			try:
-				self._dbusmonitor.dbusConn.call_blocking(serviceName, objectPath, iface, 'GetValue', '', [])
-				return True
-			except dbus.exceptions.DBusException:
-				continue
-		return False
+		try:
+			self._dbusmonitor.dbusConn.call_blocking(serviceName, objectPath, S2_IFACE, 'Discover', '', [])
+			return True
+		except dbus.exceptions.DBusException:
+			return False
 		
 	def device_added(self, service, instance, *args):
 		logger_debug_proxy("Device added: {}".format(service))
