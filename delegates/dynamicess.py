@@ -116,6 +116,19 @@ class IterationChangeTracker(object):
 		self._previous_nw_tsoc_higher = None
 		self._previous_nw_tsoc_lower = None
 
+	def _check_soc_precision(self, soc):
+		"""
+			Determines the soc precision of the current soc value.
+		"""
+		p = 0
+		x = round(soc, 2)
+		for _ in range(2):
+			p += 1
+			x *= 10
+			if x % 10 < 1e-2:
+				return p - 1
+		return 2
+
 	def input(self, soc, soc_raw, target_soc, nw_tsoc_higher, nw_tsoc_lower):
 		self._current_soc = soc
 		self._current_target_soc = target_soc
@@ -125,8 +138,7 @@ class IterationChangeTracker(object):
 		#determine if soc precision is higher than currently used. Round to 8 to avoid
 		#issues like 1.1 would become 1.1000000000000001 and therefore an unreal precision.
 		if self._delegate.soc_precision < 2:
-			s = f"{round(soc_raw, 8):.8f}".rstrip('0').rstrip('.')
-			prec = len(s.split('.')[-1]) if '.' in s else 0
+			prec = self._check_soc_precision(soc_raw)
 			if (prec > self._delegate.soc_precision):
 				self._delegate.soc_precision = min(prec,2)
 
@@ -636,34 +648,29 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		#              32 = support decimal target soc values
 		self._dbusservice.add_path('/DynamicEss/Capabilities', value=63)
 		self._dbusservice.add_path('/DynamicEss/NumberOfSchedules', value=NUM_SCHEDULES)
-		self._dbusservice.add_path('/DynamicEss/Active', value=0,
-			gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
-		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=0.0,
-			gettextcallback=lambda p, v: '{}%'.format(v))
-		self._dbusservice.add_path('/DynamicEss/WindowSoc', value=0.0,
-			gettextcallback=lambda p, v: '{}%'.format(v))
-		self._dbusservice.add_path('/DynamicEss/MinimumSoc', value=None,
-			gettextcallback=lambda p, v: '{}%'.format(v))
-		self._dbusservice.add_path('/DynamicEss/ErrorCode', value=0,
-			gettextcallback=lambda p, v: ERRORS.get(v, 'Unknown'))
-		self._dbusservice.add_path('/DynamicEss/LastScheduledStart', value=None)
-		self._dbusservice.add_path('/DynamicEss/LastScheduledEnd', value=None)
-		self._dbusservice.add_path('/DynamicEss/ChargeRate', value=0)
+		self._dbusservice.add_path('/DynamicEss/Active', value=0, gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
+		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=0.0, gettextcallback=lambda p, v: '{}%'.format(v))
+		self._dbusservice.add_path('/DynamicEss/WindowSoc', value=0.0, gettextcallback=lambda p, v: '{}%'.format(v))
+		self._dbusservice.add_path('/DynamicEss/MinimumSoc', value=None, gettextcallback=lambda p, v: '{}%'.format(v))
+		self._dbusservice.add_path('/DynamicEss/ErrorCode', value=0, gettextcallback=lambda p, v: ERRORS.get(v, 'Unknown'))
+		self._dbusservice.add_path('/DynamicEss/LastScheduledStart', value=None, gettextcallback=lambda p, v: '{}'.format(datetime.fromtimestamp(v).strftime('%Y-%m-%d %H:%M:%S')))
+		self._dbusservice.add_path('/DynamicEss/LastScheduledEnd', value=None, gettextcallback=lambda p, v: '{}'.format(datetime.fromtimestamp(v).strftime('%Y-%m-%d %H:%M:%S')))
+		self._dbusservice.add_path('/DynamicEss/ChargeRate', value=0, gettextcallback=lambda p, v: '{}W'.format(v))
 		self._dbusservice.add_path('/DynamicEss/WindowSlot', value=0)
-		self._dbusservice.add_path('/DynamicEss/Strategy', value=None)
+		self._dbusservice.add_path('/DynamicEss/Strategy', value=None, gettextcallback=lambda p, v: Strategy(v).name)
 		self._dbusservice.add_path('/DynamicEss/WorkingSocPrecision', value=0)
-		self._dbusservice.add_path('/DynamicEss/Restrictions', value=None)
+		self._dbusservice.add_path('/DynamicEss/Restrictions', value=None, gettextcallback=lambda p, v: '{}'.format(Restrictions(v).name))
 		self._dbusservice.add_path('/DynamicEss/AllowGridFeedIn', value=None)
-		self._dbusservice.add_path('/DynamicEss/Flags', value=None)
-		self._dbusservice.add_path('/DynamicEss/AvailableOverhead', value=None)
-		self._dbusservice.add_path('/DynamicEss/ChargeHysteresis', value=0)
-		self._dbusservice.add_path('/DynamicEss/DischargeHysteresis', value=0)
+		self._dbusservice.add_path('/DynamicEss/Flags', value=None, gettextcallback=lambda p, v: '{}'.format(Flags(v).name))
+		self._dbusservice.add_path('/DynamicEss/AvailableOverhead', value=None, gettextcallback=lambda p, v: '{}W'.format(v))
+		self._dbusservice.add_path('/DynamicEss/ChargeHysteresis', value=0, gettextcallback=lambda p, v: '{}%'.format(v))
+		self._dbusservice.add_path('/DynamicEss/DischargeHysteresis', value=0, gettextcallback=lambda p, v: '{}%'.format(v))
 
 		if self.mode > 0:
-			self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value=None)
+			self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value=None, gettextcallback=lambda p, v: ReactiveStrategy(v))
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
 		else:
-			self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value = ReactiveStrategy.DESS_DISABLED.value)
+			self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value = ReactiveStrategy.DESS_DISABLED.value, gettextcallback=lambda p, v: ReactiveStrategy(v))
 
 	def get_settings(self):
 		# Settings for DynamicEss
