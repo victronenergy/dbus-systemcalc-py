@@ -648,34 +648,29 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		#              32 = support decimal target soc values
 		self._dbusservice.add_path('/DynamicEss/Capabilities', value=63)
 		self._dbusservice.add_path('/DynamicEss/NumberOfSchedules', value=NUM_SCHEDULES)
-		self._dbusservice.add_path('/DynamicEss/Active', value=0,
-			gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
-		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=0.0,
-			gettextcallback=lambda p, v: '{}%'.format(v))
-		self._dbusservice.add_path('/DynamicEss/WindowSoc', value=0.0,
-			gettextcallback=lambda p, v: '{}%'.format(v))
-		self._dbusservice.add_path('/DynamicEss/MinimumSoc', value=None,
-			gettextcallback=lambda p, v: '{}%'.format(v))
-		self._dbusservice.add_path('/DynamicEss/ErrorCode', value=0,
-			gettextcallback=lambda p, v: ERRORS.get(v, 'Unknown'))
-		self._dbusservice.add_path('/DynamicEss/LastScheduledStart', value=None)
-		self._dbusservice.add_path('/DynamicEss/LastScheduledEnd', value=None)
-		self._dbusservice.add_path('/DynamicEss/ChargeRate', value=0)
+		self._dbusservice.add_path('/DynamicEss/Active', value=0, gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
+		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=0.0, gettextcallback=lambda p, v: '{}%'.format(v))
+		self._dbusservice.add_path('/DynamicEss/WindowSoc', value=0.0, gettextcallback=lambda p, v: '{}%'.format(v))
+		self._dbusservice.add_path('/DynamicEss/MinimumSoc', value=None, gettextcallback=lambda p, v: '{}%'.format(v))
+		self._dbusservice.add_path('/DynamicEss/ErrorCode', value=0, gettextcallback=lambda p, v: ERRORS.get(v, 'Unknown'))
+		self._dbusservice.add_path('/DynamicEss/LastScheduledStart', value=None, gettextcallback=lambda p, v: '{}'.format(datetime.fromtimestamp(v).strftime('%Y-%m-%d %H:%M:%S')))
+		self._dbusservice.add_path('/DynamicEss/LastScheduledEnd', value=None, gettextcallback=lambda p, v: '{}'.format(datetime.fromtimestamp(v).strftime('%Y-%m-%d %H:%M:%S')))
+		self._dbusservice.add_path('/DynamicEss/ChargeRate', value=0, gettextcallback=lambda p, v: '{}W'.format(v))
 		self._dbusservice.add_path('/DynamicEss/WindowSlot', value=0)
-		self._dbusservice.add_path('/DynamicEss/Strategy', value=None)
+		self._dbusservice.add_path('/DynamicEss/Strategy', value=None, gettextcallback=lambda p, v: Strategy(v).name)
 		self._dbusservice.add_path('/DynamicEss/WorkingSocPrecision', value=0)
-		self._dbusservice.add_path('/DynamicEss/Restrictions', value=None)
+		self._dbusservice.add_path('/DynamicEss/Restrictions', value=None, gettextcallback=lambda p, v: '{}'.format(Restrictions(v).name))
 		self._dbusservice.add_path('/DynamicEss/AllowGridFeedIn', value=None)
-		self._dbusservice.add_path('/DynamicEss/Flags', value=None)
-		self._dbusservice.add_path('/DynamicEss/AvailableOverhead', value=None)
-		self._dbusservice.add_path('/DynamicEss/ChargeHysteresis', value=0)
-		self._dbusservice.add_path('/DynamicEss/DischargeHysteresis', value=0)
+		self._dbusservice.add_path('/DynamicEss/Flags', value=None, gettextcallback=lambda p, v: '{}'.format(Flags(v).name))
+		self._dbusservice.add_path('/DynamicEss/AvailableOverhead', value=None, gettextcallback=lambda p, v: '{}W'.format(v))
+		self._dbusservice.add_path('/DynamicEss/ChargeHysteresis', value=0, gettextcallback=lambda p, v: '{}%'.format(v))
+		self._dbusservice.add_path('/DynamicEss/DischargeHysteresis', value=0, gettextcallback=lambda p, v: '{}%'.format(v))
 
 		if self.mode > 0:
-			self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value=None)
+			self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value=None, gettextcallback=lambda p, v: ReactiveStrategy(v))
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
 		else:
-			self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value = ReactiveStrategy.DESS_DISABLED.value)
+			self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value = ReactiveStrategy.DESS_DISABLED.value, gettextcallback=lambda p, v: ReactiveStrategy(v))
 
 	def get_settings(self):
 		# Settings for DynamicEss

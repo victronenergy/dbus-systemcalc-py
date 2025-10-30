@@ -105,7 +105,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 60)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 60)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 	
 		timer_manager.run(5000)
@@ -132,7 +132,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 40)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 40)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 	
 		timer_manager.run(5000)
@@ -161,7 +161,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 50)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 50)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 	
 		timer_manager.run(5000)
@@ -190,13 +190,13 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 2)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 60)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 60)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Start', stamp + 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Strategy', 2)
-		self._set_setting('/Settings/DynamicEss/Schedule/1/Soc', 65)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/TargetSoc', 65)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/AllowGridFeedIn', 1)
 
 		#run 1800 seconds, validate charging as per schedule 0
@@ -255,13 +255,13 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 2)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 60)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 60)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Start', stamp + 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Strategy', 2)
-		self._set_setting('/Settings/DynamicEss/Schedule/1/Soc', 65)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/TargetSoc', 65)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/AllowGridFeedIn', 1)
 
 		#run 1800 seconds, validate charging as per schedule 0
@@ -318,7 +318,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3) #ProGrid should trigger #13
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 40)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 40)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 	
 		timer_manager.run(5000)
@@ -347,7 +347,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3) 
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 90) 
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 90) 
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 2) 
 
 		self._monitor.set_value(self.vebus, '/Soc', 80)
@@ -398,7 +398,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 2)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 60)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 60)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 
 		timer_manager.run(5000)
@@ -446,7 +446,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 0)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 60)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 60)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 	
 		timer_manager.run(5000)
@@ -492,7 +492,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 1)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 40)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 40)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 
 		timer_manager.run(5000)
@@ -538,7 +538,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 1)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 40)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 40)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 
 		timer_manager.run(5000)
@@ -584,7 +584,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3) 
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 90) 
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 90) 
 
 		self._monitor.set_value(self.vebus, '/Soc', 100)
 		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L1/Power", 2000)
@@ -635,7 +635,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 2) 
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 100) 
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 100) 
 
 		self._monitor.set_value(self.vebus, '/Soc', 100)
 		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L1/Power", -200)
@@ -697,13 +697,13 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0) #use targetsoc for discharge.
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 40)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 40)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Start', stamp + 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Strategy', 0) #use targetsoc for discharge.
-		self._set_setting('/Settings/DynamicEss/Schedule/1/Soc', 35)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/TargetSoc', 35)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/AllowGridFeedIn', 1)
 
 		#run 1800 seconds, validate charging as per schedule 0
@@ -760,13 +760,13 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 40)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 40)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Start', stamp + 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Strategy', 0)
-		self._set_setting('/Settings/DynamicEss/Schedule/1/Soc', 35)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/TargetSoc', 35)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/AllowGridFeedIn', 1)
 
 		#run 1800 seconds, validate charging as per schedule 0
@@ -942,15 +942,31 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Mode', 1)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 55.0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 55.0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 
-		self._monitor.set_value(self.vebus, '/Soc', 55.0)
+		for s in range(0,101):
+			self._monitor.set_value(self.vebus, '/Soc', 100 - s)
+			timer_manager.run(5000)
+			timer_manager.run(5000)
+
+			self._check_values({
+				'/DynamicEss/WorkingSocPrecision': 0,
+			})
+
+		self._monitor.set_value(self.vebus, '/Soc', 55.999999)
 		timer_manager.run(5000)
 		timer_manager.run(5000)
 
 		self._check_values({
-			'/DynamicEss/Active': 1,
+			'/DynamicEss/WorkingSocPrecision': 0,
+		})
+
+		self._monitor.set_value(self.vebus, '/Soc', 55.000001)
+		timer_manager.run(5000)
+		timer_manager.run(5000)
+
+		self._check_values({
 			'/DynamicEss/WorkingSocPrecision': 0,
 		})
 
@@ -959,7 +975,6 @@ class TestDynamicEss(TestSystemCalcBase):
 		timer_manager.run(5000)
 
 		self._check_values({
-			'/DynamicEss/Active': 1,
 			'/DynamicEss/WorkingSocPrecision': 1,
 		})
 
@@ -968,7 +983,6 @@ class TestDynamicEss(TestSystemCalcBase):
 		timer_manager.run(5000)
 
 		self._check_values({
-			'/DynamicEss/Active': 1,
 			'/DynamicEss/WorkingSocPrecision': 2,
 		})
 
@@ -977,10 +991,8 @@ class TestDynamicEss(TestSystemCalcBase):
 		timer_manager.run(5000)
 
 		self._check_values({
-			'/DynamicEss/Active': 1,
 			'/DynamicEss/WorkingSocPrecision': 2,
 		})
-
 
 	def test_feedInLimitPrecedence(self):
 		# no limit set? default (-96000) kW should kick in.
@@ -997,7 +1009,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 50)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 50)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 
 		#no limit
