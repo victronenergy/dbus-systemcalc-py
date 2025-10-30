@@ -1397,7 +1397,7 @@ class EMS(SystemCalcDelegate):
 		logger_debug_proxy("Device added: {}".format(service))
 		i = 0
 		while True:
-			s2_rm_exists = self._check_s2_rm(service, "/S2/0")
+			s2_rm_exists = self._check_s2_rm(service, "/S2/0/Rm")
 
 			if s2_rm_exists:
 				delegate = S2RMDelegate(self._dbusmonitor, service, instance, i, self)
