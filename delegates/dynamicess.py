@@ -89,6 +89,7 @@ class ReactiveStrategy(int, Enum):
 	SELFCONSUME_ACCEPT_BELOW_TSOC = 20
 	IDLE_NO_DISCHARGE_OPPORTUNITY = 21
 
+	SELFCONSUME_INVALID_TARGETSOC = 91
 	DESS_DISABLED = 92
 	SELFCONSUME_UNEXPECTED_EXCEPTION = 93
 	SELFCONSUME_FAULTY_CHARGERATE = 94
@@ -635,7 +636,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self.discharge_states = (ReactiveStrategy.SCHEDULED_DISCHARGE, ReactiveStrategy.SCHEDULED_MINIMUM_DISCHARGE, ReactiveStrategy.SCHEDULED_DISCHARGE_SMOOTH_TRANSITION)
 		self.error_selfconsume_states = (ReactiveStrategy.NO_WINDOW, ReactiveStrategy.UNKNOWN_OPERATING_MODE, ReactiveStrategy.SELFCONSUME_UNPREDICTED,
 								    ReactiveStrategy.SELFCONSUME_UNMAPPED_STATE, ReactiveStrategy.SELFCONSUME_FAULTY_CHARGERATE, 
-									ReactiveStrategy.SELFCONSUME_UNEXPECTED_EXCEPTION)
+									ReactiveStrategy.SELFCONSUME_UNEXPECTED_EXCEPTION, ReactiveStrategy.SELFCONSUME_INVALID_TARGETSOC)
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(DynamicEss, self).set_sources(dbusmonitor, settings, dbusservice)
@@ -700,8 +701,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				path + "/Schedule/{}/Start".format(i), 0, 0, 0))
 			settings.append(("dess_duration_{}".format(i),
 				path + "/Schedule/{}/Duration".format(i), 0, 0, 0))
-			settings.append(("dess_soc_{}".format(i),
-				path + "/Schedule/{}/Soc".format(i), 100.0, 0.0, 100.0)) #needs to be decimal
+			settings.append(("dess_targetsoc_{}".format(i),
+				path + "/Schedule/{}/TargetSoc".format(i), 0.0, 0.0, 100.0)) #needs to be decimal
 			settings.append(("dess_discharge_{}".format(i),
 				path + "/Schedule/{}/AllowGridFeedIn".format(i), 0, 0, 1))
 			settings.append(("dess_restrictions_{}".format(i),
@@ -801,7 +802,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 	def windows(self):
 		starttimes = (self._settings['dess_start_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		durations = (self._settings['dess_duration_{}'.format(i)] for i in range(NUM_SCHEDULES))
-		socs = (self._settings['dess_soc_{}'.format(i)] for i in range(NUM_SCHEDULES))
+		socs = (self._settings['dess_targetsoc_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		discharges = (self._settings['dess_discharge_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		restrictions = (self._settings['dess_restrictions_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		strategies = (self._settings['dess_strategy_{}'.format(i)] for i in range(NUM_SCHEDULES))
@@ -1148,8 +1149,11 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# Below here, strategy is any of the target soc dependent strategies
 		# some preparations
 		self.override_chargerate = None 
-
 		new_targetsoc = round(w.soc, self.soc_precision)
+
+		if new_targetsoc <= 0.1:
+			#this should never happen. So, when it happens, avoid some undesired hyper-discharging of the battery.
+			return ReactiveStrategy.SELFCONSUME_INVALID_TARGETSOC
 
 		#detect soc drop during idle.
 		if self.targetsoc is not None and round(self.targetsoc, self.soc_precision) != new_targetsoc:
