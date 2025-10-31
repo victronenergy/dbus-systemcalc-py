@@ -47,7 +47,6 @@ class InverterCharger(SystemCalcDelegate):
 
 	def get_output(self):
 		return [
-			('/Ac/HasAcSystem', {'gettext': '%s'}),
 			('/Dc/InverterCharger/Current', {'gettext': '%.1F A'}),
 			('/Dc/InverterCharger/Power', {'gettext': '%.0F W'})]
 
@@ -74,7 +73,6 @@ class InverterCharger(SystemCalcDelegate):
 				self._dbusmonitor.get_value(vebus_service, '/Dc/0/Current')
 			newvalues['/Dc/InverterCharger/Power'] = \
 				self._dbusmonitor.get_value(vebus_service, '/Dc/0/Power')
-			newvalues['/Ac/HasAcSystem' ] = 1
 		else:
 			power = None
 			current = None
@@ -119,4 +117,3 @@ class InverterCharger(SystemCalcDelegate):
 
 			newvalues['/Dc/InverterCharger/Current'] = current
 			newvalues['/Dc/InverterCharger/Power'] = power
-			newvalues['/Ac/HasAcSystem' ] = 1 if self.devices else 0

@@ -57,6 +57,7 @@ class AcInputs(SystemCalcDelegate):
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
+		dbusservice.add_path('/Ac/HasAcSystem', value=0)
 
 	def get_input(self):
 		return [('com.victronenergy.acsystem', [
@@ -71,6 +72,8 @@ class AcInputs(SystemCalcDelegate):
 				('com.victronenergy.settings', [
 					'/Settings/CGwacs/PreventFeedback'
 				]),
+				('com.victronenergy.heatpump', [
+					'/ProductId']),
 		]
 
 	def get_output(self):
@@ -92,17 +95,35 @@ class AcInputs(SystemCalcDelegate):
 				('/Ac/ActiveIn/ServiceType', {'gettext': '%s'}),
 		]
 
+	@property
+	def has_ac_system(self):
+		return bool(self._dbusservice['/Ac/HasAcSystem'])
+
+	@has_ac_system.setter
+	def has_ac_system(self, v):
+		self._dbusservice['/Ac/HasAcSystem'] = int(v)
+
 	def device_added(self, service, instance, *args):
-		# Look for grid and genset
-		if service.startswith('com.victronenergy.grid.'):
+		# This is only ever called for services starting with
+		# com.victronenergy.
+		t = service.split('.')[2]
+		if t == 'grid':
 			self.gridmeters[service] = GridMeter(self._dbusmonitor, service, instance)
 			self._set_gridmeter()
-		elif service.startswith('com.victronenergy.genset.'):
+			self.has_ac_system = True
+		elif t == 'genset':
 			self.gensetmeters[service] = AcSource(self._dbusmonitor, service, instance)
 			self._set_gensetmeter()
-		elif service.startswith('com.victronenergy.acsystem.'):
+			self.has_ac_system = True
+		elif t == 'acsystem':
 			self.inverterchargers[service] = InverterCharger(self._dbusmonitor, service, instance)
 			self._set_invertercharger()
+			self.has_ac_system = True
+		elif t in ('charger', 'inverter', 'evcharger', 'acload',
+				'heatpump', 'pvinverter', 'vebus'):
+			# If any of the above services exist, we have some kind of AC
+			# system.
+			self.has_ac_system = True
 
 	def device_removed(self, service, instance):
 		if service in self.gridmeters:
