@@ -106,6 +106,7 @@ logger.propagate = True
 
 HUB4_SERVICE = "com.victronenergy.hub4"
 S2_IFACE = "com.victronenergy.S2"
+S2_IFACE_PATH = "/S2/0/Rm"
 KEEP_ALIVE_INTERVAL_S = 30 #seconds
 COUNTER_PERSIST_INTERVAL_MS = 60000 #milli-seconds
 CONNECTION_RETRY_INTERVAL_MS = 90000 #milli-seconds
@@ -586,7 +587,7 @@ class S2RMDelegate():
 		self.service = service
 		self.instance = instance
 		self.rmno = rmno
-		self.s2path = "/S2/0"
+		self.s2path = S2_IFACE_PATH
 		self._dbusmonitor = monitor
 		self._keep_alive_missed = 0
 		self.s2_parser = S2Parser()
@@ -1415,7 +1416,7 @@ class OpportunityLoads(SystemCalcDelegate):
 		logger_debug_proxy("Device added: {}".format(service))
 		i = 0
 		while True:
-			s2_rm_exists = self._check_s2_rm(service, "/S2/0/Rm")
+			s2_rm_exists = self._check_s2_rm(service, S2_IFACE_PATH)
 
 			if s2_rm_exists:
 				delegate = S2RMDelegate(self._dbusmonitor, service, instance, i, self)
@@ -1601,51 +1602,21 @@ class OpportunityLoads(SystemCalcDelegate):
 		"""
 			Publishes all known delegates on dbus, so the UI can query this information for configuration purpose.
 		"""
-		delegate_list = []
+		delegates = [
+			{"serviceType": "system", "deviceInstance": 0, "priority": C_BATTERY_PRIORITY.current_value},
+			*(
+				{"serviceType": d.service.rsplit('.', 1)[-1], "deviceInstance": d.instance}
+				for d in self.managed_rms.values()
+			),
+		]
 
-		#battery is hardcoded placeholder.
-		battery_instance = {
-			"serviceType": "com.victronenergy.system",
-			"deviceInstance": 0,
-			"configModel": "battery",
-			"label": "Battery",
-			"priority": C_BATTERY_PRIORITY.current_value
-		}
+		# Sort by (priority, deviceInstance); non-priority items go after those with priority
+		delegates.sort(key=lambda x: (x.get("priority", float("inf")), x["deviceInstance"]))
 
-		delegate_list.append(battery_instance)
-
-		for technical_identifier, delegate in self.managed_rms.items():
-			delegate_instance = {}
-
-			#TODO: Once there are other acloads (beside shellies) we need to change this to use another identifier to detect configModel.
-			if delegate.technical_identifier.startswith("com.victronenergy.acload"):
-				delegate_instance = {
-					"serviceType": "com.victronenergy.acload",
-					"deviceInstance": delegate.instance,
-					"configModel": "shelly",
-					"priority": delegate.priority
-				}
-				delegate_list.append(delegate_instance)
-
-			#TODO: EVCharger needs to be added, once the delegate service is clearified. EVCS-Service itself?
-			if delegate.technical_identifier.startswith("com.victronenergy.switch"):
-				delegate_instance = {
-					"serviceType": "com.victronenergy.switch",
-					"deviceInstance": delegate.instance,
-					"configModel": "evcs",
-					"priority": delegate.priority
-				}
-				delegate_list.append(delegate_instance)
-
-		#sort based on priority We cannot do this before creating the array, because the
-		#battery needs to be "mixed in".
-		delegate_list = sorted(delegate_list, key=lambda x: x["priority"]*1000 + x["deviceInstance"])
-
-		#remove prio, not needed for ui
-		for entry in delegate_list:
-			del entry["priority"]
-
-		self._dbusservice["/OpportunityLoads/AvailableServices"] = json.dumps(delegate_list)
+		# Strip 'priority'
+		self._dbusservice["/OpportunityLoads/AvailableServices"] = json.dumps([
+			{"serviceType": x["serviceType"], "deviceInstance": x["deviceInstance"]} for x in delegates
+		])
 
 	def _determine_system_type_flags(self) -> SystemTypeFlag:
 		'''
@@ -1742,7 +1713,7 @@ class OpportunityLoads(SystemCalcDelegate):
 							return True
 
 			#Also, sorting of the priorities may have changed, which is not a configurable item.
-			if  path == "/OpportunityLoads/AvailableServices":
+			if path == "/OpportunityLoads/AvailableServices":
 				logger.info("Available Services resorted")
 				logger.info("Raw Value: " + value)
 				jar = json.loads(value)
