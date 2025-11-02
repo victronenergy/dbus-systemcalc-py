@@ -49,60 +49,60 @@ from s2python.version import S2_VERSION
 from s2python.s2_control_type import S2ControlType, PEBCControlType, NoControlControlType
 from s2python.validate_values_mixin import S2MessageComponent
 
-#debug purpose.
-log_dir = "/var/log"
-if not os.path.exists(log_dir):
-	os.mkdir(log_dir)
+# #debug purpose.
+# log_dir = "/var/log"
+# if not os.path.exists(log_dir):
+# 	os.mkdir(log_dir)
 
-class NoDebugInfoWarningPropagationLogger(logging.Logger):
-    def callHandlers(self, record):
-        # Handle with this logger's handlers
-        c = self
-        found = 0
-        while c:
-            for hdlr in c.handlers:
-                if record.levelno >= hdlr.level:
-                    hdlr.handle(record)
-                    found = 1
-            # Prevent DEBUG logs from propagating
-            if record.levelno <= logging.WARNING:
-                break
-            if not c.propagate:
-                break
-            c = c.parent
-        if not found:
-            logging.lastResort.handle(record)
+# class NoDebugInfoWarningPropagationLogger(logging.Logger):
+#     def callHandlers(self, record):
+#         # Handle with this logger's handlers
+#         c = self
+#         found = 0
+#         while c:
+#             for hdlr in c.handlers:
+#                 if record.levelno >= hdlr.level:
+#                     hdlr.handle(record)
+#                     found = 1
+#             # Prevent DEBUG logs from propagating
+#             if record.levelno <= logging.WARNING:
+#                 break
+#             if not c.propagate:
+#                 break
+#             c = c.parent
+#         if not found:
+#             logging.lastResort.handle(record)
 
-class LevelFilter(logging.Filter):
-    def __init__(self, level):
-        self.level = level
-    def filter(self, record):
-        return record.levelno >= self.level
+# class LevelFilter(logging.Filter):
+#     def __init__(self, level):
+#         self.level = level
+#     def filter(self, record):
+#         return record.levelno >= self.level
 
-log_format = logging.Formatter(
-    fmt='%(asctime)s,%(msecs)d %(levelname)s %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+# log_format = logging.Formatter(
+#     fmt='%(asctime)s,%(msecs)d %(levelname)s %(message)s',
+#     datefmt='%Y-%m-%d %H:%M:%S'
+# )
 
-debug_handler = TimedRotatingFileHandler(log_dir + "/ems_debug.log", when="midnight", interval=1, backupCount=2)
-info_handler = TimedRotatingFileHandler(log_dir + "/ems_info.log", when="midnight", interval=1, backupCount=2)
+# debug_handler = TimedRotatingFileHandler(log_dir + "/ems_debug.log", when="midnight", interval=1, backupCount=2)
+# info_handler = TimedRotatingFileHandler(log_dir + "/ems_info.log", when="midnight", interval=1, backupCount=2)
 
-debug_handler.setLevel(logging.DEBUG)
-debug_handler.setFormatter(log_format)
-debug_handler.addFilter(LevelFilter(logging.DEBUG))
+# debug_handler.setLevel(logging.DEBUG)
+# debug_handler.setFormatter(log_format)
+# debug_handler.addFilter(LevelFilter(logging.DEBUG))
 
-info_handler.setLevel(logging.INFO)
-info_handler.setFormatter(log_format)
-info_handler.addFilter(LevelFilter(logging.INFO))
+# info_handler.setLevel(logging.INFO)
+# info_handler.setFormatter(log_format)
+# info_handler.addFilter(LevelFilter(logging.INFO))
 
-logging.setLoggerClass(NoDebugInfoWarningPropagationLogger)
+# logging.setLoggerClass(NoDebugInfoWarningPropagationLogger)
 
-logger = logging.getLogger("ems")
-logger.addHandler(debug_handler)
-logger.addHandler(info_handler)
+logger = logging.getLogger("opportunityloads")
+# logger.addHandler(debug_handler)
+# logger.addHandler(info_handler)
 logger.setLevel(logging.DEBUG)
 logger.propagate = True
-#end debug purpose
+# #end debug purpose
 
 HUB4_SERVICE = "com.victronenergy.hub4"
 S2_IFACE = "com.victronenergy.S2"
@@ -823,7 +823,7 @@ class S2RMDelegate():
 					else:
 						#Not yet implemented!
 						logger.warning("{} | Received an unknown Message: {} ".format(self.unique_identifier, jmsg["message_type"]))
-						self._s2_send_reception_message(ReceptionStatusValues.PERMANENT_ERROR, jmsg["message_id"], "MessageType not yet implemented in EMS.")
+						self._s2_send_reception_message(ReceptionStatusValues.PERMANENT_ERROR, jmsg["message_id"], "MessageType not yet implemented in OpportunityLoads.")
 				else:
 					#Received another message than Handshake without beeing connected. Reject.
 					logger.warning("{} | Received a Message: {} while RM is not actively connected".format(self.unique_identifier, jmsg["message_type"]))
@@ -1038,7 +1038,7 @@ class S2RMDelegate():
 	def self_assign_overhead(self, overhead:SolarOverhead) -> SolarOverhead:
 		"""
 			RM Delegate is claiming power that matches it's requirements.
-			RMDelegate is waiting for comit() of EMS, before sending new instructions to RM.
+			RMDelegate is waiting for comit() of OpportunityLoads, before sending new instructions to RM.
 		"""
 		try:
 			self.prior_power_claim = PhaseAwareFloat.from_phase_aware_float(self.power_claim) if self.power_claim is not None else None
@@ -1151,7 +1151,7 @@ class S2RMDelegate():
 
 					logger_debug_proxy("Operation Mode selected: '{}'. (Power-Claim: {})".format(opm.diagnostic_label, new_power_claim))
 
-					#store this operation_mode as beeing the next one to be send. EMS will call comit() on the RM-Delegate,
+					#store this operation_mode as beeing the next one to be send. OpportunityLoads will call comit() on the RM-Delegate,
 					#once it should inform the actual RM and send out a new instruction, if required. RM-Delegate has to
 					#track if a (re-)send is required.
 					self._ombc_next_operation_mode = opm
@@ -1320,10 +1320,10 @@ class OpportunityLoads(SystemCalcDelegate):
 		global DEBUG_LOG
 		DEBUG_LOG = not DEBUG_LOG
 		if DEBUG_LOG == 1:
-			logger.info("Enabled debug logging for EMS.")
+			logger.info("Enabled debug logging for OpportunityLoads.")
 			logger_debug_proxy = logger.debug
 		else:
-			logger.info("Disabled debug logging for EMS.")
+			logger.info("Disabled debug logging for OpportunityLoads.")
 			logger_debug_proxy = logger_debug_proxy_pass
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
@@ -1368,11 +1368,11 @@ class OpportunityLoads(SystemCalcDelegate):
 		#configure logging as requested.
 		if DEBUG_LOG:
 			global logger_debug_proxy
-			logger.info("Enabled debug logging for EMS.")
+			logger.info("Enabled debug logging for OpportunityLoads.")
 			logger_debug_proxy = logger.debug
 
 	def get_settings(self):
-		# Settings for EMS
+		# Settings for OpportunityLoads
 		settings = []
 		for c in CONFIGURABLES:
 			settings.append((c.settings_key, c.settings_path, c.default_value, c.min_value, c.max_value))
@@ -1581,21 +1581,21 @@ class OpportunityLoads(SystemCalcDelegate):
 
 	def _enable(self):
 		'''
-			Enables EMS.
+			Enables OpportunityLoads.
 		'''
 		self._timer = GLib.timeout_add(C_CONTROL_LOOP_INTERVAL.current_value * 1000, self._on_timer) #regular control loop according to configuration.
 		self._limit_timer = GLib.timeout_add(INVERTER_LIMIT_MONITOR_INTERVAL_MS, self._on_timer_check_inverter_limits) #quick monitoring of desired inverter limitations
 		self._timer_track_power = GLib.timeout_add(1000, self._on_timer_track_power)
 		self._timer_retry_connections = GLib.timeout_add(CONNECTION_RETRY_INTERVAL_MS, self._on_timer_retry_connection) #retry connection to devices periodically.
 		self._dbusservice["/OpportunityLoads/Active"] = 1
-		logger.info("EMS activated with a control loop interval of {}s".format(C_CONTROL_LOOP_INTERVAL.current_value))
+		logger.info("OpportunityLoads activated with a control loop interval of {}s".format(C_CONTROL_LOOP_INTERVAL.current_value))
 
 	def _disable(self):
 		'''
-			Disables EMS.
+			Disables OpportunityLoads.
 		'''
 		self._dbusservice["/OpportunityLoads/Active"] = 0
-		logger.info("EMS deactivated.")
+		logger.info("OpportunityLoads deactivated.")
 
 	def publish_available_services(self):
 		"""
@@ -1829,7 +1829,7 @@ class OpportunityLoads(SystemCalcDelegate):
 				except:
 					pass
 
-			#only iterate when we have solar-overhead, OR EMS-caused consumption (then we may need to turn a consumer off.)
+			#only iterate when we have solar-overhead, OR OpportunityLoads-caused consumption (then we may need to turn a consumer off.)
 			if (available_overhead.power.total > 0 or
 	   			(self._dbusservice["/OpportunityLoads/PrimaryConsumer/Ac/Power"] or 0) > 0 or
 				(self._dbusservice["/OpportunityLoads/SecondaryConsumer/Ac/Power"] or 0) > 0):
@@ -1950,7 +1950,7 @@ class OpportunityLoads(SystemCalcDelegate):
 					#reset that fake BMS to defaults.
 					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(no), "/Dc/0/Power", 0.0)
 					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(no), "/Dc/0/Soc", 0)
-					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(no), "/CustomName", "EMS Fake BMS {}".format(no))
+					self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_{}".format(no), "/CustomName", "OpportunityLoads Fake BMS {}".format(no))
 
 			now2 = self._get_time()
 			duration = (now2 - now).total_seconds() * 1000
@@ -2002,7 +2002,7 @@ class OpportunityLoads(SystemCalcDelegate):
 
 		#ZeroFeedin and Offgrid-Systems are suspect to PV beeing throttled when the batteries CCL is going down.
 		#This is undesired, throttled solar could be used for self-consumption-optimization instead.
-		#Hence, when we are at balancingSoc + 1, we going to pretend more DCPV than there is, to increase HEMS consumption
+		#Hence, when we are at balancingSoc + 1, we going to pretend more DCPV than there is, to increase OpportunityLoads consumption
 		#and ensure solar is remaining unthrottled. When reaching balancingSoc - 1, we restore normal operation mode.
 		if self.system_type_flags & (SystemTypeFlag.ZeroFeedin | SystemTypeFlag.OffGrid):
 			if self.soc is not None and self.soc >= C_BALANCING_THRESHOLD.current_value + 1:
