@@ -31,12 +31,12 @@ class RelayState(SystemCalcDelegate):
 			('/Relay/0/State', '/Settings/Relay/0/InitialState', 0, 0, 1),
 			('/SwitchableOutput/0/Settings/Group', '/Settings/Relay/0/Group', "", 0, 0),
 			('/SwitchableOutput/0/Settings/CustomName', '/Settings/Relay/0/CustomName', "", 0, 0),
-			('/SwitchableOutput/0/Settings/ShowUIControl', '/Settings/Relay/0/ShowUIControl', 1, 0, 1),
+			('/SwitchableOutput/0/Settings/ShowUIControl', '/Settings/Relay/0/ShowUIControl', 1, 0, 0),
 
 			('/Relay/1/State', '/Settings/Relay/1/InitialState', 0, 0, 1),
 			('/SwitchableOutput/1/Settings/Group', '/Settings/Relay/1/Group', "", 0, 0),
 			('/SwitchableOutput/1/Settings/CustomName', '/Settings/Relay/1/CustomName', "", 0, 0),
-			('/SwitchableOutput/1/Settings/ShowUIControl', '/Settings/Relay/1/ShowUIControl', 1, 0, 1),
+			('/SwitchableOutput/1/Settings/ShowUIControl', '/Settings/Relay/1/ShowUIControl', 1, 0, 0),
 		]
 		# Add settings for additional relays, for the tinkerers. These are not
 		# managed by venus-platform.
@@ -45,7 +45,7 @@ class RelayState(SystemCalcDelegate):
 				(f'/Relay/{i}/State', f'/Settings/Relay/{i}/InitialState', 0, 0, 1),
 				(f'/SwitchableOutput/{i}/Settings/Group', f'/Settings/Relay/{i}/Group', "", 0, 0),
 				(f'/SwitchableOutput/{i}/Settings/CustomName', f'/Settings/Relay/{i}/CustomName', "", 0, 0),
-				(f'/SwitchableOutput/{i}/Settings/ShowUIControl', f'/Settings/Relay/{i}/ShowUIControl', 1, 0, 1),
+				(f'/SwitchableOutput/{i}/Settings/ShowUIControl', f'/Settings/Relay/{i}/ShowUIControl', 1, 0, 0),
 			))
 		return s
 
@@ -108,7 +108,7 @@ class RelayState(SystemCalcDelegate):
 				s.add_path(f'/SwitchableOutput/{idx}/Status', value=None)
 
 				# Switchable output settings
-				for setting, typ in (('Group', str), ('CustomName', str), ('ShowUIControl', bool)):
+				for setting, typ in (('Group', str), ('CustomName', str), ('ShowUIControl', int)):
 					s.add_path(p := f'/SwitchableOutput/{idx}/Settings/{setting}',
 						value=self._settings[p], writeable=True,
 						onchangecallback=partial(self._on_relay_setting_changed, idx, typ))
