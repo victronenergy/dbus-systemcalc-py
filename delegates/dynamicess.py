@@ -680,8 +680,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			("dess_mode", path + "/Mode", 0, 0, 4),
 			("dess_capacity", path + "/BatteryCapacity", 0.0, 0.0, 1000.0),
 			("dess_efficiency", path + "/SystemEfficiency", 90.0, 50.0, 100.0),
-			# 0=None, 1=disallow export, 2=disallow import
-			("dess_restrictions", path + "/Restrictions", 0, 0, sum(res.value for res in Restrictions)),
 			("dess_fullchargeinterval", path + "/FullChargeInterval", 14, -1, 99),
 			("dess_fullchargeduration", path + "/FullChargeDuration", 2, -1, 12),
 			("dess_operatingmode", path + '/OperatingMode', -1, -1, 2),
@@ -921,10 +919,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 	def operating_mode(self) -> OperatingMode:
 		return OperatingMode(self._settings["dess_operatingmode"])
 
-	@property
-	def restrictions(self) -> Restrictions:
-		return Restrictions(self._settings["dess_restrictions"])
-
 	def update_chargerate(self, now, end, start_soc, end_soc):
 		""" now is current time, end is end of slot, start_soc and end_soc determine the amount of intended soc change. Rate is the rate desired DC-Side. """
 
@@ -1000,7 +994,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		#      can be optimized, we MOSTLY need 0 - 5
 		#      and #47 to determine maximal available schedule.
 		windows = list(self.windows())
-		restrictions = self.restrictions
 
 		#Whenever an error occurs that is totally unexpected, the delegate
 		#should enter self consume and not die.(try/catch around the control loop logic)
@@ -1030,10 +1023,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					self.errorcode = 0 # No error
 
 					current_window = w
-					restrictions = w.restrictions | self.restrictions
 
 					self._dbusservice['/DynamicEss/Strategy'] = w.strategy
-					self._dbusservice['/DynamicEss/Restrictions'] = restrictions
+					self._dbusservice['/DynamicEss/Restrictions'] = w.restrictions
 					self._dbusservice['/DynamicEss/AllowGridFeedIn'] = int(w.allow_feedin)
 					break # out of for loop
 
@@ -1048,7 +1040,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 						break # out of for loop
 
 				#As of now, one common handler is enough. Hence, we don't need to validate the operation mode 
-				final_strategy = self._determine_reactive_strategy(current_window, next_window, restrictions, now)
+				final_strategy = self._determine_reactive_strategy(current_window, next_window, current_window.restrictions, now)
 
 				if (self.chargerate or 0) != self._dbusservice['/DynamicEss/ChargeRate']:
 					logger.log(logging.DEBUG, "Anticipated chargerate is now: {}".format(self.chargerate or 0))
@@ -1077,7 +1069,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			self.chargerate = None #self consume has no chargerate.
 			self.charge_hysteresis = self.discharge_hysteresis = 0
 			self._dbusservice['/DynamicEss/ChargeRate'] = 0
-			self._device.self_consume(restrictions, None)
+			self._device.self_consume(Restrictions.NONE, None) #no schedule, no restrictions.
 
 		return True
 
