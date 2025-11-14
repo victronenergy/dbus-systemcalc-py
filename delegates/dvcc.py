@@ -799,12 +799,10 @@ class Multi(object):
 
 	@maxchargecurrent.setter
 	def maxchargecurrent(self, v):
-		# If the Multi is not ready, don't write to it just yet
-		if self.active and self.maxchargecurrent is not None and v != self._v:
-			# The maximum present charge current is 6-parallel 12V 5kva units, 6*220 = 1320A.
-			# We will consider 10000A to be impossibly high.
-			self.monitor.set_value_async(self.service, '/Dc/0/MaxChargeCurrent', 10000 if v is None else v)
-			self._v = v
+		# If the Multi is not ready, or if the value is unchanged,
+		# this will return false. We don't care, as we are called
+		# periodically from _on_timer, so this will resolve later.
+		MultiService.instance.set_maxchargecurrent(v)
 
 	@property
 	def state(self):
