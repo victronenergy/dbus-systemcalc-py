@@ -1,3 +1,0 @@
-#!/bin/sh
-exec 2>&1
-python /opt/victronenergy/dbus-systemcalc-py/ext/s2/shellyMock_OMBC_Single_ThreePhaseHeater.py

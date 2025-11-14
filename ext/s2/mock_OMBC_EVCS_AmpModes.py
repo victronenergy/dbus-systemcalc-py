@@ -20,9 +20,9 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(logging.StreamHandler(sys.stdout))
 
-sys.path.insert(1, '/opt/victronenergy/dbus-systemcalc-py/ext/s2')
 sys.path.insert(1, '/opt/victronenergy/dbus-systemcalc-py/ext/velib_python')
-sys.path.insert(1, '/opt/victronenergy/dbus-systemcalc-py/ext/aiovelib')
+sys.path.insert(1, '/opt/victronenergy/dbus-shelly/ext/aiovelib')
+sys.path.insert(1, '/opt/victronenergy/dbus-shelly')
 
 if sys.version_info.major == 2:
     import gobject # type: ignore
@@ -72,7 +72,7 @@ from s2python.ombc import (
 
 DBusGMainLoop(set_as_default=True)
 EVCS_SERVICE = "com.victronenergy.evcharger"
-PHASE_MODE_CONFIG = 1
+PHASE_MODE_CONFIG = 3
 
 class OMBCT(OMBCControlType):
     def __init__(self, rm_item:S2ResourceManagerItem):
@@ -580,7 +580,7 @@ class EVCSMock(Service):
 
     def setup_rm0(self):
         self.rm0 = RM0(
-            '/S2/0', 
+            '/S2/0/Rm', 
             AssetDetails(
                 uuid.uuid4(),
                 False,

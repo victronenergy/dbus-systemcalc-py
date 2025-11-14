@@ -209,7 +209,7 @@ class PhaseAwareFloat():
 		)
 
 	@classmethod
-	def from_power_ranges(clazz, power_ranges:list[PowerRange]):
+	def from_power_ranges(clazz, power_ranges:list[PowerRange], use_start_of_range=False):
 		'''
 			Creates a PhaseAwareFloat out of the given list of PowerRanges.
 		'''
@@ -217,9 +217,9 @@ class PhaseAwareFloat():
 		for pr in power_ranges:
 			if pr.commodity_quantity == CommodityQuantity.ELECTRIC_POWER_3_PHASE_SYMMETRIC:
 				for l in [1,2,3]:
-					res.by_phase[l] += pr.end_of_range / 3.0
+					res.by_phase[l] += (pr.end_of_range if not use_start_of_range else pr.start_of_range) / 3.0
 			else:
-				res.by_commodity[pr.commodity_quantity] += pr.end_of_range
+				res.by_commodity[pr.commodity_quantity] += (pr.end_of_range if not use_start_of_range else pr.start_of_range)
 		return res
 
 	def __iadd__(self, other):
@@ -309,7 +309,7 @@ class PhaseAwareFloat():
 	
 #Helper Classes for Configurable items. 
 class Configurable():
-	def __init__(self, system_path:str, settings_path:str, settings_key:str, default_value, min_value, max_value) :
+	def __init__(self, system_path:str, settings_path:str, settings_key:str, default_value, min_value, max_value, decode_payload=False) :
 		self._system_path = system_path
 		self._settings_path = settings_path
 		self._settings_key = settings_key
@@ -317,6 +317,7 @@ class Configurable():
 		self._current_value = default_value #init to default
 		self._min_value = min_value
 		self._max_value = max_value
+		self._decode_payload = decode_payload
 
 		global CONFIGURABLES
 		CONFIGURABLES.append(self)
@@ -348,6 +349,22 @@ class Configurable():
 	@property
 	def current_value(self):
 		return self._current_value
+	
+	@current_value.setter
+	def current_value(self, v):
+		if self._decode_payload:
+			self._current_value = json.loads(v)
+		else:
+			self._current_value=v
+	
+	def force_write(self, settings):
+		"""
+			forces a rewrite of current value to settings.
+		"""
+		if self._decode_payload:
+			settings[self.settings_key] = json.dumps(self.current_value)
+		else:
+			settings[self.settings_key] = self.current_value
 
 CONFIGURABLES:list[Configurable] = []
 C_MODE = Configurable('/OpportunityLoads/Mode', '/Settings/OpportunityLoads/Mode', 'ems_mode', 0, 0, 1)
@@ -356,9 +373,9 @@ C_BALANCING_THRESHOLD = Configurable('/OpportunityLoads/BalancingThreshold', '/S
 C_RESERVATION_BASE_POWER = Configurable('/OpportunityLoads/ReservationBasePower', '/Settings/OpportunityLoads/ReservationBasePower', 'ems_battery_base', 10000.0, 0.0, 100000.0)
 C_RESERVATION_DECREMENT = Configurable('/OpportunityLoads/ReservationDecrement', '/Settings/OpportunityLoads/ReservationDecrement', 'ems_battery_decrement', 100.0, 0.0, 100000.0)
 C_RESERVATION_EQUATION = Configurable(None, '/Settings/OpportunityLoads/BatteryReservationEquation', 'ems_batteryreservation', "RBP - SOC * RD","","")
-C_BATTERY_PRIORITY = Configurable('/OpportunityLoads/BatteryPriority', '/Settings/OpportunityLoads/BatteryPriority', 'ems_batterypriority', 0, 0, 1000)
 C_CONTINIOUS_INVERTER_POWER = Configurable(None, '/Settings/OpportunityLoads/ContinuousInverterPower', 'ems_cip', 30000.0, 0.0, 300000.0)
 C_CONTROL_LOOP_INTERVAL = Configurable(None, '/Settings/OpportunityLoads/ControlLoopInterval', 'ems_clinterval', 5, 5, 15)
+C_PRIORITY_MAPPING = Configurable(None, '/Settings/OpportunityLoads/PriorityMapping', 'ems_pmap', "{\"battery\":0}", "", "", True)
 
 class SolarOverhead():
 	def __init__(self, l1:float, l2:float, l3:float, dcpv:float, reservation:float, battery_rate:float, 
@@ -368,7 +385,7 @@ class SolarOverhead():
 		self._prior_power:PhaseAwareFloat = None
 		self.power_claim:PhaseAwareFloat = None
 		self.power_request:PhaseAwareFloat = None
-		self._delegate:EMS = delegate
+		self._delegate:OpportunityLoads = delegate
 		self.battery_rate = battery_rate
 		self.battery_reservation = reservation
 		self.transaction_running = False
@@ -391,6 +408,30 @@ class SolarOverhead():
 		self.power_claim = PhaseAwareFloat()
 		self.transaction_running = True
 	
+	def claim_range(self, power_request_min:PhaseAwareFloat, power_request_max:PhaseAwareFloat, primary:bool, force:bool=False)->bool:
+		"""
+			claims the maximum power on variable power requests. Returns true on success, false on error. If the requirements of an RM are satisfied,
+			call comit() which returns a PhaseAwareFloat representing the powerclaim of the transaction.
+		"""
+		if not self.transaction_running:
+			raise Exception("No Solar Claim Transaction currently running. Need to call begin() before claiming power.")
+		
+		#this is the tricky part: At least one phase is requesting a value within a min/max range.
+		#it may be as worse as all 3 phases requesting dynamic values. So, we have to find the MPP
+		#among all possible combinations. Since claiming energy from either source will affect the
+		#availability on other sources, we cannot probe each phase individually. We need to generate
+		#a (reasonable) amount of permutations within a pre-selected range and check, which one fits best.
+	
+		#first, check the all-max case. if that works out, we are already done and found the highest possible range.
+		max_fits = self.claim(power_request_max, primary, force)
+		if max_fits:
+			return True
+		
+		self.rollback()
+		#didn't fit. So, let's start probing.
+
+		return False
+
 	def claim(self, power_request:PhaseAwareFloat, primary:bool, force:bool=False)->bool:
 		"""
 			Claims a bunch of power. Returns true on success, false on error. If the requirements of an RM are satisfied,
@@ -403,9 +444,6 @@ class SolarOverhead():
 		#Also check, if reservation needs to be applied for this claim. If there is enough "total", we can drive the consumer. 
 		#The claim however may source from any available Power theren is.
 		
-		#TODO: calculate the claim_factor as OMBC needs it. Other control types don't need this, but doesn't hurt either. 
-		#power_factor = (maxv - minv) / claim_target_total if claim_target_total > 0 else 0
-
 		#now, deduct energy from the proper source. We start by allocating direct ACPV.
 		claim_target = self._try_claim_ac(PhaseAwareFloat.from_phase_aware_float(power_request))
 		
@@ -586,12 +624,13 @@ class S2RMDelegate():
 		self.instance = instance
 		self.rmno = rmno
 		self.s2path = "/S2/0"
+		self.s2rmpath = "{}/Rm".format(self.s2path)
 		self._dbusmonitor = monitor
 		self._keep_alive_missed = 0
 		self.s2_parser = S2Parser()
 		self._commit_count = 0 #to ensure responsibility if consumers don't react.
 		self._no_desc_count = 0 #connection will be dropped after 6 updates with no system description.
-		self._ems:EMS=ems
+		self._ems:OpportunityLoads=ems
 		self.current_state_confirmed=True #will be reset, when new instructions are send. 
 		self._reported_as_blocked = False
 		self.ombc_transition_info = None
@@ -644,15 +683,17 @@ class S2RMDelegate():
 		"""
 			priority of this consumer
 		"""
-		priority = self._dbusmonitor.get_value(self.service, "/S2/0/Priority".format(self.rmno))
-		return priority if priority is not None else 100
+		if self.unique_identifier in C_PRIORITY_MAPPING.current_value.keys():
+			return C_PRIORITY_MAPPING.current_value[self.unique_identifier]
+		
+		return 100
 
 	@property
 	def priority_sort(self) -> float:
 		"""
 			priority * 1000 of this consumer and secondary sorting by device instance.
 		"""
-		priority = self._dbusmonitor.get_value(self.service, "/S2/0/Priority".format(self.rmno))
+		priority = self.priority
 		return (priority * 1000 +  self.instance) if priority is not None else 10000
 
 	@property
@@ -660,7 +701,7 @@ class S2RMDelegate():
 		"""
 			Returns the consumer type. Primary consumers have a higher priority (lower value) than the battery.
 		"""
-		return ConsumerType.Primary if self.priority < C_BATTERY_PRIORITY.current_value else ConsumerType.Secondary
+		return ConsumerType.Primary if self.priority < C_PRIORITY_MAPPING.current_value["battery"] else ConsumerType.Secondary
 
 	def publish_fake_bms_values(self):
 		"""
@@ -725,11 +766,11 @@ class S2RMDelegate():
 		self._s2_send_disconnect()
 
 		if self._message_receiver is not None:
-			self._dbusmonitor.dbusConn.remove_signal_receiver(self._s2_on_message_handler, path=self.s2path, signal_name="Message", dbus_interface=S2_IFACE)
+			self._dbusmonitor.dbusConn.remove_signal_receiver(self._s2_on_message_handler, path=self.s2rmpath, signal_name="Message", dbus_interface=S2_IFACE)
 			self._message_receiver = None
 
 		if self._disconnect_receiver is not None:
-			self._dbusmonitor.dbusConn.remove_signal_receiver(self._s2_on_disconnect_handler, path=self.s2path, signal_name="Disconnect", dbus_interface=S2_IFACE)
+			self._dbusmonitor.dbusConn.remove_signal_receiver(self._s2_on_disconnect_handler, path=self.s2rmpath, signal_name="Disconnect", dbus_interface=S2_IFACE)
 			self._disconnect_receiver = None
 
 		if self._keep_alive_timer is not None:
@@ -752,7 +793,7 @@ class S2RMDelegate():
 		def error_handler(result):
 			self._keep_alive_missed = self._keep_alive_missed + 1
 
-		self._dbusmonitor.dbusConn.call_async(self.service, self.s2path, S2_IFACE, method='KeepAlive', signature='s',
+		self._dbusmonitor.dbusConn.call_async(self.service, self.s2rmpath, S2_IFACE, method='KeepAlive', signature='s',
 										args=[wrap_dbus_value(self.unique_identifier)],
 										reply_handler=reply_handler, error_handler=error_handler)
 		
@@ -770,12 +811,12 @@ class S2RMDelegate():
 		#start to monitor for Signals: Message and Disconnect. Yes, we need to do this, before connection 
 		#is successfull, else we have a race-condition on catching the first reply, if any. 
 		self._message_receiver = self._dbusmonitor.dbusConn.add_signal_receiver(self._s2_on_message_handler,
-			dbus_interface=S2_IFACE, signal_name='Message', path=self.s2path)
+			dbus_interface=S2_IFACE, signal_name='Message', path=self.s2rmpath)
 
 		self._disconnect_receiver = self._dbusmonitor.dbusConn.add_signal_receiver(self._s2_on_disconnect_handler,
-			dbus_interface=S2_IFACE, signal_name='Disconnect', path=self.s2path)
+			dbus_interface=S2_IFACE, signal_name='Disconnect', path=self.s2rmpath)
 		
-		self._dbusmonitor.dbusConn.call_async(self.service, self.s2path, S2_IFACE, method='Connect', signature='si', 
+		self._dbusmonitor.dbusConn.call_async(self.service, self.s2rmpath, S2_IFACE, method='Connect', signature='si', 
 			args=[wrap_dbus_value(self.unique_identifier), wrap_dbus_value(KEEP_ALIVE_INTERVAL_S)],
 			reply_handler=self._s2_connect_callback_ok, error_handler=self._s2_connect_callback_error)
 
@@ -789,7 +830,7 @@ class S2RMDelegate():
 		self.initialized = True
 
 	def _s2_connect_callback_error(self, result):
-		logger.warning("{} | S2-Connection failed. Operation will be retried in {}s".format(self.unique_identifier, CONNECTION_RETRY_INTERVAL_MS))
+		logger.warning("{} | S2-Connection failed. Operation will be retried in {}s: {}".format(self.unique_identifier, CONNECTION_RETRY_INTERVAL_MS, result))
 		self.end() #clean handlers and stuff.
 
 	def _s2_on_message_handler(self, client_id, msg:str):
@@ -971,7 +1012,6 @@ class S2RMDelegate():
 
 	def _s2_on_handhsake_message(self, message:Handshake):
 		#RM wants to handshake. Do that :) 
-		logger.info("{} | Received handshake.".format(self.unique_identifier))
 		if S2_VERSION in message.supported_protocol_versions:
 			self._s2_send_reception_message(ReceptionStatusValues.OK, message)
 			#Supported Version, Accept.
@@ -1013,7 +1053,7 @@ class S2RMDelegate():
 			self._reply_handler_dict[message.model_dump()["message_id"]] = reply_handler
 
 		try:
-			self._dbusmonitor.dbusConn.call_async(self.service, self.s2path, S2_IFACE, method='Message', signature='ss', 
+			self._dbusmonitor.dbusConn.call_async(self.service, self.s2rmpath, S2_IFACE, method='Message', signature='ss', 
 					args=[wrap_dbus_value(self.unique_identifier), wrap_dbus_value(message.to_json())], 
 					reply_handler=None, error_handler=None)
 		except Exception as ex:
@@ -1028,7 +1068,7 @@ class S2RMDelegate():
 		"""
 		try:
 			logger.warning("{} | Sending disconnect.".format(self.unique_identifier))
-			self._dbusmonitor.dbusConn.call_async(self.service, self.s2path, S2_IFACE, method='Disconnect', signature='s', 
+			self._dbusmonitor.dbusConn.call_async(self.service, self.s2rmpath, S2_IFACE, method='Disconnect', signature='s', 
 					args=[wrap_dbus_value(self.unique_identifier)], 
 					reply_handler=None, error_handler=None)
 		except Exception as ex:
@@ -1120,20 +1160,27 @@ class S2RMDelegate():
 		logger_debug_proxy("Forced State: {}".format(forced_state.diagnostic_label))
 
 		for opm in eligible_operation_modes:
-			#combine all power ranges into a power_request
-			power_request = PhaseAwareFloat.from_power_ranges(opm.power_ranges)
+			#combine all power ranges into a power_request. To determine if we need to consider
+			#a state at all, we need the min request a state could have - and see if that could fit.
+			#force state needs to be evaluated always.
+			power_request_min = PhaseAwareFloat.from_power_ranges(opm.power_ranges, True)
+			power_request_max = PhaseAwareFloat.from_power_ranges(opm.power_ranges)
 		
-			#First check: If the power_claim is exceeding available total - it won't fit after considering efficiency losses. 
-			#thus, for these states, we can directly omit to validate them througly and simple skip them. We basically start
-			#above the state that may eventually fit. Check on force state always needs to be performed. 
-			if (power_request.total > overhead.power.total and not opm.id == forced_state.id):
+			if (power_request_min.total > overhead.power.total and not opm.id == forced_state.id):
 				logger_debug_proxy("Skipping detailed check on '{}'. {}W vs {}W raw available won't fit for sure.".format(
-					opm.diagnostic_label, power_request.total, overhead.power.total
+					opm.diagnostic_label, power_request_min.total, overhead.power.total
 				))
 				continue
-
+			
+			# minimum request is at least smaller than total available. It may fit, depending on conversion losses, it may not.
 			overhead.begin()
-			claim_success = overhead.claim(power_request, self.consumer_type==ConsumerType.Primary, opm.id == forced_state.id)
+
+			#if we have min.total = max.total it's the easy part. all phases request a fixed amount.
+			claim_success = False
+			if power_request_min.total == power_request_max.total:
+				claim_success = overhead.claim(power_request_max, self.consumer_type==ConsumerType.Primary, opm.id == forced_state.id)
+			else:
+				claim_success = overhead.claim_range(power_request_min, power_request_max, self.consumer_type==ConsumerType.Primary, opm.id == forced_state.id)
 			
 			if not claim_success:
 				#maximum assignment for this powerrange failed for at least one powerrange requested. This OperationMode is currently not eligible. 
@@ -1145,7 +1192,7 @@ class S2RMDelegate():
 				if self._ombc_check_timer_block(opm) == 0:
 					#all good, commit. Deduct from budget, what we claim. 
 					new_power_claim = overhead.comit()
-					self.power_request = power_request
+					self.power_request = power_request_min #FIXME: What to do here in case of range-requests?
 					self.power_claim = new_power_claim
 					
 					logger_debug_proxy("Operation Mode selected: '{}'. (Power-Claim: {})".format(opm.diagnostic_label, new_power_claim))
@@ -1288,11 +1335,11 @@ class S2RMDelegate():
 
 		return False
 
-class EMS(SystemCalcDelegate):
+class OpportunityLoads(SystemCalcDelegate):
 	_get_time = datetime.now
 
 	def __init__(self):
-		super(EMS, self).__init__()
+		super(OpportunityLoads, self).__init__()
 		self.system_type_flags = SystemTypeFlag.None_
 		self.managed_rms: Dict[str, S2RMDelegate] = {}
 		self.rms_to_drop: list[str] = []
@@ -1309,16 +1356,17 @@ class EMS(SystemCalcDelegate):
 			self.available_fake_bms = [1,2,3,4,5,6,7,8,9]
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
-		super(EMS, self).set_sources(dbusmonitor, settings, dbusservice)
+		super(OpportunityLoads, self).set_sources(dbusmonitor, settings, dbusservice)
 
 		#initialize configurables with eventually stored settings. 
 		for c in CONFIGURABLES:
 			try:
 				v = settings[c.settings_key]
+				logger.info("Loading setting {}:{}".format(c.settings_key, v))
 				if v is not None:
-					#write internal backing field to bypass setter triggering a config update.
-					c._current_value = v
-			except Exception:
+					c.current_value = v
+			except Exception as ex:
+				logger.error("Ex", exc_info=ex)
 				logger.warning("Couldn't load setting for Configurable {}:{}; Fine if not yet persisted something.".format(c.settings_key, c.settings_path))
 
 		#Output Paths we use. 
@@ -1439,7 +1487,7 @@ class EMS(SystemCalcDelegate):
 		#generic setting handling
 		for c in CONFIGURABLES:
 			if c.settings_key == setting:
-				c._current_value = newvalue
+				c.current_value = newvalue
 
 				#write back to system path, if that's not the origin of the change.
 				if self._dbusservice[c.system_path] != newvalue:
@@ -1542,7 +1590,8 @@ class EMS(SystemCalcDelegate):
 			self._dbusservice["/OpportunityLoads/BatteryReservationState"] = reservation_hint
 
 			if USE_FAKE_BMS:
-				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/CustomName", "Battery Reservation: {}W ({})".format(reservation, reservation_hint))
+				self._dbusmonitor.set_value("com.victronenergy.battery.hems_fake_0", "/CustomName", "{}: Battery Reservation: {}W ({})".format(
+					C_PRIORITY_MAPPING.current_value["battery"], reservation, reservation_hint))
 
 		except Exception as ex:
 			reservation = 0.0
@@ -1602,7 +1651,8 @@ class EMS(SystemCalcDelegate):
 			"deviceInstance": 0,
 			"configModel": "battery",
 			"label": "Battery",
-			"priority": C_BATTERY_PRIORITY.current_value
+			"priority": C_PRIORITY_MAPPING.current_value["battery"],
+			"uniqueIdentifier": "battery"
 		}
 
 		delegate_list.append(battery_instance)
@@ -1616,7 +1666,8 @@ class EMS(SystemCalcDelegate):
 					"serviceType": "com.victronenergy.acload",
 					"deviceInstance": delegate.instance,
 					"configModel": "shelly",
-					"priority": delegate.priority
+					"priority": delegate.priority,
+					"uniqueIdentifier": delegate.unique_identifier
 				}
 				delegate_list.append(delegate_instance)
 
@@ -1626,7 +1677,8 @@ class EMS(SystemCalcDelegate):
 					"serviceType": "com.victronenergy.switch",
 					"deviceInstance": delegate.instance,
 					"configModel": "evcs",
-					"priority": delegate.priority
+					"priority": delegate.priority,
+					"uniqueIdentifier": delegate.unique_identifier
 				}
 				delegate_list.append(delegate_instance)
 		
@@ -1638,7 +1690,7 @@ class EMS(SystemCalcDelegate):
 		for entry in delegate_list:
 			del entry["priority"]
 
-		self._dbusservice["/OpportunityLoads/AvailableServices"] = json.dumps(delegate_list)
+		self._dbusservice["/OpportunityLoads/AvailableServices"] = delegate_list
 
 	def _determine_system_type_flags(self) -> SystemTypeFlag:
 		'''
@@ -1725,6 +1777,7 @@ class EMS(SystemCalcDelegate):
 			Callback, if one of our writeable system paths is changed.
 		"""
 		try:
+			logger.info("change on {} detected".format(path))
 			for c in CONFIGURABLES:
 				if c.system_path is not None:
 					if c.system_path == path:
@@ -1736,27 +1789,28 @@ class EMS(SystemCalcDelegate):
 
 			#Also, sorting of the priorities may have changed, which is not a configurable item.
 			if  path == "/OpportunityLoads/AvailableServices":
-				logger.info("Available Services resorted")
-				logger.info("Raw Value: " + value)
-				jar = json.loads(value)
-				i = 0
-				for jo in jar:
-					device_instance = jo["deviceInstance"]
-					service_type = jo["serviceType"]
-					priority = i
+				if isinstance(value, str):
+					value = json.loads(value)
 
-					if service_type == "battery":
-						#TODO: Write to dbus path, bind to C_ Object, write to settings? 
-						pass
-					else:
-						for technical_identifier, delegate in self.managed_rms.items():
-							#find the delegate this equals and update settings accordingly. 
-							if delegate.service.startswith(service_type) and str(delegate.instance) == str(device_instance):
-								logger.info("->Identified {} #{} as {}. Setting priority to {}".format(
-									service_type, device_instance, delegate.unique_identifier, priority
-								))
-					i += 1
+					logger.info("Available Services resorted")
+					logger.info("Raw Value: {}".format(value))
 
+					p=0
+					for obj in value:
+						uid = obj["uniqueIdentifier"]
+						C_PRIORITY_MAPPING.current_value[uid] = p
+						p +=1
+
+					#required cause we modify existing value.	
+					C_PRIORITY_MAPPING.force_write(self._settings)
+
+					#republish result?!	
+					self.publish_available_services()
+
+					#reject acceptance, we got that covered.
+					return False
+				
+				#writeback
 				return True
 			
 		except Exception as e:
