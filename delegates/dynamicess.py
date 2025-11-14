@@ -1095,6 +1095,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# However it will be more precice to only consider the "available ac pv" with 0.9. Direct Consumption will basically
 		# lower the available acpv without conversion losses.
 
+		if w.soc is None:
+			return ReactiveStrategy.SELFCONSUME_INVALID_TARGETSOC
+
 		available_solar_plus = 0
 
 		direct_acpv_consume = min(self._device.acpv or 0, self._device.consumption)
@@ -1139,7 +1142,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		new_targetsoc = round(w.soc, self.soc_precision)
 
 		if new_targetsoc <= 0.1:
-			#this should never happen. So, when it happens, avoid some undesired hyper-discharging of the battery.
+			#this should never happen. extra safety check to avoid undesired discharges.
 			return ReactiveStrategy.SELFCONSUME_INVALID_TARGETSOC
 
 		#detect soc drop during idle.
