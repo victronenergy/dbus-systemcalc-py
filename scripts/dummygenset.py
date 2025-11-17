@@ -37,6 +37,8 @@ s = DbusDummyService(
 		'/CustomName': {'initial': None},
 		'/StatusCode': {'initial': 0},
 		'/ErrorCode': {'initial': 0},
+		'/Error/0/Id': {'initial': ''},
+		'/Error/2/Id': {'initial': ''},
 		'/Engine/Load': {'initial': 65},
 		'/Engine/Speed': {'initial': 1800},
 		'/Engine/OperatingHours': {'initial': 101},
