@@ -1,0 +1,4 @@
+#!/bin/sh
+exec 2>&1
+
+exec python /opt/victronenergy/opportunity-loads/tmp/evcs_s2_rm.py

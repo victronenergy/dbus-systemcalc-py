@@ -1,0 +1,6 @@
+{
+    "python.analysis.extraPaths": [
+        "C:\\Users\\dm\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages",
+        "./ext/velib_python"
+    ]
+}

@@ -1005,7 +1005,6 @@ class S2RMDelegate():
 				)
 				
 			else:
-				#TODO: Implement other controltypes.
 				#Any Other controltype is currenetly not implemented, we just can reject. 
 				logger.error("{} | Offered no compatible ControlType. Rejecting request.".format(self.unique_identifier))
 				self._s2_send_reception_message(ReceptionStatusValues.PERMANENT_ERROR, "No supported ControlType offered.")
@@ -1294,7 +1293,6 @@ class S2RMDelegate():
 		"""
 		if self.active_control_type == ControlType.OPERATION_MODE_BASED_CONTROL:
 			#Transitioning may be based on timers. So, check if our transition is suspect to be delayed currently. 
-			#FIXME: Sommetimes this stucks, because is_Confirmed is false, but next op mode is equal current mode? 
 			if self._ombc_next_operation_mode is not None and self._ombc_next_operation_mode.id != self.ombc_active_operation_mode.id:
 				#send out op mode selection, as operation mode changed. 
 				self.current_state_confirmed=False
@@ -1575,8 +1573,6 @@ class OpportunityLoads(SystemCalcDelegate):
 
 			# for now, only handle the case when DESS is issuing a positive chargerate.
 			# having a lower chargerate issued than the calculated reservation otherwise would cause unused feedin.
-			# TODO: When DESS is trying to charge from grid, Consumers can consume available solar and grid-pull is increased to match battery rate. 
-			#       This should be avoided by setting the limitation to the desired chargerate, if the desired chargerate is > reservation.
 			if dess_charge is not None and dess_charge > 0:
 				if dess_charge != reservation:
 					reservation = dess_charge
@@ -1828,7 +1824,7 @@ class OpportunityLoads(SystemCalcDelegate):
 		# Monitor the total Inverting Power of each phase. This shall not exceed the continious inverter power. 
 		# If it does, trigger an immediate re-calculation in order to drop some loads. Also monitor for overload alerts, 
 		# if that is the case, pro-actively drop loads, ignoring the off_hysteresis to ensure system-stability.
-		# TODO: Implement.
+		# TODO: Implement?
 		pass
 
 	def _on_timer(self):
@@ -1915,7 +1911,6 @@ class OpportunityLoads(SystemCalcDelegate):
 				state_change_pending = False
 				for technical_identifier, delegate in self.managed_rms.items():
 					if not delegate.current_state_confirmed and delegate.initialized and delegate._ombc_next_operation_mode is not None :
-						#TODO: Does successfull state change require a power report to be present as well? There may be huge delays until first report. Currently observing. 
 						delegate.comit()
 						logger.warning("{} | State change to '{}' pending. Skipping change comits but forcing a re-comit.".format(
 							delegate.unique_identifier, 

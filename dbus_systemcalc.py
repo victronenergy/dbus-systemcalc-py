@@ -1,8 +1,8 @@
 #!/usr/bin/python3 -u
 # -*- coding: utf-8 -*-
 
-from dbus.mainloop.glib import DBusGMainLoop
-import dbus
+from dbus.mainloop.glib import DBusGMainLoop #type:ignore
+import dbus #type:ignore
 import argparse
 import sys
 import os
@@ -10,7 +10,7 @@ import json
 import time
 import re
 import itertools
-from gi.repository import GLib
+from gi.repository import GLib #type: ignore
 
 # Victron packages
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), 'ext', 'velib_python'))
