@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import json
 from gi.repository import GLib # type: ignore
 from delegates.base import SystemCalcDelegate
 from delegates.batterysoc import BatterySoc
@@ -65,6 +66,23 @@ class ChangeIndicator(int, Enum):
 	BECAME_FALSE = 4
 	CHANGED = 5
 
+class EVCSState():
+	def __init__(self, service, instance, monitor):
+		self.service = service
+		self.instance = instance
+		self.amps = 0
+		self.is_started = False
+		self.no_phases = None
+		self.monitor = monitor
+	
+	@property
+	def status(self) -> int:
+		return self.monitor.get_value(self.service, "/Status")
+	
+	@property
+	def mode(self) -> int:
+		return self.monitor.get_value(self.service, "/Mode")
+
 class ReactiveStrategy(int, Enum):
 	#do not re-number, external applications rely on this mapping.
 	SCHEDULED_SELFCONSUME = 1
@@ -88,6 +106,7 @@ class ReactiveStrategy(int, Enum):
 	SCHEDULED_DISCHARGE_SMOOTH_TRANSITION = 19
 	SELFCONSUME_ACCEPT_BELOW_TSOC = 20
 	IDLE_NO_DISCHARGE_OPPORTUNITY = 21
+	CONTROLLED_DISCHARGE_EVCS = 22
 
 	SELFCONSUME_INVALID_TARGETSOC = 91
 	DESS_DISABLED = 92
@@ -577,7 +596,8 @@ class MultiRsDevice(EssDevice):
 		self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', 0)
 
 class DynamicEssWindow(ScheduledWindow):
-	def __init__(self, start, duration, soc, targetsoc, allow_feedin, restrictions, strategy, flags, slot):
+
+	def __init__(self, start, duration, soc, targetsoc, allow_feedin, restrictions, strategy, flags, slot, to_ev):
 		super(DynamicEssWindow, self).__init__(start, duration)
 		self.soc = targetsoc if (targetsoc is not None and targetsoc > 0) else soc #legacy support: fall back to /Soc, when /Targetsoc is 0 (default value)
 		self.allow_feedin = allow_feedin
@@ -586,6 +606,7 @@ class DynamicEssWindow(ScheduledWindow):
 		self.flags:Flags = Flags(flags)
 		self.slot = slot
 		self.duration = duration
+		self.to_ev = json.loads(to_ev) if to_ev is not None and to_ev != "" else {}
 
 	def get_window_progress(self, now) -> float:
 		""" returns the progress of the window, 0.00 - 100.00. If the window is not or no longer active, this returns none.
@@ -622,6 +643,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._errorcode = 0
 		self._errortimer = ERROR_TIMEOUT
 		self.iteration_change_tracker = IterationChangeTracker(self)
+		self._evcs_states:dict[str, EVCSState] = {}
 
 		#define the four kind of deterministic states we have. 
 		#SCHEDULED_SELFCONSUME is left out, it isn't part of the overall deterministic strategy tree, but a quick escape before entering. 
@@ -633,7 +655,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 							 ReactiveStrategy.SELFCONSUME_NO_GRID, ReactiveStrategy.SELFCONSUME_INCREASED_DISCHARGE, ReactiveStrategy.SELFCONSUME_ACCEPT_BELOW_TSOC)
 		self.idle_states = (ReactiveStrategy.IDLE_SCHEDULED_FEEDIN, ReactiveStrategy.IDLE_MAINTAIN_SURPLUS, ReactiveStrategy.IDLE_MAINTAIN_TARGETSOC, 
 					  ReactiveStrategy.IDLE_NO_OPPORTUNITY, ReactiveStrategy.IDLE_NO_DISCHARGE_OPPORTUNITY)
-		self.discharge_states = (ReactiveStrategy.SCHEDULED_DISCHARGE, ReactiveStrategy.SCHEDULED_MINIMUM_DISCHARGE, ReactiveStrategy.SCHEDULED_DISCHARGE_SMOOTH_TRANSITION)
+		self.discharge_states = (ReactiveStrategy.SCHEDULED_DISCHARGE, ReactiveStrategy.SCHEDULED_MINIMUM_DISCHARGE, ReactiveStrategy.SCHEDULED_DISCHARGE_SMOOTH_TRANSITION,
+						   ReactiveStrategy.CONTROLLED_DISCHARGE_EVCS)
 		self.error_selfconsume_states = (ReactiveStrategy.NO_WINDOW, ReactiveStrategy.UNKNOWN_OPERATING_MODE, ReactiveStrategy.SELFCONSUME_UNPREDICTED,
 								    ReactiveStrategy.SELFCONSUME_UNMAPPED_STATE, ReactiveStrategy.SELFCONSUME_FAULTY_CHARGERATE, 
 									ReactiveStrategy.SELFCONSUME_UNEXPECTED_EXCEPTION, ReactiveStrategy.SELFCONSUME_INVALID_TARGETSOC)
@@ -642,11 +665,12 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		super(DynamicEss, self).set_sources(dbusmonitor, settings, dbusservice)
 		# Capabilities, 1 = supports charge/discharge restrictions
 		#               2 = supports self-consumption strategy
-		#               4 = supports fast-charge strategy
-		#               8 = values set on Venus (Battery balancing, capacity, operation mode)
+		#               4 = supports fast-charge flag
+		#               8 = values set on Venus (Battery balancing, capacity, operation mode, rate limits)
 		#              16 = DESS split coping capability
 		#              32 = support decimal target soc values
-		self._dbusservice.add_path('/DynamicEss/Capabilities', value=63)
+		#              64 = support evcs control
+		self._dbusservice.add_path('/DynamicEss/Capabilities', value=127)
 		self._dbusservice.add_path('/DynamicEss/NumberOfSchedules', value=NUM_SCHEDULES)
 		self._dbusservice.add_path('/DynamicEss/Active', value=0, gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
 		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=0.0, gettextcallback=lambda p, v: '{}%'.format(v))
@@ -665,6 +689,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice.add_path('/DynamicEss/AvailableOverhead', value=None, gettextcallback=lambda p, v: '{}W'.format(v))
 		self._dbusservice.add_path('/DynamicEss/ChargeHysteresis', value=0, gettextcallback=lambda p, v: '{}%'.format(v))
 		self._dbusservice.add_path('/DynamicEss/DischargeHysteresis', value=0, gettextcallback=lambda p, v: '{}%'.format(v))
+		self._dbusservice.add_path('/DynamicEss/WindowToEVBattery', value="{{}}")
 
 		if self.mode > 0:
 			self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value=None, gettextcallback=lambda p, v: ReactiveStrategy(v))
@@ -705,7 +730,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			settings.append(("dess_strategy_{}".format(i),
 				path + "/Schedule/{}/Strategy".format(i), 0, 0, 3))
 			settings.append(("dess_flags_{}".format(i),
-				path + "/Schedule/{}/Flags".format(i), 0, 0, sum(flag.value for flag in Flags)))
+				path + "/Schedule/{}/Flags".format(i), 0, 0, sum(flag.value for flag in Flags))),
+			settings.append(("dess_toev_{}".format(i),
+				path + "/Schedule/{}/ToEVBattery".format(i), "", "", ""))
 
 		return settings
 
@@ -727,7 +754,15 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			('com.victronenergy.settings', [
 				'/Settings/CGwacs/Hub4Mode',
 				'/Settings/CGwacs/MaxFeedInPower',
-				'/Settings/CGwacs/PreventFeedback'])
+				'/Settings/CGwacs/PreventFeedback']),
+			('com.victronenergy.evcharger', [
+				'/StartStop',
+				'/SetCurrent',
+				'/Status',
+				'/Mode',
+				'/Ac/L1/Power',
+				'/Ac/L3/Power'
+			])
 		]
 
 	def get_output(self):
@@ -778,8 +813,15 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		elif service.startswith('com.victronenergy.acsystem.'):
 			self._devices[service] = MultiRsDevice(self, self._dbusmonitor, service)
 			GLib.idle_add(self._set_device)
+		elif service.startswith('com.victronenergy.evcharger.'):
+			logger.info("Registering EVCS #{} on {} for charge control.".format(instance, service))
+			self._evcs_states[str(instance)] = EVCSState(service, instance, self._dbusmonitor)
 
 	def device_removed(self, service, instance):
+		if service.startswith('com.victronenergy.evcharger.'):
+			if instance in self._evcs_states.keys():
+				del self._evcs_states[instance]
+
 		try:
 			del self._devices[service]
 		except KeyError:
@@ -803,11 +845,12 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		restrictions = (self._settings['dess_restrictions_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		strategies = (self._settings['dess_strategy_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		wflags = (self._settings['dess_flags_{}'.format(i)] for i in range(NUM_SCHEDULES))
+		toevbattery = (self._settings['dess_toev_{}'.format(i)] for i in range(NUM_SCHEDULES))
 
-		for start, duration, soc, targetsoc, discharge, restrict, strategy, flags, slot in zip(starttimes, durations, socs, targetsocs, discharges, restrictions, strategies, wflags, range(NUM_SCHEDULES)):
+		for start, duration, soc, targetsoc, discharge, restrict, strategy, flags, slot, toevbattery in zip(starttimes, durations, socs, targetsocs, discharges, restrictions, strategies, wflags, range(NUM_SCHEDULES), toevbattery):
 			if start > 0:
 				yield DynamicEssWindow(
-					datetime.fromtimestamp(start), duration, soc, targetsoc, discharge, restrict, strategy, flags, slot)
+					datetime.fromtimestamp(start), duration, soc, targetsoc, discharge, restrict, strategy, flags, slot, toevbattery)
 
 	@property
 	def mode(self):
@@ -899,6 +942,17 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			returns the unmodified soc. Required to detect actual precission.
 		"""
 		return BatterySoc.instance.soc
+	
+	@property
+	def soc_precision(self) -> int:
+		"""
+			Detected SoC Precision of the battery.
+		"""
+		return self._dbusservice['/DynamicEss/WorkingSocPrecision']
+	
+	@soc_precision.setter
+	def soc_precision(self, v):
+		self._dbusservice['/DynamicEss/WorkingSocPrecision'] = v
 
 	@property
 	def soc_precision(self) -> int:
@@ -1045,6 +1099,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				#As of now, one common handler is enough. Hence, we don't need to validate the operation mode 
 				final_strategy = self._determine_reactive_strategy(current_window, next_window, current_window.restrictions, now)
 
+				#check EV instructions
+				self._evcs_control(current_window, now)
 				if (self.chargerate or 0) != self._dbusservice['/DynamicEss/ChargeRate']:
 					logger.log(logging.DEBUG, "Anticipated chargerate is now: {}".format(self.chargerate or 0))
 
@@ -1085,6 +1141,72 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		"""
 		#capacity (kWh) * 10 is 1% in Wh equivalent.
 		return round(min(250.0 / (self.capacity * 10), 1.0), self.soc_precision)
+	
+	def is_ev_charging(self) -> bool:
+		"""
+			Checks if any EV is currently charging, used to determine a different behaviour for the
+			main battery discharge.
+		"""
+		#FIXME: waiting until phasecount is known is not perfect, because it causes a delay until
+		#       the system recognizes an active charge. Until then, the battery may be discharged
+		#	    with a higher rate than intended to catch - by that time - uncontrolled consumption.
+		for evcsid, evcs_state in self._evcs_states.items():
+			if evcs_state.is_started and evcs_state.no_phases is not None:
+				return True
+		
+		return False
+
+	def _evcs_control(self, w:DynamicEssWindow, now):
+		#check, if we need to start a charge or change current.
+		for evcsid, kWh in w.to_ev.items():
+			if kWh > 0:
+				if evcsid in self._evcs_states.keys():
+					evcs_state = self._evcs_states[evcsid]
+
+					#check, if we have a valid EVCS state.
+					#Should be status >0 (connected car) and mode == 0 (manual control, temporary).
+					if evcs_state.status > 0 and evcs_state.mode == 0:
+						#minimum amps to charge is 6, whatever calculation yields.
+						#FIXME: Read System voltage from vebus / multirs
+						amps = max(6, round((kWh * 1000 * 3600.0/w.duration) / 235.0 / (evcs_state.no_phases or 1), 0))
+
+						if not evcs_state.is_started:
+							#set current to 6 and start. Once we know phase count, we can adapt. 
+							evcs_state.is_started=True
+							evcs_state.amps = 1
+							self._dbusmonitor.set_value_async(self._evcs_states[evcsid].service, "/SetCurrent", 6)
+							self._dbusmonitor.set_value_async(self._evcs_states[evcsid].service, "/StartStop", 1)
+							logger.info("Starting to charge EVCS #{} with 6A to probe phase count".format(evcsid))
+						
+						elif evcs_state.amps != amps and evcs_state.no_phases is not None:
+							#update current.
+							self._evcs_states[evcsid].amps = amps
+							self._dbusmonitor.set_value_async(self._evcs_states[evcsid].service, "/SetCurrent", amps)
+							logger.info("Changing Amps on EVCS #{} to {}A. (Requested: {} kWh / 15min)".format(evcsid, amps, kWh))
+						
+						elif evcs_state.no_phases is None:
+							#See, if we can determine the phases now.
+							l1 = self._dbusmonitor.get_value(evcs_state.service, "/Ac/L1/Power") or 0
+							l3 = self._dbusmonitor.get_value(evcs_state.service, "/Ac/L3/Power") or 0
+
+							if l3 > 0 and l1 > 0:
+								evcs_state.no_phases = 3
+								logger.info("Detected EVCS #{} as 3 phased.".format(evcsid, amps))
+							elif l1 > 0 and l3 == 0:
+								evcs_state.no_phases = 1
+								logger.info("Detected EVCS #{} as 1 phased.".format(evcsid, amps))
+		
+		#check, if we need to stop a charge due to absence of information or 0 instruction
+		#FIXME: if evcs stopps charging (full) We may also return to a non-charging-state.
+		for evcsid, evcs_state in self._evcs_states.items():
+			if not evcsid in w.to_ev.keys() or w.to_ev[evcsid] == 0:
+				#Stop, if charging.
+				if evcs_state.is_started:
+					evcs_state.amps = 0
+					evcs_state.is_started=False
+					evcs_state.no_phases = None
+					self._dbusmonitor.set_value_async(self._evcs_states[evcsid].service, "/StartStop", 0)
+					logger.info("Stopping Charging on EVCS #{}".format(evcsid))
 
 	def _determine_reactive_strategy(self, w: DynamicEssWindow, nw: DynamicEssWindow, restrictions:Restrictions, now) -> ReactiveStrategy:
 		'''
@@ -1119,6 +1241,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice["/DynamicEss/AvailableOverhead"] = available_solar_plus
 		self._dbusservice["/DynamicEss/WindowSoc"] = round(w.soc, self.soc_precision)
 		self._dbusservice["/DynamicEss/WindowSlot"] = w.slot
+		self._dbusservice["/DynamicEss/WindowToEVBattery"] = json.dumps(w.to_ev)
+
 		#logger.log(logging.DEBUG, "ACPV / DCPV / Cons / Overhead is: {} / {} / {} / {}".format(self._device.acpv, self._device.pvpower, self._device.consumption, available_solar_plus))
 
 		next_window_higher_target_soc = nw is not None and (nw.soc > w.soc) and nw.strategy != Strategy.SELFCONSUME
@@ -1278,14 +1402,17 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 						if available_solar_plus > 0 and (Restrictions.BAT2GRID in restrictions):
 							reactive_strategy = ReactiveStrategy.IDLE_NO_DISCHARGE_OPPORTUNITY
 						else:
-							reactive_strategy = ReactiveStrategy.SELFCONSUME_ACCEPT_DISCHARGE
+							if (self.is_ev_charging()):
+								self.update_chargerate(now, w.stop, self.soc, self.targetsoc)
+								reactive_strategy = ReactiveStrategy.CONTROLLED_DISCHARGE_EVCS
+							else:
+								reactive_strategy = ReactiveStrategy.SELFCONSUME_ACCEPT_DISCHARGE
 
 					else:
 						# Here we are:
 						# - Ahead of plan, but the next window indicates a higher soc target.
 						# - Spot on target soc, so idling is imminent / above targetSoc by discharge_hysteresis %.
 						# - available solar plus, but intended feedin.
-
 						if available_solar_plus > 0 and excess_to_grid:
 							# We have solar surplus, but VRM wants an explicit feedin.
 							# since we are above or equal to target soc, we are going idle to achieve that.

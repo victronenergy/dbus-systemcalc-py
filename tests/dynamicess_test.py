@@ -450,7 +450,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		#	(percent * capacity * 36000) / duration	
-		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec,
+		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec, 
 		
 		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
 		self.validate_discharge_state(expected_rate)
@@ -834,7 +834,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		#	(percent * capacity * 36000) / duration	
-		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec,
+		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec, 
 		self.validate_discharge_state(expected_rate)
 
 		# run 1700 seconds more and pretend we reached target soc. Transition state should now kick in. 
@@ -1020,7 +1020,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		if rate is not None:
 			self.assertLessEqual(abs(self._service["/DynamicEss/ChargeRate"] - rate) / abs(rate), 0.01) # max 1% deviation allowed
 			self.assertLessEqual(abs(Dvcc.instance.internal_maxchargepower - rate) / abs(rate), 0.01) # max 1% deviation allowed
-
+	
 	def validate_discharge_state(self, rate):
 		from delegates import Dvcc
 
@@ -1033,11 +1033,11 @@ class TestDynamicEss(TestSystemCalcBase):
 
 		if rate is not None:
 			self.assertLessEqual((abs(self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower')) - abs(rate)) / abs(rate), 0.01)
-
+		
 		self.assertEqual(None, Dvcc.instance.internal_maxchargepower)
 
 	def validate_idle_state(self):
-
+		
 		#internal
 		self._check_values({
 			'/DynamicEss/Active': 1,
@@ -1050,13 +1050,13 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Overrides/ForceCharge': 0,
 				'/Overrides/MaxDischargePower':1
 		}})
-
+	
 	def test_soc_precision_detection(self):
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
 
-		#If the system is sitting (idle) at 55.4 % SoC and the soc drops 0.1, Hysteresis should
-		#increase to 0.1. Let it drop 3 times, validate it adjusts.
+		#If the system is sitting (idle) at 55.4 % SoC and the soc drops 0.1, Hysteresis should 
+		#increase to 0.1. Let it drop 3 times, validate it adjusts. 
 
 		self._set_setting('/Settings/DynamicEss/Mode', 1)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
