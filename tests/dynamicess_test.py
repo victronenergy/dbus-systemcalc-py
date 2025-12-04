@@ -72,6 +72,125 @@ class TestDynamicEss(TestSystemCalcBase):
 	def tearDown(self):
 		DynamicEss.instance.release_control()
 
+	def test_legacy_fallback(self):
+		
+		now = timer_manager.datetime
+		stamp = int(now.timestamp())
+
+		#check 1: No value existing at all for /TargetSoc. 
+		self._monitor.set_value(self.vebus, '/Soc', 50.0)
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 73) 
+	
+		timer_manager.run(7000)
+
+		#check internal values
+		self._check_values({
+			'/DynamicEss/WindowSoc': 73,
+			'/DynamicEss/WorkingSocPrecision': 0,
+			'/DynamicEss/LastScheduledStart': stamp
+		})
+
+		#check 2: none-Value -> Should Fall back to /Soc
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 74) 
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', None) 
+	
+		timer_manager.run(7000)
+
+		#check internal values
+		self._check_values({
+			'/DynamicEss/WindowSoc': 74,
+			'/DynamicEss/WorkingSocPrecision': 0,
+			'/DynamicEss/LastScheduledStart': stamp
+		})
+
+		#check 3: 0.0-Value (default setting) -> Should Fall back to /Soc
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 75) 
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 0.0) 
+	
+		timer_manager.run(7000)
+
+		#check internal values
+		self._check_values({
+			'/DynamicEss/WindowSoc': 75,
+			'/DynamicEss/WorkingSocPrecision': 0,
+			'/DynamicEss/LastScheduledStart': stamp
+		})
+
+		#check 4: a legit decimal soc, rounded up on integer-system.
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 76.6) 
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 0.0) 
+	
+		timer_manager.run(7000)
+
+		#check internal values
+		self._check_values({
+			'/DynamicEss/WindowSoc': 77,
+			'/DynamicEss/WorkingSocPrecision': 0,
+			'/DynamicEss/LastScheduledStart': stamp
+		})
+
+		#check 5: a legit decimal soc, rounded down on integer-system.
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 76.4) 
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 0.0) 
+	
+		timer_manager.run(7000)
+
+		#check internal values
+		self._check_values({
+			'/DynamicEss/WindowSoc': 76,
+			'/DynamicEss/WorkingSocPrecision': 0,
+			'/DynamicEss/LastScheduledStart': stamp
+		})
+
+		self._monitor.set_value(self.vebus, '/Soc', 50.3)
+
+		#give it 2 ticks to detect higher precision.
+		timer_manager.run(7000)
+		timer_manager.run(7000)
+
+		#check 5: a legit decimal soc, on a dec-supporting system. 
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 76.4) 
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 0.0) 
+	
+		timer_manager.run(7000)
+
+		#check internal values
+		self._check_values({
+			'/DynamicEss/WindowSoc': 76.4,
+			'/DynamicEss/WorkingSocPrecision': 1,
+			'/DynamicEss/LastScheduledStart': stamp
+		})
+
 	def test_1_SCHEDULED_SELFCONSUME(self):
 		
 		now = timer_manager.datetime
