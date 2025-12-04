@@ -577,9 +577,9 @@ class MultiRsDevice(EssDevice):
 		self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', 0)
 
 class DynamicEssWindow(ScheduledWindow):
-	def __init__(self, start, duration, soc, allow_feedin, restrictions, strategy, flags, slot):
+	def __init__(self, start, duration, soc, targetsoc, allow_feedin, restrictions, strategy, flags, slot):
 		super(DynamicEssWindow, self).__init__(start, duration)
-		self.soc = soc
+		self.soc = targetsoc if (targetsoc is not None and targetsoc > 0) else soc #legacy support: fall back to /Soc, when /Targetsoc is 0 (default value)
 		self.allow_feedin = allow_feedin
 		self.restrictions:Restrictions = Restrictions(restrictions)
 		self.strategy = strategy
@@ -696,6 +696,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				path + "/Schedule/{}/Duration".format(i), 0, 0, 0))
 			settings.append(("dess_targetsoc_{}".format(i),
 				path + "/Schedule/{}/TargetSoc".format(i), 0.0, 0.0, 100.0)) #needs to be decimal
+			settings.append(("dess_soc_{}".format(i),
+				path + "/Schedule/{}/Soc".format(i), 0, 0, 100)) #keep legacy support for a while.
 			settings.append(("dess_discharge_{}".format(i),
 				path + "/Schedule/{}/AllowGridFeedIn".format(i), 0, 0, 1))
 			settings.append(("dess_restrictions_{}".format(i),
@@ -795,16 +797,17 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 	def windows(self):
 		starttimes = (self._settings['dess_start_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		durations = (self._settings['dess_duration_{}'.format(i)] for i in range(NUM_SCHEDULES))
-		socs = (self._settings['dess_targetsoc_{}'.format(i)] for i in range(NUM_SCHEDULES))
+		socs = (self._settings['dess_soc_{}'.format(i)] for i in range(NUM_SCHEDULES)) #keep legacy support for a while
+		targetsocs = (self._settings['dess_targetsoc_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		discharges = (self._settings['dess_discharge_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		restrictions = (self._settings['dess_restrictions_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		strategies = (self._settings['dess_strategy_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		wflags = (self._settings['dess_flags_{}'.format(i)] for i in range(NUM_SCHEDULES))
 
-		for start, duration, soc, discharge, restrict, strategy, flags, slot in zip(starttimes, durations, socs, discharges, restrictions, strategies, wflags, range(NUM_SCHEDULES)):
+		for start, duration, soc, targetsoc, discharge, restrict, strategy, flags, slot in zip(starttimes, durations, socs, targetsocs, discharges, restrictions, strategies, wflags, range(NUM_SCHEDULES)):
 			if start > 0:
 				yield DynamicEssWindow(
-					datetime.fromtimestamp(start), duration, soc, discharge, restrict, strategy, flags, slot)
+					datetime.fromtimestamp(start), duration, soc, targetsoc, discharge, restrict, strategy, flags, slot)
 
 	@property
 	def mode(self):
