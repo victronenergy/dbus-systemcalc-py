@@ -137,8 +137,8 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 76.6) 
-		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 0.0) 
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 76) 
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 76.7) 
 	
 		timer_manager.run(7000)
 
@@ -155,8 +155,8 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 76.4) 
-		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 0.0) 
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 77) 
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 76.4) 
 	
 		timer_manager.run(7000)
 
@@ -179,14 +179,14 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 76.4) 
-		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 0.0) 
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 71) 
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 71.4) 
 	
 		timer_manager.run(7000)
 
 		#check internal values
 		self._check_values({
-			'/DynamicEss/WindowSoc': 76.4,
+			'/DynamicEss/WindowSoc': 71.4,
 			'/DynamicEss/WorkingSocPrecision': 1,
 			'/DynamicEss/LastScheduledStart': stamp
 		})
