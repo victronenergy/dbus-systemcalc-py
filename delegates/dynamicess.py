@@ -1096,13 +1096,11 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 						next_window = w
 						break # out of for loop
 
-				#As of now, one common handler is enough. Hence, we don't need to validate the operation mode 
-				final_strategy = self._determine_reactive_strategy(current_window, next_window, current_window.restrictions, now)
-
 				#check EV instructions
 				self._evcs_control(current_window, now)
-				if (self.chargerate or 0) != self._dbusservice['/DynamicEss/ChargeRate']:
-					logger.log(logging.DEBUG, "Anticipated chargerate is now: {}".format(self.chargerate or 0))
+
+				#determine final strategy to use.
+				final_strategy = self._determine_reactive_strategy(current_window, next_window, current_window.restrictions, now)
 
 				self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate or 0 #Always set the anticipated chargerate on dbus.
 			else:
@@ -1147,11 +1145,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			Checks if any EV is currently charging, used to determine a different behaviour for the
 			main battery discharge.
 		"""
-		#FIXME: waiting until phasecount is known is not perfect, because it causes a delay until
-		#       the system recognizes an active charge. Until then, the battery may be discharged
-		#	    with a higher rate than intended to catch - by that time - uncontrolled consumption.
 		for evcsid, evcs_state in self._evcs_states.items():
-			if evcs_state.is_started and evcs_state.no_phases is not None:
+			if evcs_state.is_started:
 				return True
 		
 		return False
