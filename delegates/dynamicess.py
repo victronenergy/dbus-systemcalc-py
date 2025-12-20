@@ -1154,12 +1154,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 						next_window = w
 						break # out of for loop
 
-<<<<<<< HEAD
 				#As of now, one common handler is enough. Hence, we don't need to validate the operation mode
 				final_strategy = self._determine_reactive_strategy(current_window, next_window, current_window.restrictions, now)
 
-=======
->>>>>>> 1597382 (improved charging detection)
 				#check EV instructions
 				self._evcs_control(current_window, now)
 
@@ -1242,6 +1239,18 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 							self._evcs_states[evcsid].amps = amps
 							self._dbusmonitor.set_value_async(self._evcs_states[evcsid].service, "/SetCurrent", amps)
 							logger.info("Changing Amps on EVCS #{} to {}A. (Requested: {} kWh / 15min)".format(evcsid, amps, kWh))
+
+						elif evcs_state.amps == amps and evcs_state.no_phases == 1:
+							#EV may switch from 1 to 3 phase during charge. Recalculate phase count if required.
+							l1 = self._dbusmonitor.get_value(evcs_state.service, "/Ac/L1/Power") or 0
+							l3 = self._dbusmonitor.get_value(evcs_state.service, "/Ac/L3/Power") or 0
+
+							if l3 > 0 and l1 > 0:
+								evcs_state.no_phases = 3
+								amps = max(6, round((kWh * 1000 * 3600.0/w.duration) / 235.0 / (evcs_state.no_phases or 1), 0))
+								logger.info("Detected switch of EVCS #{} to 3 phased. Switching amps to {}".format(evcsid, amps))
+								self._dbusmonitor.set_value_async(self._evcs_states[evcsid].service, "/SetCurrent", amps)
+								self._evcs_states[evcsid].amps = amps
 
 						elif evcs_state.no_phases is None:
 							#See, if we can determine the phases now.
