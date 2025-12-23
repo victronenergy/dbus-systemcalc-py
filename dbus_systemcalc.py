@@ -238,7 +238,8 @@ class SystemCalc:
 			delegates.InverterCharger(),
 			delegates.DynamicEss(),
 			delegates.LoadShedding(),
-			delegates.MotorDrive()]
+			delegates.MotorDrive(),
+			delegates.MotorDriveConsumption()]
 
 		for m in self._modules:
 			for service, paths in m.get_input():
@@ -1206,6 +1207,10 @@ class SystemCalc:
 		for m in self._modules:
 			m.device_removed(service, instance)
 
+	def _service_registered(self):
+		for m in self._modules:
+			m.service_registered()
+
 	def _scan_complete(self, monitor):
 		# Replace the early device_added handler with the runtime handler
 		monitor.set_device_added_callback(self._device_added)
@@ -1220,6 +1225,7 @@ class SystemCalc:
 		self._handleservicechange()
 		self._updatevalues()
 		self._dbusservice.register()
+		self._service_registered()
 		GLib.timeout_add(1000, exit_on_error, self._handletimertick)
 		logger.info("Startup scan complete")
 

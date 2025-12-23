@@ -68,3 +68,6 @@ class SystemCalcDelegate(object, metaclass=TrackInstance):
 
 	def device_removed(self, service, instance):
 		pass
+
+	def service_registered(self):
+		pass
