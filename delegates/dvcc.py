@@ -27,26 +27,26 @@ VECAN_FIRMWARE_REQUIRED = 0x10200 # 1.02, 24-bit version
 # This is a place to account for some BMS quirks where we may have to ignore
 # the BMS value and substitute our own.
 
-def _byd_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
+def _byd_quirk(dvcc, bms, charge_voltage, charge_current):
 	""" Quirk for the BYD batteries. When the battery sends CCL=0, float it at
 	   55V. """
 	if charge_current == 0:
-		return (min(55.0, charge_voltage), 40, feedback_allowed, False)
-	return (charge_voltage, charge_current, feedback_allowed, False)
+		return (min(55.0, charge_voltage), 40, False)
+	return (charge_voltage, charge_current, False)
 
-def _lg_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
+def _lg_quirk(dvcc, bms, charge_voltage, charge_current):
 	""" Quirk for LG batteries. The hard limit is 58V. Above that you risk
 	    tripping on high voltage. The batteries publish a charge voltage of 57.7V
 	    but we need to make room for an 0.4V overvoltage when feed-in is enabled.
 	"""
 	# Make room for a potential 0.4V at the top
-	return (min(charge_voltage, 57.3), charge_current, feedback_allowed, False)
+	return (min(charge_voltage, 57.3), charge_current, False)
 
 class _pylontech_quirk(object):
 	def __init__(self):
 		self._chargevoltage = 52.5
 
-	def __call__(self, dvcc, bms, charge_voltage, charge_current, feedback_allowed):
+	def __call__(self, dvcc, bms, charge_voltage, charge_current):
 		""" Quirk for Pylontech. Make a bit of room at the top. Pylontech says that
 			at 51.8V the battery is 95% full, and that balancing starts at 90%.
 			53.2V is normally considered 100% full, and 54V raises an alarm. By
@@ -56,13 +56,19 @@ class _pylontech_quirk(object):
 			Identify 24-V batteries by the lower charge voltage, and do the same
 			thing with an 8-to-15 cell ratio, +-3.48V per cell.
 		"""
+
+		# Check if the battery can do its own charge voltage control, in which
+		# case just return the values as is
+		if bms.has_charge_voltage_control:
+			return (charge_voltage, charge_current, False)
+
 		# Use 3.48V per cell plus a little, 52.4V for 15 cell 48V batteries.
 		# Use 3.46V per cell plus a little, 27.8V for 24V batteries testing shows that's 100% SOC.
 		# That leaves 1.6V margin for 48V batteries and 1.0V for 24V.
 		# See https://github.com/victronenergy/venus/issues/536
 		if charge_voltage > 55:
 			# 48V battery (16 cells.) Assume BMS knows what it's doing.
-			return (charge_voltage, charge_current, feedback_allowed, False)
+			return (charge_voltage, charge_current, False)
 		if charge_voltage > 20:
 			# 48V battery (15 cells) or 24V battery (8 cells). We want to halve
 			# the charge current limit when CCL=0 is sent. Normally the limit is
@@ -91,12 +97,12 @@ class _pylontech_quirk(object):
 				except TypeError:
 					charge_voltage = min(charge_voltage, 52.4)
 
-			return (charge_voltage, charge_current, feedback_allowed, False)
+			return (charge_voltage, charge_current, False)
 
 		# Not known, probably a 12V battery.
-		return (charge_voltage, charge_current, feedback_allowed, False)
+		return (charge_voltage, charge_current, False)
 
-def _pylontech_pelio_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
+def _pylontech_pelio_quirk(dvcc, bms, charge_voltage, charge_current):
 	""" Quirk for Pelio-L batteries. This is a 16-cell battery. 56V is 3.5V per
 	    cell which is where this battery registers 100% SOC. Battery sends
 	    CCL=0 at 3.55V per cell, to ensure good feed-in of excess DC coupled
@@ -106,12 +112,12 @@ def _pylontech_pelio_quirk(dvcc, bms, charge_voltage, charge_current, feedback_a
 	capacity = bms.capacity or 100.0
 	charge_current = max(charge_current, round(capacity/5.0))
 	if charge_current < 0.1:
-		return (min(charge_voltage, 55.2), charge_current, feedback_allowed, False)
-	return (min(charge_voltage, 56.0), charge_current, feedback_allowed, False)
+		return (min(charge_voltage, 55.2), charge_current, False)
+	return (min(charge_voltage, 56.0), charge_current, False)
 
-def _lynx_smart_bms_quirk(dvcc, bms, charge_voltage, charge_current, feedback_allowed):
+def _lynx_smart_bms_quirk(dvcc, bms, charge_voltage, charge_current):
 	""" When the Lynx Smart BMS sends CCL=0, it wants all chargers to stop. """
-	return (charge_voltage, charge_current, feedback_allowed, True)
+	return (charge_voltage, charge_current, True)
 
 QUIRKS = {
 	0xB004: _lg_quirk,
@@ -125,44 +131,6 @@ QUIRKS = {
 	0xA3E6: _lynx_smart_bms_quirk,
 	0xA3E7: _lynx_smart_bms_quirk,
 }
-
-def distribute(current_values, max_values, increment):
-	""" current_values and max_values are lists of equal size containing the
-	    current limits, and the maximum they can be increased to. increment
-	    contains the amount by which we want to increase the total, ie the sum
-	    of the values in current_values, while staying below max_values.
-
-	    This is done simply by first attempting to spread the increment
-	    equally. If a value exceeds the max in that process, the remainder is
-	    thrown back into the pot and distributed equally among the rest.
-
-	    Negative values are also handled, and zero is assumed to be the
-	    implicit lower limit. """
-	n = cn = len(current_values)
-	new_values = [-1] * n
-	for j in range(0, n):
-		for i, mv, av in zip(count(), max_values, current_values):
-			assert mv >= 0
-			if new_values[i] == mv or new_values[i] == 0:
-				continue
-			nv = av + float(increment) / cn
-
-			if nv >= mv:
-				increment += av - mv
-				cn -= 1
-				new_values[i] = mv
-				break
-			elif nv < 0:
-				increment += av
-				cn -= 1
-				new_values[i] = 0
-				break
-
-			new_values[i] = nv
-		else:
-			break
-		continue
-	return new_values
 
 class LowPassFilter(object):
 	""" Low pass filter, with a cap. """
@@ -216,6 +184,13 @@ class BaseCharger(object):
 		return self._get_path('/State') != 0
 
 	@property
+	def controllable(self):
+		return (self.active
+			and self.maxchargecurrent is not None
+			and self.currentlimit is not None
+			and self.n2k_device_instance in (0, None))
+
+	@property
 	def has_externalcontrol_support(self):
 		""" Override this to implement detection of external control support.
 		"""
@@ -257,6 +232,7 @@ class BaseCharger(object):
 			copy_dbus_value(self.monitor,
 				self.service, '/Settings/ChargeCurrentLimit',
 				self.service, '/Link/ChargeCurrent')
+		return self.currentlimit
 
 	@property
 	def smoothed_current(self):
@@ -377,6 +353,16 @@ class InverterCharger(SolarCharger):
 	def solaroffset(self):
 		return self._get_path('/Link/ChargeVoltageSolarOffset')
 
+	def update_values(self):
+		# Override the one in SolarCharger, as our PV yield has to be
+		# derived differently.
+		p = self.monitor.get_value(self.service, '/Yield/Power')
+		v = self.monitor.get_value(self.service, '/Dc/0/Voltage')
+		try:
+			self._smoothed_current.update(p/v)
+		except (TypeError, ZeroDivisionError):
+			pass
+
 class DcGenset(BaseCharger):
 	""" Encapsulates a DC genset on dbus. Exposes dbus paths as convenient
 	    attributes. """
@@ -467,6 +453,7 @@ class ChargerSubsystem(object):
 		self.monitor = monitor
 		self._solarchargers = {}
 		self._inverterchargers = {}
+		self._acsystem0 = None
 		self._otherchargers = {}
 
 	def add_solar_charger(self, service):
@@ -484,6 +471,25 @@ class ChargerSubsystem(object):
 	def add_invertercharger(self, service):
 		self._inverterchargers[service] = inverter = InverterCharger(self.monitor, service)
 		return inverter
+
+	def add_acsystem(self, service):
+		self._acsystem0 = acsystem = AcSystem(self.monitor, service)
+		return acsystem
+
+	def remove_acsystem(self, service):
+		try:
+			if self._acsystem0.service == service:
+				self._acsystem0 = None
+				return True
+		except AttributeError:
+			pass
+		return False
+
+	@property
+	def acsystem_allows_feedback(self):
+		return (self._acsystem0 is not None
+			and self._acsystem0.feedback_enabled
+			and self._acsystem0.discharge_capacity is not None)
 
 	def remove_charger(self, service):
 		for di in (self._solarchargers, self._inverterchargers, self._otherchargers):
@@ -537,16 +543,6 @@ class ChargerSubsystem(object):
 		return safeadd(*(c.smoothed_current for c in chain(
 			self._solarchargers.values(), self._inverterchargers.values()))) or 0
 
-	def maximize_charge_current(self):
-		""" Max out all chargers. """
-		for charger in self:
-			charger.maximize_charge_current()
-
-	def shutdown_chargers(self):
-		""" Shut down all chargers. """
-		for charger in self:
-			charger.maxchargecurrent = 0
-
 	def set_networked(self, has_bms, bms_charge_voltage, charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0):
 		""" This is the main entry-point into the solar charger subsystem. This
 		    sets all chargers to the same charge_voltage, and distributes
@@ -591,28 +587,43 @@ class ChargerSubsystem(object):
 		# current.
 		#
 		# Additionally, don't bother with chargers that are disconnected.
-		chargers = [x for x in chain(self._solarchargers.values(),
-			self._inverterchargers.values()) if x.active and x.maxchargecurrent is not None and x.n2k_device_instance in (0, None)]
-		if len(chargers) > 0:
-			if stop_on_mcc0 and max_charge_current == 0:
-				self.shutdown_chargers()
-			elif feedback_allowed:
-				self.maximize_charge_current()
-			elif max_charge_current is not None:
-				if len(chargers) == 1:
-					# The simple case: Only one charger. Simply assign the
-					# limit to the charger
-					sc = chargers[0]
-					cc = min(ceil(max_charge_current), sc.currentlimit)
-					sc.maxchargecurrent = cc
-				elif max_charge_current > self.totalcapacity * 0.95:
-					# Another simple case, we're asking for more than our
-					# combined capacity (with a 5% margin)
-					self.maximize_charge_current()
-				else:
-					# The hard case, we have more than one CC and we want
-					# less than our capacity.
-					self._distribute_current(chargers, max_charge_current)
+		solarchargers = [x for x in self._solarchargers.values() if x.controllable]
+		inverterchargers = [x for x in self._inverterchargers.values() if x.controllable]
+		chargers = solarchargers + inverterchargers
+
+		if stop_on_mcc0 and max_charge_current == 0:
+			for charger in chargers:
+				charger.maxchargecurrent = 0
+		elif max_charge_current is None:
+			for charger in chargers:
+				charger.maximize_charge_current()
+		elif self.acsystem_allows_feedback: # By Multi-RS
+			# The maximum to generate, is what the battery can take, plus
+			# what the inverter/charger can take off our hands.
+			m = max_charge_current + self._acsystem0.discharge_capacity
+
+			# The total charge current, somewhat smoothed, that the external
+			# solar chargers are making.
+			solarcurrent = min(
+				self._set_charge_current(solarchargers, m), # assigned to chargers
+				safeadd(*(c.smoothed_current for c in solarchargers)) or 0) # What they actually do
+
+			# The inverter/charger gets what remains after subtracting
+			# the current made by the solar chargers
+			mm = max_charge_current - solarcurrent
+			self._set_charge_current(inverterchargers, max(0.0, mm))
+
+			# And when mm becomes negative, that is when we have overcurrent,
+			# feed that to the grid.
+			self._acsystem0.discharge_setpoint = max(0.0, round(-mm, 1))
+		elif feedback_allowed: # by VE.Bus Multi, max_charge_current is not None
+			# Maximise all chargers, as we have always done, and let the Multi
+			# feed it in using overvoltage-feedin.
+			for charger in chargers:
+				charger.maximize_charge_current()
+
+		elif len(chargers): # no feedback, max_charge_current is not None
+			self._set_charge_current(chargers, max_charge_current)
 
 		# Split remainder over other chargers, according to individual
 		# capacity. Only consider controllable devices.
@@ -631,6 +642,27 @@ class ChargerSubsystem(object):
 
 		# Return flags of what we did
 		return voltage_written, int(network_mode_written and max_charge_current is not None), network_mode
+
+	def _set_charge_current(self, chargers, max_charge_current):
+		""" Set the charge current over a group of chargers. Return the
+		    ammount of unassigned charge capacity. """
+		if len(chargers) == 1:
+			# The simple case: Only one charger. Simply assign the
+			# limit to the charger
+			sc = chargers[0]
+			sc.maxchargecurrent = assigned = min(ceil(max_charge_current), sc.currentlimit)
+			return min(max_charge_current, assigned)
+		elif max_charge_current > sum(c.currentlimit for c in chargers) * 0.95:
+			# Another simple case, we're asking for more than our
+			# combined capacity (with a 5% margin)
+			assigned = 0.0
+			for charger in chargers:
+				assigned += charger.maximize_charge_current()
+			return min(max_charge_current, assigned)
+		else:
+			# The hard case, we have more than one CC and we want
+			# less than our capacity.
+			return self._distribute_current(chargers, max_charge_current)
 
 	@staticmethod
 	def _distribute_current(chargers, max_charge_current):
@@ -655,8 +687,10 @@ class ChargerSubsystem(object):
 		try:
 			P = (max_charge_current - actual) / max(capacity - actual, 0.0)
 		except ZeroDivisionError:
-			P = 1.0 # C == a, then give it all the beans
+			# Already at capacity, leave it alone for now
+			return min(max_charge_current, capacity)
 		else:
+			assigned = 0.0
 			spillover = 0.0
 			for charger in chargers:
 				l = max((a := charger.smoothed_current) + P * (
@@ -667,6 +701,8 @@ class ChargerSubsystem(object):
 				# so the max error is 100mA at the last charger.
 				spillover = l - (r := round(l, 1))
 				charger.maxchargecurrent = r
+				assigned += r
+			return min(max_charge_current, assigned)
 
 	def update_values(self):
 		# This is called periodically from a timer to update contained
@@ -727,7 +763,7 @@ class Multi(object):
 
 	@property
 	def ac_connected(self):
-		return self.monitor.get_value(self.service, '/Ac/ActiveIn/Connected') == 1
+		return getattr(MultiService.instance.vebus_service, 'ac_connected', False)
 
 	@property
 	def has_bolframe(self):
@@ -735,15 +771,7 @@ class Multi(object):
 
 	@property
 	def has_ess_assistant(self):
-		# We do not analyse the content of /Devices/0/Assistants, because that
-		# would require us to keep a list of ESS assistant version numbers (see
-		# VebusSocWriter._hub2_assistant_ids). Because that list is expected to
-		# change (unlike the list of hub-2 assistants), we use
-		# /Hub4/AssistantId to check the presence. It is guaranteed that
-		# /Hub4/AssistantId will be published before /Devices/0/Assistants.
-		assistants = self.monitor.get_value(self.service, '/Devices/0/Assistants')
-		return assistants is not None and \
-			self.monitor.get_value(self.service, '/Hub4/AssistantId') == 5
+		return getattr(MultiService.instance.vebus_service, 'has_ess_assistant', False)
 
 	@property
 	def dc_current(self):
@@ -752,20 +780,18 @@ class Multi(object):
 
 	@property
 	def hub_voltage(self):
-		return self.monitor.get_value(self.service, '/Hub/ChargeVoltage')
+		return getattr(MultiService.instance.vebus_service, 'hub_voltage', None)
 
 	@property
 	def maxchargecurrent(self):
-		return self.monitor.get_value(self.service, '/Dc/0/MaxChargeCurrent')
+		return getattr(MultiService.instance.vebus_service, 'maxchargecurrent', None)
 
 	@maxchargecurrent.setter
 	def maxchargecurrent(self, v):
-		# If the Multi is not ready, don't write to it just yet
-		if self.active and self.maxchargecurrent is not None and v != self._v:
-			# The maximum present charge current is 6-parallel 12V 5kva units, 6*220 = 1320A.
-			# We will consider 10000A to be impossibly high.
-			self.monitor.set_value_async(self.service, '/Dc/0/MaxChargeCurrent', 10000 if v is None else v)
-			self._v = v
+		# If the Multi is not ready, or if the value is unchanged,
+		# this will return false. We don't care, as we are called
+		# periodically from _on_timer, so this will resolve later.
+		MultiService.instance.set_maxchargecurrent(v)
 
 	@property
 	def state(self):
@@ -812,6 +838,28 @@ class Multi(object):
 			if limit is not None:
 				c = max(c, -limit)
 			self._dc_current.update(c)
+
+class AcSystem(object):
+	def __init__(self, monitor, service):
+		self.monitor = monitor
+		self.service = service
+
+	@property
+	def feedback_enabled(self):
+		return self.monitor.get_value(self.service, '/Ac/NoFeedInReason') == 0
+
+	@property
+	def discharge_capacity(self):
+		return self.monitor.get_value(self.service, '/Ess/BatteryDischargeCapacity')
+
+	@property
+	def discharge_setpoint(self):
+		return self.monitor.get_value(self.service, '/Ess/BatteryDischargeSetpoint')
+
+	@discharge_setpoint.setter
+	def discharge_setpoint(self, v):
+		self.monitor.set_value_async(self.service,
+			'/Ess/BatteryDischargeSetpoint', v)
 
 class Dvcc(SystemCalcDelegate):
 	""" This is the main DVCC delegate object. """
@@ -887,7 +935,8 @@ class Dvcc(SystemCalcDelegate):
 				'/State',
 				'/N2kDeviceInstance',
 				'/Mgmt/Connection',
-				'/Settings/BmsPresent']),
+				'/Settings/BmsPresent',
+				'/Yield/Power']),
 			('com.victronenergy.multi', [
 				'/ProductId',
 				'/Dc/0/Current',
@@ -900,13 +949,20 @@ class Dvcc(SystemCalcDelegate):
 				'/State',
 				'/N2kDeviceInstance',
 				'/Mgmt/Connection',
-				'/Settings/BmsPresent']),
+				'/Settings/BmsPresent',
+				'/Yield/Power']),
 			('com.victronenergy.vecan',	[
 				'/Link/ChargeVoltage',
 				'/Link/NetworkMode']),
 			('com.victronenergy.settings', [
 				 '/Settings/CGwacs/OvervoltageFeedIn',
-				 '/Settings/Services/Bol'])]
+				 '/Settings/Services/Bol']),
+			('com.victronenergy.acsystem', [
+				'/DeviceInstance',
+				'/Ac/NoFeedInReason',
+				'/Ess/BatteryDischargeCapacity',
+				'/Ess/BatteryDischargeSetpoint',
+			])]
 
 	def get_settings(self):
 		return [
@@ -941,9 +997,6 @@ class Dvcc(SystemCalcDelegate):
 			self._chargesystem.add_solar_charger(service)
 		elif service_type in ('inverter', 'multi'):
 			if self._dbusmonitor.get_value(service, '/IsInverterCharger') == 1:
-				# Add to both the solarcharger and inverter collections.
-				# add_invertercharger returns an object that can be directly
-				# added to the inverter collection.
 				self._inverters._add_inverter(
 					self._chargesystem.add_invertercharger(service))
 		elif service_type == 'vecan':
@@ -954,6 +1007,10 @@ class Dvcc(SystemCalcDelegate):
 			self._chargesystem.add_dcgenset(service)
 		elif service_type == 'battery':
 			pass # install timer below
+		elif service_type == 'acsystem':
+			if self._dbusmonitor.get_value(service, '/DeviceInstance') == 0:
+				self._chargesystem.add_acsystem(service)
+			return # skip timer
 		else:
 			# Skip timer code below
 			return
@@ -971,6 +1028,8 @@ class Dvcc(SystemCalcDelegate):
 			self._vecan_services.remove(service)
 		elif service in self._inverters:
 			self._inverters.remove_inverter(service)
+		elif self._chargesystem.remove_acsystem(service):
+			pass
 		if len(self._chargesystem) == 0 and len(self._vecan_services) == 0 and \
 			len(BatteryService.instance.batteries) == 0 and self._timer is not None:
 			GLib.source_remove(self._timer)
@@ -1088,12 +1147,11 @@ class Dvcc(SystemCalcDelegate):
 		# If there is a BMS, get the charge voltage and current from it
 		max_charge_current = None
 		charge_voltage = None
-		feedback_allowed = self.feedback_allowed
 		stop_on_mcc0 = False
 		has_bms = bms_service is not None
 		if has_bms:
-			charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0 = \
-				self._adjust_battery_operational_limits(bms_service, feedback_allowed)
+			charge_voltage, max_charge_current, stop_on_mcc0 = \
+				self._adjust_battery_operational_limits(bms_service)
 
 		# Check /Bms/AllowToCharge on the VE.Bus service, and set
 		# max_charge_current to zero if charging is not allowed.  Skip this if
@@ -1148,7 +1206,7 @@ class Dvcc(SystemCalcDelegate):
 		# Try to push the solar chargers to the vebus-compensated value
 		voltage_written, current_written, effective_charge_voltage = \
 			self._update_solarchargers_and_vecan(has_bms, charge_voltage,
-			_max_charge_current, feedback_allowed, stop_on_mcc0)
+			_max_charge_current, stop_on_mcc0)
 		update_solarcharger_control_flags(voltage_written, current_written, effective_charge_voltage)
 
 		# The Multi gets the remainder after subtracting what the solar
@@ -1195,7 +1253,7 @@ class Dvcc(SystemCalcDelegate):
 
 		return True
 
-	def _adjust_battery_operational_limits(self, bms_service, feedback_allowed):
+	def _adjust_battery_operational_limits(self, bms_service):
 		""" Take the charge voltage and maximum charge current from the BMS
 		    and adjust it as necessary. For now we only implement quirks
 		    for batteries known to have them.
@@ -1208,14 +1266,14 @@ class Dvcc(SystemCalcDelegate):
 		if quirk is not None:
 			# If any quirks are registered for this battery, use that
 			# instead.
-			cv, mcc, feedback_allowed, stop_on_mcc0 = quirk(self, bms_service, cv, mcc, feedback_allowed)
+			cv, mcc, stop_on_mcc0 = quirk(self, bms_service, cv, mcc)
 
 		# Add debug offsets
 		if cv is not None:
 			cv = safeadd(cv, self.invertervoltageoffset)
 		if mcc is not None:
 			mcc = safeadd(mcc, self.currentoffset)
-		return cv, mcc, feedback_allowed, stop_on_mcc0
+		return cv, mcc, stop_on_mcc0
 
 	def _update_battery_operational_limits(self, bms_service, cv, mcc):
 		""" This function writes the bms parameters across to the Multi
@@ -1241,7 +1299,7 @@ class Dvcc(SystemCalcDelegate):
 
 		# Control secondary Multis (systems with more than one) if configured
 		if self._settings['bolsecondary']:
-			self._update_secondary_multis(cv, bms_service.maxdischargecurrent)
+			self._update_secondary_multis(cv, mcc, bms_service.maxdischargecurrent)
 
 		# Also control inverters if BMS stops discharge
 		if len(self._inverters):
@@ -1250,11 +1308,17 @@ class Dvcc(SystemCalcDelegate):
 
 		return written
 
-	def _update_secondary_multis(self, cv, dcl):
+	def _update_secondary_multis(self, cv, mcc, dcl):
 		if cv is not None:
 			for m in MultiService.instance.othermultis:
 				self._dbusmonitor.set_value_async(m.service,
 					'/BatteryOperationalLimits/MaxChargeVoltage', cv)
+
+		if mcc is not None:
+			for m in MultiService.instance.othermultis:
+				self._dbusmonitor.set_value_async(m.service,
+					'/BatteryOperationalLimits/MaxChargeCurrent', mcc)
+
 		if dcl is not None:
 			for m in MultiService.instance.othermultis:
 				self._dbusmonitor.set_value_async(m.service,
@@ -1268,7 +1332,7 @@ class Dvcc(SystemCalcDelegate):
 			self._dbusmonitor.get_value('com.victronenergy.settings',
 				'/Settings/CGwacs/OvervoltageFeedIn') == 1
 
-	def _update_solarchargers_and_vecan(self, has_bms, bms_charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0):
+	def _update_solarchargers_and_vecan(self, has_bms, bms_charge_voltage, max_charge_current, stop_on_mcc0):
 		""" This function updates the solar chargers and VE.Can connected
 		    devices such as Multi-RS. Parameters related to the Multi are
 		    handled elsewhere. """
@@ -1308,7 +1372,7 @@ class Dvcc(SystemCalcDelegate):
 
 		voltage_written, current_written, network_mode = self._chargesystem.set_networked(
 			has_bms, bms_charge_voltage, charge_voltage,
-			max_charge_current, feedback_allowed, stop_on_mcc0)
+			max_charge_current, self.feedback_allowed, stop_on_mcc0)
 
 		# Write the voltage to VE.Can. Also update the networkmode. If there is
 		# no voltage to write to VE.Can, then still set the networkmode so that

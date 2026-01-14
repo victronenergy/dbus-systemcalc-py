@@ -66,6 +66,7 @@ class BatteryLife(SystemCalcDelegate):
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(BatteryLife, self).set_sources(dbusmonitor, settings, dbusservice)
 		self._dbusservice.add_path('/Control/ActiveSocLimit', value=None)
+		self._dbusservice.add_path('/Control/EssState', value=None)
 		self._timer = GLib.timeout_add(900000, exit_on_error, self._on_timer)
 
 	def get_input(self):
@@ -300,11 +301,15 @@ class BatteryLife(SystemCalcDelegate):
 		# Cannot start without a multi or an soc
 		if self.vebus is None or self.soc is None:
 			logging.debug("[BatteryLife] No vebus or no valid SoC")
+			self._dbusservice['/Control/EssState'] = None
+			self._dbusservice['/Control/ActiveSocLimit'] = None
 			return
 
 		# Cannot start without ESS available
 		if self._dbusmonitor.get_value(self.vebus, '/Hub4/AssistantId') is None:
 			logging.debug("[BatteryLife] No ESS Assistant found")
+			self._dbusservice['/Control/EssState'] = None
+			self._dbusservice['/Control/ActiveSocLimit'] = None
 			return
 
 		# The values we received might transition our state machine through
@@ -320,7 +325,7 @@ class BatteryLife(SystemCalcDelegate):
 			_newstate = self._map.get(newstate, lambda s: State.BLDefault)(self)
 			if _newstate is None or _newstate == newstate: break
 			newstate = _newstate
-		self.state = newstate
+		self._dbusservice['/Control/EssState'] = self.state = newstate
 
 		# Publish the active SOC limit on dbus
 		if newstate < State.KeepCharged:

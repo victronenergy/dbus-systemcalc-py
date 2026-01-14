@@ -869,91 +869,6 @@ class TestHubSystem(TestSystemCalcBase):
 
 		self._monitor.set_value('com.victronenergy.battery.socketcan_can0_di0_uc30688', '/Info/MaxChargeCurrent', 100)
 
-	def test_distribute(self):
-		from delegates.dvcc import distribute
-
-		actual = [1, 2, 3, 4, 5] # 15 amps
-		limits = [5, 5, 5, 5, 5] # 25 amps
-
-		# add 5 amps
-		newlimits = distribute(actual, limits, 5)
-		self.assertTrue(sum(newlimits)==20)
-
-		# max it out
-		newlimits = distribute(actual, limits, 10)
-		self.assertTrue(sum(newlimits)==25)
-
-		# overflow it
-		newlimits = distribute(actual, limits, 11)
-		self.assertTrue(sum(newlimits)==25)
-
-		# Drop 5 amps
-		newlimits = distribute(actual, limits, -5)
-		self.assertTrue(sum(newlimits)==10)
-
-		# Drop 10 amps
-		newlimits = distribute(actual, limits, -10)
-		self.assertTrue(sum(newlimits)==5)
-
-		# All of it
-		newlimits = distribute(actual, limits, -15)
-		self.assertTrue(sum(newlimits)==0)
-
-		# Attempt to go negative
-		newlimits = distribute(actual, limits, -20)
-		self.assertTrue(sum(newlimits)==0)
-
-		newlimits = distribute([2, 2], [2, 2], 20)
-
-	def test_hub1bridge_distr_1(self):
-		from delegates.dvcc import distribute
-		actual_values = [1, 2, 3]
-		max_values = [6, 5, 4]
-		new_values = distribute(actual_values, max_values, 3)
-		self.assertEqual(new_values, [2, 3, 4])
-
-	def test_hub1bridge_distr_2(self):
-		from delegates.dvcc import distribute
-		actual_values = [1, 2, 3]
-		max_values = [6, 5, 4]
-		new_values = distribute(actual_values, max_values, 9.0)
-		self.assertEqual(new_values, [6, 5, 4])
-
-	def test_hub1bridge_distr_3(self):
-		from delegates.dvcc import distribute
-		actual_values = [1, 2, 3]
-		max_values = [6, 5, 4]
-		new_values = distribute(actual_values, max_values, 10.0)
-		self.assertEqual(new_values, [6, 5, 4])
-
-	def test_hub1bridge_distr_4(self):
-		from delegates.dvcc import distribute
-		actual_values = [1, 2, 3]
-		max_values = [6, 5, 4]
-		new_values = distribute(actual_values, max_values, 6.0)
-		self.assertEqual(new_values, [3.5, 4.5, 4])
-
-	def test_hub1bridge_distr_5(self):
-		from delegates.dvcc import distribute
-		actual_values = [3, 2, 1]
-		max_values = [4, 5, 6]
-		new_values = distribute(actual_values, max_values, 6.0)
-		self.assertEqual(new_values, [4, 4.5, 3.5])
-
-	def test_hub1bridge_distr_6(self):
-		from delegates.dvcc import distribute
-		actual_values = [4, 5, 6]
-		max_values = [1, 2, 8]
-		new_values = distribute(actual_values, max_values, 0.0)
-		self.assertEqual(new_values, [1, 2, 8])
-
-	def test_hub1bridge_distr_7(self):
-		from delegates.dvcc import distribute
-		actual_values = [1]
-		max_values = [5]
-		new_values = distribute(actual_values, max_values, 6.0)
-		self.assertEqual(new_values, [5])
-
 	def test_debug_chargeoffsets(self):
 		self._update_values()
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 12.6)
@@ -2208,6 +2123,52 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Link/ChargeCurrent': 25 + 8}, # 25A limit, 8A VEBus
 		})
 
+	def test_dvcc_alternator_no_maxcurrent(self):
+		""" Don't crash when alternator has no /Settings/ChargeCurrentLimit. """
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 14.0,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 56,
+				'/Soc': 15.3,
+				'/DeviceInstance': 0,
+				'/Info/BatteryLowVoltage': 11,
+				'/Info/MaxChargeCurrent': 0,
+				'/Info/MaxChargeVoltage': 14.2,
+				'/Info/MaxDischargeCurrent': 50,
+				'/ProductId': 0xA3E5 }) # Lynx
+		self._add_device('com.victronenergy.solarcharger.ttyUSB0', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Dc/0/Voltage': 14.0,
+			'/Dc/0/Current': 4.0,
+			'/FirmwareVersion': 0x0129},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.alternator.ttyO4', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Settings/ChargeCurrentLimit': None,
+			'/Dc/0/Current': 33,
+			'/FirmwareVersion': 0 },
+			connection='VE.Direct')
+		self._update_values(interval=30000)
+		self._check_external_values({
+			'com.victronenergy.alternator.ttyO4': {
+				'/Link/ChargeVoltage': 14.2,
+				'/Link/ChargeCurrent': None },
+			'com.victronenergy.solarcharger.ttyUSB0': {
+				'/Link/ChargeVoltage': 14.2,
+				'/Link/ChargeCurrent': 0 },
+		})
+
 	def test_internal_maxchargecurrent(self):
 		""" The DVCC assistant allows other assistants to set an internal limit
 		    for the Multi. """
@@ -2355,7 +2316,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50 },
 			'com.victronenergy.vebus.ttyUSB0': {
 				'/BatteryOperationalLimits/BatteryLowVoltage': None,
-				'/BatteryOperationalLimits/MaxChargeCurrent': None,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 45,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50 },
 		})
@@ -2432,7 +2393,188 @@ class TestHubSystem(TestSystemCalcBase):
 		self._check_external_values({
 			'com.victronenergy.vebus.ttyUSB0': {
 				'/BatteryOperationalLimits/BatteryLowVoltage': None,
-				'/BatteryOperationalLimits/MaxChargeCurrent': None,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 45,
 				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50 },
+		})
+
+	def test_dvcc_with_multiple_multis_no_extra_multis(self):
+		from delegates.multi import Multi
+		Multi.instance.has_onboard_mkx = True # Force it true
+		self._set_setting('/Settings/SystemSetup/DvccControlAllMultis', 1)
+
+		# This space intentionally left not adding an extra Multi
+
+		# Add managed battery
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 58.1,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 45,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
+		self._update_values(interval=3000)
+
+		# First Multi still got the values
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 45,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': 50 },
+		})
+
+	def test_pylontech_with_voltage_control(self):
+		""" Some Pylontech batteries can control their own charge,
+		    voltage, then pass voltage through. """
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 51.8,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 155.4,
+				'/Soc': 95,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': None,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 53.2,
+				'/Info/MaxDischargeCurrent': 25,
+				'/InstalledCapacity': None,
+				'/Capabilities/ChargeVoltageControl': 1,
+				'/ProductId': 0xB009})
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeVoltage': 53.2,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 25
+			}
+		})
+		self._check_values({ '/Control/EffectiveChargeVoltage': 53.2 })
+
+	def test_current_distribution_solarchargers_multirs(self):
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+
+		self._add_device('com.victronenergy.multi.ttyO1', {
+			'/Ac/Out/L1/P': -530,
+			'/Ac/Out/L1/V': 234.2,
+			'/Dc/0/Voltage': 53.1,
+			'/Dc/0/Current': -10,
+			'/Dc/0/Power': -54,
+			'/Dc/0/Temperature': 24.5,
+			'/DeviceInstance': 0,
+			'/Soc': 53.2,
+			'/State': 9,
+			'/IsInverterCharger': 1,
+			'/Link/ChargeCurrent': None,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Yield/Power': 531},
+			product_name='Multi RS', connection='VE.Direct')
+
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+				'/State': 4,
+				'/Link/NetworkMode': 0,
+				'/Link/ChargeVoltage': None,
+				'/Link/ChargeCurrent': 100,
+				'/Link/VoltageSense': None,
+				'/Dc/0/Voltage': 12.4,
+				'/Dc/0/Current': 20.0,
+				'/FirmwareVersion': 0x129,
+				'/Settings/ChargeCurrentLimit': 100 },
+				connection='VE.Direct')
+
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 58.0,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 120.0,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
+
+		self._add_device('com.victronenergy.acsystem.socketcan_can0_sys0',
+			product_name=None,
+			values={
+				'/DeviceInstance': 0,
+				'/Ac/NoFeedInReason': 0,
+				'/Ess/BatteryDischargeCapacity': None, # old firmware
+				'/Ess/BatteryDischargeSetpoint': None
+			})
+
+		self._update_values(interval=3000)
+		self._check_external_values({ # Charge current adds up to 120A
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeCurrent': 63.7,
+			},
+			'com.victronenergy.multi.ttyO1': {
+				'/Link/ChargeCurrent': 56.3,
+			}
+		})
+
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeCurrent', 200)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeCurrent': 100,
+			},
+			'com.victronenergy.multi.ttyO1': {
+				'/Link/ChargeCurrent': 100,
+			}
+		})
+
+		# Update the firmware on the RS so it supports BatteryDischargeSetpoint
+		self._monitor.set_value('com.victronenergy.acsystem.socketcan_can0_sys0',
+			'/Ess/BatteryDischargeCapacity', 100.0)
+
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeCurrent', 80)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeCurrent': 100, # maximised, for feedback
+			},
+			'com.victronenergy.multi.ttyO1': {
+				'/Link/ChargeCurrent': 60, # 20A from local charger
+			}
+		})
+
+		# Set lower CCL
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeCurrent', 10)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeCurrent': 100, # maximised, for feedback
+			},
+			'com.victronenergy.multi.ttyO1': {
+				'/Link/ChargeCurrent': 0, # All PV to grid, none to battery
+			},
+			'com.victronenergy.acsystem.socketcan_can0_sys0': {
+				# 20A from local charger, 10A into battery, 10A into grid
+				'/Ess/BatteryDischargeSetpoint': 10,
+			}
+		})
+
+		# Can't feed in, then normal split. Expect 10A for battery total,
+		# 50/50 split since toh are doing 4A.
+		self._monitor.set_value('com.victronenergy.acsystem.socketcan_can0_sys0',
+			'/Ac/NoFeedInReason', 1)
+		self._monitor.set_value('com.victronenergy.solarcharger.ttyO1',
+			'/Dc/0/Current', 4)
+		self._monitor.set_value('com.victronenergy.multi.ttyO1',
+			'/Yield/Power', 212.4)
+		self._update_values(interval=15000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeCurrent': 5.0,
+			},
+			'com.victronenergy.multi.ttyO1': {
+				'/Link/ChargeCurrent': 5.0,
+			}
 		})

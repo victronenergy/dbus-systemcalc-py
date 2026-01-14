@@ -3,6 +3,8 @@ import dbus
 from ve_utils import get_product_id
 from delegates.base import SystemCalcDelegate
 
+notset = object()
+
 class Service(object):
 	def __init__(self, monitor, service, instance):
 		self.monitor = monitor
@@ -52,6 +54,22 @@ class Service(object):
 		# return False
 		return self.monitor.get_value(self.service, '/Hub4/DoNotFeedInOvervoltage') == 0
 
+	@property
+	def ac_connected(self):
+		return self.monitor.get_value(self.service, '/Ac/ActiveIn/Connected') == 1
+
+	@property
+	def hub_voltage(self):
+		return self.monitor.get_value(self.service, '/Hub/ChargeVoltage')
+
+	@property
+	def maxchargecurrent(self):
+		return self.monitor.get_value(self.service, '/Dc/0/MaxChargeCurrent')
+
+	@maxchargecurrent.setter
+	def maxchargecurrent(self, v):
+		self.monitor.set_value_async(self.service, '/Dc/0/MaxChargeCurrent', v)
+
 	def set_ignore_ac(self, inp, ignore):
 		if inp not in (0, 1):
 			raise ValueError(inp)
@@ -74,6 +92,7 @@ class Multi(SystemCalcDelegate):
 		self.vebus_service = None # The VE.Bus service, Multi could be offline
 		self.othermultis = [] # Second and third devices
 		self.has_onboard_mkx = True
+		self._cur_maxchargecurrent = notset
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
@@ -114,6 +133,21 @@ class Multi(SystemCalcDelegate):
 			del self.multis[service]
 			self._set_multi()
 
+	def set_maxchargecurrent(self, v):
+		if (self.multi is not None and self.multi.maxchargecurrent is not None):
+			if v is None:
+				if self._cur_maxchargecurrent is not None:
+					# Resetting to no limit
+					self.multi.maxchargecurrent = 10000 # max out
+					self._cur_maxchargecurrent = None
+					return True
+				#else: both are None, do nothing
+			else:
+				self.multi.maxchargecurrent = self._cur_maxchargecurrent = v
+				return True
+
+		return False
+
 	def _set_multi(self, *args, **kwargs):
 		# If platform has an onboard mkx, use only that as VE.Bus service.
 		# On other platforms, use the Multi with the lowest DeviceInstance.
@@ -141,6 +175,11 @@ class Multi(SystemCalcDelegate):
 				self.multi = main if main.connected else None
 				self.vebus_service = main
 				self.othermultis = multis[1:]
+
+		# If we lose the Multi, remember that the current limit has to be
+		# set again when we get it back.
+		if self.multi is None:
+			self._cur_maxchargecurrent = notset
 
 	def update_values(self, newvalues):
 		# If there are multis connected, but for some reason none is selected

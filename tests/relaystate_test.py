@@ -17,6 +17,24 @@ class RelayStateTest(TestSystemCalcBase):
 		TestSystemCalcBase.__init__(self, methodName)
 
 	def setUp(self):
+		self.gpio_dir = tempfile.mkdtemp()
+		os.mkdir(os.path.join(self.gpio_dir, 'relay_1'))
+		os.mkdir(os.path.join(self.gpio_dir, 'relay_2'))
+		os.mkdir(os.path.join(self.gpio_dir, 'relay_3'))
+		self.gpio1_state = os.path.join(self.gpio_dir, 'relay_1', 'value')
+		self.gpio2_state = os.path.join(self.gpio_dir, 'relay_2', 'value')
+		self.gpio3_state = os.path.join(self.gpio_dir, 'relay_3', 'value')
+
+		# Relay 1 is on, relay 2 is off
+		with open(self.gpio1_state, 'wt') as f:
+			f.write('1')
+		with open(self.gpio2_state, 'wt') as f:
+			f.write('0')
+		with open(self.gpio3_state, 'wt') as f:
+			f.write('0')
+
+		RelayState.RELAY_GLOB = os.path.join(self.gpio_dir, 'relay_*')
+
 		TestSystemCalcBase.setUp(self)
 		self._add_device('com.victronenergy.vebus.ttyO1', product_name='Multi',
 		values={
@@ -36,26 +54,18 @@ class RelayStateTest(TestSystemCalcBase):
 
 		self._add_device('com.victronenergy.settings', values={
 			'/Settings/Relay/Function': 1, # Generator
+			'/Settings/Relay/Polarity': 0, # N/O
+			'/Settings/Relay/1/Function': 2, # manual
+			'/Settings/Relay/1/Polarity': 0,
 		})
-
-		self.gpio_dir = tempfile.mkdtemp()
-		os.mkdir(os.path.join(self.gpio_dir, 'relay_1'))
-		os.mkdir(os.path.join(self.gpio_dir, 'relay_2'))
-		self.gpio1_state = os.path.join(self.gpio_dir, 'relay_1', 'value')
-		self.gpio2_state = os.path.join(self.gpio_dir, 'relay_2', 'value')
-		RelayState.RELAY_GLOB = os.path.join(self.gpio_dir, 'relay_*')
-
-		# Relay 1 is on, relay 2 is off
-		with open(self.gpio1_state, 'wt') as f:
-			f.write('1')
-		with open(self.gpio2_state, 'wt') as f:
-			f.write('0')
 
 	def tearDown(self):
 		os.remove(self.gpio1_state)
 		os.remove(self.gpio2_state)
+		os.remove(self.gpio3_state)
 		os.rmdir(os.path.join(self.gpio_dir, 'relay_1'))
 		os.rmdir(os.path.join(self.gpio_dir, 'relay_2'))
+		os.rmdir(os.path.join(self.gpio_dir, 'relay_3'))
 		os.rmdir(self.gpio_dir)
 
 	def test_relay_state(self):
@@ -77,6 +87,7 @@ class RelayStateTest(TestSystemCalcBase):
 	def test_stored_state(self):
 		rs = RelayState()
 		rs.set_sources(self._monitor, self._system_calc._settings, self._service)
+		self._update_values()
 
 		self._service.set_value('/Relay/0/State', 0)
 		self._service.set_value('/Relay/1/State', 1)
@@ -122,3 +133,39 @@ class RelayStateTest(TestSystemCalcBase):
 		self._update_values(5000)
 		self.assertEqual(self._service['/Relay/0/State'], 1) # Unaffected
 		self.assertEqual(open(self.gpio1_state, 'rt').read(), '1') # Unaffected
+
+	def test_relay_manual_polarity(self):
+		rs = RelayState()
+		rs.set_sources(self._monitor, self._system_calc._settings, self._service)
+
+		self._monitor.set_value('com.victronenergy.settings',
+			'/Settings/Relay/Function', 2) # Manual
+		self._monitor.set_value('com.victronenergy.settings',
+			'/Settings/Relay/1/Function', 2) # Manual
+
+		# Polarity is N/O
+		self._update_values(5000)
+		self.assertEqual(self._service['/Relay/0/State'], 0)
+		self.assertEqual(self._service['/Relay/1/State'], 0)
+		self.assertEqual(open(self.gpio1_state, 'rt').read(), '0')
+		self.assertEqual(open(self.gpio2_state, 'rt').read(), '0')
+
+		# Polarity is N/C
+		self._monitor.set_value('com.victronenergy.settings', '/Settings/Relay/Polarity', 1)
+		self._monitor.set_value('com.victronenergy.settings', '/Settings/Relay/1/Polarity', 1)
+		self._update_values(5000) # dbus follows actual state after update
+		self.assertEqual(self._service['/Relay/0/State'], 1)
+		self.assertEqual(self._service['/Relay/1/State'], 1)
+		self.assertEqual(open(self.gpio1_state, 'rt').read(), '0')
+		self.assertEqual(open(self.gpio2_state, 'rt').read(), '0')
+
+		# Flip state to 0, which should be inverted
+		self._service.set_value('/Relay/0/State', 0)
+		self._service.set_value('/Relay/1/State', 0)
+		self.assertEqual(open(self.gpio1_state, 'rt').read(), '1')
+		self.assertEqual(open(self.gpio2_state, 'rt').read(), '1')
+
+		self._service.set_value('/Relay/0/State', 1)
+		self._service.set_value('/Relay/1/State', 1)
+		self.assertEqual(open(self.gpio1_state, 'rt').read(), '0')
+		self.assertEqual(open(self.gpio2_state, 'rt').read(), '0')

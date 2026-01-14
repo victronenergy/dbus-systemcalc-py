@@ -72,6 +72,125 @@ class TestDynamicEss(TestSystemCalcBase):
 	def tearDown(self):
 		DynamicEss.instance.release_control()
 
+	def test_legacy_fallback(self):
+		
+		now = timer_manager.datetime
+		stamp = int(now.timestamp())
+
+		#check 1: No value existing at all for /TargetSoc.
+		self._monitor.set_value(self.vebus, '/Soc', 50.0)
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 73)
+	
+		timer_manager.run(7000)
+
+		#check internal values
+		self._check_values({
+			'/DynamicEss/WindowSoc': 73,
+			'/DynamicEss/WorkingSocPrecision': 0,
+			'/DynamicEss/LastScheduledStart': stamp
+		})
+
+		#check 2: none-Value -> Should Fall back to /Soc
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 74)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', None)
+	
+		timer_manager.run(7000)
+
+		#check internal values
+		self._check_values({
+			'/DynamicEss/WindowSoc': 74,
+			'/DynamicEss/WorkingSocPrecision': 0,
+			'/DynamicEss/LastScheduledStart': stamp
+		})
+
+		#check 3: 0.0-Value (default setting) -> Should Fall back to /Soc
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 75)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 0.0)
+	
+		timer_manager.run(7000)
+
+		#check internal values
+		self._check_values({
+			'/DynamicEss/WindowSoc': 75,
+			'/DynamicEss/WorkingSocPrecision': 0,
+			'/DynamicEss/LastScheduledStart': stamp
+		})
+
+		#check 4: a legit decimal soc, rounded up on integer-system.
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 76)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 76.7)
+	
+		timer_manager.run(7000)
+
+		#check internal values
+		self._check_values({
+			'/DynamicEss/WindowSoc': 77,
+			'/DynamicEss/WorkingSocPrecision': 0,
+			'/DynamicEss/LastScheduledStart': stamp
+		})
+
+		#check 5: a legit decimal soc, rounded down on integer-system.
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 77)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 76.4)
+	
+		timer_manager.run(7000)
+
+		#check internal values
+		self._check_values({
+			'/DynamicEss/WindowSoc': 76,
+			'/DynamicEss/WorkingSocPrecision': 0,
+			'/DynamicEss/LastScheduledStart': stamp
+		})
+
+		self._monitor.set_value(self.vebus, '/Soc', 50.3)
+
+		#give it 2 ticks to detect higher precision.
+		timer_manager.run(7000)
+		timer_manager.run(7000)
+
+		#check 5: a legit decimal soc, on a dec-supporting system. 
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 71)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 71.4)
+	
+		timer_manager.run(7000)
+
+		#check internal values
+		self._check_values({
+			'/DynamicEss/WindowSoc': 71.4,
+			'/DynamicEss/WorkingSocPrecision': 1,
+			'/DynamicEss/LastScheduledStart': stamp
+		})
+
 	def test_1_SCHEDULED_SELFCONSUME(self):
 		
 		now = timer_manager.datetime
@@ -105,7 +224,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 60)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 60)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 	
 		timer_manager.run(5000)
@@ -118,10 +237,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		#	(percent * capacity * 36000) / duration	
-		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600)
-		
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
+		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) #rate is rounded to 0 prec,
 		self.validate_charge_state(expected_rate)
 
 	def test_6_SCHEDULED_DISCHARGE(self):
@@ -135,7 +251,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 40)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 40)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 	
 		timer_manager.run(5000)
@@ -148,11 +264,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		#	(percent * capacity * 36000) / duration	
-		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600) * -1
-		
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate. 
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
-		
+		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec, 
 		self.validate_discharge_state(expected_rate)
 
 
@@ -168,7 +280,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 50)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 50)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 	
 		timer_manager.run(5000)
@@ -188,23 +300,22 @@ class TestDynamicEss(TestSystemCalcBase):
 		# it should keep up the current charge rate until the next target soc change.
 		# This should only happen, if targetsoc is reached within the last 20% of window progress.
 
-
 		#first, create two consecutive charge windows.
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
 		self._set_setting('/Settings/DynamicEss/BatteryCapacity', 10.0)
-		self._monitor.set_value(self.vebus, '/Soc', 50.0)
+		self._monitor.set_value(self.vebus, '/Soc', 50)
 		self._set_setting('/Settings/DynamicEss/Mode', 1)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 2)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 60)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 60)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Start', stamp + 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Strategy', 2)
-		self._set_setting('/Settings/DynamicEss/Schedule/1/Soc', 65)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/TargetSoc', 65)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/AllowGridFeedIn', 1)
 
 		#run 1800 seconds, validate charging as per schedule 0
@@ -213,29 +324,25 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/Active': 1,
 			'/DynamicEss/ReactiveStrategy': 2,
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
+			'/DynamicEss/WorkingSocPrecision': 0
 		})
 
-		#	(percent * capacity * 36000) / duration	
-		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600)
-
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate. 
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
-
+		#	(percent * capacity * 36000) / duration
+		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) #rate is rounded to 0 prec, 
 		self.validate_charge_state(expected_rate)
 
-		# run 1700 seconds more and pretend we reached target soc. Transition state should now kick in.
+		# run 1690 seconds more and pretend we reached target soc. Transition state should now kick in.
 		# chargerate should remain the same as currently set. 
 		timer_manager.run(1690 * 1000)
-		self._monitor.set_value(self.vebus, '/Soc', 60.0)
+		self._monitor.set_value(self.vebus, '/Soc', 60)
 		timer_manager.run(10 * 1000)
 
 		self._check_values({
 			'/DynamicEss/Active': 1,
 			'/DynamicEss/ReactiveStrategy': 10,
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
+			'/DynamicEss/WorkingSocPrecision': 0
 		})
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
 
 		self.validate_charge_state(expected_rate)
 
@@ -248,8 +355,7 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 
-		expected_rate = round(1.1 * (5 * 10 * 36000) / 3600)
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
+		expected_rate = round((10 * 5 * 36000) / (3600.0 - 5.0), 0) #rate is rounded to 0 prec, 
 		self.validate_charge_state(expected_rate)
 
 	def test_10_SCHEDULED_CHARGE_SMOOTH_TRANSITION_NOK(self):
@@ -268,13 +374,13 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 2)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 60)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 60)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Start', stamp + 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Strategy', 2)
-		self._set_setting('/Settings/DynamicEss/Schedule/1/Soc', 65)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/TargetSoc', 65)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/AllowGridFeedIn', 1)
 
 		#run 1800 seconds, validate charging as per schedule 0
@@ -285,12 +391,8 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 
-		#	(percent * capacity * 36000) / duration	
-		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600)
-
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
-
+		#	(percent * capacity * 36000) / duration
+		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) #rate is rounded to 0 prec, 
 		self.validate_charge_state(expected_rate)
 
 		# run 1400 seconds more and pretend we reached target soc. Transition state should NOT kick in, but idle. 
@@ -304,7 +406,7 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/ReactiveStrategy': 9,
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
+
 		self.validate_idle_state()
 
 		#transist to next window - should cause a change back to regular charging with updated chargerate. 
@@ -316,8 +418,8 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 
-		expected_rate = round(1.1 * (5 * 10 * 36000) / 3600)
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
+		#	(percent * capacity * 36000) / duration
+		expected_rate = round((10 * 5 * 36000) / (3600.0 - 5.0), 0) #rate is rounded to 0 prec, 
 		self.validate_charge_state(expected_rate)
 
 	def test_12_SCHEDULED_CHARGE_NO_GRID(self):
@@ -335,7 +437,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3) #ProGrid should trigger #13
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 40)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 40)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 	
 		timer_manager.run(5000)
@@ -348,10 +450,9 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		#	(percent * capacity * 36000) / duration	
-		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600) * -1
+		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec,
 		
 		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
 		self.validate_discharge_state(expected_rate)
 
 	def test_14_SELFCONSUME_NO_GRID(self):
@@ -365,7 +466,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3) 
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 90) 
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 90) 
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 2) 
 
 		self._monitor.set_value(self.vebus, '/Soc', 80)
@@ -405,10 +506,52 @@ class TestDynamicEss(TestSystemCalcBase):
 		self.validate_self_consume(300)
 
 	def test_15_IDLE_NO_OPPORTUNITY(self):
-		#This has been replaced, cause PROGRID now allows to go bellow targetsoc,
-		# see test_20_SELF_CONSUME_ACCEPT_BELLOW_TSOC_1
-		# and test_20_SELF_CONSUME_ACCEPT_BELLOW_TSOC_2
-		pass
+		now = timer_manager.datetime
+		stamp = int(now.timestamp())
+
+		self._set_setting('/Settings/DynamicEss/BatteryCapacity', 10.0)
+		self._monitor.set_value(self.vebus, '/Soc', 50.0)
+
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 2)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 60)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
+
+		timer_manager.run(5000)
+
+		#pretend there is consumption, beside we want to charge.
+		#if there is a grid2battery restriction, we can't charge.
+		#System should enter 15: IDLE_NO_OPPROTUNITY when a strategy asks to punish missing to grid.
+		#Idling then means: grid2bat restriction is obeyed and letting consumer hit the grid obeys missing2grid coping.
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L1/Power", 0)
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L2/Power", 0)
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L3/Power", 0)
+
+		self._add_device('com.victronenergy.pvinverter.mock31', {
+			'/Ac/L1/Power': 300,
+			'/Ac/L2/Power': 0,
+			'/Ac/L3/Power': 0,
+			'/Position': 0,
+			'/Connected': 1,
+			'/DeviceInstance': 31,
+		})
+
+		self._update_values()
+
+		#check internal values
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ReactiveStrategy': 15,
+			'/DynamicEss/LastScheduledStart': stamp,
+			'/Ac/Consumption/L1/Power': 300,
+			'/Ac/Consumption/L2/Power': 0,
+			'/Ac/Consumption/L3/Power': 0,
+		})
+
+		self.validate_idle_state()
 
 	def test_20_SELF_CONSUME_ACCEPT_BELLOW_TSOC_1(self):
 		now = timer_manager.datetime
@@ -422,7 +565,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 0)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 60)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 60)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 	
 		timer_manager.run(5000)
@@ -468,7 +611,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 1)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 40)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 40)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 
 		timer_manager.run(5000)
@@ -514,7 +657,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 1)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 40)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 40)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 
 		timer_manager.run(5000)
@@ -560,7 +703,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3) 
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 90) 
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 90) 
 
 		self._monitor.set_value(self.vebus, '/Soc', 100)
 		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L1/Power", 2000)
@@ -598,11 +741,6 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp,
 		})
 
-		#	(percent * capacity * 36000) / duration	
-		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600) * -1
-		
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
 		self.validate_self_consume()
 
 	def test_18_KEEP_BATTERY_CHARGED(self):
@@ -616,7 +754,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 2) 
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 100) 
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 100) 
 
 		self._monitor.set_value(self.vebus, '/Soc', 100)
 		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L1/Power", -200)
@@ -678,13 +816,13 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0) #use targetsoc for discharge.
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 40)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 40)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Start', stamp + 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Strategy', 0) #use targetsoc for discharge.
-		self._set_setting('/Settings/DynamicEss/Schedule/1/Soc', 35)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/TargetSoc', 35)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/AllowGridFeedIn', 1)
 
 		#run 1800 seconds, validate charging as per schedule 0
@@ -696,11 +834,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		#	(percent * capacity * 36000) / duration	
-		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600) * -1
-
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
-
+		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec,
 		self.validate_discharge_state(expected_rate)
 
 		# run 1700 seconds more and pretend we reached target soc. Transition state should now kick in. 
@@ -714,8 +848,6 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/ReactiveStrategy': 19,
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
 
 		self.validate_discharge_state(expected_rate)
 
@@ -728,8 +860,7 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 
-		expected_rate = round(1.1 * (5 * 10 * 36000) / 3600) * -1
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
+		expected_rate = round((5 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec, 
 		self.validate_discharge_state(expected_rate)
 
 	def test_19_SCHEDULED_DISCHARGE_SMOOTH_TRANSITION_NOK(self):
@@ -748,13 +879,13 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 40)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 40)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Start', stamp + 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/Strategy', 0)
-		self._set_setting('/Settings/DynamicEss/Schedule/1/Soc', 35)
+		self._set_setting('/Settings/DynamicEss/Schedule/1/TargetSoc', 35)
 		self._set_setting('/Settings/DynamicEss/Schedule/1/AllowGridFeedIn', 1)
 
 		#run 1800 seconds, validate charging as per schedule 0
@@ -766,11 +897,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		#	(percent * capacity * 36000) / duration	
-		expected_rate = round(1.1 * (10 * 10 * 36000) / 3600) * -1
-
-		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
-
+		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec, 
 		self.validate_discharge_state(expected_rate)
 
 		# run 1400 seconds more and pretend we reached target soc. Transition state should NOT kick in, but idle. 
@@ -796,8 +923,7 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 
-		expected_rate = round(1.1 * (5 * 10 * 36000) / 3600) * -1
-		self.assertAlmostEqual(expected_rate/100.0, self._service["/DynamicEss/ChargeRate"]/100.0, 1)
+		expected_rate = round((5 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec, 
 		self.validate_discharge_state(expected_rate)
 
 	def test_92_DESS_DISABLED(self):
@@ -890,8 +1016,11 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Overrides/MaxDischargePower': -1
 		}})
 
-		self.assertAlmostEqual(rate/100.0, Dvcc.instance.internal_maxchargepower/100.0,1)
-	
+		#validate calculation is good.
+		if rate is not None:
+			self.assertLessEqual(abs(self._service["/DynamicEss/ChargeRate"] - rate) / abs(rate), 0.01) # max 1% deviation allowed
+			self.assertLessEqual(abs(Dvcc.instance.internal_maxchargepower - rate) / abs(rate), 0.01) # max 1% deviation allowed
+
 	def validate_discharge_state(self, rate):
 		from delegates import Dvcc
 
@@ -902,65 +1031,87 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Overrides/Setpoint': -96000
 		}})
 
-		self.assertAlmostEqual(rate/100.0, self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower')/-100.0,1)
+		if rate is not None:
+			self.assertLessEqual((abs(self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower')) - abs(rate)) / abs(rate), 0.01)
+
 		self.assertEqual(None, Dvcc.instance.internal_maxchargepower)
-	
+
 	def validate_idle_state(self):
+
+		#internal
+		self._check_values({
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/ChargeRate': 0,
+		})
+
 		#validate external values
 		self._check_external_values({
 			'com.victronenergy.hub4': {
 				'/Overrides/ForceCharge': 0,
 				'/Overrides/MaxDischargePower':1
 		}})
-		#TODO check more settings to validate idle state.
 
-	def test_hysteresis(self):
-		#Test case for batteries that don't report whole numbers, but
-		#jumps between SOC values and don't always hit match target SOC
-		#exactly. Use case jitters between 43.8% and 44.4%. """
-		from delegates import Dvcc
+	def test_soc_precision_detection(self):
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
+
+		#If the system is sitting (idle) at 55.4 % SoC and the soc drops 0.1, Hysteresis should
+		#increase to 0.1. Let it drop 3 times, validate it adjusts.
 
 		self._set_setting('/Settings/DynamicEss/Mode', 1)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 44)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 55.0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 
-		self._monitor.set_value(self.vebus, '/Soc', 44.4)
-		timer_manager.run(5000)
-		self.assertGreaterEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower'),  1.0) # Controlled discharge
+		for s in range(0,101):
+			self._monitor.set_value(self.vebus, '/Soc', 100 - s)
+			timer_manager.run(5000)
+			timer_manager.run(5000)
 
-		self._monitor.set_value(self.vebus, '/Soc', 43.8)
-		timer_manager.run(5000)
-		# SOC is reached, idle
-		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower'), 1.0)
-		self.assertEqual(None, Dvcc.instance.internal_maxchargepower)
+			self._check_values({
+				'/DynamicEss/WorkingSocPrecision': 0,
+			})
 
-		# Returns to 44.4, remain in idle
-		self._monitor.set_value(self.vebus, '/Soc', 44.4)
+		self._monitor.set_value(self.vebus, '/Soc', 55.999999)
 		timer_manager.run(5000)
-		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower') , 1.0)
-		self.assertEqual(None, Dvcc.instance.internal_maxchargepower)
+		timer_manager.run(5000)
 
-		# Increases to 45.1%, go back to discharge.
-		self._monitor.set_value(self.vebus, '/Soc', 45.1)
-		timer_manager.run(5000)
-		self.assertGreaterEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower'), 1.0) # Controlled discharge
+		self._check_values({
+			'/DynamicEss/WorkingSocPrecision': 0,
+		})
 
-		# Idle again
-		self._monitor.set_value(self.vebus, '/Soc', 43.8)
+		self._monitor.set_value(self.vebus, '/Soc', 55.000001)
 		timer_manager.run(5000)
-		# SOC is reached, idle
-		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower'), 1.0)
-		self.assertEqual(None, Dvcc.instance.internal_maxchargepower)
+		timer_manager.run(5000)
 
-		# Back to charge if we go low enough
-		self._monitor.set_value(self.vebus, '/Soc', 42.9)
+		self._check_values({
+			'/DynamicEss/WorkingSocPrecision': 0,
+		})
+
+		self._monitor.set_value(self.vebus, '/Soc', 55.3)
 		timer_manager.run(5000)
-		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower'), -1.0)
-		self.assertGreaterEqual(Dvcc.instance.internal_maxchargepower, 0.0)
+		timer_manager.run(5000)
+
+		self._check_values({
+			'/DynamicEss/WorkingSocPrecision': 1,
+		})
+
+		self._monitor.set_value(self.vebus, '/Soc', 55.33)
+		timer_manager.run(5000)
+		timer_manager.run(5000)
+
+		self._check_values({
+			'/DynamicEss/WorkingSocPrecision': 2,
+		})
+
+		self._monitor.set_value(self.vebus, '/Soc', 55.339)
+		timer_manager.run(5000)
+		timer_manager.run(5000)
+
+		self._check_values({
+			'/DynamicEss/WorkingSocPrecision': 2,
+		})
 
 	def test_feedInLimitPrecedence(self):
 		# no limit set? default (-96000) kW should kick in.
@@ -977,7 +1128,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 50)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 50)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
 
 		#no limit

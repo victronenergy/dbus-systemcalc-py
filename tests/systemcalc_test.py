@@ -31,6 +31,7 @@ class TestSystemCalc(TestSystemCalcBase):
 				'/DeviceInstance': 0,
 				'/Devices/0/Assistants': [0x55, 0x1] + (26 * [0]),  # Hub-4 assistant
 				'/Dc/0/MaxChargeCurrent': None,
+				'/Dc/0/Capacity': None,
 				'/Soc': 53.2,
 				'/State': 3,
 				'/BatteryOperationalLimits/MaxChargeVoltage': None,
@@ -1560,6 +1561,53 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Ac/ConsumptionOnOutput/L1/Current': 0.4,
 			'/Ac/ConsumptionOnInput/L1/Power': None,
 			'/Ac/ConsumptionOnInput/L1/Current': None
+		})
+
+	def test_battery_capacity(self):
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.vebus/0')
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Capacity': None
+		})
+
+		# Multi has capacity
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1',
+			'/Dc/0/Capacity', 150.0)
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Capacity': 150.0
+		})
+
+		# Battery selected with no capacity
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 51.8,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 155.4,
+				'/Soc': 95,
+				'/DeviceInstance': 0,
+				'/ProductId': 0x203,
+				'/Capacity': None,
+				'/InstalledCapacity': None})
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.battery/0')
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Capacity': None
+		})
+
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Capacity', 150.0)
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Capacity': 150.0
+		})
+
+		# InstalledCapacity is fallback
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Capacity', None)
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/InstalledCapacity', 200.0)
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Capacity': 200.0
 		})
 
 if __name__ == '__main__':

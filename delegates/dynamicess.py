@@ -7,9 +7,9 @@ from delegates.dvcc import Dvcc
 from delegates.batterylife import BatteryLife
 from delegates.batterylife import State as BatteryLifeState
 from delegates.chargecontrol import ChargeControl
-from enum import Enum
+from enum import Enum, IntFlag
 from time import time
-import json
+import math
 import logging
 logger = logging.getLogger(__name__)
 
@@ -48,11 +48,11 @@ class OperatingMode(int, Enum):
 	TRADEMODE = 0
 	GREENMODE = 1
 
-class Flags(int, Enum):
+class Flags(IntFlag):
 	NONE = 0
 	FASTCHARGE = 1
 
-class Restrictions(int, Enum):
+class Restrictions(IntFlag):
 	NONE = 0
 	BAT2GRID = 1
 	GRID2BAT = 2
@@ -86,9 +86,10 @@ class ReactiveStrategy(int, Enum):
 	SELFCONSUME_INCREASED_DISCHARGE = 17
 	KEEP_BATTERY_CHARGED = 18
 	SCHEDULED_DISCHARGE_SMOOTH_TRANSITION = 19
-	SELF_CONSUME_ACCEPT_BELOW_TSOC = 20
+	SELFCONSUME_ACCEPT_BELOW_TSOC = 20
 	IDLE_NO_DISCHARGE_OPPORTUNITY = 21
 
+	SELFCONSUME_INVALID_TARGETSOC = 91
 	DESS_DISABLED = 92
 	SELFCONSUME_UNEXPECTED_EXCEPTION = 93
 	SELFCONSUME_FAULTY_CHARGERATE = 94
@@ -102,11 +103,12 @@ class IterationChangeTracker(object):
 	'''
 		The iteration change tracker analyzes changes occuring between iterations, if the actual strategy may depend on the triggering factor.
 	'''
-	def __init__(self):
+	def __init__(self, delegate):
 		self._current_soc = None
 		self._current_target_soc = None
 		self._current_nw_tsoc_higher = None
 		self._current_nw_tsoc_lower = None
+		self._delegate = delegate
 
 		self._previous_reactive_strategy = None
 		self._previous_soc = None
@@ -114,41 +116,57 @@ class IterationChangeTracker(object):
 		self._previous_nw_tsoc_higher = None
 		self._previous_nw_tsoc_lower = None
 
-	def input(self, soc, target_soc, nw_tsoc_higher, nw_tsoc_lower):
+	def _check_soc_precision(self, soc):
+		"""
+			Determines the soc precision of the current soc value.
+		"""
+		p = 0
+		x = round(soc, 2)
+		for _ in range(2):
+			p += 1
+			x *= 10
+			if x % 10 < 1e-2:
+				return p - 1
+		return 2
+
+	def input(self, soc, soc_raw, target_soc, nw_tsoc_higher, nw_tsoc_lower):
 		self._current_soc = soc
 		self._current_target_soc = target_soc
 		self._current_nw_tsoc_higher = nw_tsoc_higher
 		self._current_nw_tsoc_lower = nw_tsoc_lower
 
+		#determine if soc precision is higher than currently used. Round to 8 to avoid
+		#issues like 1.1 would become 1.1000000000000001 and therefore an unreal precision.
+		if self._delegate.soc_precision < 2:
+			prec = self._check_soc_precision(soc_raw)
+			if (prec > self._delegate.soc_precision):
+				self._delegate.soc_precision = min(prec,2)
+
 		#log changes as well.
 		tme = datetime.today().strftime('%H:%M:%S')
 		if self.soc_change() != ChangeIndicator.NONE:
-			logger.log(logging.DEBUG, "{0}: detected soc change from {1} to {2}, identified as: {3}".format(
-				tme,
+			logger.log(logging.DEBUG, "detected soc change from {} to {}, identified as: {}".format(
 				self._previous_soc if self._previous_soc is not None else "None",
 				self._current_soc,
 				self.soc_change().name
 			))
 
 		if self.target_soc_change() != ChangeIndicator.NONE:
-			logger.log(logging.DEBUG, "{0}: detected target soc change from {1} to {2}, identified as: {3}".format(
-				tme,
+			logger.log(logging.DEBUG, "detected target soc change from {} to {}, identified as: {}".format(
 				self._previous_target_soc if self._previous_target_soc is not None else "None",
 				self._current_target_soc if self._current_target_soc is not None else "None",
 				self.target_soc_change().name
 			))
 
 		if self.nw_tsoc_higher_change() != ChangeIndicator.NONE:
-			logger.log(logging.DEBUG, "{0}: detected nw higher tsoc change from {1} to {2}, identified as: {3}".format(
-				tme,
+			logger.log(logging.DEBUG, "detected nw higher tsoc change from {} to {}, identified as: {}".format(
 				self._previous_nw_tsoc_higher if self._previous_nw_tsoc_higher is not None else "None",
 				self._current_nw_tsoc_higher,
 				self.nw_tsoc_higher_change().name
 			))
 
 		if self.nw_tsoc_lower_change() != ChangeIndicator.NONE:
-			logger.log(logging.DEBUG, "{0}: detected nw lower tsoc change from {1} to {2}, identified as: {3}".format(
-				tme,
+			logger.log(logging.DEBUG, "detected nw lower tsoc change from {} to {}, identified as: {}".format(
 				self._previous_nw_tsoc_lower if self._previous_nw_tsoc_lower is not None else "None",
 				self._current_nw_tsoc_lower,
 				self.nw_tsoc_lower_change().name
@@ -157,7 +175,6 @@ class IterationChangeTracker(object):
 	def soc_change(self) -> ChangeIndicator:
 		if self._current_soc is None or self._current_soc == self._previous_soc:
 			return ChangeIndicator.NONE
-
 		if self._previous_soc is None or self._current_soc > self._previous_soc:
 			return ChangeIndicator.RISING
 		elif self._current_soc < self._previous_soc:
@@ -205,13 +222,11 @@ class IterationChangeTracker(object):
 
 		if (self._previous_reactive_strategy != reactive_strategy):
 			tme = datetime.today().strftime('%H:%M:%S')
-			logger.log(logging.DEBUG, "{0}: Strategy switch from {1} to {2}".format(
-				tme,
+			logger.log(logging.DEBUG, "Strategy switch from {} to {}".format(
 				self._previous_reactive_strategy.name if self._previous_reactive_strategy is not None else "None",
 				reactive_strategy.name))
 
 		self._previous_reactive_strategy = reactive_strategy
-
 
 class EssDevice(object):
 	def __init__(self, delegate, monitor, service):
@@ -237,16 +252,16 @@ class EssDevice(object):
 		    return a non-zero error code. """
 		return 0
 
-	def charge(self, flags, restrictions, rate, allow_feedin):
+	def charge(self, flags, restrictions:Restrictions, rate, allow_feedin):
 		raise NotImplementedError("charge")
 
-	def discharge(self, flags, restrictions, rate, allow_feedin):
+	def discharge(self, flags, restrictions:Restrictions, rate, allow_feedin):
 		raise NotImplementedError("discharge")
 
 	def idle(self, allow_feedin):
 		raise NotImplementedError("idle")
 
-	def self_consume(self, restrictions, allow_feedin):
+	def self_consume(self, restrictions:Restrictions, allow_feedin):
 		raise NotImplementedError("self_consume")
 
 	def deactivate(self):
@@ -331,7 +346,7 @@ class VebusDevice(EssDevice):
 
 		return 0
 
-	def charge(self, flags, restrictions, rate, allow_feedin):
+	def charge(self, flags, restrictions:Restrictions, rate, allow_feedin):
 		self._set_feedin(allow_feedin)
 
 		#if the desired rate is lower than dcpv, this would come down to NOT charging from AC,
@@ -340,7 +355,7 @@ class VebusDevice(EssDevice):
 		#minus once more dcpv, as the discharge-method will internally add dcpv again.
 		# that'll be self.pvpower - rate - self.pvpower, hence comes down to rate * -1
 		# or in other words: we leave the portion of rate * -1 from dcpv available for the battery.
-		fast_charge_requested = flags & int(Flags.FASTCHARGE)
+		fast_charge_requested = Flags.FASTCHARGE in flags
 
 		#don't forward fastcharge. That means "max power", so no forced discharge. 
 		if rate < self.pvpower and not fast_charge_requested:
@@ -373,11 +388,12 @@ class VebusDevice(EssDevice):
 			# and the updated chargerate will be a little bit higher, if nothing else changes. This is fine and neglectable. 
 			# this only happens in certain charge-situations, scheduled charging from grid only changes the chargerate on soc change.
 			# rate will already be adjusted for obeying batteryimport limitation, so these check can be omited.
-			self._set_charge_power(max(0.0, rate - self.pvpower))
+			setrate = rate - self.pvpower
+			self._set_charge_power(max(0.0, setrate))
 			return rate
 
-	def discharge(self, flags, restrictions, rate, allow_feedin):
-		batteryexport = not (restrictions & int(Restrictions.BAT2GRID))
+	def discharge(self, flags, restrictions:Restrictions, rate, allow_feedin):
+		batteryexport = not (Restrictions.BAT2GRID in restrictions)
 
 		self._set_feedin(allow_feedin)
 		self._set_charge_power(None)
@@ -390,7 +406,7 @@ class VebusDevice(EssDevice):
 			# to DC-coupled PV plus local consumption.
 			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
 
-			if flags & Flags.FASTCHARGE:
+			if Flags.FASTCHARGE in flags:
 				self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
 				return None
 			else:
@@ -407,9 +423,8 @@ class VebusDevice(EssDevice):
 				return rate
 
 		else:
-			# If we are not allowed to sell to the grid, then we effectively do
-			# normal ESS here.
-			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', 0) # Normal ESS, no feedin
+			# this should never be reached, as discharge won't be entered with restrictions - leaving it here for double safety.
+			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', None) # Normal ESS, no feedin
 			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', -1)
 			return rate
 
@@ -430,8 +445,8 @@ class VebusDevice(EssDevice):
 
 		return None
 
-	def self_consume(self, restrictions, allow_feedin):
-		batteryimport = not restrictions & 2
+	def self_consume(self, restrictions:Restrictions, allow_feedin):
+		batteryimport = not (Restrictions.GRID2BAT in restrictions)
 
 		self._set_feedin(allow_feedin)
 
@@ -476,7 +491,7 @@ class MultiRsDevice(EssDevice):
 			return 4 # SOC low, happens during firmware updates
 		return 0
 
-	def charge(self, flags, restrictions, rate, allow_feedin):
+	def charge(self, flags, restrictions:Restrictions, rate, allow_feedin):
 		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin) if allow_feedin is not None else 0)
 
 		#if the desired rate is lower than dcpv, this would come down to NOT charging from AC,
@@ -485,7 +500,7 @@ class MultiRsDevice(EssDevice):
 		#minus once more dcpv, as the discharge-method will internally add dcpv again.
 		# that'll be self.pvpower - rate - self.pvpower, hence comes down to rate * -1
 		# or in other words: we leave the portion of rate * -1 from dcpv available for the battery.
-		fast_charge_requested = flags & int(Flags.FASTCHARGE)
+		fast_charge_requested = Flags.FASTCHARGE in flags
 
 		#don't forward fastcharge. That means "max power", so no forced discharge. 
 		if rate < self.pvpower and not fast_charge_requested:
@@ -513,8 +528,8 @@ class MultiRsDevice(EssDevice):
 
 		return rate
 
-	def discharge(self, flags, restrictions, rate, allow_feedin):
-		batteryexport = not (restrictions & int(Restrictions.BAT2GRID))
+	def discharge(self, flags, restrictions:Restrictions, rate, allow_feedin):
+		batteryexport = not (Restrictions.BAT2GRID in restrictions)
 
 		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin) if allow_feedin is not None else 0)
 		if allow_feedin:
@@ -523,7 +538,7 @@ class MultiRsDevice(EssDevice):
 			# making. If exporting the battery is not allowed, then limit that
 			# to DC-coupled PV plus local consumption.
 			self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
-			if flags & Flags.FASTCHARGE:
+			if Flags.FASTCHARGE in flags:
 				self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', -15000)
 				return None
 			else:
@@ -550,7 +565,7 @@ class MultiRsDevice(EssDevice):
 		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
 		self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', -max(0, self.pvpower))
 
-	def self_consume(self, restrictions, allow_feedin):
+	def self_consume(self, restrictions:Restrictions, allow_feedin):
 		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin) if allow_feedin is not None else 0)
 		self.monitor.set_value_async(self.service, '/Ess/AcPowerSetpoint', 0)
 		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 0)
@@ -562,13 +577,14 @@ class MultiRsDevice(EssDevice):
 		self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', 0)
 
 class DynamicEssWindow(ScheduledWindow):
-	def __init__(self, start, duration, soc, allow_feedin, restrictions, strategy, flags):
+	def __init__(self, start, duration, soc, targetsoc, allow_feedin, restrictions, strategy, flags, slot):
 		super(DynamicEssWindow, self).__init__(start, duration)
-		self.soc = soc
+		self.soc = targetsoc if (targetsoc is not None and targetsoc > 0) else soc #legacy support: fall back to /Soc, when /Targetsoc is 0 (default value)
 		self.allow_feedin = allow_feedin
-		self.restrictions = restrictions
+		self.restrictions:Restrictions = Restrictions(restrictions)
 		self.strategy = strategy
-		self.flags = flags
+		self.flags:Flags = Flags(flags)
+		self.slot = slot
 		self.duration = duration
 
 	def get_window_progress(self, now) -> float:
@@ -585,7 +601,6 @@ class DynamicEssWindow(ScheduledWindow):
 
 		passed_seconds = now - self.start
 		progress = passed_seconds.seconds / self.duration * 100.0
-		#logger.log(logging.INFO, "Start / Now / End / Duration / Passed / Progress: {} / {} / {} / {}s / {}s / {}%".format(self.start, now, self.stop, self.duration, passed_seconds.seconds, round(progress, 2)))
 		return progress
 
 	def __repr__(self):
@@ -598,9 +613,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 	def __init__(self):
 		super(DynamicEss, self).__init__()
-		self.charge_hysteresis = 0
-		self.discharge_hysteresis = 0
-		self.prevsoc = None
+		self.prevsoc_cr_calc = None
 		self.chargerate = None # Chargerate based on tsoc. Always to be set to DynamicEss/ChargeRate, even if an override is used. 
 		self.override_chargerate = None # chargerate if calculation based on tsco is overwritten.
 		self._timer = None
@@ -608,7 +621,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._device = None
 		self._errorcode = 0
 		self._errortimer = ERROR_TIMEOUT
-		self.iteration_change_tracker = IterationChangeTracker()
+		self.iteration_change_tracker = IterationChangeTracker(self)
 
 		#define the four kind of deterministic states we have. 
 		#SCHEDULED_SELFCONSUME is left out, it isn't part of the overall deterministic strategy tree, but a quick escape before entering. 
@@ -617,13 +630,13 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					ReactiveStrategy.SCHEDULED_CHARGE_SMOOTH_TRANSITION, ReactiveStrategy.UNSCHEDULED_CHARGE_CATCHUP_TARGETSOC,
 					ReactiveStrategy.KEEP_BATTERY_CHARGED)
 		self.selfconsume_states = (ReactiveStrategy.SELFCONSUME_ACCEPT_CHARGE, ReactiveStrategy.SELFCONSUME_ACCEPT_DISCHARGE, 
-							 ReactiveStrategy.SELFCONSUME_NO_GRID, ReactiveStrategy.SELFCONSUME_INCREASED_DISCHARGE, ReactiveStrategy.SELF_CONSUME_ACCEPT_BELOW_TSOC)
+							 ReactiveStrategy.SELFCONSUME_NO_GRID, ReactiveStrategy.SELFCONSUME_INCREASED_DISCHARGE, ReactiveStrategy.SELFCONSUME_ACCEPT_BELOW_TSOC)
 		self.idle_states = (ReactiveStrategy.IDLE_SCHEDULED_FEEDIN, ReactiveStrategy.IDLE_MAINTAIN_SURPLUS, ReactiveStrategy.IDLE_MAINTAIN_TARGETSOC, 
 					  ReactiveStrategy.IDLE_NO_OPPORTUNITY, ReactiveStrategy.IDLE_NO_DISCHARGE_OPPORTUNITY)
 		self.discharge_states = (ReactiveStrategy.SCHEDULED_DISCHARGE, ReactiveStrategy.SCHEDULED_MINIMUM_DISCHARGE, ReactiveStrategy.SCHEDULED_DISCHARGE_SMOOTH_TRANSITION)
 		self.error_selfconsume_states = (ReactiveStrategy.NO_WINDOW, ReactiveStrategy.UNKNOWN_OPERATING_MODE, ReactiveStrategy.SELFCONSUME_UNPREDICTED,
 								    ReactiveStrategy.SELFCONSUME_UNMAPPED_STATE, ReactiveStrategy.SELFCONSUME_FAULTY_CHARGERATE, 
-									ReactiveStrategy.SELFCONSUME_UNEXPECTED_EXCEPTION)
+									ReactiveStrategy.SELFCONSUME_UNEXPECTED_EXCEPTION, ReactiveStrategy.SELFCONSUME_INVALID_TARGETSOC)
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(DynamicEss, self).set_sources(dbusmonitor, settings, dbusservice)
@@ -632,30 +645,32 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		#               4 = supports fast-charge strategy
 		#               8 = values set on Venus (Battery balancing, capacity, operation mode)
 		#              16 = DESS split coping capability
-		self._dbusservice.add_path('/DynamicEss/Capabilities', value=31)
+		#              32 = support decimal target soc values
+		self._dbusservice.add_path('/DynamicEss/Capabilities', value=63)
 		self._dbusservice.add_path('/DynamicEss/NumberOfSchedules', value=NUM_SCHEDULES)
-		self._dbusservice.add_path('/DynamicEss/Active', value=0,
-			gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
-		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=0,
-			gettextcallback=lambda p, v: '{}%'.format(v))
-		self._dbusservice.add_path('/DynamicEss/MinimumSoc', value=None,
-			gettextcallback=lambda p, v: '{}%'.format(v))
-		self._dbusservice.add_path('/DynamicEss/ErrorCode', value=0,
-			gettextcallback=lambda p, v: ERRORS.get(v, 'Unknown'))
-		self._dbusservice.add_path('/DynamicEss/LastScheduledStart', value=None)
-		self._dbusservice.add_path('/DynamicEss/LastScheduledEnd', value=None)
-		self._dbusservice.add_path('/DynamicEss/ChargeRate', value=0)
-		self._dbusservice.add_path('/DynamicEss/Strategy', value=None)
-		self._dbusservice.add_path('/DynamicEss/Restrictions', value=None)
+		self._dbusservice.add_path('/DynamicEss/Active', value=0, gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
+		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=0.0, gettextcallback=lambda p, v: '{}%'.format(v))
+		self._dbusservice.add_path('/DynamicEss/WindowSoc', value=0.0, gettextcallback=lambda p, v: '{}%'.format(v))
+		self._dbusservice.add_path('/DynamicEss/MinimumSoc', value=None, gettextcallback=lambda p, v: '{}%'.format(v))
+		self._dbusservice.add_path('/DynamicEss/ErrorCode', value=0, gettextcallback=lambda p, v: ERRORS.get(v, 'Unknown'))
+		self._dbusservice.add_path('/DynamicEss/LastScheduledStart', value=None, gettextcallback=lambda p, v: '{}'.format(datetime.fromtimestamp(v).strftime('%Y-%m-%d %H:%M:%S')))
+		self._dbusservice.add_path('/DynamicEss/LastScheduledEnd', value=None, gettextcallback=lambda p, v: '{}'.format(datetime.fromtimestamp(v).strftime('%Y-%m-%d %H:%M:%S')))
+		self._dbusservice.add_path('/DynamicEss/ChargeRate', value=0, gettextcallback=lambda p, v: '{}W'.format(v))
+		self._dbusservice.add_path('/DynamicEss/WindowSlot', value=0)
+		self._dbusservice.add_path('/DynamicEss/Strategy', value=None, gettextcallback=lambda p, v: Strategy(v).name)
+		self._dbusservice.add_path('/DynamicEss/WorkingSocPrecision', value=0)
+		self._dbusservice.add_path('/DynamicEss/Restrictions', value=None, gettextcallback=lambda p, v: '{}'.format(Restrictions(v).name))
 		self._dbusservice.add_path('/DynamicEss/AllowGridFeedIn', value=None)
-		self._dbusservice.add_path('/DynamicEss/Flags', value=None)
-		self._dbusservice.add_path('/DynamicEss/AvailableOverhead', value=None)
+		self._dbusservice.add_path('/DynamicEss/Flags', value=None, gettextcallback=lambda p, v: '{}'.format(Flags(v).name))
+		self._dbusservice.add_path('/DynamicEss/AvailableOverhead', value=None, gettextcallback=lambda p, v: '{}W'.format(v))
+		self._dbusservice.add_path('/DynamicEss/ChargeHysteresis', value=0, gettextcallback=lambda p, v: '{}%'.format(v))
+		self._dbusservice.add_path('/DynamicEss/DischargeHysteresis', value=0, gettextcallback=lambda p, v: '{}%'.format(v))
 
 		if self.mode > 0:
-			self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value=None)
+			self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value=None, gettextcallback=lambda p, v: ReactiveStrategy(v))
 			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
 		else:
-			self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value = ReactiveStrategy.DESS_DISABLED.value)
+			self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value = ReactiveStrategy.DESS_DISABLED.value, gettextcallback=lambda p, v: ReactiveStrategy(v))
 
 	def get_settings(self):
 		# Settings for DynamicEss
@@ -665,8 +680,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			("dess_mode", path + "/Mode", 0, 0, 4),
 			("dess_capacity", path + "/BatteryCapacity", 0.0, 0.0, 1000.0),
 			("dess_efficiency", path + "/SystemEfficiency", 90.0, 50.0, 100.0),
-			# 0=None, 1=disallow export, 2=disallow import
-			("dess_restrictions", path + "/Restrictions", 0, 0, 3),
 			("dess_fullchargeinterval", path + "/FullChargeInterval", 14, -1, 99),
 			("dess_fullchargeduration", path + "/FullChargeDuration", 2, -1, 12),
 			("dess_operatingmode", path + '/OperatingMode', -1, -1, 2),
@@ -681,16 +694,18 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				path + "/Schedule/{}/Start".format(i), 0, 0, 0))
 			settings.append(("dess_duration_{}".format(i),
 				path + "/Schedule/{}/Duration".format(i), 0, 0, 0))
+			settings.append(("dess_targetsoc_{}".format(i),
+				path + "/Schedule/{}/TargetSoc".format(i), 0.0, 0.0, 100.0)) #needs to be decimal
 			settings.append(("dess_soc_{}".format(i),
-				path + "/Schedule/{}/Soc".format(i), 100, 0, 100))
+				path + "/Schedule/{}/Soc".format(i), 0, 0, 100)) #keep legacy support for a while.
 			settings.append(("dess_discharge_{}".format(i),
 				path + "/Schedule/{}/AllowGridFeedIn".format(i), 0, 0, 1))
 			settings.append(("dess_restrictions_{}".format(i),
-				path + "/Schedule/{}/Restrictions".format(i), 0, 0, 3))
+				path + "/Schedule/{}/Restrictions".format(i), 0, 0, sum(res.value for res in Restrictions)))
 			settings.append(("dess_strategy_{}".format(i),
 				path + "/Schedule/{}/Strategy".format(i), 0, 0, 3))
 			settings.append(("dess_flags_{}".format(i),
-				path + "/Schedule/{}/Flags".format(i), 0, 0, 1))
+				path + "/Schedule/{}/Flags".format(i), 0, 0, sum(flag.value for flag in Flags)))
 
 		return settings
 
@@ -749,8 +764,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		return None
 
 	@property
-	def oneway_efficency(self):
-		''' When charging from AC, only half of the efficency-losses have to be considered
+	def oneway_efficiency(self):
+		''' When charging from AC, only half of the efficiency-losses have to be considered
 			So, with an overall system efficency of 0.8, the charging efficency would be 0.9 and so on.
 		'''
 		return min(1.0, ((1 - self._settings["dess_efficiency"] / 100.0) / -2.0) + 1.0)
@@ -782,16 +797,17 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 	def windows(self):
 		starttimes = (self._settings['dess_start_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		durations = (self._settings['dess_duration_{}'.format(i)] for i in range(NUM_SCHEDULES))
-		socs = (self._settings['dess_soc_{}'.format(i)] for i in range(NUM_SCHEDULES))
+		socs = (self._settings['dess_soc_{}'.format(i)] for i in range(NUM_SCHEDULES)) #keep legacy support for a while
+		targetsocs = (self._settings['dess_targetsoc_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		discharges = (self._settings['dess_discharge_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		restrictions = (self._settings['dess_restrictions_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		strategies = (self._settings['dess_strategy_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		wflags = (self._settings['dess_flags_{}'.format(i)] for i in range(NUM_SCHEDULES))
 
-		for start, duration, soc, discharge, restrict, strategy, flags in zip(starttimes, durations, socs, discharges, restrictions, strategies, wflags):
+		for start, duration, soc, targetsoc, discharge, restrict, strategy, flags, slot in zip(starttimes, durations, socs, targetsocs, discharges, restrictions, strategies, wflags, range(NUM_SCHEDULES)):
 			if start > 0:
 				yield DynamicEssWindow(
-					datetime.fromtimestamp(start), duration, soc, discharge, restrict, strategy, flags)
+					datetime.fromtimestamp(start), duration, soc, targetsoc, discharge, restrict, strategy, flags, slot)
 
 	@property
 	def mode(self):
@@ -826,6 +842,22 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice['/DynamicEss/Active'] = v
 
 	@property
+	def charge_hysteresis(self):
+		return self._dbusservice['/DynamicEss/ChargeHysteresis']
+
+	@charge_hysteresis.setter
+	def charge_hysteresis(self, v):
+		self._dbusservice['/DynamicEss/ChargeHysteresis'] = v
+
+	@property
+	def discharge_hysteresis(self):
+		return self._dbusservice['/DynamicEss/DischargeHysteresis']
+
+	@discharge_hysteresis.setter
+	def discharge_hysteresis(self, v):
+		self._dbusservice['/DynamicEss/DischargeHysteresis'] = v
+
+	@property
 	def errorcode(self):
 		return self._errorcode
 
@@ -854,30 +886,57 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 	@property
 	def soc(self):
+		"""
+			returns the current soc, rounded to the systems working precission. This allows
+			us to omit to round every comparision anywhere else.
+		"""
+		bsoc = BatterySoc.instance.soc
+		return round(bsoc, self.soc_precision) if bsoc is not None else None
+
+	@property
+	def soc_raw(self):
+		"""
+			returns the unmodified soc. Required to detect actual precission.
+		"""
 		return BatterySoc.instance.soc
 
 	@property
-	def capacity(self):
+	def soc_precision(self) -> int:
+		"""
+			Detected SoC Precision of the battery.
+		"""
+		return self._dbusservice['/DynamicEss/WorkingSocPrecision']
+
+	@soc_precision.setter
+	def soc_precision(self, v):
+		self._dbusservice['/DynamicEss/WorkingSocPrecision'] = v
+
+	@property
+	def capacity(self) -> float:
+		"""
+			DESS configured capacity in kWh
+		"""
 		return self._settings["dess_capacity"]
 
 	@property
 	def operating_mode(self) -> OperatingMode:
 		return OperatingMode(self._settings["dess_operatingmode"])
 
-	@property
-	def restrictions(self):
-		return self._settings["dess_restrictions"]
-
 	def update_chargerate(self, now, end, start_soc, end_soc):
-		""" now is current time, end is end of slot, start_soc and end_soc determine the amount of intended soc change """
+		""" now is current time, end is end of slot, start_soc and end_soc determine the amount of intended soc change. Rate is the rate desired DC-Side. """
 
 		# Only update the charge rate if a new soc value has to be considered or chargerate is none
-		if self.chargerate is None or self.soc != self.prevsoc:
+		# round the soc, otherwise comparission fails for decimal socs and rate is calculated every 5 sec.
+		# adapting a chargerate with a forced precision of 1 is enough.
+		if self.chargerate is None or round(self.soc, 1) != round(self.prevsoc_cr_calc, 1):
 			try:
 				# a Watt is a Joule-second, a Wh is 3600 joules.
 				# Capacity is kWh, so multiply by 100, percentage needs division by 100, therefore 36000.
 				percentage = abs(start_soc - end_soc)
-				chargerate = round(1.1 * (percentage * self.capacity * 36000) / abs((end - now).total_seconds()))
+				duration = abs((end - now).total_seconds())
+				chargerate = round((percentage * self.capacity * 36000) / duration)
+
+				logger.debug("Charging from {} to {} in {}s requires a {} rate.".format(start_soc, end_soc, duration, chargerate))
 
 				#Discharge and charge has two different limits for calculation. these limits are added in update_chargerate
 				#rather than charge/discharge method, so data logging clearly shows the exact computed chargerate.
@@ -888,8 +947,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 				# keeping up prior chargerate is no longer required at this point.
 				self.chargerate = chargerate
-				#self.chargerate = chargerate if self.chargerate is None else max(abs(self.chargerate), chargerate)
-				self.prevsoc = self.soc
+				self.prevsoc_cr_calc = self.soc
 
 			except ZeroDivisionError:
 				logger.log(logging.WARNING, "Caught ZeroDivisionError in update_chargerate() for end='{}', now='{}'".format(end, now))
@@ -934,8 +992,11 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		now = self._get_time()
 		start = None
 		stop = None
+
+		#TODO: this always builds all 48 Windows.
+		#      can be optimized, we MOSTLY need 0 - 5
+		#      and #47 to determine maximal available schedule.
 		windows = list(self.windows())
-		restrictions = self.restrictions
 
 		#Whenever an error occurs that is totally unexpected, the delegate
 		#should enter self consume and not die.(try/catch around the control loop logic)
@@ -965,10 +1026,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					self.errorcode = 0 # No error
 
 					current_window = w
-					restrictions = w.restrictions | self.restrictions
 
 					self._dbusservice['/DynamicEss/Strategy'] = w.strategy
-					self._dbusservice['/DynamicEss/Restrictions'] = restrictions
+					self._dbusservice['/DynamicEss/Restrictions'] = w.restrictions
 					self._dbusservice['/DynamicEss/AllowGridFeedIn'] = int(w.allow_feedin)
 					break # out of for loop
 
@@ -983,7 +1043,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 						break # out of for loop
 
 				#As of now, one common handler is enough. Hence, we don't need to validate the operation mode 
-				final_strategy = self._determine_reactive_strategy(current_window, next_window, restrictions, now)
+				final_strategy = self._determine_reactive_strategy(current_window, next_window, current_window.restrictions, now)
 
 				if (self.chargerate or 0) != self._dbusservice['/DynamicEss/ChargeRate']:
 					logger.log(logging.DEBUG, "Anticipated chargerate is now: {}".format(self.chargerate or 0))
@@ -1009,13 +1069,24 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 		if final_strategy.value in self.error_selfconsume_states:
 			#Do at least regular ESS. 
-			self.chargerate = None
+			self.chargerate = None #self consume has no chargerate.
+			self.charge_hysteresis = self.discharge_hysteresis = 0
 			self._dbusservice['/DynamicEss/ChargeRate'] = 0
-			self._device.self_consume(restrictions, None)
+			self._device.self_consume(Restrictions.NONE, None) #no schedule, no restrictions.
 
 		return True
 
-	def _determine_reactive_strategy(self, w: DynamicEssWindow, nw: DynamicEssWindow, restrictions, now) -> ReactiveStrategy:
+	@property
+	def hysteresis(self) -> float:
+		"""
+			Determines the hysteresis value to use. We anticipate that the scheduler may never be off more than
+			250 Wh. So, we use the equivalant of 250Wh of the battery size, but limit it to be 1%, as this may
+			be the biggest soc-drop that could be encountered on a integer-based system during idle.
+		"""
+		#capacity (kWh) * 10 is 1% in Wh equivalent.
+		return round(min(250.0 / (self.capacity * 10), 1.0), self.soc_precision)
+
+	def _determine_reactive_strategy(self, w: DynamicEssWindow, nw: DynamicEssWindow, restrictions:Restrictions, now) -> ReactiveStrategy:
 		'''
 			Logic to be applied in Greenmode. Micro changes in strategy are applied to optimize solar gain / minimize grid pull. Returns the choosen strategy.
 			Strategy has to be determined in a 100% deterministic way. After it has been determined the proper system reaction with different variable sets
@@ -1027,27 +1098,34 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# However it will be more precice to only consider the "available ac pv" with 0.9. Direct Consumption will basically
 		# lower the available acpv without conversion losses.
 
+		if w.soc is None:
+			return ReactiveStrategy.SELFCONSUME_INVALID_TARGETSOC
+
 		available_solar_plus = 0
 
 		direct_acpv_consume = min(self._device.acpv or 0, self._device.consumption)
 		remaining_ac_pv = max(0, (self._device.acpv or 0) - direct_acpv_consume)
 		if remaining_ac_pv > 0:
 			#dc can be used for charging 100%, ac is penalized with 10% conversion losses.
-			available_solar_plus = (self._device.pvpower or 0) + remaining_ac_pv * self.oneway_efficency
+			available_solar_plus = (self._device.pvpower or 0) + remaining_ac_pv * self.oneway_efficiency
 		else:
 			#not enough ac pv. so, the part flowing from DC to remaining AC loads will lower the budget.
 			#ac doesn't have to be considered, it's 100% consumed. Hower, dc consume is penalized by 10% conversion
 			direct_dcpv_consume = self._device.consumption - direct_acpv_consume
-			available_solar_plus = (self._device.pvpower or 0) - direct_dcpv_consume / self.oneway_efficency
+			available_solar_plus = (self._device.pvpower or 0) - direct_dcpv_consume / self.oneway_efficiency
+
+		available_solar_plus = round(available_solar_plus)
 
 		self._dbusservice["/DynamicEss/AvailableOverhead"] = available_solar_plus
-		logger.log(logging.DEBUG, "ACPV / DCPV / Cons / Overhead is: {} / {} / {} / {}".format(self._device.acpv, self._device.pvpower, self._device.consumption, available_solar_plus))
+		self._dbusservice["/DynamicEss/WindowSoc"] = round(w.soc, self.soc_precision)
+		self._dbusservice["/DynamicEss/WindowSlot"] = w.slot
+		#logger.log(logging.DEBUG, "ACPV / DCPV / Cons / Overhead is: {} / {} / {} / {}".format(self._device.acpv, self._device.pvpower, self._device.consumption, available_solar_plus))
 
 		next_window_higher_target_soc = nw is not None and (nw.soc > w.soc) and nw.strategy != Strategy.SELFCONSUME
 		next_window_lower_target_soc = nw is not None and (nw.soc < w.soc) and nw.strategy != Strategy.SELFCONSUME
 
 		#pass new values to iteration change tracker. 
-		self.iteration_change_tracker.input(self.soc, self.targetsoc, next_window_higher_target_soc, next_window_lower_target_soc)
+		self.iteration_change_tracker.input(self.soc, self.soc_raw, self.targetsoc, next_window_higher_target_soc, next_window_lower_target_soc)
 		soc_change = self.iteration_change_tracker.soc_change()
 		target_soc_change = self.iteration_change_tracker.target_soc_change()
 		window_progress = w.get_window_progress(now) or 0
@@ -1056,18 +1134,28 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		if w.strategy == Strategy.SELFCONSUME:
 			self.chargerate = None #No scheduled chargerate in this case.
 			self.targetsoc = None
+			self.charge_hysteresis = self.hysteresis
+			self.discharge_hysteresis = 0
 			self._device.self_consume(restrictions, w.allow_feedin)
 			return ReactiveStrategy.SCHEDULED_SELFCONSUME
 
 		# Below here, strategy is any of the target soc dependent strategies
 		# some preparations
-		self.override_chargerate = None #if a override to chargerate can be found, it is set here.
-		if self.targetsoc != w.soc:
+		self.override_chargerate = None 
+		new_targetsoc = round(w.soc, self.soc_precision)
+
+		if new_targetsoc <= 0.1:
+			#this should never happen. extra safety check to avoid undesired discharges.
+			return ReactiveStrategy.SELFCONSUME_INVALID_TARGETSOC
+
+		#detect soc drop during idle.
+		if self.targetsoc is not None and round(self.targetsoc, self.soc_precision) != new_targetsoc:
 			self.chargerate = None # For recalculation, if target soc changes.
 
-		self.targetsoc = w.soc 
+		self.targetsoc = new_targetsoc
 		self._dbusservice['/DynamicEss/Flags'] = w.flags
 
+		#extract some flags for easy access.
 		excess_to_grid = (w.strategy == Strategy.PROGRID) or (w.strategy == Strategy.TARGETSOC)
 		missing_to_grid = (w.strategy == Strategy.TARGETSOC) or (w.strategy == Strategy.PROBATTERY)
 		excess_to_bat = not excess_to_grid
@@ -1076,17 +1164,17 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		#Needs to be determined
 		reactive_strategy = None 
 
-		if self.soc + self.charge_hysteresis < w.soc or w.soc >= 100:
+		if round(self.soc + self.charge_hysteresis, self.soc_precision) < self.targetsoc or self.targetsoc >= 100:
 			# if 100% is reached, keep batteries charged. 
 			# Mind we need to leave this, if missing2bat copping is selected and the ME-indicator is negative. 
 			# (To be more precice, as soon as the 250 Watt requested couldnt't be served by solar, fall back to default behaviour)
-			if w.soc >= 100 and self.soc >= 100 and (missing_to_grid or (missing_to_bat and available_solar_plus > 250)):
+			if self.targetsoc >= 100 and self.soc >= 100 and (missing_to_grid or (missing_to_bat and available_solar_plus > 250)):
 				self.chargerate = 250
 				reactive_strategy = ReactiveStrategy.KEEP_BATTERY_CHARGED
 
 			# we are behind plan. Charging is required. 
 			else:
-				self.update_chargerate(now, w.stop, self.soc, w.soc)
+				self.update_chargerate(now, w.stop, self.soc, self.targetsoc)
 
 				# Based on the coping flags, charging has 4 options
 				# Also restrictions may be applied (grid2bat). 
@@ -1103,22 +1191,29 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 						reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_FEEDIN
 				else:
 					#available_solar_plus <= self.chargerate
+
 					# 3) There isn't enough solar and we are flagged MISSINGTOGRID -> use calculated charge rate.
 					#    (Wording note: Missing2Grid describes the punishment of missing energy to the grid - so TAKING energy from the grid ;-))
 					#    But, this state is dissallowed, if a Grid2Bat Restriction is active.
-					if missing_to_grid and not (w.restrictions & Restrictions.GRID2BAT): 
+					if missing_to_grid and not (Restrictions.GRID2BAT in w.restrictions):
 						reactive_strategy = ReactiveStrategy.SCHEDULED_CHARGE_ALLOW_GRID
 
 					# 4) There isn't enough solar and we are flagged MISSINGTOBAT -> only use solar power that is availble.
 					#    This is self consume, until condition changes.
 					#    In case there is Grid2Bat restriction, this is our only option, even if the flag would indicate MISSINGTOGRID
-					elif available_solar_plus > 0 and (missing_to_bat or (w.restrictions & Restrictions.GRID2BAT)): 
+					elif available_solar_plus > 0 and (missing_to_bat or (Restrictions.GRID2BAT in w.restrictions)):
 						reactive_strategy = ReactiveStrategy.SELFCONSUME_NO_GRID
 
-					# 5.) Ultimate case: No Grid charge possible, no solar. We can't charge.
+					# 5.) No Grid charge possible, no solar. We can't charge.
 					#     However, when we have missing_to_bat, we allow to go bellow target soc. 
-					elif available_solar_plus <= 0 and (missing_to_bat or (w.restrictions & Restrictions.GRID2BAT)):
-						reactive_strategy = ReactiveStrategy.SELF_CONSUME_ACCEPT_BELOW_TSOC
+					elif available_solar_plus <= 0 and missing_to_bat:
+						reactive_strategy = ReactiveStrategy.SELFCONSUME_ACCEPT_BELOW_TSOC
+
+					# 5.) No Grid charge possible, no solar. We can't charge.
+					#     with missing2grid, but grid2bat restriction we can only idle now.
+					#     missing2grid with no restriction is already handled in case 3.
+					elif available_solar_plus <= 0 and missing_to_grid and (Restrictions.GRID2BAT in w.restrictions):
+						reactive_strategy = ReactiveStrategy.IDLE_NO_OPPORTUNITY
 
 		else:
 			# if we are currently in any SCHEDULED_CHARGE_* State and our next window outlines an even higher target soc, 
@@ -1145,17 +1240,17 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					# Any imprecission shall be handled by the grid
 					# not allowed with bat2grid restriction
 					#       When we have a bat2grid restriction, we should discharge at full consumption, feeding in 100% of solar production. 
-					if self.soc - self.discharge_hysteresis > max(w.soc, self._device.minsoc) and excess_to_grid and missing_to_grid \
-						and not (int(restrictions) & int(Restrictions.BAT2GRID)):
-						self.update_chargerate(now, w.stop, self.soc, w.soc)
+					if self.soc - self.discharge_hysteresis > max(self.targetsoc, self._device.minsoc) and excess_to_grid and missing_to_grid \
+						and not (Restrictions.BAT2GRID in restrictions):
+						self.update_chargerate(now, w.stop, self.soc, self.targetsoc)
 						reactive_strategy = ReactiveStrategy.SCHEDULED_DISCHARGE
 
 					# if flags are EXCESSTOGRID and MISSINGTOBAT, that means: keep a MINIMUM dischargerate, but allow to discharge more, if consumption-solar is higher.
 					# not allowed with bat2grid restriction
 					# so, we do some quick maths, if loads would require a higher discharge - then we let self consume handle that, over calculating a "better" discharge rate. 
-					elif self.soc - self.discharge_hysteresis > max(w.soc, self._device.minsoc) and excess_to_grid and missing_to_bat \
-						and not (int(restrictions) & int(Restrictions.BAT2GRID)):
-						self.update_chargerate(now, w.stop, self.soc, w.soc)
+					elif self.soc - self.discharge_hysteresis > max(self.targetsoc, self._device.minsoc) and excess_to_grid and missing_to_bat \
+						and not (Restrictions.BAT2GRID in restrictions):
+						self.update_chargerate(now, w.stop, self.soc, self.targetsoc)
 						me_indicator = available_solar_plus - self.chargerate
 
 						if me_indicator < 0:
@@ -1177,10 +1272,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					#     So, the more logical way is to accept ANY discharge, but simple stop when reaching target soc - and punish the remaining
 					#     load during that window to the grid. -> also self consume
 					# BUT: we are only doing this, If our next window has a smaller, equal or no target soc
-					elif self.soc - self.discharge_hysteresis > max(w.soc, self._device.minsoc):
+					elif self.soc - self.discharge_hysteresis > max(self.targetsoc, self._device.minsoc):
 						# we are supposed to drive loads only to achieve the indendet discharge. However, if solar > consumption and a bat2grid restriction,
 						# we have no discharge opportunity, Then, we ultimately only can idle to stay close to target soc.
-						if available_solar_plus > 0 and (int(restrictions) & int(Restrictions.BAT2GRID)):
+						if available_solar_plus > 0 and (Restrictions.BAT2GRID in restrictions):
 							reactive_strategy = ReactiveStrategy.IDLE_NO_DISCHARGE_OPPORTUNITY
 						else:
 							reactive_strategy = ReactiveStrategy.SELFCONSUME_ACCEPT_DISCHARGE
@@ -1188,13 +1283,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					else:
 						# Here we are:
 						# - Ahead of plan, but the next window indicates a higher soc target.
-						# - Spot on target soc, so idling is imminent / bellow targetSoc by charge_hysteresis %.
+						# - Spot on target soc, so idling is imminent / above targetSoc by discharge_hysteresis %.
 						# - available solar plus, but intended feedin.
-						# All cases should lead to idle, just determine which we have, for debug purpose
-						#if (self.soc > self.targetsoc and next_window_higher_target_soc):
-							# next window has a higher target soc than the current window, so idle to maintin advantage.
-							# if a discharge would have been enforced by the schedule, we would already be in SCHEDULED_DISCHARGE case.
-							#reactive_strategy = ReactiveStrategy.IDLE_MAINTAIN_SURPLUS
+
 						if available_solar_plus > 0 and excess_to_grid:
 							# We have solar surplus, but VRM wants an explicit feedin.
 							# since we are above or equal to target soc, we are going idle to achieve that.
@@ -1204,17 +1295,15 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 								next_window_lower_target_soc and window_progress >= TRANSITION_STATE_THRESHOLD) or \
 								(self.iteration_change_tracker._previous_reactive_strategy == ReactiveStrategy.SCHEDULED_DISCHARGE_SMOOTH_TRANSITION and target_soc_change == ChangeIndicator.NONE):
 								# keep current charge rate untouched.
-								# already targeting the new soc target of "next" window will cause a not smooth transition, if next window in slot 1 is outdated
-								# and the next window beeing pushed to slot 0 indicates another target soc.
 								# but only enter it, when window progress is >= TRANSITION_STATE_THRESHOLD
 								reactive_strategy = ReactiveStrategy.SCHEDULED_DISCHARGE_SMOOTH_TRANSITION
 							else:
-								# else, we have soc==targetsoc, or soc + charge_hystersis == targetsoc.
+								# else, we have soc==targetsoc, or soc - discharge_hystersis > targetsoc.
 								# In Case of MISSING_TO_BAT, we allow to discharge bellow target soc.
 								# Forced discharges are already handled, so we simply let self-consume handle the required amount
 								# of discharge here.
 								if missing_to_bat:
-									reactive_strategy = ReactiveStrategy.SELF_CONSUME_ACCEPT_BELOW_TSOC
+									reactive_strategy = ReactiveStrategy.SELFCONSUME_ACCEPT_BELOW_TSOC
 								else:
 									# else we ultimately idle.
 									reactive_strategy = ReactiveStrategy.IDLE_MAINTAIN_TARGETSOC
@@ -1236,30 +1325,30 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				reactive_strategy = ReactiveStrategy.SELFCONSUME_FAULTY_CHARGERATE
 
 			if reactive_strategy in self.charge_states:
+				self.charge_hysteresis = 0 #allow to reach tsoc spot on
+				self.discharge_hysteresis = self.hysteresis #avoid discharging on overshoot
 				self._device.charge(w.flags, restrictions, abs(final_chargerate), w.allow_feedin)
-				self.charge_hysteresis = 0 #allow to reach targetsoc precicesly.
-				self.discharge_hysteresis = 1 #avoid discharging, when overshooting targetsoc.
 
 			elif reactive_strategy in self.selfconsume_states:
+				self.charge_hysteresis = self.hysteresis #avoid charge of minor tsoc raise
+				self.discharge_hysteresis = 0
+				self.chargerate = None #self consume has no chargerate.
 				self._device.self_consume(restrictions, w.allow_feedin)
-				self.charge_hysteresis = 0 #no hysteresis.
-				self.discharge_hysteresis = 0 #no hysteresis.
 
 			elif reactive_strategy in self.idle_states:
+				self.charge_hysteresis = self.hysteresis #avoid charge on idle soc drop
+				self.discharge_hysteresis = 0 #allow follow a controlled discharge
+				self.chargerate = None #idle has no chargerate.
 				self._device.idle(w.allow_feedin)
-				self.charge_hysteresis = 1 #avoid rapid changes.
-				self.discharge_hysteresis = 1 #avoid rapid changes.
 
 			elif reactive_strategy in self.discharge_states:
+				self.charge_hysteresis = self.hysteresis #avoid charging on undershoot.
+				self.discharge_hysteresis = 0 #allow to reach tsoc spot on
 				#chargerate to be send to discharge method has to be always positive.
 				self._device.discharge(w.flags, restrictions, abs(final_chargerate), w.allow_feedin)
-				self.charge_hysteresis = 1 #avoid charging, when undershooting targetsoc.
-				self.discharge_hysteresis = 0 # allow to reach tsoc precicesly.
 
 			elif reactive_strategy in self.error_selfconsume_states:
-				#errorstates are handled outside this method. Seperate return to avoid else-case.
-				self.charge_hysteresis = 0 #no hysteresis.
-				self.discharge_hysteresis = 0 #no hysteresis.
+				#errorstates are handled outside this method.
 				return reactive_strategy
 
 			else:
@@ -1269,7 +1358,6 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				return ReactiveStrategy.SELFCONSUME_UNMAPPED_STATE
 
 			return reactive_strategy
-
 
 	def deactivate(self, reason):
 		try:
@@ -1293,11 +1381,3 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			newvalues['/DynamicEss/Available'] = int(self._device.available)
 		except AttributeError:
 			newvalues['/DynamicEss/Available'] = 0
-
-#Helper methods
-def xor(a, b):
-	''' 
-		equivalent of a ^ b.
-		Does a "bitwise exclusive or". Each bit of the output is the same as the corresponding bit in x if that bit in y is 0, and it's the complement of the bit in x if that bit in y is 1.
-	'''
-	return (a and not b) or (not a and b)

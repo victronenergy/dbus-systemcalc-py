@@ -51,6 +51,7 @@ class AcInputs(SystemCalcDelegate):
 		self.gridmeters = {}
 		self.gensetmeters = {}
 		self.inverterchargers = {}
+		self.acloads = set() # Things that indicate the presence of loads
 		self.gridmeter = None
 		self.gensetmeter = None
 		self.invertercharger = None
@@ -71,6 +72,8 @@ class AcInputs(SystemCalcDelegate):
 				('com.victronenergy.settings', [
 					'/Settings/CGwacs/PreventFeedback'
 				]),
+				('com.victronenergy.heatpump', [
+					'/ProductId']),
 		]
 
 	def get_output(self):
@@ -90,19 +93,26 @@ class AcInputs(SystemCalcDelegate):
 				('/Ac/ActiveIn/GridParallel', {'gettext': '%d'}),
 				('/Ac/ActiveIn/FeedbackEnabled', {'gettext': '%d'}),
 				('/Ac/ActiveIn/ServiceType', {'gettext': '%s'}),
+				('/Ac/HasAcLoads', {'gettext': '%s'}),
 		]
 
 	def device_added(self, service, instance, *args):
-		# Look for grid and genset
-		if service.startswith('com.victronenergy.grid.'):
+		# This is only ever called for services starting with
+		# com.victronenergy.
+		t = service.split('.')[2]
+		if t == 'grid':
 			self.gridmeters[service] = GridMeter(self._dbusmonitor, service, instance)
 			self._set_gridmeter()
-		elif service.startswith('com.victronenergy.genset.'):
+		elif t == 'genset':
 			self.gensetmeters[service] = AcSource(self._dbusmonitor, service, instance)
 			self._set_gensetmeter()
-		elif service.startswith('com.victronenergy.acsystem.'):
+		elif t == 'acsystem':
 			self.inverterchargers[service] = InverterCharger(self._dbusmonitor, service, instance)
 			self._set_invertercharger()
+		elif t in ('inverter', 'evcharger', 'acload', 'heatpump', 'vebus'):
+			# If any of the above services exist, we have some kind of AC
+			# system.
+			self.acloads.add(service)
 
 	def device_removed(self, service, instance):
 		if service in self.gridmeters:
@@ -114,6 +124,8 @@ class AcInputs(SystemCalcDelegate):
 		if service in self.inverterchargers:
 			del self.inverterchargers[service]
 			self._set_invertercharger()
+
+		self.acloads.discard(service)
 
 	def _get_meter(self, meters):
 		if meters:
@@ -153,6 +165,7 @@ class AcInputs(SystemCalcDelegate):
 		input_count = 0
 		newvalues['/Ac/ActiveIn/GridParallel'] = 0
 		newvalues['/Ac/ActiveIn/FeedbackEnabled'] = 0
+		newvalues['/Ac/HasAcLoads'] = int(len(self.acloads) + len(self.inverterchargers) > 0)
 		if multi is None:
 			# This is a system without an inverter/charger. If there is a
 			# grid meter or a genset, we can display that. This works because
