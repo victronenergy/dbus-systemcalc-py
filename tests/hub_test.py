@@ -2578,3 +2578,57 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Link/ChargeCurrent': 5.0,
 			}
 		})
+
+	def test_current_distribution_solarchargers_multirs_2(self):
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+
+		self._add_device('com.victronenergy.multi.ttyO1', {
+			'/Ac/Out/L1/P': -530,
+			'/Ac/Out/L1/V': 234.2,
+			'/Dc/0/Voltage': 53.1,
+			'/Dc/0/Current': 56.4,
+			'/Dc/0/Power': 3000,
+			'/Dc/0/Temperature': 24.5,
+			'/DeviceInstance': 0,
+			'/Soc': 53.2,
+			'/State': 9,
+			'/IsInverterCharger': 1,
+			'/Link/ChargeCurrent': None,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Yield/Power': 51},
+			product_name='Multi RS', connection='VE.Direct')
+
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+				'/State': 4,
+				'/Link/NetworkMode': 0,
+				'/Link/ChargeVoltage': None,
+				'/Link/ChargeCurrent': 100,
+				'/Link/VoltageSense': None,
+				'/Dc/0/Voltage': 53.1,
+				'/Dc/0/Current': 5.0,
+				'/FirmwareVersion': 0x129,
+				'/Settings/ChargeCurrentLimit': 100 },
+				connection='VE.Direct')
+
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 53.1,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 100.0,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
+
+		self._update_values(interval=3000)
+		self._check_external_values({ # Charge current adds up to 100A
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeCurrent': 31.5,
+			},
+			'com.victronenergy.multi.ttyO1': {
+				'/Link/ChargeCurrent': 68.5,
+			}
+		})

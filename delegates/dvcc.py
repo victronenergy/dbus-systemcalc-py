@@ -358,8 +358,9 @@ class InverterCharger(SolarCharger):
 		# derived differently.
 		p = self.monitor.get_value(self.service, '/Yield/Power')
 		v = self.monitor.get_value(self.service, '/Dc/0/Voltage')
+		b = self.monitor.get_value(self.service, '/Dc/0/Current')
 		try:
-			self._smoothed_current.update(p/v)
+			self._smoothed_current.update(max(p/v, b))
 		except (TypeError, ZeroDivisionError):
 			pass
 
