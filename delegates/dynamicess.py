@@ -928,7 +928,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# Only update the charge rate if a new soc value has to be considered or chargerate is none
 		# round the soc, otherwise comparission fails for decimal socs and rate is calculated every 5 sec.
 		# adapting a chargerate with a forced precision of 1 is enough.
-		if self.chargerate is None or round(self.soc, 1) != round(self.prevsoc_cr_calc, 1):
+		if self.chargerate is None or self.prevsoc_cr_calc is None or round(self.soc, 1) != round(self.prevsoc_cr_calc, 1):
 			try:
 				# a Watt is a Joule-second, a Wh is 3600 joules.
 				# Capacity is kWh, so multiply by 100, percentage needs division by 100, therefore 36000.
