@@ -74,6 +74,8 @@ class EVCSState():
 		self.is_started = False
 		self.no_phases = None
 		self.monitor = monitor
+		self.emergency_charge = False
+		self.emergency_charge_timer = None
 
 	@property
 	def status(self) -> int:
@@ -759,6 +761,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			("dess_batterydischargelimit", path + '/BatteryDischargeLimit', -1.0, -1.0, 9999.9),
 			("dess_gridimportlimit", path + '/GridImportLimit', -1.0, -1.0, 9999.9),
 			("dess_gridexportlimit", path + '/GridExportLimit', -1.0, -1.0, 9999.9),
+			("dess_evemergencystart", path + '/EVEmergencyStart', 30*60, 0, 86400),
+			("dess_evemergencycurrent", path + '/EVEmergencyCurrent', 6, 0, 32)
 		]
 
 		for i in range(NUM_SCHEDULES):
@@ -1219,6 +1223,11 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				if evcsid in self._evcs_states.keys():
 					evcs_state = self._evcs_states[evcsid]
 
+					if evcs_state.emergency_charge:
+						logger.info("Stopping Emergency Charging on EVCS #{} due to valid instruction arrived.".format(evcsid))
+						evcs_state.emergency_charge_timer = None
+						evcs_state.emergency_charge = False
+
 					#check, if we have a valid EVCS state.
 					#Should be status >0 (connected car) and mode == 0 (manual control, temporary).
 					if evcs_state.status > 0 and evcs_state.mode == 0:
@@ -1264,17 +1273,44 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 								evcs_state.no_phases = 1
 								logger.info("Detected EVCS #{} as 1 phased.".format(evcsid, amps))
 
-		#check, if we need to stop a charge due to absence of information or 0 instruction
-		#FIXME: if evcs stopps charging (full) We may also return to a non-charging-state.
+		#check, if we need to stop a charge or switch enter emergency-charge timeout mode due to absence of information or 0 instruction
 		for evcsid, evcs_state in self._evcs_states.items():
-			if not evcsid in w.to_ev.keys() or w.to_ev[evcsid] == 0:
-				#Stop, if charging.
+			#Stop, if charging regulary due to 0 instruction.
+			if evcsid in w.to_ev.keys() and w.to_ev[evcsid] == 0:
 				if evcs_state.is_started:
+					if evcs_state.emergency_charge:
+						logger.info("Stopping Emergency Charging on EVCS #{} due to 0 instruction.".format(evcsid))
+						evcs_state.emergency_charge_timer = None
+						evcs_state.emergency_charge = False
+
 					evcs_state.amps = 0
 					evcs_state.is_started=False
 					evcs_state.no_phases = None
 					self._dbusmonitor.set_value_async(self._evcs_states[evcsid].service, "/StartStop", 0)
 					logger.info("Stopping Charging on EVCS #{}".format(evcsid))
+
+			#If we detect a connection and have to emergency_timer started, do that:
+			if not evcsid in w.to_ev.keys() and evcs_state.status in [1,6] and evcs_state.emergency_charge_timer is None:
+				evcs_state.emergency_charge_timer = now
+				logger.info("Starting emergency charge timer on EVCS #{} ({}s).".format(evcsid, self._settings['dess_evemergencystart']))
+
+			#matching my happen anytime before the emergency timer runs out.
+			#cancel it, once that happens.
+			if evcsid in w.to_ev.keys() and evcs_state.emergency_charge_timer is not None:
+				logger.info("Cancelling emergency charge timer on EVCS #{} due to valid instruction arrived.".format(evcsid))
+				evcs_state.emergency_charge_timer = None
+
+			#If we have an emergency timer running, check if we need to start emergency charge.
+			if evcs_state.emergency_charge_timer is not None and not evcs_state.emergency_charge:
+				elapsed = (now - evcs_state.emergency_charge_timer).total_seconds()
+				if elapsed >= self._settings['dess_evemergencystart']:
+					#start emergency charge with configured amps.
+					evcs_state.emergency_charge = True
+					evcs_state.is_started=True
+					evcs_state.amps = self._settings['dess_evemergencycurrent']
+					self._dbusmonitor.set_value_async(self._evcs_states[evcsid].service, "/SetCurrent", self._settings['dess_evemergencycurrent'])
+					self._dbusmonitor.set_value_async(self._evcs_states[evcsid].service, "/StartStop", 1)
+					logger.info("Starting emergency charge on EVCS #{} after {}s.".format(evcsid, self._settings['dess_evemergencystart']))
 
 	def _determine_reactive_strategy(self, w: DynamicEssWindow, nw: DynamicEssWindow, restrictions:Restrictions, now) -> ReactiveStrategy:
 		'''
