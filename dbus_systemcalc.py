@@ -24,6 +24,32 @@ from sc_utils import safeadd as _safeadd, safemax as _safemax
 
 softwareVersion = '2.244'
 
+# Pre-computed path strings for the hot path in _updatevalues().
+# Avoids repeated % string formatting every 1-second tick.
+_PHASES = ('L1', 'L2', 'L3')
+_AC_PATHS = {}
+for _dt in ('Grid', 'Genset'):
+	for _ph in _PHASES:
+		_AC_PATHS[(_dt, _ph, 'pvpower')] = '/Ac/PvOn%s/%s/Power' % (_dt, _ph)
+		_AC_PATHS[(_dt, _ph, 'pvcurrent')] = '/Ac/PvOn%s/%s/Current' % (_dt, _ph)
+		_AC_PATHS[(_dt, _ph, 'em_p')] = '/Ac/%s/Power' % _ph
+		_AC_PATHS[(_dt, _ph, 'em_i')] = '/Ac/%s/Current' % _ph
+		_AC_PATHS[(_dt, _ph, 'ain_p')] = '/Ac/ActiveIn/%s/P' % _ph
+		_AC_PATHS[(_dt, _ph, 'ain_i')] = '/Ac/ActiveIn/%s/I' % _ph
+		_AC_PATHS[(_dt, _ph, 'out_p')] = '/Ac/%s/%s/Power' % (_dt, _ph)
+		_AC_PATHS[(_dt, _ph, 'out_i')] = '/Ac/%s/%s/Current' % (_dt, _ph)
+		_AC_PATHS[(_dt, _ph, 'activein_p')] = '/Ac/ActiveIn/%s/Power' % _ph
+		_AC_PATHS[(_dt, _ph, 'activein_i')] = '/Ac/ActiveIn/%s/Current' % _ph
+for _ph in _PHASES:
+	_AC_PATHS[(_ph, 'cons_out_p')] = '/Ac/ConsumptionOnOutput/%s/Power' % _ph
+	_AC_PATHS[(_ph, 'cons_out_i')] = '/Ac/ConsumptionOnOutput/%s/Current' % _ph
+	_AC_PATHS[(_ph, 'cons_p')] = '/Ac/Consumption/%s/Power' % _ph
+	_AC_PATHS[(_ph, 'cons_i')] = '/Ac/Consumption/%s/Current' % _ph
+	_AC_PATHS[(_ph, 'cons_in_p')] = '/Ac/ConsumptionOnInput/%s/Power' % _ph
+	_AC_PATHS[(_ph, 'cons_in_i')] = '/Ac/ConsumptionOnInput/%s/Current' % _ph
+	_AC_PATHS[(_ph, 'pvout_p')] = '/Ac/PvOnOutput/%s/Power' % _ph
+	_AC_PATHS[(_ph, 'pvout_i')] = '/Ac/PvOnOutput/%s/Current' % _ph
+
 class SystemCalc:
 	STATE_IDLE = 0
 	STATE_CHARGING = 1
@@ -900,11 +926,11 @@ class SystemCalc:
 			for phase in consumption:
 				p = None
 				mc = None
-				pvpower = newvalues.get('/Ac/PvOn%s/%s/Power' % (device_type, phase))
-				pvcurrent = newvalues.get('/Ac/PvOn%s/%s/Current' % (device_type, phase))
+				pvpower = newvalues.get(_AC_PATHS[(device_type, phase, 'pvpower')])
+				pvcurrent = newvalues.get(_AC_PATHS[(device_type, phase, 'pvcurrent')])
 				if em is not None:
-					p = self._dbusmonitor.get_value(em.service, '/Ac/%s/Power' % phase)
-					mc = self._dbusmonitor.get_value(em.service, '/Ac/%s/Current' % phase)
+					p = self._dbusmonitor.get_value(em.service, _AC_PATHS[(device_type, phase, 'em_p')])
+					mc = self._dbusmonitor.get_value(em.service, _AC_PATHS[(device_type, phase, 'em_i')])
 					# Compute consumption between energy meter and multi (meter power - multi AC in) and
 					# add an optional PV inverter on input to the mix.
 					c = None
@@ -912,8 +938,8 @@ class SystemCalc:
 					if uses_active_input:
 						if multi_path is not None:
 							try:
-								c = _safeadd(c, -self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/P' % phase))
-								cc = _safeadd(cc, -self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/I' % phase))
+								c = _safeadd(c, -self._dbusmonitor.get_value(multi_path, _AC_PATHS[(device_type, phase, 'ain_p')]))
+								cc = _safeadd(cc, -self._dbusmonitor.get_value(multi_path, _AC_PATHS[(device_type, phase, 'ain_i')]))
 							except TypeError:
 								pass
 						elif non_vebus_inverter is not None and active_input in (0, 1):
@@ -934,10 +960,10 @@ class SystemCalc:
 				else:
 					if uses_active_input:
 						if multi_path is not None  and (
-								p := self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/P' % phase)) is not None:
+								p := self._dbusmonitor.get_value(multi_path, _AC_PATHS[(device_type, phase, 'ain_p')])) is not None:
 							consumption[phase] = _safeadd(0, consumption[phase])
 							currentconsumption[phase] = _safeadd(0, currentconsumption[phase])
-							mc = self._dbusmonitor.get_value(multi_path, '/Ac/ActiveIn/%s/I' % phase)
+							mc = self._dbusmonitor.get_value(multi_path, _AC_PATHS[(device_type, phase, 'ain_i')])
 						elif non_vebus_inverter is not None and active_input in (0, 1):
 							for i in non_vebus_inverters:
 								p = _safeadd(p,
@@ -956,13 +982,13 @@ class SystemCalc:
 					except TypeError:
 						pass
 
-				newvalues['/Ac/%s/%s/Power' % (device_type, phase)] = p
-				newvalues['/Ac/%s/%s/Current' % (device_type, phase)] = mc
+				newvalues[_AC_PATHS[(device_type, phase, 'out_p')]] = p
+				newvalues[_AC_PATHS[(device_type, phase, 'out_i')]] = mc
 				if ac_in_guess in _types:
-					newvalues['/Ac/ActiveIn/%s/Power' % (phase,)] = p
-					newvalues['/Ac/ActiveIn/%s/Current' % (phase,)] = mc
+					newvalues[_AC_PATHS[(device_type, phase, 'activein_p')]] = p
+					newvalues[_AC_PATHS[(device_type, phase, 'activein_i')]] = mc
 
-			self._compute_number_of_phases('/Ac/%s' % device_type, newvalues)
+			self._compute_number_of_phases('/Ac/' + device_type, newvalues)
 			self._compute_number_of_phases('/Ac/ActiveIn', newvalues)
 
 			product_id = None
@@ -975,8 +1001,8 @@ class SystemCalc:
 					product_id = self._dbusmonitor.get_value(multi_path, '/ProductId')
 				elif non_vebus_inverter is not None:
 					product_id = self._dbusmonitor.get_value(non_vebus_inverter, '/ProductId')
-			newvalues['/Ac/%s/ProductId' % device_type] = product_id
-			newvalues['/Ac/%s/DeviceType' % device_type] = device_type_id
+			newvalues['/Ac/' + device_type + '/ProductId'] = product_id
+			newvalues['/Ac/' + device_type + '/DeviceType'] = device_type_id
 
 		# If a system has no loads/generation on the input side, we can
 		# assume ConsumptionOnInput to be invalid. This also implies that
@@ -995,8 +1021,8 @@ class SystemCalc:
 			c = None
 			a = None
 			if use_ac_out:
-				c = newvalues.get('/Ac/PvOnOutput/%s/Power' % phase)
-				a = newvalues.get('/Ac/PvOnOutput/%s/Current' % phase)
+				c = newvalues.get(_AC_PATHS[(phase, 'pvout_p')])
+				a = newvalues.get(_AC_PATHS[(phase, 'pvout_i')])
 				if multi_path is None:
 					for inv in non_vebus_inverters:
 						ac_out = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/P' % phase)
@@ -1019,13 +1045,13 @@ class SystemCalc:
 					a = _safeadd(a, i_out)
 				c = _safemax(0, c)
 				a = _safemax(0, a)
-			newvalues['/Ac/ConsumptionOnOutput/%s/Power' % phase] = c
-			newvalues['/Ac/ConsumptionOnOutput/%s/Current' % phase] = a
-			newvalues['/Ac/Consumption/%s/Power' % phase] = _safeadd(consumption[phase], c)
-			newvalues['/Ac/Consumption/%s/Current' % phase] = _safeadd(currentconsumption[phase], a)
+			newvalues[_AC_PATHS[(phase, 'cons_out_p')]] = c
+			newvalues[_AC_PATHS[(phase, 'cons_out_i')]] = a
+			newvalues[_AC_PATHS[(phase, 'cons_p')]] = _safeadd(consumption[phase], c)
+			newvalues[_AC_PATHS[(phase, 'cons_i')]] = _safeadd(currentconsumption[phase], a)
 			if has_ac_in_system:
-				newvalues['/Ac/ConsumptionOnInput/%s/Power' % phase] = consumption[phase]
-				newvalues['/Ac/ConsumptionOnInput/%s/Current' % phase] = currentconsumption[phase]
+				newvalues[_AC_PATHS[(phase, 'cons_in_p')]] = consumption[phase]
+				newvalues[_AC_PATHS[(phase, 'cons_in_i')]] = currentconsumption[phase]
 
 		self._compute_number_of_phases('/Ac/Consumption', newvalues)
 		self._compute_number_of_phases('/Ac/ConsumptionOnOutput', newvalues)
