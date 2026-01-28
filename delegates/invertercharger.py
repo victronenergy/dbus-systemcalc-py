@@ -27,8 +27,8 @@ class InverterCharger(SystemCalcDelegate):
 				'/Ac/Out/L1/V',
 				'/Ac/Out/L2/V',
 				'/Ac/Out/L3/V',
-				'/Ac/Out/L1/I'
-				'/Ac/Out/L2/I'
+				'/Ac/Out/L1/I',
+				'/Ac/Out/L2/I',
 				'/Ac/Out/L3/I']),
 		('com.victronenergy.multi', [
 				'/Dc/0/Voltage',
@@ -40,8 +40,8 @@ class InverterCharger(SystemCalcDelegate):
 				'/Ac/Out/L1/V',
 				'/Ac/Out/L2/V',
 				'/Ac/Out/L3/V',
-				'/Ac/Out/L1/I'
-				'/Ac/Out/L2/I'
+				'/Ac/Out/L1/I',
+				'/Ac/Out/L2/I',
 				'/Ac/Out/L3/I'])
 		]
 
