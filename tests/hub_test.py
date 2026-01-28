@@ -924,6 +924,55 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Dc/0/MaxChargeCurrent': 999
 			}})
 
+	def test_debug_chargeoffsets_clamped(self):
+		self._update_values()
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 12.6)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', 2)
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			 '/State': 0,
+			 '/Link/NetworkMode': 0,
+			 '/Link/ChargeVoltage': None,
+			 '/Link/VoltageSense': None,
+			 '/Dc/0/Voltage': 12.4,
+			 '/Dc/0/Current': 9.7,
+			 '/FirmwareVersion': 0x129},
+			 connection='VE.Direct')
+		self._add_device('com.victronenergy.battery.ttyO2', product_name='battery',
+			 values={
+					 '/Dc/0/Voltage': 12.5,
+					 '/Dc/0/Current': 5.3,
+					 '/Dc/0/Power': 65,
+					 '/Soc': 15.3,
+					 '/DeviceInstance': 2,
+					 '/Info/BatteryLowVoltage': 10,
+					 '/Info/MaxChargeCurrent': 25,
+					 '/Info/MaxChargeVoltage': 12.6,
+					 '/Info/MaxDischargeCurrent': 50})
+
+		# Set extreme offsets that exceed safe bounds
+		self._service.set_value('/Debug/BatteryOperationalLimits/SolarVoltageOffset', 10.0)
+		self._service.set_value('/Debug/BatteryOperationalLimits/VebusVoltageOffset', 5.0)
+		self._service.set_value('/Debug/BatteryOperationalLimits/CurrentOffset', 100)
+		self._update_values(3000)
+
+		# Voltage offset should be clamped to 0.5V, not 10V
+		# BMS MaxChargeVoltage=12.6, solar offset clamped to 0.5 => 13.1
+		self._check_external_values({
+			 'com.victronenergy.solarcharger.ttyO1': {
+					 '/Link/ChargeVoltage': 13.1
+			 }})
+
+		# Vebus offset clamped to 0.5V => 12.6 + 0.5 = 13.1
+		self._check_external_values({
+			 'com.victronenergy.vebus.ttyO1': {
+					 '/BatteryOperationalLimits/MaxChargeVoltage': 13.1
+			 }})
+		# Current offset clamped to 5A => 15 + 5 = 20 (not 115)
+		self._check_external_values({
+			 'com.victronenergy.vebus.ttyO1': {
+					 '/BatteryOperationalLimits/MaxChargeCurrent': 20
+			 }})
+
 	def test_hub1_legacy_voltage_control(self):
 		# BOL support is off initialy
 		self._set_setting('/Settings/Services/Bol', 0)
@@ -1258,7 +1307,6 @@ class TestHubSystem(TestSystemCalcBase):
 		# Check that this is also used as the Bms Service
 		self._check_values({'/ActiveBmsService': 'com.victronenergy.battery.ttyO2'})
 
-
 	def test_bms_selection_lowest_deviceinstance(self):
 		""" Test that if there is more than one BMS in the system,
 		    the lowest device instance """
@@ -1307,7 +1355,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/DeviceInstance': 0})
 		self.assertEqual(Dvcc.instance.bms, None)
 		self._check_values({'/ActiveBmsService': None})
-	
+
 	def test_bms_explicitly_selected(self):
 		# Default battery selection will pick the lowest DeviceInstance
 		self._set_setting('/Settings/SystemSetup/BatteryService', 'default')
