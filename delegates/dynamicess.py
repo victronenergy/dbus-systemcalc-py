@@ -273,6 +273,10 @@ class EssDevice(object):
 		    return a non-zero error code. """
 		return 0
 
+	@property
+	def average_ac_voltage(self) -> float:
+		raise NotImplementedError("average_ac_voltage")
+
 	def charge(self, flags, restrictions:Restrictions, rate, allow_feedin):
 		raise NotImplementedError("charge")
 
@@ -348,6 +352,16 @@ class VebusDevice(EssDevice):
 	def minsoc(self):
 		# The BatteryLife delegate puts the active soc limit here.
 		return self.delegate._dbusservice['/Control/ActiveSocLimit']
+
+	@property
+	def average_ac_voltage(self) -> float:
+		l1 = self.monitor.get_value(self.service, '/Ac/Out/L1/V')
+		l2 = self.monitor.get_value(self.service, '/Ac/Out/L2/V')
+		l3 = self.monitor.get_value(self.service, '/Ac/Out/L3/V')
+
+		#only consider non-None values to calculate the average.
+		voltages = [v for v in (l1, l2, l3) if v is not None]
+		return sum(voltages) / len(voltages)
 
 	def _set_feedin(self, allow_feedin):
 		""" None = follow system setup
@@ -506,6 +520,16 @@ class MultiRsDevice(EssDevice):
 	def minsoc(self):
 		# The minsoc is here on the Multi-RS
 		return self.monitor.get_value(self.service, '/Settings/Ess/MinimumSocLimit')
+
+	@property
+	def average_ac_voltage(self) -> float:
+		l1 = self.monitor.get_value(self.service, '/Ac/Out/L1/V')
+		l2 = self.monitor.get_value(self.service, '/Ac/Out/L2/V')
+		l3 = self.monitor.get_value(self.service, '/Ac/Out/L3/V')
+
+		#only consider non-None values to calculate the average.
+		voltages = [v for v in (l1, l2, l3) if v is not None]
+		return sum(voltages) / len(voltages)
 
 	@property
 	def mode(self):
@@ -818,6 +842,16 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				'/Mode',
 				'/Ac/L1/Power',
 				'/Ac/L3/Power'
+			]),
+			('com.victronenergy.vebus', [
+				'/Ac/Out/L1/V',
+				'/Ac/Out/L2/V',
+				'/Ac/Out/L3/V',
+			]),
+			('com.victronenergy.acsystem', [
+				'/Ac/Out/L1/V',
+				'/Ac/Out/L2/V',
+				'/Ac/Out/L3/V',
 			])
 		]
 
@@ -943,6 +977,13 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 	@active.setter
 	def active(self, v):
 		self._dbusservice['/DynamicEss/Active'] = v
+
+	@property
+	def average_ac_voltage(self) -> float:
+		"""
+			Returns the average AC voltage of all phases from the current device.
+		"""
+		return self._device.average_ac_voltage
 
 	@property
 	def charge_hysteresis(self):
@@ -1211,7 +1252,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			main battery discharge.
 		"""
 		for evcsid, evcs_state in self._evcs_states.items():
-			if evcs_state.is_started:
+			#we only consider the EV charging, if the state is charging AND we have been the invoker
+			#of the start. If it is full or not charging, battery usage behaviour shouldn't be affected.
+			if evcs_state.is_started and evcs_state.status == 2:
 				return True
 
 		return False
@@ -1233,7 +1276,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					if evcs_state.status > 0 and evcs_state.mode == 0:
 						#minimum amps to charge is 6, whatever calculation yields.
 						#FIXME: Read System voltage from vebus / multirs
-						amps = max(6, round((kWh * 1000 * 3600.0/w.duration) / 235.0 / (evcs_state.no_phases or 1), 0))
+						avg_ac = self.average_ac_voltage
+						amps = max(6, round((kWh * 1000 * 3600.0/w.duration) / avg_ac / (evcs_state.no_phases or 1), 0))
 
 						if not evcs_state.is_started:
 							#set current to 6 and start. Once we know phase count, we can adapt.
@@ -1247,7 +1291,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 							#update current.
 							self._evcs_states[evcsid].amps = amps
 							self._dbusmonitor.set_value_async(self._evcs_states[evcsid].service, "/SetCurrent", amps)
-							logger.info("Changing Amps on EVCS #{} to {}A. (Requested: {} kWh / 15min)".format(evcsid, amps, kWh))
+							logger.info("Setting Amps on EVCS #{} to {}A. ({}V / {}kWh / 15min)".format(evcsid, amps, avg_ac, kWh))
 
 						elif evcs_state.amps == amps and evcs_state.no_phases == 1:
 							#EV may switch from 1 to 3 phase during charge. Recalculate phase count if required.
@@ -1256,8 +1300,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 							if l3 > 0 and l1 > 0:
 								evcs_state.no_phases = 3
-								amps = max(6, round((kWh * 1000 * 3600.0/w.duration) / 235.0 / (evcs_state.no_phases or 1), 0))
-								logger.info("Detected switch of EVCS #{} to 3 phased. Switching amps to {}".format(evcsid, amps))
+								amps = max(6, round((kWh * 1000 * 3600.0/w.duration) / avg_ac / (evcs_state.no_phases or 1), 0))
+								logger.info("Detected switch of EVCS #{} to 3 phased. Switching amps to {} ({}V)".format(evcsid, amps, avg_ac))
 								self._dbusmonitor.set_value_async(self._evcs_states[evcsid].service, "/SetCurrent", amps)
 								self._evcs_states[evcsid].amps = amps
 
