@@ -1305,8 +1305,8 @@ class DbusSystemCalc(SystemCalc):
 if __name__ == "__main__":
 	# Argument parsing
 	parser = argparse.ArgumentParser(
-		description='Converts readings from AC-Sensors connected to a VE.Bus device in a pvinverter ' +
-					'D-Bus service.'
+		description='Aggregates data from D-Bus services (battery monitors, solar chargers, inverters, etc.) ' +
+					'and publishes system-wide calculations as com.victronenergy.system.'
 	)
 
 	parser.add_argument("-d", "--debug", help="set logging level to debug",
