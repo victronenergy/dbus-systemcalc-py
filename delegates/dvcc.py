@@ -552,25 +552,25 @@ class ChargerSubsystem(object):
 			network_mode_written = True
 		return network_mode_written
 
-	def set_chargevoltage(self, charge_voltage, bms_charge_voltage):
-		""" Set the charge voltage on all chargers. """
-		# Distribute the voltage setpoint to all solar chargers.
-		# Non-solar chargers are controlled elsewhere.
-		voltage_written = 0
-		if charge_voltage is not None:
-			voltage_written = int(len(self)>0)
-			for charger in chain(self._solarchargers.values(),
-					self._inverterchargers.values()):
-				# VE.Can chargers get their voltage from the VE.Can interface
-				if not charger.is_vecan:
-					charger.chargevoltage = charge_voltage
+	def set_chargevoltage_solarchargers(self, charge_voltage):
+		""" Set the charge voltage on solar chargers and inverter chargers. """
+		if charge_voltage is None:
+			return 0
+		voltage_written = int(len(self) > 0)
+		for charger in chain(self._solarchargers.values(),
+				self._inverterchargers.values()):
+			# VE.Can chargers get their voltage from the VE.Can interface
+			if not charger.is_vecan:
+				charger.chargevoltage = charge_voltage
+		return voltage_written
 
-		# Distribute the original BMS voltage setpoint, if there is one,
-		# to the other chargers
-		if bms_charge_voltage is not None:
-			for charger in self._otherchargers.values():
-				charger.chargevoltage = bms_charge_voltage
-
+	def set_chargevoltage_otherchargers(self, bms_charge_voltage):
+		""" Set the charge voltage on other chargers. """
+		if bms_charge_voltage is None:
+			return 0
+		voltage_written = int(len(self._otherchargers) > 0)
+		for charger in self._otherchargers.values():
+			charger.chargevoltage = bms_charge_voltage
 		return voltage_written
 
 	def set_maxchargecurrent(self, max_charge_current, feedback_allowed, stop_on_mcc0):
@@ -1330,11 +1330,8 @@ class Dvcc(SystemCalcDelegate):
 		return self._dbusmonitor.get_value('com.victronenergy.settings',
 			'/Settings/System/AccessLevel', 0) > 2 # Access level
 
-	def _update_solarchargers_and_vecan(self, has_bms, bms_charge_voltage, max_charge_current, stop_on_mcc0):
-		""" This function updates the solar chargers and VE.Can connected
-		    devices such as Multi-RS. Parameters related to the Multi are
-		    handled elsewhere. """
-
+	def _get_chargevoltage(self, bms_charge_voltage):
+		""" Determine the charge voltage to use for solar chargers. """
 		# If the vebus service does not provide a charge voltage setpoint (so
 		# no ESS/Hub-1/Hub-4), we use the max charge voltage provided by the
 		# BMS (if any). This will probably prevent feedback, but that is
@@ -1373,23 +1370,20 @@ class Dvcc(SystemCalcDelegate):
 			except (ValueError, TypeError):
 				pass
 
-		if charge_voltage is None and max_charge_current is None:
-			return 0, 0, None
+		return charge_voltage, vecan_voltage
 
+	def _set_solarcharger_networkmode(self, has_bms, charge_voltage, vecan_voltage, max_charge_current):
+		""" Set network mode on solar chargers and VE.Can devices. """
 		# Network mode:
 		# bit 0: Operated in network environment
 		# bit 2: Remote Hub-1 control (MPPT will accept charge voltage and max charge current)
 		# bit 3: Remote BMS control (MPPT enter BMS mode)
 		network_mode = 1 | (0 if charge_voltage is None and max_charge_current is None else 4) | (8 if has_bms else 0)
-
 		network_mode_written = self._chargesystem.set_networkmode(network_mode)
-		voltage_written = self._chargesystem.set_chargevoltage(charge_voltage, bms_charge_voltage)
-		self._chargesystem.set_maxchargecurrent(max_charge_current, self.feedback_allowed, stop_on_mcc0)
-		current_written = int(network_mode_written and max_charge_current is not None)
 
-		# Write the voltage to VE.Can. Also update the networkmode. If there is
-		# no voltage to write to VE.Can, then still set the networkmode so that
-		# RS devices will send us their Charge Voltage.
+		# Set the networkmode on VE.Can. If there is no voltage to write to
+		# VE.Can, then still set the networkmode so that RS devices will send
+		# us their Charge Voltage.
 		if vecan_voltage is None:
 			for service in self._vecan_services:
 				try:
@@ -1400,15 +1394,49 @@ class Dvcc(SystemCalcDelegate):
 		else:
 			for service in self._vecan_services:
 				try:
-					# In case there is no path at all, the set_value below will
-					# raise an DBusException which we will ignore cheerfully. If we
-					# cannot set the NetworkMode there is no point in setting the
-					# ChargeVoltage.
 					self._dbusmonitor.set_value_async(service, '/Link/NetworkMode', network_mode)
+				except DBusException:
+					pass
+
+		return network_mode_written
+
+	def _set_solarcharger_voltage(self, bms_charge_voltage, charge_voltage, vecan_voltage):
+		""" Set charge voltage on solar chargers, other chargers, and VE.Can devices. """
+		voltage_written = self._chargesystem.set_chargevoltage_solarchargers(charge_voltage)
+		voltage_written |= self._chargesystem.set_chargevoltage_otherchargers(bms_charge_voltage)
+
+		# Write the voltage to VE.Can.
+		if vecan_voltage is not None:
+			for service in self._vecan_services:
+				try:
 					self._dbusmonitor.set_value_async(service, '/Link/ChargeVoltage', vecan_voltage)
 					voltage_written = 1
 				except DBusException:
 					pass
+
+		return voltage_written
+
+	def _update_solarchargers_and_vecan(self, has_bms, bms_charge_voltage, max_charge_current, stop_on_mcc0):
+		""" This function updates the solar chargers and VE.Can connected
+		    devices such as Multi-RS. Parameters related to the Multi are
+		    handled elsewhere. """
+
+		charge_voltage, vecan_voltage = self._get_chargevoltage(bms_charge_voltage)
+
+		if charge_voltage is None and max_charge_current is None:
+			return 0, 0, None
+
+		# Set network mode
+		network_mode_written = self._set_solarcharger_networkmode(
+			has_bms, charge_voltage, vecan_voltage, max_charge_current)
+
+		# Set charge voltage
+		voltage_written = self._set_solarcharger_voltage(
+			bms_charge_voltage, charge_voltage, vecan_voltage)
+
+		# Set current limits
+		self._chargesystem.set_maxchargecurrent(max_charge_current, self.feedback_allowed, stop_on_mcc0)
+		current_written = int(network_mode_written and max_charge_current is not None)
 
 		return voltage_written, current_written, charge_voltage
 
