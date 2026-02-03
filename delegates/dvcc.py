@@ -544,7 +544,7 @@ class ChargerSubsystem(object):
 		return safeadd(*(c.smoothed_current for c in chain(
 			self._solarchargers.values(), self._inverterchargers.values()))) or 0
 
-	def set_networked(self, has_bms, bms_charge_voltage, charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0):
+	def set_networked(self, bms_charge_voltage, charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0, network_mode):
 		""" This is the main entry-point into the solar charger subsystem. This
 		    sets all chargers to the same charge_voltage, and distributes
 		    max_charge_current between the chargers. If feedback_allowed, then
@@ -552,11 +552,6 @@ class ChargerSubsystem(object):
 		    distribution if there's only one charger in the system or if
 		    it exceeds our total capacity.
 		"""
-		# Network mode:
-		# bit 0: Operated in network environment
-		# bit 2: Remote Hub-1 control (MPPT will accept charge voltage and max charge current)
-		# bit 3: Remote BMS control (MPPT enter BMS mode)
-		network_mode = 1 | (0 if charge_voltage is None and max_charge_current is None else 4) | (8 if has_bms else 0)
 		network_mode_written = False
 		for charger in self:
 			charger.networkmode = network_mode
@@ -642,7 +637,7 @@ class ChargerSubsystem(object):
 						pass
 
 		# Return flags of what we did
-		return voltage_written, int(network_mode_written and max_charge_current is not None), network_mode
+		return voltage_written, int(network_mode_written and max_charge_current is not None)
 
 	def _set_charge_current(self, chargers, max_charge_current):
 		""" Set the charge current over a group of chargers. Return the
@@ -1096,11 +1091,9 @@ class Dvcc(SystemCalcDelegate):
 			self._dbusservice['/Control/SolarChargeCurrent'] = current_written
 			self._dbusservice['/Control/EffectiveChargeVoltage'] = chargevoltage
 
-		bol_support = self.has_dvcc
-
 		self._tickcount -= 1; self._tickcount %= ADJUST
 
-		if not bol_support:
+		if not self.has_dvcc:
 			if self._tickcount > 0: return True
 
 			voltage_written, current_written = self._legacy_update_solarchargers()
@@ -1113,13 +1106,7 @@ class Dvcc(SystemCalcDelegate):
 			self._dbusservice['/Dc/Battery/ChargeVoltage'] = None
 			return True
 
-
 		# BOL/DVCC support below
-		self._dbusservice['/Dvcc/Alarms/FirmwareInsufficient'] = int(
-			not self._chargesystem.has_externalcontrol_support or (
-			self._multi.firmwareversion is not None and self._multi.firmwareversion < VEBUS_FIRMWARE_REQUIRED))
-		self._dbusservice['/Dvcc/Alarms/MultipleBatteries'] = int(
-			len(BatteryService.instance.bmses) > 1)
 
 		# Update subsystems
 		self._chargesystem.update_values()
@@ -1127,6 +1114,13 @@ class Dvcc(SystemCalcDelegate):
 
 		# Below are things we only do every ADJUST seconds
 		if self._tickcount > 0: return True
+
+		# Alarms
+		self._dbusservice['/Dvcc/Alarms/FirmwareInsufficient'] = int(
+			not self._chargesystem.has_externalcontrol_support or (
+			self._multi.firmwareversion is not None and self._multi.firmwareversion < VEBUS_FIRMWARE_REQUIRED))
+		self._dbusservice['/Dvcc/Alarms/MultipleBatteries'] = int(
+			len(BatteryService.instance.bmses) > 1)
 
 		# Signal Dvcc support to other processes
 		self._dbusservice['/Control/Dvcc'] = 1
@@ -1384,9 +1378,15 @@ class Dvcc(SystemCalcDelegate):
 		if charge_voltage is None and max_charge_current is None:
 			return 0, 0, None
 
-		voltage_written, current_written, network_mode = self._chargesystem.set_networked(
-			has_bms, bms_charge_voltage, charge_voltage,
-			max_charge_current, self.feedback_allowed, stop_on_mcc0)
+		# Network mode:
+		# bit 0: Operated in network environment
+		# bit 2: Remote Hub-1 control (MPPT will accept charge voltage and max charge current)
+		# bit 3: Remote BMS control (MPPT enter BMS mode)
+		network_mode = 1 | (0 if charge_voltage is None and max_charge_current is None else 4) | (8 if has_bms else 0)
+
+		voltage_written, current_written = self._chargesystem.set_networked(
+			bms_charge_voltage, charge_voltage,
+			max_charge_current, self.feedback_allowed, stop_on_mcc0, network_mode)
 
 		# Write the voltage to VE.Can. Also update the networkmode. If there is
 		# no voltage to write to VE.Can, then still set the networkmode so that
