@@ -544,19 +544,16 @@ class ChargerSubsystem(object):
 		return safeadd(*(c.smoothed_current for c in chain(
 			self._solarchargers.values(), self._inverterchargers.values()))) or 0
 
-	def set_networked(self, bms_charge_voltage, charge_voltage, max_charge_current, feedback_allowed, stop_on_mcc0, network_mode):
-		""" This is the main entry-point into the solar charger subsystem. This
-		    sets all chargers to the same charge_voltage, and distributes
-		    max_charge_current between the chargers. If feedback_allowed, then
-		    we simply max out the chargers. We also don't bother with
-		    distribution if there's only one charger in the system or if
-		    it exceeds our total capacity.
-		"""
+	def set_networkmode(self, network_mode):
+		""" Set the network mode on all chargers. """
 		network_mode_written = False
 		for charger in self:
 			charger.networkmode = network_mode
 			network_mode_written = True
+		return network_mode_written
 
+	def set_chargevoltage(self, charge_voltage, bms_charge_voltage):
+		""" Set the charge voltage on all chargers. """
 		# Distribute the voltage setpoint to all solar chargers.
 		# Non-solar chargers are controlled elsewhere.
 		voltage_written = 0
@@ -574,6 +571,10 @@ class ChargerSubsystem(object):
 			for charger in self._otherchargers.values():
 				charger.chargevoltage = bms_charge_voltage
 
+		return voltage_written
+
+	def set_maxchargecurrent(self, max_charge_current, feedback_allowed, stop_on_mcc0):
+		""" Distribute max charge current to all chargers. """
 		# Do not limit max charge current when feedback is allowed. The
 		# rationale behind this is that MPPT charge power should match the
 		# capabilities of the battery. If the default charge algorithm is used
@@ -635,9 +636,6 @@ class ChargerSubsystem(object):
 						# happens if for some reason
 						# /Settings/ChargeCurrentLimit is not defined
 						pass
-
-		# Return flags of what we did
-		return voltage_written, int(network_mode_written and max_charge_current is not None)
 
 	def _set_charge_current(self, chargers, max_charge_current):
 		""" Set the charge current over a group of chargers. Return the
@@ -1384,9 +1382,10 @@ class Dvcc(SystemCalcDelegate):
 		# bit 3: Remote BMS control (MPPT enter BMS mode)
 		network_mode = 1 | (0 if charge_voltage is None and max_charge_current is None else 4) | (8 if has_bms else 0)
 
-		voltage_written, current_written = self._chargesystem.set_networked(
-			bms_charge_voltage, charge_voltage,
-			max_charge_current, self.feedback_allowed, stop_on_mcc0, network_mode)
+		network_mode_written = self._chargesystem.set_networkmode(network_mode)
+		voltage_written = self._chargesystem.set_chargevoltage(charge_voltage, bms_charge_voltage)
+		self._chargesystem.set_maxchargecurrent(max_charge_current, self.feedback_allowed, stop_on_mcc0)
+		current_written = int(network_mode_written and max_charge_current is not None)
 
 		# Write the voltage to VE.Can. Also update the networkmode. If there is
 		# no voltage to write to VE.Can, then still set the networkmode so that
