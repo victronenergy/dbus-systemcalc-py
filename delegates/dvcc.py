@@ -1043,9 +1043,28 @@ class Dvcc(SystemCalcDelegate):
 		except ValueError:
 			return None
 
-	solarvoltageoffset = property(partial(_property, '/Debug/BatteryOperationalLimits/SolarVoltageOffset'))
-	invertervoltageoffset = property(partial(_property, '/Debug/BatteryOperationalLimits/VebusVoltageOffset'))
-	currentoffset = property(partial(_property, '/Debug/BatteryOperationalLimits/CurrentOffset'))
+	# these +- limitations should work with intention bounds set in tests/hub_test.py:876-915
+	MAX_VOLTAGE_OFFSET = 0.5  # Volts
+	MAX_CURRENT_OFFSET = 5.0  # Amps
+
+	# just a helper
+	@staticmethod
+	def _clamp(value, limit):
+		if value is None:
+			return None
+		return min(max(value, -limit), limit)
+
+	@property
+	def solarvoltageoffset(self):
+		return self._clamp(Dvcc._property('/Debug/BatteryOperationalLimits/SolarVoltageOffset', self), self.MAX_VOLTAGE_OFFSET)
+
+	@property
+	def invertervoltageoffset(self):
+		return self._clamp(Dvcc._property('/Debug/BatteryOperationalLimits/VebusVoltageOffset', self), self.MAX_VOLTAGE_OFFSET)
+
+	@property
+	def currentoffset(self):
+		return self._clamp(Dvcc._property('/Debug/BatteryOperationalLimits/CurrentOffset', self), self.MAX_CURRENT_OFFSET)
 
 	@property
 	def internal_maxchargepower(self):
