@@ -144,7 +144,7 @@ class RelayState(SystemCalcDelegate):
 				self.__update_relay_state(idx, path)
 
 		# Watch changes and update dbus. Do we still need this?
-		GLib.timeout_add(5000, exit_on_error, self._update_relay_state)
+		GLib.timeout_add_seconds(5, exit_on_error, self._update_relay_state)
 		return False
 
 	def _update_relay_state(self):

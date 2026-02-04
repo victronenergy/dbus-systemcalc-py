@@ -197,7 +197,7 @@ class BatteryData(SystemCalcDelegate):
 		# Publish the battery configuration
 		self._dbusservice.add_path('/Batteries', value=None)
 		self._dbusservice.add_path('/AvailableBatteries', value=None)
-		self._timer = GLib.timeout_add(5000, exit_on_error, self._on_timer)
+		self._timer = GLib.timeout_add_seconds(5, exit_on_error, self._on_timer)
 
 	def get_input(self):
 		return [

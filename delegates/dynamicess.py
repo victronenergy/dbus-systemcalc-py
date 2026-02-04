@@ -668,7 +668,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 		if self.mode > 0:
 			self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value=None, gettextcallback=lambda p, v: ReactiveStrategy(v))
-			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
+			self._timer = GLib.timeout_add_seconds(INTERVAL, self._on_timer)
 		else:
 			self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value = ReactiveStrategy.DESS_DISABLED.value, gettextcallback=lambda p, v: ReactiveStrategy(v))
 
@@ -790,7 +790,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 	def settings_changed(self, setting, oldvalue, newvalue):
 		if setting == 'dess_mode':
 			if oldvalue == 0 and newvalue > 0:
-				self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
+				self._timer = GLib.timeout_add_seconds(INTERVAL, self._on_timer)
 			if newvalue == 0:
 				self._dbusservice['/DynamicEss/ReactiveStrategy'] = ReactiveStrategy.DESS_DISABLED.value
 

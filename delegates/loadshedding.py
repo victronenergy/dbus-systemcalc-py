@@ -87,7 +87,7 @@ class LoadShedding(SystemCalcDelegate, ChargeControl):
 			gettextcallback=lambda p, v: datetime.fromtimestamp(v).isoformat())
 
 		if self.mode > 0:
-			self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
+			self._timer = GLib.timeout_add_seconds(INTERVAL, self._on_timer)
 
 	def get_settings(self):
 		# Settings for LoadShedding
@@ -138,7 +138,7 @@ class LoadShedding(SystemCalcDelegate, ChargeControl):
 	def settings_changed(self, setting, oldvalue, newvalue):
 		if setting == 'loadshedding_mode':
 			if oldvalue == 0 and newvalue > 0:
-				self._timer = GLib.timeout_add(INTERVAL * 1000, self._on_timer)
+				self._timer = GLib.timeout_add_seconds(INTERVAL, self._on_timer)
 
 	def device_added(self, service, instance, *args):
 		if service.startswith('com.victronenergy.multi.'):

@@ -237,7 +237,7 @@ class ScheduledCharging(SystemCalcDelegate, ChargeControl):
 		# return non-zero.
 		self.devices.append(VebusDevice(self, dbusmonitor, None))
 
-		self._timer = GLib.timeout_add(5000, exit_on_error, self._on_timer)
+		self._timer = GLib.timeout_add_seconds(5, exit_on_error, self._on_timer)
 
 	def get_input(self):
 		return [

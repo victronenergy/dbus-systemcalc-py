@@ -67,7 +67,7 @@ class BatteryLife(SystemCalcDelegate):
 		super(BatteryLife, self).set_sources(dbusmonitor, settings, dbusservice)
 		self._dbusservice.add_path('/Control/ActiveSocLimit', value=None)
 		self._dbusservice.add_path('/Control/EssState', value=None)
-		self._timer = GLib.timeout_add(900000, exit_on_error, self._on_timer)
+		self._timer = GLib.timeout_add_seconds(900, exit_on_error, self._on_timer)
 
 	def get_input(self):
 		# We need to check the assistantid to know if we should even be active.
