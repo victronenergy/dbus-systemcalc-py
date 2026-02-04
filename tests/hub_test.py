@@ -2660,3 +2660,42 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Link/ChargeCurrent': 68.5,
 			}
 		})
+
+	def test_voltage_changed_callback(self):
+		""" Test that registered voltage changed callbacks are called when
+		    the BMS charge voltage changes. """
+		from delegates.batteryservice import BatteryService
+
+		received = []
+		BatteryService.instance.add_voltage_changed_callback(
+			lambda v: received.append(v))
+
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 51.8,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 155.4,
+				'/Soc': 95,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': None,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 53.2,
+				'/Info/MaxDischargeCurrent': 25,
+				'/ProductId': 0xB009})
+		self._update_values(interval=3000)
+
+		# Change the charge voltage, callback should fire
+		self._monitor.set_value('com.victronenergy.battery.ttyO2',
+			'/Info/MaxChargeVoltage', 52.0)
+		self.assertEqual(received, [52.0])
+
+		# Change again
+		self._monitor.set_value('com.victronenergy.battery.ttyO2',
+			'/Info/MaxChargeVoltage', 51.5)
+		self.assertEqual(received, [52.0, 51.5])
+
+		# Setting to None should pass None to the callback
+		self._monitor.set_value('com.victronenergy.battery.ttyO2',
+			'/Info/MaxChargeVoltage', None)
+		self.assertEqual(received, [52.0, 51.5, None])

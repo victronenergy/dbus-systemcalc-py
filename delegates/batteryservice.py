@@ -1,3 +1,4 @@
+from functools import partial
 from gi.repository import GLib
 from delegates.base import SystemCalcDelegate
 
@@ -95,7 +96,8 @@ class BatteryService(SystemCalcDelegate):
 		self.systemcalc = sc
 		self._batteries = {}
 		self.bms = None
-		self._notify = []
+		self._bms_changed_callbacks = []
+		self._voltage_changed_callbacks = []
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(BatteryService, self).set_sources(dbusmonitor, settings, dbusservice)
@@ -132,7 +134,7 @@ class BatteryService(SystemCalcDelegate):
 	def device_added(self, service, instance, *args):
 		if service.startswith('com.victronenergy.battery.'):
 			self._batteries[instance] = Battery(self._dbusmonitor, service, instance)
-			self._dbusmonitor.track_value(service, "/Info/MaxChargeVoltage", self._set_bms)
+			self._dbusmonitor.track_value(service, "/Info/MaxChargeVoltage", partial(self._charge_voltage_changed, service))
 			self._dbusmonitor.track_value(service, "/CustomName", self._set_bms)
 			# If you call _set_bms directly now, changes to MaxChargeVoltage
 			# that is still in the pipeline will not reflect yet. Instead
@@ -172,12 +174,15 @@ class BatteryService(SystemCalcDelegate):
 		return None
 
 	def add_bms_changed_callback(self, cb):
-		self._notify.append(cb)
+		self._bms_changed_callbacks.append(cb)
+
+	def add_voltage_changed_callback(self, cb):
+		self._voltage_changed_callbacks.append(cb)
 
 	def __set_bms(self, service, instance):
 		self._dbusservice['/ActiveBmsService'] = service
 		self._dbusservice['/ActiveBmsInstance'] = instance
-		for cb in self._notify:
+		for cb in self._bms_changed_callbacks:
 			cb(service)
 
 	def _set_bms(self, *args, **kwargs):
@@ -230,3 +235,17 @@ class BatteryService(SystemCalcDelegate):
 		else:
 			self.bms = None
 			self.__set_bms(None, None)
+
+	def _charge_voltage_changed(self, service, changes, *args, **kwargs):
+		# If the charge voltage of the currently selected BMS changed...
+		if self.bms is not None and service == self.bms.service:
+			try:
+				v = changes['Value'] or None
+			except KeyError:
+				pass
+			else:
+				for cb in self._voltage_changed_callbacks:
+					cb(v)
+
+		# (Re)set BMS if it has changed.
+		self._set_bms()
