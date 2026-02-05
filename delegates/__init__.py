@@ -31,3 +31,4 @@ from delegates.invertercharger import InverterCharger
 from delegates.dynamicess import DynamicEss
 from delegates.loadshedding import LoadShedding
 from delegates.motordrive import MotorDrive
+from delegates.motordriveconsumption import MotorDriveConsumption
