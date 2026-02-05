@@ -1344,7 +1344,15 @@ class Dvcc(SystemCalcDelegate):
 		# probably not allowed anyway.
 		charge_voltage = vecan_voltage = None
 		if self._multi.active:
-			charge_voltage = vecan_voltage = self._multi.hub_voltage
+			# Allow the hub_voltage to be max 0.4V higher than the
+			# bms_charge_voltage. This helps to deal with delays in
+			# the pipeline, otherwise it takes a full extra 3 seconds for
+			# a lowered CVL to work its way through the ESS pipeline.
+			try:
+				charge_voltage = vecan_voltage = min(
+					bms_charge_voltage + 0.4, self._multi.hub_voltage)
+			except TypeError:
+				charge_voltage = vecan_voltage = self._multi.hub_voltage
 
 		# Next try a voltage from an inverter/charger
 		if charge_voltage is None:
