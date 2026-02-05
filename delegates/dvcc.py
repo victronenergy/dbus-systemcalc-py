@@ -1312,8 +1312,7 @@ class Dvcc(SystemCalcDelegate):
 	def _update_secondary_multis(self, cv, mcc, dcl):
 		if cv is not None:
 			for m in MultiService.instance.othermultis:
-				self._dbusmonitor.set_value_async(m.service,
-					'/BatteryOperationalLimits/MaxChargeVoltage', cv)
+				m.maxchargevoltage = cv
 
 		if mcc is not None:
 			for m in MultiService.instance.othermultis:

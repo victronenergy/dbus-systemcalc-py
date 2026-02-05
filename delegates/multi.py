@@ -70,6 +70,14 @@ class Service(object):
 	def maxchargecurrent(self, v):
 		self.monitor.set_value_async(self.service, '/Dc/0/MaxChargeCurrent', v)
 
+	@property
+	def maxchargevoltage(self):
+		return self.monitor.get_value(self.service, '/BatteryOperationalLimits/MaxChargeVoltage')
+
+	@maxchargevoltage.setter
+	def maxchargevoltage(self, v):
+		self.monitor.set_value_async(self.service, '/BatteryOperationalLimits/MaxChargeVoltage', v)
+
 	def set_ignore_ac(self, inp, ignore):
 		if inp not in (0, 1):
 			raise ValueError(inp)
