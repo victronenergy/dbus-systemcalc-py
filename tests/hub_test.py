@@ -1157,6 +1157,33 @@ class TestHubSystem(TestSystemCalcBase):
 		})
 		self._check_values({ '/Control/EffectiveChargeVoltage': 14.2 })
 
+	def test_pylontech_high_cell_voltage_floor(self):
+		""" A very high maxcellvoltage should not push the charge voltage
+		    below 47V. """
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 51.8,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 155.4,
+				'/Soc': 95,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': None,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 53.2,
+				'/Info/MaxDischargeCurrent': 25,
+				'/InstalledCapacity': None,
+				'/System/MaxCellVoltage': 4.5,
+				'/ProductId': 0xB009})
+
+		# Run enough ticks for the filter to converge
+		for _ in range(100):
+			self._update_values(interval=3000)
+
+		# Check that the charge voltage is floored at 47V
+		v = self._monitor.get_value('com.victronenergy.vebus.ttyO1',
+			'/BatteryOperationalLimits/MaxChargeVoltage')
+		self.assertAlmostEqual(v, 47.0, places=1)
 
 	def test_no_bms_max_charge_current_setting(self):
 		# Test that with no BMS but a user limit, /Dc/0/MaxChargeCurrent is correctly set.

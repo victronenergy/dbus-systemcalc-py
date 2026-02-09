@@ -91,7 +91,7 @@ class _pylontech_quirk(object):
 				# voltage if the highest cell goes over 3.485V. Filter this
 				# to keep it somewhat stable.
 				try:
-					charge_voltage = 52.5 - 30 * max(0, bms.maxcellvoltage-3.485)
+					charge_voltage = max(47.0, 52.5 - 30 * max(0, bms.maxcellvoltage-3.485))
 					charge_voltage = self._chargevoltage = 0.95 * self._chargevoltage + 0.05 * charge_voltage
 					charge_voltage = round(charge_voltage, 2)
 				except TypeError:
