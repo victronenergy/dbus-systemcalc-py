@@ -1142,15 +1142,6 @@ class Dvcc(SystemCalcDelegate):
 			bms_charge_voltage, max_charge_current, stop_on_mcc0 = \
 				self._adjust_battery_operational_limits(bms_service)
 
-		# Override the battery charge voltage by taking the lesser of the
-		# voltage limits. Only override if the battery supplies one, to prevent
-		# a voltage being sent to a Multi in a system without a managed battery.
-		# Otherwise the Multi will go into passthru if the user disables this.
-		if bms_charge_voltage is not None:
-			user_charge_voltage = self._settings['maxchargevoltage']
-			if user_charge_voltage > 0:
-				bms_charge_voltage = min(bms_charge_voltage, user_charge_voltage)
-
 		# Publish the charge voltage from the BMS (after quirks) to dbus
 		self._dbusservice['/Dc/Battery/ChargeVoltage'] = bms_charge_voltage
 
@@ -1267,7 +1258,8 @@ class Dvcc(SystemCalcDelegate):
 	def _adjust_battery_operational_limits(self, bms_service):
 		""" Take the charge voltage and maximum charge current from the BMS
 		    and adjust it as necessary. For now we only implement quirks
-		    for batteries known to have them.
+		    for batteries known to have them. Additionally we also apply
+		    a user charge voltage limit, if defined.
 		"""
 		cv = bms_service.chargevoltage
 		mcc = bms_service.maxchargecurrent
@@ -1278,6 +1270,13 @@ class Dvcc(SystemCalcDelegate):
 			# If any quirks are registered for this battery, use that
 			# instead.
 			cv, mcc, stop_on_mcc0 = quirk(self, bms_service, cv, mcc)
+
+		# Override the battery charge voltage by taking the lesser of the
+		# voltage limits. Only override if the battery supplies one, to prevent
+		# a voltage being sent to a Multi in a system without a managed battery.
+		# Otherwise the Multi will go into passthru if the user disables this.
+		if cv is not None and (user_charge_voltage := self._settings['maxchargevoltage']) > 0:
+			cv = min(cv, user_charge_voltage)
 
 		# Add debug offsets if access level is high enough.
 		if self.gx_is_rooted:
