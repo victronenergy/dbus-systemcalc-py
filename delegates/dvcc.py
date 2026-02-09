@@ -28,6 +28,7 @@ VECAN_FIRMWARE_REQUIRED = 0x10200 # 1.02, 24-bit version
 # the BMS value and substitute our own.
 class BatteryBehaviour(object):
 	_stop_on_mcc0 = False
+	_quick_adjust = False
 
 	def charge_voltage(self, bms):
 		return bms.chargevoltage
@@ -38,6 +39,10 @@ class BatteryBehaviour(object):
 	@property
 	def stop_on_mcc0(self):
 		return self._stop_on_mcc0
+
+	@property
+	def quick_adjust(self):
+		return self._quick_adjust
 
 class _byd_quirk(BatteryBehaviour):
 	""" Quirk for the BYD batteries. When the battery sends CCL=0, float it at
@@ -148,8 +153,10 @@ class _pylontech_pelio_quirk(BatteryBehaviour):
 		return max(bms.maxchargecurrent, round(capacity/5.0))
 
 class _lynx_smart_bms_quirk(BatteryBehaviour):
-	""" When the Lynx Smart BMS sends CCL=0, it wants all chargers to stop. """
+	""" When the Lynx Smart BMS sends CCL=0, it wants all chargers to stop.
+	    Lynx also wants quick adjustment. """
 	_stop_on_mcc0 = True
+	_quick_adjust = True
 
 BEHAVIOURS = {
 	0xB004: _lg_quirk(),
@@ -1018,6 +1025,10 @@ class Dvcc(SystemCalcDelegate):
 		self._dbusservice.add_path('/Dvcc/Alarms/FirmwareInsufficient', value=0)
 		self._dbusservice.add_path('/Dvcc/Alarms/MultipleBatteries', value=0)
 
+		# If the charge voltage changes, do a quick voltage adjustment
+		# for systems where that is supported.
+		BatteryService.instance.add_voltage_changed_callback(self._quick_adjust)
+
 	def device_added(self, service, instance, *args, **kwargs):
 		service_type = service.split('.')[2]
 		if service_type == 'solarcharger':
@@ -1115,6 +1126,17 @@ class Dvcc(SystemCalcDelegate):
 	@property
 	def bms_seen(self):
 		return self._chargesystem.want_bms
+
+	def _quick_adjust(self, *args):
+		""" Adjusts charge voltages in systems where these need to adjust
+		    faster than every ADJUST seconds. """
+		behaviour = self._battery_behaviour(self.bms) # self.bms is not None
+		if behaviour.quick_adjust:
+			bms_charge_voltage = self._adjust_battery_chargevoltage(behaviour, self.bms)
+			effective_charge_voltage, vecan_voltage = self._get_chargevoltage(bms_charge_voltage)
+			self._set_solarcharger_voltage(
+				bms_charge_voltage, effective_charge_voltage, vecan_voltage)
+			self._update_multi_chargevoltage(bms_charge_voltage)
 
 	def _on_timer(self):
 		def update_solarcharger_control_flags(voltage_written, current_written, chargevoltage):
