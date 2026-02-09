@@ -264,7 +264,8 @@ class SystemCalc:
 			delegates.InverterCharger(),
 			delegates.DynamicEss(),
 			delegates.LoadShedding(),
-			delegates.MotorDrive()]
+			delegates.MotorDrive(),
+			delegates.MotorDriveConsumption()]
 
 		for m in self._modules:
 			for service, paths in m.get_input():
