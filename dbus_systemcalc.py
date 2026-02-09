@@ -265,7 +265,8 @@ class SystemCalc:
 			delegates.DynamicEss(),
 			delegates.LoadShedding(),
 			delegates.MotorDrive(),
-			delegates.MotorDriveConsumption()]
+			delegates.MotorDriveConsumption(),
+			delegates.MotorDriveRange()]
 
 		for m in self._modules:
 			for service, paths in m.get_input():

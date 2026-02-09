@@ -32,3 +32,4 @@ from delegates.dynamicess import DynamicEss
 from delegates.loadshedding import LoadShedding
 from delegates.motordrive import MotorDrive
 from delegates.motordriveconsumption import MotorDriveConsumption
+from delegates.motordriverange import MotorDriveRange

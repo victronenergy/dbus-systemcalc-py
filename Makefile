@@ -38,7 +38,8 @@ DELEGATES = \
 	$(SOURCEDIR)/delegates/invertercharger.py \
 	$(SOURCEDIR)/delegates/loadshedding.py \
 	$(SOURCEDIR)/delegates/motordrive.py \
-	$(SOURCEDIR)/delegates/motordriveconsumption.py
+	$(SOURCEDIR)/delegates/motordriveconsumption.py \
+	$(SOURCEDIR)/delegates/motordriverange.py
 
 VEDLIB_FILES = \
 	$(VEDLIBDIR)/logger.py \
