@@ -5,7 +5,7 @@ from itertools import count, chain
 from functools import partial
 
 # Victron packages
-from sc_utils import safeadd, copy_dbus_value, ExpiringValue
+from sc_utils import safeadd, copy_dbus_value, ExpiringValue, reify
 from ve_utils import exit_on_error
 
 from delegates.base import SystemCalcDelegate
@@ -957,7 +957,8 @@ class Dvcc(SystemCalcDelegate):
 				'/Link/NetworkMode']),
 			('com.victronenergy.settings', [
 				 '/Settings/CGwacs/OvervoltageFeedIn',
-				 '/Settings/Services/Bol']),
+				 '/Settings/Services/Bol',
+				 '/Settings/System/AccessLevel']),
 			('com.victronenergy.acsystem', [
 				'/DeviceInstance',
 				'/Ac/NoFeedInReason',
@@ -1269,11 +1270,12 @@ class Dvcc(SystemCalcDelegate):
 			# instead.
 			cv, mcc, stop_on_mcc0 = quirk(self, bms_service, cv, mcc)
 
-		# Add debug offsets
-		if cv is not None:
-			cv = safeadd(cv, self.invertervoltageoffset)
-		if mcc is not None:
-			mcc = safeadd(mcc, self.currentoffset)
+		# Add debug offsets if access level is high enough.
+		if self.gx_is_rooted:
+			if cv is not None:
+				cv = safeadd(cv, self.invertervoltageoffset)
+			if mcc is not None:
+				mcc = safeadd(mcc, self.currentoffset)
 		return cv, mcc, stop_on_mcc0
 
 	def _update_battery_operational_limits(self, bms_service, cv, mcc):
@@ -1332,6 +1334,11 @@ class Dvcc(SystemCalcDelegate):
 			self._dbusmonitor.get_value('com.victronenergy.settings',
 				'/Settings/CGwacs/OvervoltageFeedIn') == 1
 
+	@reify
+	def gx_is_rooted(self):
+		return self._dbusmonitor.get_value('com.victronenergy.settings',
+			'/Settings/System/AccessLevel', 0) > 2 # Access level
+
 	def _update_solarchargers_and_vecan(self, has_bms, bms_charge_voltage, max_charge_current, stop_on_mcc0):
 		""" This function updates the solar chargers and VE.Can connected
 		    devices such as Multi-RS. Parameters related to the Multi are
@@ -1367,8 +1374,8 @@ class Dvcc(SystemCalcDelegate):
 		if charge_voltage is None and bms_charge_voltage is not None:
 			charge_voltage = vecan_voltage = bms_charge_voltage
 
-		# Add the debug solar offset
-		if charge_voltage is not None:
+		# Add the debug solar offset, but only if access level is high enough
+		if charge_voltage is not None and self.gx_is_rooted:
 			try:
 				charge_voltage += self.solarvoltageoffset
 				vecan_voltage += self.solarvoltageoffset

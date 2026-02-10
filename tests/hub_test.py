@@ -873,6 +873,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self._update_values()
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 12.6)
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', 2)
+		self._monitor.add_value('com.victronenergy.settings', '/Settings/System/AccessLevel', 3)
 		self._service.set_value('/Debug/BatteryOperationalLimits/SolarVoltageOffset', 0.4)
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
