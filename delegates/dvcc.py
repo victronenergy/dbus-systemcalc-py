@@ -891,7 +891,6 @@ class Dvcc(SystemCalcDelegate):
 				'/Devices/Bms/Version',
 				'/FirmwareFeatures/BolFrame',
 				'/Hub4/L1/DoNotFeedInOvervoltage',
-				'/Hub4/UseBatteryOvervoltageProtection',
 				'/FirmwareVersion',
 				'/Interfaces/Mk2/ProductName']),
 			('com.victronenergy.solarcharger', [
