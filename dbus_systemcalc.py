@@ -942,7 +942,7 @@ class SystemCalc:
 								cc = _safeadd(cc, -self._dbusmonitor.get_value(multi_path, _AC_PATHS[(device_type, phase, 'ain_i')]))
 							except TypeError:
 								pass
-						elif non_vebus_inverter is not None and active_input in (0, 1):
+						if non_vebus_inverter is not None and active_input in (0, 1):
 							for i in non_vebus_inverters:
 								try:
 									c = _safeadd(c, -self._dbusmonitor.get_value(i, '/Ac/In/%d/%s/P' % (active_input+1, phase)))
@@ -959,20 +959,20 @@ class SystemCalc:
 					currentconsumption[phase] = _safeadd(currentconsumption[phase], _safemax(0, cc))
 				else:
 					if uses_active_input:
-						if multi_path is not None  and (
-								p := self._dbusmonitor.get_value(multi_path, _AC_PATHS[(device_type, phase, 'ain_p')])) is not None:
-							consumption[phase] = _safeadd(0, consumption[phase])
-							currentconsumption[phase] = _safeadd(0, currentconsumption[phase])
-							mc = self._dbusmonitor.get_value(multi_path, _AC_PATHS[(device_type, phase, 'ain_i')])
-						elif non_vebus_inverter is not None and active_input in (0, 1):
+						if multi_path is not None:
+							vebus_ain_p = self._dbusmonitor.get_value(multi_path, _AC_PATHS[(device_type, phase, 'ain_p')])
+							if vebus_ain_p is not None:
+								p = _safeadd(p, vebus_ain_p)
+								mc = _safeadd(mc, self._dbusmonitor.get_value(multi_path, _AC_PATHS[(device_type, phase, 'ain_i')]))
+						if non_vebus_inverter is not None and active_input in (0, 1):
 							for i in non_vebus_inverters:
 								p = _safeadd(p,
 									self._dbusmonitor.get_value(i, '/Ac/In/%d/%s/P' % (active_input + 1, phase)))
 								mc = _safeadd(mc,
 									self._dbusmonitor.get_value(i, '/Ac/In/%d/%s/I' % (active_input + 1, phase)))
-							if p is not None:
-								consumption[phase] = _safeadd(0, consumption[phase])
-								currentconsumption[phase] = _safeadd(0, currentconsumption[phase])
+						if p is not None:
+							consumption[phase] = _safeadd(0, consumption[phase])
+							currentconsumption[phase] = _safeadd(0, currentconsumption[phase])
 
 					# No relevant energy meter present. Assume there is no load between the grid and the multi.
 					# There may be a PV inverter present though (Hub-3 setup).
@@ -1023,26 +1023,25 @@ class SystemCalc:
 			if use_ac_out:
 				c = newvalues.get(_AC_PATHS[(phase, 'pvout_p')])
 				a = newvalues.get(_AC_PATHS[(phase, 'pvout_i')])
-				if multi_path is None:
-					for inv in non_vebus_inverters:
-						ac_out = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/P' % phase)
-						i = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/I' % phase)
-
-						# Some models don't show power, try apparent power,
-						# else calculate it
-						if ac_out is None:
-							ac_out = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/S' % phase)
-							if ac_out is None:
-								u = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/V' % phase)
-								if None not in (i, u):
-									ac_out = i * u
-						c = _safeadd(c, ac_out)
-						a = _safeadd(a, i)
-				else:
+				if multi_path is not None:
 					ac_out = self._dbusmonitor.get_value(multi_path, '/Ac/Out/%s/P' % phase)
 					c = _safeadd(c, ac_out)
 					i_out = self._dbusmonitor.get_value(multi_path, '/Ac/Out/%s/I' % phase)
 					a = _safeadd(a, i_out)
+				for inv in non_vebus_inverters:
+					ac_out = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/P' % phase)
+					i = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/I' % phase)
+
+					# Some models don't show power, try apparent power,
+					# else calculate it
+					if ac_out is None:
+						ac_out = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/S' % phase)
+						if ac_out is None:
+							u = self._dbusmonitor.get_value(inv, '/Ac/Out/%s/V' % phase)
+							if None not in (i, u):
+								ac_out = i * u
+					c = _safeadd(c, ac_out)
+					a = _safeadd(a, i)
 				c = _safemax(0, c)
 				a = _safemax(0, a)
 			newvalues[_AC_PATHS[(phase, 'cons_out_p')]] = c

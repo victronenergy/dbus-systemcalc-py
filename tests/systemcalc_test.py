@@ -1610,5 +1610,68 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Dc/Battery/Capacity': 200.0
 		})
 
+	def test_vebus_and_non_vebus_inverter_ac_out_summed(self):
+		"""When a VE.Bus Multi and a non-VE.Bus inverter both exist, their
+		AC output power should be summed for consumption calculation."""
+		# Default setUp already has a VE.Bus Multi with Ac/Out/L1/P=100, I=0.4.
+		# Add an RS Smart inverter alongside it.
+		self._add_device('com.victronenergy.inverter.ttyO2',
+			product_name='RS Smart',
+			values={
+				'/Dc/0/Voltage': 48.0,
+				'/Ac/Out/L1/V': 230,
+				'/Ac/Out/L1/I': 0.5,
+				'/Ac/Out/L1/P': 115,
+				'/DeviceInstance': 1,
+			})
+
+		self._update_values()
+		self._check_values({
+			'/Ac/ActiveIn/Source': 1,
+			'/Ac/Grid/L1/Power': 123,
+			# AC-out consumption should be VE.Bus(100) + RS Smart(115) = 215
+			'/Ac/ConsumptionOnOutput/L1/Power': 100 + 115,
+			'/Ac/ConsumptionOnOutput/L1/Current': 0.4 + 0.5,
+			# Total consumption = input(0) + output(215)
+			'/Ac/Consumption/L1/Power': 100 + 115,
+		})
+
+	def test_vebus_and_non_vebus_inverter_ac_in_with_gridmeter(self):
+		"""When a VE.Bus Multi and a Multi RS both exist with a grid meter,
+		both AC input values should be subtracted from the meter reading."""
+		self._add_device('com.victronenergy.multi.ttyO2',
+			product_name='Multi RS',
+			values={
+				'/Dc/0/Voltage': 48.0,
+				'/Ac/Out/L1/V': 230,
+				'/Ac/Out/L1/I': 0.3,
+				'/Ac/Out/L1/P': 70,
+				'/Ac/In/1/L1/P': 80,
+				'/Ac/In/1/L1/I': 0.35,
+				'/Ac/ActiveIn/ActiveInput': 0,
+				'/Ac/In/1/Type': 1,
+				'/Ac/In/2/Type': 2,
+				'/Yield/Power': 0,
+				'/DeviceInstance': 1,
+			})
+		self._add_device('com.victronenergy.grid.ttyUSB1', {
+			'/Ac/L1/Power': 1000,
+			'/Ac/L1/Current': 4.3,
+		})
+
+		self._update_values()
+		self._check_values({
+			'/Ac/ActiveIn/Source': 1,
+			'/Ac/Grid/L1/Power': 1000,
+			# Consumption on input = meter(1000) - vebus_ac_in(123) - multi_rs_ac_in(80)
+			'/Ac/ConsumptionOnInput/L1/Power': 1000 - 123 - 80,
+			'/Ac/ConsumptionOnInput/L1/Current': 4.3 - 0.6 - 0.35,
+			# Consumption on output = vebus(100) + multi_rs(70)
+			'/Ac/ConsumptionOnOutput/L1/Power': 100 + 70,
+			'/Ac/ConsumptionOnOutput/L1/Current': 0.4 + 0.3,
+			# Total = input + output
+			'/Ac/Consumption/L1/Power': (1000 - 123 - 80) + (100 + 70),
+		})
+
 if __name__ == '__main__':
 	unittest.main()
