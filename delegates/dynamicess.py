@@ -1,3 +1,4 @@
+from collections import namedtuple
 from datetime import datetime, timedelta
 from gi.repository import GLib # type: ignore
 from delegates.base import SystemCalcDelegate
@@ -15,6 +16,13 @@ logger = logging.getLogger(__name__)
 
 NUM_SCHEDULES = 48
 INTERVAL = 5
+
+# Pre-computed settings key strings to avoid 384 string formats every 5 seconds
+_SlotKeys = namedtuple('_SlotKeys', 'start duration soc targetsoc discharge restrictions strategy flags')
+_DESS_KEYS = tuple(
+	_SlotKeys(*('dess_{}_{}'.format(field, i) for field in _SlotKeys._fields))
+	for i in range(NUM_SCHEDULES)
+)
 HUB4_SERVICE = 'com.victronenergy.hub4'
 ERROR_TIMEOUT = 60
 MAX_FEEDIN_VALUE = 96000
@@ -795,19 +803,15 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				self._dbusservice['/DynamicEss/ReactiveStrategy'] = ReactiveStrategy.DESS_DISABLED.value
 
 	def windows(self):
-		starttimes = (self._settings['dess_start_{}'.format(i)] for i in range(NUM_SCHEDULES))
-		durations = (self._settings['dess_duration_{}'.format(i)] for i in range(NUM_SCHEDULES))
-		socs = (self._settings['dess_soc_{}'.format(i)] for i in range(NUM_SCHEDULES)) #keep legacy support for a while
-		targetsocs = (self._settings['dess_targetsoc_{}'.format(i)] for i in range(NUM_SCHEDULES))
-		discharges = (self._settings['dess_discharge_{}'.format(i)] for i in range(NUM_SCHEDULES))
-		restrictions = (self._settings['dess_restrictions_{}'.format(i)] for i in range(NUM_SCHEDULES))
-		strategies = (self._settings['dess_strategy_{}'.format(i)] for i in range(NUM_SCHEDULES))
-		wflags = (self._settings['dess_flags_{}'.format(i)] for i in range(NUM_SCHEDULES))
-
-		for start, duration, soc, targetsoc, discharge, restrict, strategy, flags, slot in zip(starttimes, durations, socs, targetsocs, discharges, restrictions, strategies, wflags, range(NUM_SCHEDULES)):
+		settings = self._settings
+		for slot, keys in enumerate(_DESS_KEYS):
+			start = settings[keys.start]
 			if start > 0:
 				yield DynamicEssWindow(
-					datetime.fromtimestamp(start), duration, soc, targetsoc, discharge, restrict, strategy, flags, slot)
+					datetime.fromtimestamp(start),
+					settings[keys.duration], settings[keys.soc], settings[keys.targetsoc],
+					settings[keys.discharge], settings[keys.restrictions],
+					settings[keys.strategy], settings[keys.flags], slot)
 
 	@property
 	def mode(self):
@@ -993,22 +997,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		start = None
 		stop = None
 
-		#TODO: this always builds all 48 Windows.
-		#      can be optimized, we MOSTLY need 0 - 5
-		#      and #47 to determine maximal available schedule.
-		windows = list(self.windows())
-
 		#Whenever an error occurs that is totally unexpected, the delegate
 		#should enter self consume and not die.(try/catch around the control loop logic)
 		try:
-			for w in windows:
-				# Keep track of maximum available schedule
-				if start is None or w.start > start:
-					start = w.start
-					stop = w.stop
-
-			self._dbusservice['/DynamicEss/LastScheduledStart'] = None if start is None else int(datetime.timestamp(start))
-			self._dbusservice['/DynamicEss/LastScheduledEnd'] = None if stop is None else int(datetime.timestamp(stop))
+			windows = list(self.windows())
 
 			final_strategy = ReactiveStrategy.NO_WINDOW
 			current_window = None
@@ -1017,30 +1009,32 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			# This is the ESS minsoc of the selected device
 			self._dbusservice['/DynamicEss/MinimumSoc'] = None if self._device is None else self._device.minsoc
 
-			#iterate through windows, find the current one. Usually it should be first,
-			#but in case of update issues may not. Also grab the next window, to perform
-			#some "look aheads" for optimizations.
+			# Find max schedule and current window in one pass
 			for w in windows:
-				if self.acquire_control() and now in w:
-					self.active = 1 # Auto
-					self.errorcode = 0 # No error
+				if start is None or w.start > start:
+					start = w.start
+					stop = w.stop
 
+				if current_window is None and self.acquire_control() and now in w:
 					current_window = w
 
-					self._dbusservice['/DynamicEss/Strategy'] = w.strategy
-					self._dbusservice['/DynamicEss/Restrictions'] = w.restrictions
-					self._dbusservice['/DynamicEss/AllowGridFeedIn'] = int(w.allow_feedin)
-					break # out of for loop
+			self._dbusservice['/DynamicEss/LastScheduledStart'] = None if start is None else int(datetime.timestamp(start))
+			self._dbusservice['/DynamicEss/LastScheduledEnd'] = None if stop is None else int(datetime.timestamp(stop))
 
 			if current_window is not None:
-				#found current window, now we need nextWindow to do some look aheads as well. 
-				#next window is the one containing current.start + current.duration + 1.
-				#finding next window is not required to enter the control loop, can be None.
+				self.active = 1 # Auto
+				self.errorcode = 0 # No error
+
+				self._dbusservice['/DynamicEss/Strategy'] = current_window.strategy
+				self._dbusservice['/DynamicEss/Restrictions'] = current_window.restrictions
+				self._dbusservice['/DynamicEss/AllowGridFeedIn'] = int(current_window.allow_feedin)
+
+				# Find next window for look-ahead optimizations
 				next_window_save_start = current_window.stop + timedelta(seconds = 1)
 				for w in windows:
-					if (next_window_save_start in w):
+					if next_window_save_start in w:
 						next_window = w
-						break # out of for loop
+						break
 
 				#As of now, one common handler is enough. Hence, we don't need to validate the operation mode 
 				final_strategy = self._determine_reactive_strategy(current_window, next_window, current_window.restrictions, now)
