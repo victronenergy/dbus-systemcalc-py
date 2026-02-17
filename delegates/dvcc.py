@@ -165,6 +165,7 @@ BEHAVIOURS = {
 	0xB015: _byd_quirk(),
 	0xB019: _byd_quirk(),
 	0xB029: _pylontech_pelio_quirk(),
+	0xA3E3: _lynx_smart_bms_quirk(), # Parallel BMS
 	0xA3E4: _lynx_smart_bms_quirk(),
 	0xA3E5: _lynx_smart_bms_quirk(),
 	0xA3E6: _lynx_smart_bms_quirk(),

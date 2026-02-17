@@ -1766,6 +1766,41 @@ class TestHubSystem(TestSystemCalcBase):
 			}
 		})
 
+	def test_quirk_lynx_parallel_bms(self):
+		""" When the Lynx Parallel BMS sends CCL=0, it wants us to stop all charging. """
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 55.1,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 165.3,
+				'/Soc': 100,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 0,
+				'/Info/MaxChargeVoltage': 56.5,
+				'/Info/MaxDischargeCurrent': 10,
+				'/ProductId': 0xA3E3})
+
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Dc/0/Voltage': 58.0,
+			'/Dc/0/Current': 30,
+			'/FirmwareVersion': 0x0129},
+			connection='VE.Direct')
+
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/ChargeCurrent': 0, # Shut down
+			}
+		})
+
 	def test_inverter_rs_discharge_current(self):
 		# Add inverter
 		self._add_device('com.victronenergy.inverter.ttyO1', {
