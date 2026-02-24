@@ -65,6 +65,18 @@ class EVGXFlags(IntFlag):
 	EMERGENCY_COUNTDOWN = 4
 	EMERGENCY_ACTIVE = 8
 	CHARGE_NOW_ACTIVE = 16
+	
+	def stringify(self):
+		"""Returns a string representation of set flags, e.g., 'SCHEDULED | EMERGENCY_ACTIVE'"""
+		if self.value == 0:
+			return "NONE"
+		
+		flags = []
+		for flag in EVGXFlags:
+			if flag.value != 0 and (self & flag):
+				flags.append(flag.name)
+		
+		return " | ".join(flags) if flags else "NONE"
 
 class EVVRMFlags(IntFlag):
 	NONE = 0
@@ -784,7 +796,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			("dess_batterydischargelimit", path + '/BatteryDischargeLimit', -1.0, -1.0, 9999.9),
 			("dess_gridimportlimit", path + '/GridImportLimit', -1.0, -1.0, 9999.9),
 			("dess_gridexportlimit", path + '/GridExportLimit', -1.0, -1.0, 9999.9),
-			("dess_evemergencystart", path + '/EVEmergencyStart', 30*60, 0, 86400),
+			("dess_evemergencystart", path + '/EVEmergencyStart', 60*60, 0, 86400),
 			("dess_evemergencycurrent", path + '/EVEmergencyCurrent', 6, 0, 32)
 		]
 
@@ -1198,10 +1210,16 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				
 				#Update EVCS Flags on dbus. 
 				jo = {}
+				jor = {}
 				for evcs_state in self._evcs_states.values():
 					jo[evcs_state.instance] = evcs_state.gx_flags
+					jor[evcs_state.instance] = evcs_state.gx_flags.stringify()
 
-				self._dbusservice['/DynamicEss/EVGXFlags'] = json.dumps(jo)
+				jos = json.dumps(jo)
+				jors = json.dumps(jor)
+				if jos != self._dbusservice['/DynamicEss/EVGXFlags']:
+					logger.info("EVGXFlags changed to: {} => {}".format(jos, jors))
+					self._dbusservice['/DynamicEss/EVGXFlags'] = jos
 			else:
 				# No matching windows
 				if self.active or self.errorcode != 3:
@@ -1253,12 +1271,31 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		return False
 
 	def _evcs_control(self, w:DynamicEssWindow, now):
+		#first check: See if one EVCS is in GXAuto-Mode.
+		#FIXME: For now "manual" is our GXAuto. Needs to be adjusted. 
+		for evcsid, evcs_state in self._evcs_states.items():
+			found_controlable_evcs = False
+			if evcs_state.mode != 0:
+				evcs_state.gx_flags = EVGXFlags.NONE
+			else:
+				found_controlable_evcs = True
+				#just use add flag, may already have operational flags.
+				evcs_state.add_flag(EVGXFlags.CONTROLABLE)
+		
+		if not found_controlable_evcs:
+			return
+
 		#check, if we need to start a charge or change current.
 		for evcsid, kWh in w.to_ev.items():
 			if kWh > 0:
 				if evcsid in self._evcs_states.keys():
 					evcs_state = self._evcs_states[evcsid]
-					evcs_state.add_flag(EVGXFlags.SCHEDULED) #this is now scheduled no matter what. 
+
+					#exclude evcs that are not supposed to be controlled currently. 
+					if EVGXFlags.CONTROLABLE not in evcs_state.gx_flags:
+						continue
+
+					evcs_state.add_flag(EVGXFlags.SCHEDULED) #this is now scheduled.
 
 					if evcs_state.emergency_charge:
 						logger.info("Stopping Emergency Charging on EVCS #{} due to valid instruction arrived.".format(evcsid))
@@ -1314,6 +1351,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		
 		#check, if we need to stop a charge or enter emergency-charge timeout mode due to absence of information or 0 instruction
 		for evcsid, evcs_state in self._evcs_states.items():
+			#exclude evcs that are not supposed to be controlled currently. 
+			if EVGXFlags.CONTROLABLE not in evcs_state.gx_flags:
+				continue
+			
 			#Stop, if charging regulary due to 0 instruction.
 			if evcsid in w.to_ev.keys() and w.to_ev[evcsid] == 0:
 				if evcs_state.is_started:
