@@ -58,6 +58,30 @@ class Restrictions(IntFlag):
 	BAT2GRID = 1
 	GRID2BAT = 2
 
+class EVCSGXFlags(IntFlag):
+	NONE = 0
+	CONTROLLABLE = 1
+	SCHEDULED = 2
+	EMERGENCY_COUNTDOWN = 4
+	EMERGENCY_ACTIVE = 8
+	CHARGE_NOW_ACTIVE = 16
+
+	def stringify(self):
+		"""Returns a string representation of set flags, e.g., 'SCHEDULED | EMERGENCY_ACTIVE'"""
+		if self.value == 0:
+			return "NONE"
+
+		flags = []
+		for flag in EVCSGXFlags:
+			if flag.value != 0 and (self & flag):
+				flags.append(flag.name)
+
+		return " | ".join(flags) if flags else "NONE"
+
+class EVVRMFlags(IntFlag):
+	NONE = 0
+	CHARGE_NOW = 1
+
 class ChangeIndicator(int, Enum):
 	NONE = 0
 	RISING = 1
@@ -76,7 +100,12 @@ class EVCSState():
 		self.monitor = monitor
 		self.emergency_charge = False
 		self.emergency_charge_timer = None
+<<<<<<< HEAD
 
+=======
+		self.gx_flags:EVCSGXFlags = EVCSGXFlags(0)
+
+>>>>>>> e0be436 (dess: Introduced EVCS Flags for communication with VRM.)
 	@property
 	def status(self) -> int:
 		return self.monitor.get_value(self.service, "/Status")
@@ -84,6 +113,18 @@ class EVCSState():
 	@property
 	def mode(self) -> int:
 		return self.monitor.get_value(self.service, "/Mode")
+
+	def add_flag(self, flag:EVCSGXFlags):
+		'''
+			Adds the given flag to the current flag collection of this EVCS.
+		'''
+		self.gx_flags |= flag
+
+	def remove_flag(self, flag:EVCSGXFlags):
+		'''
+			Removes the given flag from the current flag collection of this EVCS.
+		'''
+		self.gx_flags &= ~flag
 
 class ReactiveStrategy(int, Enum):
 	#do not re-number, external applications rely on this mapping.
@@ -275,6 +316,10 @@ class EssDevice(object):
 
 	@property
 	def average_ac_voltage(self) -> float:
+		'''
+			Calculates the average voltage seen on ac out, so the desired charge current of the
+			evcs can be calculated more accurate to match the intendet charge volume.
+		'''
 		raise NotImplementedError("average_ac_voltage")
 
 	def charge(self, flags, restrictions:Restrictions, rate, allow_feedin):
@@ -355,13 +400,21 @@ class VebusDevice(EssDevice):
 
 	@property
 	def average_ac_voltage(self) -> float:
-		l1 = self.monitor.get_value(self.service, '/Ac/Out/L1/V')
-		l2 = self.monitor.get_value(self.service, '/Ac/Out/L2/V')
-		l3 = self.monitor.get_value(self.service, '/Ac/Out/L3/V')
+		'''
+			Calculates the average voltage seen on ac out, so the desired charge current of the
+			evcs can be calculated more accurate to match the intendet charge volume.
+		'''
+		try:
+			l1 = self.monitor.get_value(self.service, '/Ac/Out/L1/V')
+			l2 = self.monitor.get_value(self.service, '/Ac/Out/L2/V')
+			l3 = self.monitor.get_value(self.service, '/Ac/Out/L3/V')
 
-		#only consider non-None values to calculate the average.
-		voltages = [v for v in (l1, l2, l3) if v is not None]
-		return sum(voltages) / len(voltages)
+			#only consider non-None values to calculate the average.
+			voltages = [v for v in (l1, l2, l3) if v is not None]
+			return sum(voltages) / len(voltages)
+		except Exception as e:
+			#paths not as expected. Default to 230V.
+			return 230.0
 
 	def _set_feedin(self, allow_feedin):
 		""" None = follow system setup
@@ -523,13 +576,21 @@ class MultiRsDevice(EssDevice):
 
 	@property
 	def average_ac_voltage(self) -> float:
-		l1 = self.monitor.get_value(self.service, '/Ac/Out/L1/V')
-		l2 = self.monitor.get_value(self.service, '/Ac/Out/L2/V')
-		l3 = self.monitor.get_value(self.service, '/Ac/Out/L3/V')
+		'''
+			Calculates the average voltage seen on ac out, so the desired charge current of the
+			evcs can be calculated more accurate to match the intendet charge volume.
+		'''
+		try:
+			l1 = self.monitor.get_value(self.service, '/Ac/Out/L1/V')
+			l2 = self.monitor.get_value(self.service, '/Ac/Out/L2/V')
+			l3 = self.monitor.get_value(self.service, '/Ac/Out/L3/V')
 
-		#only consider non-None values to calculate the average.
-		voltages = [v for v in (l1, l2, l3) if v is not None]
-		return sum(voltages) / len(voltages)
+			#only consider non-None values to calculate the average.
+			voltages = [v for v in (l1, l2, l3) if v is not None]
+			return sum(voltages) / len(voltages)
+		except Exception as e:
+			#paths not as expected. Default to 230V.
+			return 230.0
 
 	@property
 	def mode(self):
@@ -762,7 +823,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice.add_path('/DynamicEss/AvailableOverhead', value=None, gettextcallback=lambda p, v: '{}W'.format(v))
 		self._dbusservice.add_path('/DynamicEss/ChargeHysteresis', value=0, gettextcallback=lambda p, v: '{}%'.format(v))
 		self._dbusservice.add_path('/DynamicEss/DischargeHysteresis', value=0, gettextcallback=lambda p, v: '{}%'.format(v))
-		self._dbusservice.add_path('/DynamicEss/WindowToEVBattery', value="{{}}")
+		self._dbusservice.add_path('/DynamicEss/WindowToEVBattery', value=f"{{}}")
+		self._dbusservice.add_path('/DynamicEss/EvcsGxFlags', value=f"{{}}") #channel to communicate flags TO vrm. Inbound is a setting.
 
 		if self.mode > 0:
 			self._dbusservice.add_path('/DynamicEss/ReactiveStrategy', value=None, gettextcallback=lambda p, v: ReactiveStrategy(v))
@@ -785,7 +847,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			("dess_batterydischargelimit", path + '/BatteryDischargeLimit', -1.0, -1.0, 9999.9),
 			("dess_gridimportlimit", path + '/GridImportLimit', -1.0, -1.0, 9999.9),
 			("dess_gridexportlimit", path + '/GridExportLimit', -1.0, -1.0, 9999.9),
-			("dess_evemergencystart", path + '/EVEmergencyStart', 30*60, 0, 86400),
+			("dess_evemergencystart", path + '/EVEmergencyStart', 60*60, 0, 86400),
 			("dess_evemergencycurrent", path + '/EVEmergencyCurrent', 6, 0, 32)
 		]
 
@@ -980,9 +1042,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 	@property
 	def average_ac_voltage(self) -> float:
-		"""
-			Returns the average AC voltage of all phases from the current device.
-		"""
+		'''
+			Calculates the average voltage seen on ac out, so the desired charge current of the
+			evcs can be calculated more accurate to match the intendet charge volume.
+		'''
 		return self._device.average_ac_voltage
 
 	@property
@@ -1209,6 +1272,19 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				final_strategy = self._determine_reactive_strategy(current_window, next_window, current_window.restrictions, now)
 
 				self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate or 0 #Always set the anticipated chargerate on dbus.
+
+				#Update EVCS Flags on dbus.
+				jo = {}
+				jor = {}
+				for evcs_state in self._evcs_states.values():
+					jo[evcs_state.instance] = evcs_state.gx_flags
+					jor[evcs_state.instance] = evcs_state.gx_flags.stringify()
+
+				jos = json.dumps(jo)
+				jors = json.dumps(jor)
+				if jos != self._dbusservice['/DynamicEss/EvcsGxFlags']:
+					logger.info("EvcsGxFlags changed to: {} => {}".format(jos, jors))
+					self._dbusservice['/DynamicEss/EvcsGxFlags'] = jos
 			else:
 				# No matching windows
 				if self.active or self.errorcode != 3:
@@ -1260,14 +1336,35 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		return False
 
 	def _evcs_control(self, w:DynamicEssWindow, now):
+		#first check: See if one EVCS is in GXAuto-Mode.
+		#FIXME: For now "manual" is our GXAuto. Needs to be adjusted.
+		found_controlable_evcs = False
+		for evcsid, evcs_state in self._evcs_states.items():
+			if evcs_state.mode != 0:
+				evcs_state.gx_flags = EVCSGXFlags.NONE
+			else:
+				found_controlable_evcs = True
+				#just use add flag, may already have operational flags.
+				evcs_state.add_flag(EVCSGXFlags.CONTROLLABLE)
+
+		if not found_controlable_evcs:
+			return
+
 		#check, if we need to start a charge or change current.
 		for evcsid, kWh in w.to_ev.items():
-			if kWh > 0:
-				if evcsid in self._evcs_states.keys():
-					evcs_state = self._evcs_states[evcsid]
+			if evcsid in self._evcs_states.keys():
+				evcs_state = self._evcs_states[evcsid]
 
+				#exclude evcs that are not supposed to be controlled currently.
+				if EVCSGXFlags.CONTROLLABLE not in evcs_state.gx_flags:
+					continue
+
+				evcs_state.add_flag(EVCSGXFlags.SCHEDULED) #this is now scheduled.
+
+				if kWh > 0:
 					if evcs_state.emergency_charge:
 						logger.info("Stopping Emergency Charging on EVCS #{} due to valid instruction arrived.".format(evcsid))
+						evcs_state.remove_flag(EVCSGXFlags.EMERGENCY_ACTIVE)
 						evcs_state.emergency_charge_timer = None
 						evcs_state.emergency_charge = False
 
@@ -1317,13 +1414,18 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 								evcs_state.no_phases = 1
 								logger.info("Detected EVCS #{} as 1 phased.".format(evcsid, amps))
 
-		#check, if we need to stop a charge or switch enter emergency-charge timeout mode due to absence of information or 0 instruction
+		#check, if we need to stop a charge or enter emergency-charge timeout mode due to absence of information or 0 instruction
 		for evcsid, evcs_state in self._evcs_states.items():
+			#exclude evcs that are not supposed to be controlled currently.
+			if EVCSGXFlags.CONTROLLABLE not in evcs_state.gx_flags:
+				continue
+
 			#Stop, if charging regulary due to 0 instruction.
 			if evcsid in w.to_ev.keys() and w.to_ev[evcsid] == 0:
 				if evcs_state.is_started:
 					if evcs_state.emergency_charge:
 						logger.info("Stopping Emergency Charging on EVCS #{} due to 0 instruction.".format(evcsid))
+						evcs_state.remove_flag(EVCSGXFlags.EMERGENCY_ACTIVE)
 						evcs_state.emergency_charge_timer = None
 						evcs_state.emergency_charge = False
 
@@ -1337,11 +1439,14 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			if not evcsid in w.to_ev.keys() and evcs_state.status in [1,6] and evcs_state.emergency_charge_timer is None:
 				evcs_state.emergency_charge_timer = now
 				logger.info("Starting emergency charge timer on EVCS #{} ({}s).".format(evcsid, self._settings['dess_evemergencystart']))
+				evcs_state.add_flag(EVCSGXFlags.EMERGENCY_COUNTDOWN)
 
 			#matching my happen anytime before the emergency timer runs out.
 			#cancel it, once that happens.
 			if evcsid in w.to_ev.keys() and evcs_state.emergency_charge_timer is not None:
 				logger.info("Cancelling emergency charge timer on EVCS #{} due to valid instruction arrived.".format(evcsid))
+				evcs_state.add_flag(EVCSGXFlags.SCHEDULED)
+				evcs_state.remove_flag(EVCSGXFlags.EMERGENCY_COUNTDOWN)
 				evcs_state.emergency_charge_timer = None
 
 			#If we have an emergency timer running, check if we need to start emergency charge.
@@ -1355,6 +1460,15 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 					self._dbusmonitor.set_value_async(self._evcs_states[evcsid].service, "/SetCurrent", self._settings['dess_evemergencycurrent'])
 					self._dbusmonitor.set_value_async(self._evcs_states[evcsid].service, "/StartStop", 1)
 					logger.info("Starting emergency charge on EVCS #{} after {}s.".format(evcsid, self._settings['dess_evemergencystart']))
+					evcs_state.add_flag(EVCSGXFlags.EMERGENCY_ACTIVE)
+					evcs_state.remove_flag(EVCSGXFlags.EMERGENCY_COUNTDOWN)
+
+			#if the evcs enters "not connected", remove any flags related to operation.
+			if evcs_state.status == 0:
+				if evcs_state.gx_flags != EVCSGXFlags.CONTROLLABLE:
+					logger.info("EVCS #{}, car not connected (anymore).".format(evcsid))
+					#FIXME: Validate Auto-Mode constraint when auto-mode is implemented.
+					evcs_state.gx_flags = EVCSGXFlags.CONTROLLABLE
 
 	def _determine_reactive_strategy(self, w: DynamicEssWindow, nw: DynamicEssWindow, restrictions:Restrictions, now) -> ReactiveStrategy:
 		'''
@@ -1390,6 +1504,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice["/DynamicEss/WindowSoc"] = round(w.soc, self.soc_precision)
 		self._dbusservice["/DynamicEss/WindowSlot"] = w.slot
 		self._dbusservice["/DynamicEss/WindowToEVBattery"] = json.dumps(w.to_ev)
+
 
 		#logger.log(logging.DEBUG, "ACPV / DCPV / Cons / Overhead is: {} / {} / {} / {}".format(self._device.acpv, self._device.pvpower, self._device.consumption, available_solar_plus))
 
