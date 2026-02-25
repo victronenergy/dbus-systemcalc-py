@@ -60,7 +60,7 @@ class Restrictions(IntFlag):
 
 class EVGXFlags(IntFlag):
 	NONE = 0
-	CONTROLABLE = 1
+	CONTROLLABLE = 1
 	SCHEDULED = 2
 	EMERGENCY_COUNTDOWN = 4
 	EMERGENCY_ACTIVE = 8
@@ -1280,23 +1280,23 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			else:
 				found_controlable_evcs = True
 				#just use add flag, may already have operational flags.
-				evcs_state.add_flag(EVGXFlags.CONTROLABLE)
+				evcs_state.add_flag(EVGXFlags.CONTROLLABLE)
 		
 		if not found_controlable_evcs:
 			return
 
 		#check, if we need to start a charge or change current.
 		for evcsid, kWh in w.to_ev.items():
-			if kWh > 0:
-				if evcsid in self._evcs_states.keys():
-					evcs_state = self._evcs_states[evcsid]
+			if evcsid in self._evcs_states.keys():
+				evcs_state = self._evcs_states[evcsid]
 
-					#exclude evcs that are not supposed to be controlled currently. 
-					if EVGXFlags.CONTROLABLE not in evcs_state.gx_flags:
-						continue
+				#exclude evcs that are not supposed to be controlled currently. 
+				if EVGXFlags.CONTROLLABLE not in evcs_state.gx_flags:
+					continue
 
-					evcs_state.add_flag(EVGXFlags.SCHEDULED) #this is now scheduled.
+				evcs_state.add_flag(EVGXFlags.SCHEDULED) #this is now scheduled.
 
+				if kWh > 0:
 					if evcs_state.emergency_charge:
 						logger.info("Stopping Emergency Charging on EVCS #{} due to valid instruction arrived.".format(evcsid))
 						evcs_state.remove_flag(EVGXFlags.EMERGENCY_ACTIVE)
@@ -1352,9 +1352,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		#check, if we need to stop a charge or enter emergency-charge timeout mode due to absence of information or 0 instruction
 		for evcsid, evcs_state in self._evcs_states.items():
 			#exclude evcs that are not supposed to be controlled currently. 
-			if EVGXFlags.CONTROLABLE not in evcs_state.gx_flags:
+			if EVGXFlags.CONTROLLABLE not in evcs_state.gx_flags:
 				continue
-			
+
 			#Stop, if charging regulary due to 0 instruction.
 			if evcsid in w.to_ev.keys() and w.to_ev[evcsid] == 0:
 				if evcs_state.is_started:
@@ -1400,10 +1400,10 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			
 			#if the evcs enters "not connected", remove any flags related to operation. 
 			if evcs_state.status == 0:
-				if evcs_state.gx_flags != EVGXFlags.CONTROLABLE:
+				if evcs_state.gx_flags != EVGXFlags.CONTROLLABLE:
 					logger.info("EVCS #{}, car not connected (anymore).".format(evcsid))
 					#FIXME: Validate Auto-Mode constraint when auto-mode is implemented.
-					evcs_state.gx_flags = EVGXFlags.CONTROLABLE
+					evcs_state.gx_flags = EVGXFlags.CONTROLLABLE
 
 	def _determine_reactive_strategy(self, w: DynamicEssWindow, nw: DynamicEssWindow, restrictions:Restrictions, now) -> ReactiveStrategy:
 		'''
