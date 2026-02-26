@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 import logging
 from delegates.base import SystemCalcDelegate
 
-PRECISION = 2
+PRECISION = 1
 
 class BatterySoc(SystemCalcDelegate):
 	def __init__(self, sc):
@@ -10,9 +10,19 @@ class BatterySoc(SystemCalcDelegate):
 		self.systemcalc = sc
 		self.last_measurement = None
 		self.last_soc = None
-		self.one_percent_equivalent = 28400 / 100.0
+		self.one_percent_equivalent = None
 		self.iamount = None
 		self._isoc = None
+
+	def get_input(self):
+		return [
+			('com.victronenergy.settings', [
+				'/Settings/DynamicEss/BatteryCapacity'
+			])
+		]
+	
+	def set_sources(self, dbusmonitor, settings, dbusservice):
+		super(BatterySoc, self).set_sources(dbusmonitor, settings, dbusservice)
 
 	def get_output(self):
 		return [
@@ -37,7 +47,25 @@ class BatterySoc(SystemCalcDelegate):
 		return self._isoc if self._isoc is not None else self.soc_bms
 
 	def update_values(self, newvalues):
+		#doing this one time is enough for now, battery capacity is not expected to change during runtime.
+		if self.one_percent_equivalent is None:
+			battery_capacity = self._dbusmonitor.get_value("com.victronenergy.settings", '/Settings/DynamicEss/BatteryCapacity')
+			logging.getLogger().info("BatterySoc: read battery capacity of {} kWh".format(battery_capacity))	
+			if battery_capacity is not None:
+				# *1000 / 100 = *10
+				self.one_percent_equivalent = battery_capacity * 10
+				logging.getLogger().info("BatterySoc: one percent equivalent set to {} Wh".format(self.one_percent_equivalent))
+
+				if (PRECISION > 0):
+					logging.getLogger().info("BatterySoc: interpolation enabled with precision {}".format(PRECISION))
+
 		current_soc = self.soc_bms
+        
+		#check if we can do interpolation
+		if PRECISION == 0 or self.one_percent_equivalent is None:
+			newvalues['/Dc/Battery/Soc'] = current_soc
+			return
+            
 		try:
 			now = datetime.now()
 			current_power = self._dbusmonitor.get_value(self.systemcalc.batteryservice, '/Dc/0/Power')
