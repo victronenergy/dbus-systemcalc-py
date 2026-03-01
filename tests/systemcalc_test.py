@@ -1559,8 +1559,8 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Ac/Consumption/L1/Current': 5.1 - 0.6 + 0.4,
 			'/Ac/ConsumptionOnOutput/L1/Power': 100,
 			'/Ac/ConsumptionOnOutput/L1/Current': 0.4,
-			'/Ac/ConsumptionOnInput/L1/Power': None,
-			'/Ac/ConsumptionOnInput/L1/Current': None
+			'/Ac/ConsumptionOnInput/L1/Power': 0,
+			'/Ac/ConsumptionOnInput/L1/Current': 0
 		})
 
 	def test_battery_capacity(self):
