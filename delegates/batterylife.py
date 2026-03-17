@@ -333,7 +333,7 @@ class BatteryLife(SystemCalcDelegate):
 		elif newstate > State.KeepCharged:
 			self._dbusservice['/Control/ActiveSocLimit'] = self.minsoclimit
 		else:
-			self._dbusservice['/Control/ActiveSocLimit'] = None
+			self._dbusservice['/Control/ActiveSocLimit'] = self.minsoclimit
 
 	def _on_timer(self):
 		now = self._get_time()

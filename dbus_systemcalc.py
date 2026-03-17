@@ -1051,10 +1051,12 @@ class SystemCalc:
 			if has_ac_in_system:
 				newvalues[_AC_PATHS[(phase, 'cons_in_p')]] = consumption[phase]
 				newvalues[_AC_PATHS[(phase, 'cons_in_i')]] = currentconsumption[phase]
-
-		self._compute_number_of_phases('/Ac/Consumption', newvalues)
-		self._compute_number_of_phases('/Ac/ConsumptionOnOutput', newvalues)
+			else:
+				newvalues[_AC_PATHS[(phase, 'cons_in_p')]] = 0
+				newvalues[_AC_PATHS[(phase, 'cons_in_i')]] = 0
 		self._compute_number_of_phases('/Ac/ConsumptionOnInput', newvalues)
+		self._compute_number_of_phases('/Ac/ConsumptionOnOutput', newvalues)
+		self._compute_number_of_phases('/Ac/Consumption', newvalues)
 
 		for m in self._modules:
 			m.update_values(newvalues)
