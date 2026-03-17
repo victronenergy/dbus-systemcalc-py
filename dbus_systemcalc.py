@@ -872,7 +872,7 @@ class SystemCalc:
 			try:
 				newvalues['/Dc/System/Current'] = \
 					solarchargers_loadoutput_power / newvalues['/Dc/Battery/Voltage']
-			except (KeyError, ZeroDivisionError):
+			except (KeyError, ZeroDivisionError, TypeError):
 				pass
 
 		# ===== AC IN SOURCE =====
