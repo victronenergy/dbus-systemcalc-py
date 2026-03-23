@@ -865,7 +865,7 @@ class SystemCalc:
 				try:
 					newvalues['/Dc/System/Current'] = \
 						newvalues['/Dc/System/Power'] / newvalues['/Dc/Battery/Voltage']
-				except (KeyError, ZeroDivisionError):
+				except (KeyError, ZeroDivisionError, TypeError):
 					pass
 
 		elif self._settings['hasdcsystem'] == 1 and solarchargers_loadoutput_power is not None:
