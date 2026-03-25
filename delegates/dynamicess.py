@@ -230,7 +230,7 @@ class IterationChangeTracker(object):
 
 class EssDevice(object):
 	def __init__(self, delegate, monitor, service):
-		self.delegate = delegate
+		self.delegate:DynamicEss = delegate
 		self.monitor = monitor
 		self.service = service
 
@@ -436,8 +436,8 @@ class VebusDevice(EssDevice):
 		if allow_feedin:
 			# This keeps battery idle by not allowing more power to be taken
 			# from the DC bus than what DC-coupled PV provides.
-			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower',
-				max(1.0, round(0.9*self.pvpower)))
+			mdp = max(1.0, self.pvpower) # 1.0 to allow selling overvoltage
+			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/MaxDischargePower', mdp)
 			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', self.maxfeedinpower)
 		else:
 			self.monitor.set_value_async(HUB4_SERVICE, '/Overrides/Setpoint', 0) # Normal ESS
@@ -501,69 +501,90 @@ class MultiRsDevice(EssDevice):
 		# that'll be self.pvpower - rate - self.pvpower, hence comes down to rate * -1
 		# or in other words: we leave the portion of rate * -1 from dcpv available for the battery.
 		fast_charge_requested = Flags.FASTCHARGE in flags
+		batteryimport = Restrictions.GRID2BAT not in restrictions
 
-		#don't forward fastcharge. That means "max power", so no forced discharge.
-		if rate < self.pvpower and not fast_charge_requested:
-			self.discharge(flags, restrictions, rate * -1, allow_feedin)
-			return rate
+		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 0)
 
-		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
+		# if fastcharge is requested, use the maximum power allowed as per user definition.
+		if fast_charge_requested:
+			rate = self.delegate.battery_charge_limit * 1000.0
 
-		# Fast charge, or controlled charge?
-		fast_charge_clearance = True #Defaults to true, if we have no limit or can't determine technical limits, we just go for it (legacy behaviour).
+		#rate shall never exceed user configured limit
+		rate = min(rate, self.delegate.battery_charge_limit*1000.0)
 
-		if fast_charge_requested and self.delegate.battery_charge_limit is not None and self.delegate.get_charge_power_capability() is not None:
-			# limits and technical capabilities are known. So, only apply fast charge, if limit would be implicit obeyed.
-			fast_charge_clearance = self.delegate.get_charge_power_capability() <= self.delegate.battery_charge_limit * 1000
+		#if we have a grid2bat restriction, the maximum amount we can charge is solar.
+		#consumption can be ignored, may be pulled from grid. (this just validates a grid2bat, not a grid2anywhere restriction)
+		#only applicable for charge cases. In that case, acpv has a slight penalty.
+		if not batteryimport:
+			rate = min(rate, (self.pvpower or 0) + (self.acpv or 0) * self.delegate.oneway_efficiency)
 
-		if rate is None or (fast_charge_requested and fast_charge_clearance):
-			self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', 15000)
-		else:
-			# if fast charge is requested, but not yet cleared, use the configured battery charge limit as charge rate.
-			# this way the limit is obeyed, but the desired "maximum charge" is achieved.
-			if (fast_charge_requested and not fast_charge_clearance and self.delegate.battery_charge_limit is not None):
-				rate = self.delegate.battery_charge_limit * 1000
+		# In an unrestricted case, we just feedin everything, keep consumption - plus, what we actually want to flow TO the battery.
+		# DCPV has a slight penalty, when feeding in. When requesting a certain battery rate, we need to request MORE at the setpoint due to efficiency losses.
+		setpoint = - (self.acpv or 0) - ((self.pvpower or 0) / self.delegate.oneway_efficiency) + ((self.consumption or 0) + rate / self.delegate.oneway_efficiency)
 
-			self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', max(0.0, rate - self.pvpower))
+		#- If Feedin is restricted, setpoint is not allowed to be negative.
+		#this needs to be checked for charge cases as well, because a low chargerate may cause feedin.
+		if not allow_feedin:
+			setpoint = max(0, setpoint)
 
+		#finally, make sure we stay within user configured bounds with our request.
+		if setpoint < 0:
+			setpoint = max(setpoint, self.delegate.grid_export_limit * -1000.0)
+		elif setpoint > 0:
+			setpoint = min(setpoint, self.delegate.grid_import_limit * 1000.0)
+
+		#done, request the desired setpoint.
+		self.monitor.set_value_async(self.service, '/Ess/AcPowerSetpoint', setpoint)
 		return rate
 
 	def discharge(self, flags, restrictions:Restrictions, rate, allow_feedin):
-		batteryexport = not (Restrictions.BAT2GRID in restrictions)
+		rate = rate * -1 #commes in positive
+		batteryexport = not Restrictions.BAT2GRID in restrictions
 
 		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin) if allow_feedin is not None else 0)
-		if allow_feedin:
-			# Calculate how fast to sell. If exporting the battery to the grid
-			# is allowed, then export rate plus whatever DC-coupled PV is
-			# making. If exporting the battery is not allowed, then limit that
-			# to DC-coupled PV plus local consumption.
-			self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
-			if Flags.FASTCHARGE in flags:
-				self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', -15000)
-				return None
-			else:
-				srate = max(1.0, (rate or 0) + self.pvpower) # 1.0 to allow selling overvoltage
+		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 0)
 
-				if (batteryexport):
-					#discharging the battery by rate requires to discharge all available dcpv as well.
-					self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', -srate)
-				else:
-					# this may lead to feedin anyway, but it then is "feedin of solar", while battery is only backing loads.
-					self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint',
-						(-min (srate, self.pvpower + self.consumption + 1.0))) # +1.0 to allow selling overvoltage
+		#If we have a bat2grid restriction, the maximum amount we can send to grid is solar.
+		#In that case, we need to limit the fraction of battery discharge to consumption/0.95.
+		if not batteryexport:
+			rate = max(rate, -(self.consumption or 0) / self.delegate.oneway_efficiency)
 
-				return rate
+		#rate shall never exceed user configured limit
+		rate = max(rate, self.delegate.battery_discharge_limit*-1000.0)
 
-		else:
-			# We can only discharge into loads, therefore simply run
-			# self-consumption
-			self.self_consume(restrictions, allow_feedin)
-			return rate
+		#In an unrestricted case, we just feedin everything, keep consumption - plus, what we actually want to flow FROM the battery.
+		# DCPV has a slight penalty, when feeding in. When requesting a certain battery rate, we need to request LESS at the setpoint due to efficiency losses.
+		setpoint = - (self.acpv or 0) - (self.pvpower or 0) * self.delegate.oneway_efficiency + (self.consumption or 0) + rate * self.delegate.oneway_efficiency
+
+		#- If Feedin is restricted, setpoint is not allowed to be negative.
+		if not allow_feedin:
+			setpoint = max(0, setpoint)
+
+		#finally, make sure we stay within user configured bounds with our request.
+		if setpoint < 0:
+			setpoint = max(setpoint, self.delegate.grid_export_limit * -1000.0)
+		elif setpoint > 0:
+			setpoint = min(setpoint, self.delegate.grid_import_limit * 1000.0)
+
+		#done, request the desired setpoint.
+		self.monitor.set_value_async(self.service, '/Ess/AcPowerSetpoint', setpoint)
+		return rate
 
 	def idle(self, allow_feedin):
 		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin) if allow_feedin is not None else 0)
-		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 1)
-		self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', -max(0, self.pvpower))
+		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 0)
+
+		#idling means: Grid needs to deliver consumption - ACPV - DCPV * 0.95.
+		#if there is more solar than consumption, we don't have to mind, the feedin-setting will either allow for it or not.
+		acps = (self.consumption or 0) - (self.acpv or 0) - (self.pvpower or 0) * self.delegate.oneway_efficiency
+
+		#finally, make sure we stay within user configured bounds with our request.
+		if acps < 0:
+			acps = max(acps, self.delegate.grid_export_limit * -1000.0)
+		elif acps > 0:
+			acps = min(acps, self.delegate.grid_import_limit * 1000.0)
+
+		self.monitor.set_value_async(self.service, '/Ess/AcPowerSetpoint', acps)
 
 	def self_consume(self, restrictions:Restrictions, allow_feedin):
 		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin) if allow_feedin is not None else 0)
@@ -622,6 +643,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._errorcode = 0
 		self._errortimer = ERROR_TIMEOUT
 		self.iteration_change_tracker = IterationChangeTracker(self)
+		self._is_idle = False #Flag indicating if we are currently idling, resulting in a quick-update of the idle-setpoint upon value change.
+		self._idle_feedin = None #Cache the feedin-allowance of the window during idle, to quickly update the idle setpoint upon value changes.
 
 		#define the four kind of deterministic states we have.
 		#SCHEDULED_SELFCONSUME is left out, it isn't part of the overall deterministic strategy tree, but a quick escape before entering.
@@ -992,6 +1015,8 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		now = self._get_time()
 		start = None
 		stop = None
+		self._is_idle = False
+		self._idle_feedin = None
 
 		#TODO: this always builds all 48 Windows.
 		#      can be optimized, we MOSTLY need 0 - 5
@@ -1339,7 +1364,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				self.charge_hysteresis = self.hysteresis #avoid charge on idle soc drop
 				self.discharge_hysteresis = 0 #allow follow a controlled discharge
 				self.chargerate = None #idle has no chargerate.
-				self._device.idle(w.allow_feedin)
+				self._idle_feedin = w.allow_feedin #keep track of feedin permission during idle, to be able to react on changes during idle.
+				self._is_idle = True
+				#idle method is called from within a quicker control loop. (in update_values)
 
 			elif reactive_strategy in self.discharge_states:
 				self.charge_hysteresis = self.hysteresis #avoid charging on undershoot.
@@ -1381,3 +1408,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			newvalues['/DynamicEss/Available'] = int(self._device.available)
 		except AttributeError:
 			newvalues['/DynamicEss/Available'] = 0
+
+		# during idling, update the setpoint everytime we receive new values.
+		if self._device is not None and self._is_idle:
+			self._device.idle(self._idle_feedin)
+
+
