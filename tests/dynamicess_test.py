@@ -1,14 +1,18 @@
 from datetime import datetime, date, time, timedelta
+import unittest
 
 # This adapts sys.path to include all relevant packages
 import context
 
 # Testing tools
+from delegates.batterysoc import BatterySoc
+import logger
 from mock_gobject import timer_manager
 
 # our own packages
 import dbus_systemcalc
 from delegates import DynamicEss
+from delegates.dynamicess import Flags, Restrictions
 from base import TestSystemCalcBase
 
 # Monkey patching for unit tests
@@ -21,6 +25,8 @@ DynamicEss._get_time = lambda *a: timer_manager.datetime
 class TestDynamicEss(TestSystemCalcBase):
 	vebus = 'com.victronenergy.vebus.ttyO1'
 	settings_service = 'com.victronenergy.settings'
+	rs_service = 'com.victronenergy.acsystem.desstest1'
+
 	def __init__(self, methodName='runTest'):
 		TestSystemCalcBase.__init__(self, methodName)
 
@@ -63,7 +69,7 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Settings/CGwacs/PreventFeedback': 0,
 				'/Settings/SystemSetup/AcInput1': 1,
 			})
-		
+
 		self._set_setting('/Settings/DynamicEss/BatteryCapacity', 10.0)
 		self._set_setting('/Settings/DynamicEss/SystemEfficiency', 90.0)
 
@@ -73,7 +79,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		DynamicEss.instance.release_control()
 
 	def test_legacy_fallback(self):
-		
+
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
 
@@ -85,7 +91,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 73)
-	
+
 		timer_manager.run(7000)
 
 		#check internal values
@@ -103,7 +109,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 74)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', None)
-	
+
 		timer_manager.run(7000)
 
 		#check internal values
@@ -121,7 +127,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 75)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 0.0)
-	
+
 		timer_manager.run(7000)
 
 		#check internal values
@@ -139,7 +145,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 76)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 76.7)
-	
+
 		timer_manager.run(7000)
 
 		#check internal values
@@ -157,7 +163,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 77)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 76.4)
-	
+
 		timer_manager.run(7000)
 
 		#check internal values
@@ -173,7 +179,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		timer_manager.run(7000)
 		timer_manager.run(7000)
 
-		#check 5: a legit decimal soc, on a dec-supporting system. 
+		#check 5: a legit decimal soc, on a dec-supporting system.
 		self._set_setting('/Settings/DynamicEss/Mode', 1)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
@@ -181,7 +187,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Soc', 71)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 71.4)
-	
+
 		timer_manager.run(7000)
 
 		#check internal values
@@ -191,8 +197,366 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp
 		})
 
+	def test_0_RS_SetPointCalculations_Charge(self):
+		# SetPoint Calculation for the RS.
+		# Just manual testing of the charge and discharge method.
+		from delegates.dynamicess import MultiRsDevice
+
+		self._remove_device(self.vebus)
+		self._add_device(self.rs_service, product_name='Multi RS',
+			values={
+				'/State': 3,
+				'/DeviceInstance': 30,
+				'/Ess/AcPowerSetpoint': 0,
+				})
+
+		self._add_device('com.victronenergy.pvinverter.mock33', {
+			'/Ac/L1/Power': 0,
+			'/Ac/L2/Power': 0,
+			'/Ac/L3/Power': 0,
+			'/Position': 0,
+			'/Connected': 1,
+			'/DeviceInstance': 33,
+		})
+
+		self._update_values()
+
+		mock = MultiRsDevice(
+			DynamicEss.instance,
+			DynamicEss.instance._dbusmonitor,
+			self.rs_service
+		)
+
+		self._set_setting('/Settings/DynamicEss/GridExportLimit', 10)
+		self._set_setting('/Settings/DynamicEss/GridImportLimit', 10)
+		self._set_setting('/Settings/DynamicEss/BatteryChargeLimit', 10)
+		self._set_setting('/Settings/DynamicEss/BatteryDischargeLimit', 10)
+
+		#Simple test-cases: No AC, DC or consumption, no restrictions.
+		#Calculated Grid Setpoint should equal desired Battery charge plus efficiency offset.
+		mock.charge(Flags.NONE,Restrictions.NONE,2500,True)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint') , 2500 / 0.95)
+
+		#grid2bat restriction -> Setpoint should be 0.
+		mock.charge(Flags.NONE,Restrictions.GRID2BAT,2500,True)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint') , 0)
+
+		#tests with 500 consumption
+		#500 consumption -> Setpoint should be 2500/0.95 + consumption
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", '/Ac/L1/Power', 500.0)
+		self._update_values()
+		mock.charge(Flags.NONE,Restrictions.NONE,2500,True)
+		self.assertEqual(mock.consumption, 500)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint') , 2500 / 0.95 + 500)
+
+		#add 500 AC-Solar. SetPoint should now be the same as in no solar/consumption case, it compensates the consumption.
+		self._monitor.set_value("com.victronenergy.pvinverter.mock33", '/Ac/L1/Power', 500.0)
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", '/Ac/L1/Power', 0)
+		self._update_values()
+		mock.charge(Flags.NONE,Restrictions.NONE,2500,True)
+		self.assertEqual(mock.consumption, 500)
+		self.assertEqual(mock.acpv, 500)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint') , 2500 / 0.95)
+
+		#1000 solar now. That means, we can take 500 ACPV to charge.
+		#500 ACPV will turn into 500*0.95 battery charge rate.
+		#so, requested grid setpoint to charge 2500W should be (2500 - 500 * 0.95) / 0.95 = 2.131,57...
+		self._monitor.set_value("com.victronenergy.pvinverter.mock33", '/Ac/L1/Power', 1000.0)
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", '/Ac/L1/Power', -500)
+		self._update_values()
+		mock.charge(Flags.NONE,Restrictions.NONE,2500,True)
+		self.assertEqual(mock.consumption, 500)
+		self.assertEqual(mock.acpv, 1000)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint') , (2500 - 500 * 0.95) / 0.95)
+
+		#some limits to be tested.
+		#battery rate should be limited to 6000, GSP be 6000/0.95 again.
+		self._monitor.set_value("com.victronenergy.pvinverter.mock33", '/Ac/L1/Power', 0.0)
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", '/Ac/L1/Power', 0)
+		self._set_setting('/Settings/DynamicEss/GridExportLimit', 30)
+		self._set_setting('/Settings/DynamicEss/GridImportLimit', 30)
+		self._set_setting('/Settings/DynamicEss/BatteryChargeLimit', 6)
+		self._set_setting('/Settings/DynamicEss/BatteryDischargeLimit', 30)
+		self._update_values()
+		mock.charge(Flags.NONE,Restrictions.NONE,9999,True)
+		self.assertEqual(mock.consumption, 0)
+		self.assertEqual(mock.acpv, 0)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint') , 6000 / 0.95)
+
+		#Grid limit, GSP should precicesly be 6000, battery rate come down to 6000*0,95
+		#but that is not calculated. It then is what it is.
+		self._monitor.set_value("com.victronenergy.pvinverter.mock33", '/Ac/L1/Power', 0.0)
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", '/Ac/L1/Power', 0)
+		self._set_setting('/Settings/DynamicEss/GridExportLimit', 30)
+		self._set_setting('/Settings/DynamicEss/GridImportLimit', 6)
+		self._set_setting('/Settings/DynamicEss/BatteryChargeLimit', 30)
+		self._set_setting('/Settings/DynamicEss/BatteryDischargeLimit', 30)
+		self._update_values()
+		mock.charge(Flags.NONE,Restrictions.NONE,9999,True)
+		self.assertEqual(mock.consumption, 0)
+		self.assertEqual(mock.acpv, 0)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint') , 6000)
+
+		#final test: Charge at a rate lower than ACPV. This should result in Feedin.
+		#precicesly, we grab 4000 / 0,95 AC PV, so, setpoint should be (8000 - 4000/0.95) *-1
+		self._monitor.set_value("com.victronenergy.pvinverter.mock33", '/Ac/L1/Power', 8000.0)
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", '/Ac/L1/Power', -8000)
+		self._update_values()
+		mock.charge(Flags.NONE,Restrictions.NONE,4000,True)
+		self.assertEqual(mock.consumption, 0)
+		self.assertEqual(mock.acpv, 8000)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint') , (8000 - 4000/0.95) * -1)
+
+		#... and 0, if we don't allow Feedin ;)
+		mock.charge(Flags.NONE,Restrictions.NONE,4000,False)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint') , 0)
+
+	def test_0_RS_Idle_no_external_mppts(self):
+		from delegates.dynamicess import MultiRsDevice
+
+		now = timer_manager.datetime
+		stamp = int(now.timestamp())
+
+		self._set_setting('/Settings/DynamicEss/GridExportLimit', 10)
+		self._set_setting('/Settings/DynamicEss/GridImportLimit', 10)
+		self._set_setting('/Settings/DynamicEss/BatteryChargeLimit', 10)
+		self._set_setting('/Settings/DynamicEss/BatteryDischargeLimit', 10)
+
+		self._set_setting('/Settings/DynamicEss/BatteryCapacity', 10.0)
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 2)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 50)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
+
+		self._remove_device(self.vebus)
+		self._add_device(self.rs_service, product_name='Multi RS',
+			values={
+				'/State': 3,
+				'/DeviceInstance': 0,
+				'/Ess/AcPowerSetpoint': 0,
+				'/Soc': 50.0,
+				'/Settings/Ess/Mode': 1,
+				'/Ess/DisableCharge': None,
+				'/Ess/DisableDischarge': None,
+				'/Settings/Ess/MinimumSocLimit': 15,
+				'/Capabilities/HasDynamicEssSupport': 1,
+				})
+
+
+		self._add_device('com.victronenergy.solarcharger.mock33', {
+			'/Yield/Power': 0,
+			'/Connected': 1,
+			'/DeviceInstance': 33,
+		})
+
+		self._update_values()
+		timer_manager.run(10000)
+		DynamicEss.instance.update_values({}) #triggers idle call
+		timer_manager.run(5000)
+
+
+		#force idle with no external MPPT Power. /DisableXX Paths shall be used.
+		#check internal values
+
+		self.assertEqual(BatterySoc.instance.soc, 50.0)
+		self._check_values({
+			'/Dc/Battery/Soc': 50.0,
+			'/DynamicEss/ErrorCode': 0,
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/WorkingSocPrecision': 0,
+			'/DynamicEss/ReactiveStrategy': 9,
+			'/DynamicEss/LastScheduledStart': stamp,
+		})
+
+		self.assertEqual(DynamicEss.instance._is_idle, True)
+		self.assertEqual(DynamicEss.instance._idle_feedin, True)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint'), 0)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/DisableCharge'), 1)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/DisableDischarge'), 1)
+
+	def test_0_RS_Idle_external_mppts(self):
+		from delegates.dynamicess import MultiRsDevice
+
+		now = timer_manager.datetime
+		stamp = int(now.timestamp())
+
+		self._set_setting('/Settings/DynamicEss/GridExportLimit', 10)
+		self._set_setting('/Settings/DynamicEss/GridImportLimit', 10)
+		self._set_setting('/Settings/DynamicEss/BatteryChargeLimit', 10)
+		self._set_setting('/Settings/DynamicEss/BatteryDischargeLimit', 10)
+
+		self._set_setting('/Settings/DynamicEss/BatteryCapacity', 10.0)
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 2)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 50)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
+
+		self._remove_device(self.vebus)
+		self._add_device(self.rs_service, product_name='Multi RS',
+			values={
+				'/State': 3,
+				'/DeviceInstance': 0,
+				'/Ess/AcPowerSetpoint': 0,
+				'/Soc': 50.0,
+				'/Settings/Ess/Mode': 1,
+				'/Ess/DisableCharge': None,
+				'/Ess/DisableDischarge': None,
+				'/Settings/Ess/MinimumSocLimit': 15,
+				'/Capabilities/HasDynamicEssSupport': 1,
+				})
+
+
+		self._add_device('com.victronenergy.solarcharger.mock33', {
+			'/Yield/Power': 500,
+			'/Dc/0/Current': 10, #SystemCalc uses this for pvpower
+			'/Dc/0/Voltage': 50, #SystemCalc uses this for pvpower
+			'/Connected': 1,
+			'/DeviceInstance': 33,
+		})
+
+		self._update_values()
+		timer_manager.run(10000)
+		DynamicEss.instance.update_values({}) #triggers idle call
+		timer_manager.run(5000)
+
+
+		#force idle with no external MPPT Power. /DisableXX Paths shall be used.
+		#check internal values
+
+		self.assertEqual(BatterySoc.instance.soc, 50.0)
+		self._check_values({
+			'/Dc/Battery/Soc': 50.0,
+			'/DynamicEss/ErrorCode': 0,
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/WorkingSocPrecision': 0,
+			'/DynamicEss/ReactiveStrategy': 5,
+			'/DynamicEss/LastScheduledStart': stamp,
+		})
+
+		self.assertEqual(DynamicEss.instance._is_idle, True)
+		self.assertEqual(DynamicEss.instance._device.pvpower, 500)
+		self.assertEqual(DynamicEss.instance._device.external_pvpower, 500)
+		self.assertEqual(DynamicEss.instance._idle_feedin, True)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint'), 500 * 0.95 * -1)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/DisableCharge'), 0)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/DisableDischarge'), 0)
+
+	def test_0_RS_SetPointCalculations_Discharge(self):
+		from delegates.dynamicess import MultiRsDevice
+
+		self._remove_device(self.vebus)
+		self._add_device(self.rs_service, product_name='Multi RS',
+			values={
+				'/State': 3,
+				'/DeviceInstance': 30,
+				'/Ess/AcPowerSetpoint': 0,
+				})
+
+		self._add_device('com.victronenergy.pvinverter.mock33', {
+			'/Ac/L1/Power': 0,
+			'/Ac/L2/Power': 0,
+			'/Ac/L3/Power': 0,
+			'/Position': 0,
+			'/Connected': 1,
+			'/DeviceInstance': 33,
+		})
+
+		self._update_values()
+
+		mock = MultiRsDevice(
+			DynamicEss.instance,
+			DynamicEss.instance._dbusmonitor,
+			self.rs_service
+		)
+
+		self._set_setting('/Settings/DynamicEss/GridExportLimit', 10)
+		self._set_setting('/Settings/DynamicEss/GridImportLimit', 10)
+		self._set_setting('/Settings/DynamicEss/BatteryChargeLimit', 10)
+		self._set_setting('/Settings/DynamicEss/BatteryDischargeLimit', 10)
+
+		#Simple test-cases: No AC, DC or consumption, no restrictions.
+		#Discharging 2500 means, we need to set a slightly lower GSP: 2500 * 0,95
+		mock.discharge(Flags.NONE,Restrictions.NONE,2500,True)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint') , 2500 * -0.95)
+
+		#bat2grid restriction -> Setpoint should be 0.
+		mock.discharge(Flags.NONE,Restrictions.BAT2GRID,2500,True)
+		self.assertEqual(mock.consumption, 0)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint') , 0)
+
+		#tests with 500 consumption
+		#Feedin should be 2500 * 0.95 - 500
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", '/Ac/L1/Power', 500.0)
+		self._update_values()
+		mock.discharge(Flags.NONE,Restrictions.NONE,2500,True)
+		self.assertEqual(mock.consumption, 500)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint') , (2500 * 0.95 - 500) * -1)
+
+		#add 500 AC-Solar. SetPoint should now be the same as in no solar/consumption case, it compensates the consumption.
+		self._monitor.set_value("com.victronenergy.pvinverter.mock33", '/Ac/L1/Power', 500.0)
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", '/Ac/L1/Power', 0)
+		self._update_values()
+		mock.discharge(Flags.NONE,Restrictions.NONE,2500,True)
+		self.assertEqual(mock.consumption, 500)
+		self.assertEqual(mock.acpv, 500)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint') , (2500 * 0.95) * -1)
+
+		#1000 solar now. That means, from the 500 ACPV we need to feedin 500 remaining watts as well.
+		self._monitor.set_value("com.victronenergy.pvinverter.mock33", '/Ac/L1/Power', 1000.0)
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", '/Ac/L1/Power', -500)
+		self._update_values()
+		mock.discharge(Flags.NONE,Restrictions.NONE,2500,True)
+		self.assertEqual(mock.consumption, 500)
+		self.assertEqual(mock.acpv, 1000)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint') , 2500 * -0.95 - 500)
+
+		#some limits to be tested.
+		#battery rate should be limited to 6000, GSP be 6000*0.95 again.
+		self._monitor.set_value("com.victronenergy.pvinverter.mock33", '/Ac/L1/Power', 0.0)
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", '/Ac/L1/Power', 0)
+		self._set_setting('/Settings/DynamicEss/GridExportLimit', 30)
+		self._set_setting('/Settings/DynamicEss/GridImportLimit', 30)
+		self._set_setting('/Settings/DynamicEss/BatteryChargeLimit', 30)
+		self._set_setting('/Settings/DynamicEss/BatteryDischargeLimit', 6)
+		self._update_values()
+		mock.discharge(Flags.NONE,Restrictions.NONE,9999,True)
+		self.assertEqual(mock.consumption, 0)
+		self.assertEqual(mock.acpv, 0)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint') , 6000 * -0.95)
+
+		#final test: discharge above grid limit
+		#GSP should be precicesly -6000
+		self._monitor.set_value("com.victronenergy.pvinverter.mock33", '/Ac/L1/Power', 0.0)
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", '/Ac/L1/Power', 0)
+		self._set_setting('/Settings/DynamicEss/GridExportLimit', 6)
+		self._set_setting('/Settings/DynamicEss/GridImportLimit', 30)
+		self._set_setting('/Settings/DynamicEss/BatteryChargeLimit', 30)
+		self._set_setting('/Settings/DynamicEss/BatteryDischargeLimit', 30)
+		self._update_values()
+		mock.discharge(Flags.NONE,Restrictions.NONE,9000,True)
+		self.assertEqual(mock.consumption, 0)
+		self.assertEqual(mock.acpv, 0)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint') , 6000 * -1)
+
+		#final test. With a bat2grid restriction, we can only feedin solar, when available.
+		#So, when we have 500 consumption backed by 500 acpv, we can turn that into
+		#backing 500 consumption by battery and feedin 500 acsolar.
+		self._monitor.set_value("com.victronenergy.pvinverter.mock33", '/Ac/L1/Power', 500.0)
+		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", '/Ac/L1/Power', 0)
+		self._update_values()
+		mock.discharge(Flags.NONE,Restrictions.BAT2GRID,2000,True)
+		self.assertEqual(mock.consumption, 500)
+		self.assertEqual(mock.acpv, 500)
+		self.assertAlmostEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint') , -500, 4)
+
 	def test_1_SCHEDULED_SELFCONSUME(self):
-		
+
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
 
@@ -201,7 +565,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 1) # Self consume
-	
+
 		timer_manager.run(7000)
 
 		#check internal values
@@ -212,7 +576,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		self.validate_self_consume()
-	
+
 	def test_2_SCHEDULED_CHARGE_ALLOW_GRID(self):
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
@@ -226,7 +590,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 60)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
-	
+
 		timer_manager.run(5000)
 
 		#check internal values
@@ -236,7 +600,7 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp,
 		})
 
-		#	(percent * capacity * 36000) / duration	
+		#	(percent * capacity * 36000) / duration
 		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) #rate is rounded to 0 prec,
 		self.validate_charge_state(expected_rate)
 
@@ -253,7 +617,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 40)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
-	
+
 		timer_manager.run(5000)
 
 		#check internal values
@@ -263,11 +627,9 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp,
 		})
 
-		#	(percent * capacity * 36000) / duration	
-		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec, 
+		#	(percent * capacity * 36000) / duration
+		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec,
 		self.validate_discharge_state(expected_rate)
-
-
 
 	def test_9_IDLE_MAINTAIN_TARGETSOC(self):
 		now = timer_manager.datetime
@@ -282,8 +644,8 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 50)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
-	
-		timer_manager.run(5000)
+
+		timer_manager.run(15000)
 
 		#check internal values
 		self._check_values({
@@ -296,7 +658,7 @@ class TestDynamicEss(TestSystemCalcBase):
 
 	def test_10_SCHEDULED_CHARGE_SMOOTH_TRANSITION(self):
 
-		# When a system reaches target soc early during 2 consecutive scheduled charge windows, 
+		# When a system reaches target soc early during 2 consecutive scheduled charge windows,
 		# it should keep up the current charge rate until the next target soc change.
 		# This should only happen, if targetsoc is reached within the last 20% of window progress.
 
@@ -328,11 +690,11 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		#	(percent * capacity * 36000) / duration
-		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) #rate is rounded to 0 prec, 
+		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) #rate is rounded to 0 prec,
 		self.validate_charge_state(expected_rate)
 
 		# run 1690 seconds more and pretend we reached target soc. Transition state should now kick in.
-		# chargerate should remain the same as currently set. 
+		# chargerate should remain the same as currently set.
 		timer_manager.run(1690 * 1000)
 		self._monitor.set_value(self.vebus, '/Soc', 60)
 		timer_manager.run(10 * 1000)
@@ -346,7 +708,7 @@ class TestDynamicEss(TestSystemCalcBase):
 
 		self.validate_charge_state(expected_rate)
 
-		#transist to next window - should cause a change back to regular charging with updated chargerate. 
+		#transist to next window - should cause a change back to regular charging with updated chargerate.
 		timer_manager.run(110 * 1000)
 
 		self._check_values({
@@ -355,7 +717,7 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 
-		expected_rate = round((10 * 5 * 36000) / (3600.0 - 5.0), 0) #rate is rounded to 0 prec, 
+		expected_rate = round((10 * 5 * 36000) / (3600.0 - 5.0), 0) #rate is rounded to 0 prec,
 		self.validate_charge_state(expected_rate)
 
 	def test_10_SCHEDULED_CHARGE_SMOOTH_TRANSITION_NOK(self):
@@ -392,11 +754,11 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		#	(percent * capacity * 36000) / duration
-		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) #rate is rounded to 0 prec, 
+		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) #rate is rounded to 0 prec,
 		self.validate_charge_state(expected_rate)
 
-		# run 1400 seconds more and pretend we reached target soc. Transition state should NOT kick in, but idle. 
-		# chargerate should remain the same as currently set. 
+		# run 1400 seconds more and pretend we reached target soc. Transition state should NOT kick in, but idle.
+		# chargerate should remain the same as currently set.
 		timer_manager.run(1390 * 1000)
 		self._monitor.set_value(self.vebus, '/Soc', 60.0)
 		timer_manager.run(10 * 1000)
@@ -409,7 +771,7 @@ class TestDynamicEss(TestSystemCalcBase):
 
 		self.validate_idle_state()
 
-		#transist to next window - should cause a change back to regular charging with updated chargerate. 
+		#transist to next window - should cause a change back to regular charging with updated chargerate.
 		timer_manager.run(406 * 1000)
 
 		self._check_values({
@@ -419,7 +781,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		#	(percent * capacity * 36000) / duration
-		expected_rate = round((10 * 5 * 36000) / (3600.0 - 5.0), 0) #rate is rounded to 0 prec, 
+		expected_rate = round((10 * 5 * 36000) / (3600.0 - 5.0), 0) #rate is rounded to 0 prec,
 		self.validate_charge_state(expected_rate)
 
 	def test_12_SCHEDULED_CHARGE_NO_GRID(self):
@@ -439,7 +801,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3) #ProGrid should trigger #13
 		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 40)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
-	
+
 		timer_manager.run(5000)
 
 		#check internal values
@@ -449,9 +811,9 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp,
 		})
 
-		#	(percent * capacity * 36000) / duration	
+		#	(percent * capacity * 36000) / duration
 		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec,
-		
+
 		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
 		self.validate_discharge_state(expected_rate)
 
@@ -465,12 +827,12 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3) 
-		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 90) 
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 2) 
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 90)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 2)
 
 		self._monitor.set_value(self.vebus, '/Soc', 80)
-		
+
 		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L1/Power", -300)
 		self._add_device('com.victronenergy.pvinverter.mock31', {
 			'/Ac/L1/Power': 300,
@@ -540,7 +902,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		self._update_values()
-
+		timer_manager.run(5000)
 		#check internal values
 		self._check_values({
 			'/DynamicEss/Active': 1,
@@ -550,7 +912,7 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/Ac/Consumption/L2/Power': 0,
 			'/Ac/Consumption/L3/Power': 0,
 		})
-
+		timer_manager.run(5000)
 		self.validate_idle_state()
 
 	def test_20_SELF_CONSUME_ACCEPT_BELLOW_TSOC_1(self):
@@ -567,10 +929,10 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 60)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
-	
+
 		timer_manager.run(5000)
 
-		#pretend there is consumption, beside we want to charge. 
+		#pretend there is consumption, beside we want to charge.
 		#System should enter 20: SELF_CONSUME_ACCEPT_BELLOW_TSOC due to PROGRID (3) Strategy.
 		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L1/Power", 0)
 		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L2/Power", 0)
@@ -702,8 +1064,8 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3) 
-		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 90) 
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 3)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 90)
 
 		self._monitor.set_value(self.vebus, '/Soc', 100)
 		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L1/Power", 2000)
@@ -753,8 +1115,8 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
-		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 2) 
-		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 100) 
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 2)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 100)
 
 		self._monitor.set_value(self.vebus, '/Soc', 100)
 		self._monitor.set_value("com.victronenergy.grid.ttyUSB0", "/Ac/L1/Power", -200)
@@ -802,7 +1164,7 @@ class TestDynamicEss(TestSystemCalcBase):
 
 	def test_19_SCHEDULED_DISCHARGE_SMOOTH_TRANSITION(self):
 
-		# When a system reaches target soc early during 2 consecutive scheduled discharge windows, 
+		# When a system reaches target soc early during 2 consecutive scheduled discharge windows,
 		# it should keep up the current charge rate until the next target soc change.
 		# This should only happen, if targetsoc is reached within the last 20% of window progress.
 
@@ -833,12 +1195,12 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 
-		#	(percent * capacity * 36000) / duration	
+		#	(percent * capacity * 36000) / duration
 		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec,
 		self.validate_discharge_state(expected_rate)
 
-		# run 1700 seconds more and pretend we reached target soc. Transition state should now kick in. 
-		# chargerate should remain the same as currently set. 
+		# run 1700 seconds more and pretend we reached target soc. Transition state should now kick in.
+		# chargerate should remain the same as currently set.
 		timer_manager.run(1690 * 1000)
 		self._monitor.set_value(self.vebus, '/Soc', 40.0)
 		timer_manager.run(10 * 1000)
@@ -851,7 +1213,7 @@ class TestDynamicEss(TestSystemCalcBase):
 
 		self.validate_discharge_state(expected_rate)
 
-		#transist to next window - should cause a change back to regular charging with updated chargerate. 
+		#transist to next window - should cause a change back to regular charging with updated chargerate.
 		timer_manager.run(110 * 1000)
 
 		self._check_values({
@@ -860,12 +1222,12 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 
-		expected_rate = round((5 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec, 
+		expected_rate = round((5 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec,
 		self.validate_discharge_state(expected_rate)
 
 	def test_19_SCHEDULED_DISCHARGE_SMOOTH_TRANSITION_NOK(self):
 
-		# When a system reaches target soc early during 2 consecutive scheduled charge windows, 
+		# When a system reaches target soc early during 2 consecutive scheduled charge windows,
 		# it should keep up the current charge rate until the next target soc change.
 		# This should only happen, if targetsoc is reached within the last 20% of window progress.
 
@@ -896,12 +1258,12 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 
-		#	(percent * capacity * 36000) / duration	
-		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec, 
+		#	(percent * capacity * 36000) / duration
+		expected_rate = round((10 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec,
 		self.validate_discharge_state(expected_rate)
 
-		# run 1400 seconds more and pretend we reached target soc. Transition state should NOT kick in, but idle. 
-		# chargerate should remain the same as currently set. 
+		# run 1400 seconds more and pretend we reached target soc. Transition state should NOT kick in, but idle.
+		# chargerate should remain the same as currently set.
 		timer_manager.run(1390 * 1000)
 		self._monitor.set_value(self.vebus, '/Soc', 40.0)
 		timer_manager.run(10 * 1000)
@@ -914,7 +1276,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		#assert equality based on /100, to eliminate seconds the delegate needs to calculate.
 		self.validate_idle_state()
 
-		#transist to next window - should cause a change back to regular charging with updated chargerate. 
+		#transist to next window - should cause a change back to regular charging with updated chargerate.
 		timer_manager.run(406 * 1000)
 
 		self._check_values({
@@ -923,11 +1285,11 @@ class TestDynamicEss(TestSystemCalcBase):
 			'/DynamicEss/LastScheduledStart': stamp + 3600,
 		})
 
-		expected_rate = round((5 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec, 
+		expected_rate = round((5 * 10 * 36000) / (3600.0 - 5.0), 0) * - 1 #rate is rounded to 0 prec,
 		self.validate_discharge_state(expected_rate)
 
 	def test_92_DESS_DISABLED(self):
-		
+
 		now = timer_manager.datetime
 		stamp = int(now.timestamp())
 
@@ -936,7 +1298,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 0)
 		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 1) # Self consume
-	
+
 		timer_manager.run(7000)
 
 		#check internal values
@@ -970,7 +1332,7 @@ class TestDynamicEss(TestSystemCalcBase):
 	def test_98_SELFCONSUME_UNPREDICTED(self):
 		# in an ideal delegate, we don't have unpredicted inputs. So, doesn't make sence to add a unpredicted input-set state for testing
 		# cuase by the time we know that input set, it would become predicted and to be implemented.
-		pass  
+		pass
 
 	def test_99_NO_WINDOW(self):
 		self._set_setting('/Settings/DynamicEss/Mode', 1)
@@ -986,7 +1348,7 @@ class TestDynamicEss(TestSystemCalcBase):
 
 		self._check_external_values({
 			'com.victronenergy.hub4': {
-				'/Overrides/FeedInExcess': 0 #for the NO_WINDOW Test, should default to system configuration. 
+				'/Overrides/FeedInExcess': 0 #for the NO_WINDOW Test, should default to system configuration.
 		}})
 
 	def validate_self_consume(self, maxChargePower=None, maxDischargePower=None):
@@ -1003,6 +1365,8 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Overrides/MaxDischargePower': maxDischargePower
 		}})
 
+		self.assertEqual(DynamicEss.instance._is_idle, False)
+
 		self.assertEqual(maxChargePower, Dvcc.instance.internal_maxchargepower)
 
 	def validate_charge_state(self, rate):
@@ -1015,6 +1379,8 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Overrides/Setpoint': None,
 				'/Overrides/MaxDischargePower': -1
 		}})
+
+		self.assertEqual(DynamicEss.instance._is_idle, False)
 
 		#validate calculation is good.
 		if rate is not None:
@@ -1031,6 +1397,8 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/Overrides/Setpoint': -96000
 		}})
 
+		self.assertEqual(DynamicEss.instance._is_idle, False)
+
 		if rate is not None:
 			self.assertLessEqual((abs(self._monitor.get_value('com.victronenergy.hub4','/Overrides/MaxDischargePower')) - abs(rate)) / abs(rate), 0.01)
 
@@ -1045,11 +1413,7 @@ class TestDynamicEss(TestSystemCalcBase):
 		})
 
 		#validate external values
-		self._check_external_values({
-			'com.victronenergy.hub4': {
-				'/Overrides/ForceCharge': 0,
-				'/Overrides/MaxDischargePower':1
-		}})
+		self.assertEqual(DynamicEss.instance._is_idle, True)
 
 	def test_soc_precision_detection(self):
 		now = timer_manager.datetime
@@ -1135,12 +1499,16 @@ class TestDynamicEss(TestSystemCalcBase):
 		timer_manager.run(5000)
 
 		#check internal values
+		self._monitor.set_value(self.settings_service, '/Settings/CGwacs/MaxFeedInPower', -1)
+		timer_manager.run(5000)
+
 		self._check_values({
 			'/DynamicEss/Active': 1,
 			'/DynamicEss/ReactiveStrategy': 9,
 			'/DynamicEss/LastScheduledStart': stamp
 		})
 
+		self.assertEqual(DynamicEss.instance._device.maxfeedinpower, -96000)
 		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/Setpoint') , -96000)
 		self.validate_idle_state()
 
@@ -1208,3 +1576,12 @@ class TestDynamicEss(TestSystemCalcBase):
 
 		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4','/Overrides/Setpoint') , -6100)
 		self.validate_idle_state()
+
+if __name__ == '__main__':
+    logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)s %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        level=logging.DEBUG,
+        handlers=[
+            logging.StreamHandler()
+        ])
+    unittest.main()
