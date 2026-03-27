@@ -281,6 +281,13 @@ class EssDevice(object):
 		return self.delegate._dbusservice['/Dc/Pv/Power'] or 0
 
 	@property
+	def external_pvpower(self):
+		power = 0
+		for service in self.delegate._external_solarcharger_services:
+			power += self.delegate._dbusmonitor.get_value(service, '/Yield/Power') or 0
+		return power
+
+	@property
 	def consumption(self):
 		return max(0, (self.delegate._dbusservice['/Ac/Consumption/L1/Power'] or 0) +
 			(self.delegate._dbusservice['/Ac/Consumption/L2/Power'] or 0) +
@@ -493,6 +500,8 @@ class MultiRsDevice(EssDevice):
 
 	def charge(self, flags, restrictions:Restrictions, rate, allow_feedin):
 		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin) if allow_feedin is not None else 0)
+		self.monitor.set_value_async(self.service, '/Ess/DisableDischarge', 0)
+		self.monitor.set_value_async(self.service, '/Ess/DisableCharge', 0)
 
 		#if the desired rate is lower than dcpv, this would come down to NOT charging from AC,
 		#but 100% of dcpv. To really achieve an overall charge-rate of what's requested, we need
@@ -543,6 +552,8 @@ class MultiRsDevice(EssDevice):
 
 		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin) if allow_feedin is not None else 0)
 		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 0)
+		self.monitor.set_value_async(self.service, '/Ess/DisableDischarge', 0)
+		self.monitor.set_value_async(self.service, '/Ess/DisableCharge', 0)
 
 		#If we have a bat2grid restriction, the maximum amount we can send to grid is solar.
 		#In that case, we need to limit the fraction of battery discharge to consumption/0.95.
@@ -586,16 +597,28 @@ class MultiRsDevice(EssDevice):
 
 		self.monitor.set_value_async(self.service, '/Ess/AcPowerSetpoint', acps)
 
+		#when idling during 0 external mppt power, we can additionally disable discharge to improve setpoint stability.
+		if (math.ceil(self.external_pvpower or 0)) == 0:
+			self.monitor.set_value_async(self.service, '/Ess/DisableDischarge', 1)
+			self.monitor.set_value_async(self.service, '/Ess/DisableCharge', 1)
+		else:
+			self.monitor.set_value_async(self.service, '/Ess/DisableDischarge', 0)
+			self.monitor.set_value_async(self.service, '/Ess/DisableCharge', 0)
+
 	def self_consume(self, restrictions:Restrictions, allow_feedin):
 		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', int(not allow_feedin) if allow_feedin is not None else 0)
 		self.monitor.set_value_async(self.service, '/Ess/AcPowerSetpoint', 0)
 		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 0)
+		self.monitor.set_value_async(self.service, '/Ess/DisableDischarge', 0)
+		self.monitor.set_value_async(self.service, '/Ess/DisableCharge', 0)
 
 	def deactivate(self):
 		self.monitor.set_value_async(self.service, '/Ess/DisableFeedIn', 0)
 		self.monitor.set_value_async(self.service, '/Ess/AcPowerSetpoint', 0)
 		self.monitor.set_value_async(self.service, '/Ess/UseInverterPowerSetpoint', 0)
 		self.monitor.set_value_async(self.service, '/Ess/InverterPowerSetpoint', 0)
+		self.monitor.set_value_async(self.service, '/Ess/DisableDischarge', 0)
+		self.monitor.set_value_async(self.service, '/Ess/DisableCharge', 0)
 
 class DynamicEssWindow(ScheduledWindow):
 	def __init__(self, start, duration, soc, targetsoc, allow_feedin, restrictions, strategy, flags, slot):
@@ -635,6 +658,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 	def __init__(self):
 		super(DynamicEss, self).__init__()
 		self.prevsoc_cr_calc = None
+		self._external_solarcharger_services = []
 		self.chargerate = None # Chargerate based on tsoc. Always to be set to DynamicEss/ChargeRate, even if an override is used.
 		self.override_chargerate = None # chargerate if calculation based on tsco is overwritten.
 		self._timer = None
@@ -744,13 +768,18 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 				 '/Ess/AcPowerSetpoint',
 				 '/Ess/InverterPowerSetpoint',
 				 '/Ess/UseInverterPowerSetpoint',
+				 '/Ess/DisableCharge',
+				 '/Ess/DisableDischarge',
 				 '/Ess/DisableFeedIn',
 				 '/Settings/Ess/Mode',
+				 '/Mode',
 				 '/Settings/Ess/MinimumSocLimit']),
 			('com.victronenergy.settings', [
 				'/Settings/CGwacs/Hub4Mode',
 				'/Settings/CGwacs/MaxFeedInPower',
-				'/Settings/CGwacs/PreventFeedback'])
+				'/Settings/CGwacs/PreventFeedback']),
+			('com.victronenergy.solarcharger', [
+				'/Yield/Power'])
 		]
 
 	def get_output(self):
@@ -801,8 +830,13 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		elif service.startswith('com.victronenergy.acsystem.'):
 			self._devices[service] = MultiRsDevice(self, self._dbusmonitor, service)
 			GLib.idle_add(self._set_device)
+		elif service.startswith('com.victronenergy.solarcharger.'):
+			self._external_solarcharger_services.append(service)
 
 	def device_removed(self, service, instance):
+		if service in self._external_solarcharger_services:
+			self._external_solarcharger_services.remove(service)
+
 		try:
 			del self._devices[service]
 		except KeyError:
