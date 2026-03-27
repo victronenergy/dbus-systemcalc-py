@@ -5,6 +5,8 @@ import unittest
 import context
 
 # Testing tools
+from delegates.batterysoc import BatterySoc
+import logger
 from mock_gobject import timer_manager
 
 # our own packages
@@ -23,7 +25,7 @@ DynamicEss._get_time = lambda *a: timer_manager.datetime
 class TestDynamicEss(TestSystemCalcBase):
 	vebus = 'com.victronenergy.vebus.ttyO1'
 	settings_service = 'com.victronenergy.settings'
-	rs_service = 'com.victronenergy.acsystem'
+	rs_service = 'com.victronenergy.acsystem.desstest1'
 
 	def __init__(self, methodName='runTest'):
 		TestSystemCalcBase.__init__(self, methodName)
@@ -308,6 +310,142 @@ class TestDynamicEss(TestSystemCalcBase):
 		#... and 0, if we don't allow Feedin ;)
 		mock.charge(Flags.NONE,Restrictions.NONE,4000,False)
 		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint') , 0)
+
+	def test_0_RS_Idle_no_external_mppts(self):
+		from delegates.dynamicess import MultiRsDevice
+
+		now = timer_manager.datetime
+		stamp = int(now.timestamp())
+
+		self._set_setting('/Settings/DynamicEss/GridExportLimit', 10)
+		self._set_setting('/Settings/DynamicEss/GridImportLimit', 10)
+		self._set_setting('/Settings/DynamicEss/BatteryChargeLimit', 10)
+		self._set_setting('/Settings/DynamicEss/BatteryDischargeLimit', 10)
+
+		self._set_setting('/Settings/DynamicEss/BatteryCapacity', 10.0)
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 2)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 50)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
+
+		self._remove_device(self.vebus)
+		self._add_device(self.rs_service, product_name='Multi RS',
+			values={
+				'/State': 3,
+				'/DeviceInstance': 0,
+				'/Ess/AcPowerSetpoint': 0,
+				'/Soc': 50.0,
+				'/Settings/Ess/Mode': 1,
+				'/Ess/DisableCharge': None,
+				'/Ess/DisableDischarge': None,
+				'/Settings/Ess/MinimumSocLimit': 15,
+				'/Capabilities/HasDynamicEssSupport': 1,
+				})
+
+
+		self._add_device('com.victronenergy.solarcharger.mock33', {
+			'/Yield/Power': 0,
+			'/Connected': 1,
+			'/DeviceInstance': 33,
+		})
+
+		self._update_values()
+		timer_manager.run(10000)
+		DynamicEss.instance.update_values({}) #triggers idle call
+		timer_manager.run(5000)
+
+
+		#force idle with no external MPPT Power. /DisableXX Paths shall be used.
+		#check internal values
+
+		self.assertEqual(BatterySoc.instance.soc, 50.0)
+		self._check_values({
+			'/Dc/Battery/Soc': 50.0,
+			'/DynamicEss/ErrorCode': 0,
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/WorkingSocPrecision': 0,
+			'/DynamicEss/ReactiveStrategy': 9,
+			'/DynamicEss/LastScheduledStart': stamp,
+		})
+
+		self.assertEqual(DynamicEss.instance._is_idle, True)
+		self.assertEqual(DynamicEss.instance._idle_feedin, True)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint'), 0)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/DisableCharge'), 1)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/DisableDischarge'), 1)
+
+	def test_0_RS_Idle_external_mppts(self):
+		from delegates.dynamicess import MultiRsDevice
+
+		now = timer_manager.datetime
+		stamp = int(now.timestamp())
+
+		self._set_setting('/Settings/DynamicEss/GridExportLimit', 10)
+		self._set_setting('/Settings/DynamicEss/GridImportLimit', 10)
+		self._set_setting('/Settings/DynamicEss/BatteryChargeLimit', 10)
+		self._set_setting('/Settings/DynamicEss/BatteryDischargeLimit', 10)
+
+		self._set_setting('/Settings/DynamicEss/BatteryCapacity', 10.0)
+		self._set_setting('/Settings/DynamicEss/Mode', 1)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Start', stamp)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Duration', 3600)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Strategy', 0)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/Restrictions', 2)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/TargetSoc', 50)
+		self._set_setting('/Settings/DynamicEss/Schedule/0/AllowGridFeedIn', 1)
+
+		self._remove_device(self.vebus)
+		self._add_device(self.rs_service, product_name='Multi RS',
+			values={
+				'/State': 3,
+				'/DeviceInstance': 0,
+				'/Ess/AcPowerSetpoint': 0,
+				'/Soc': 50.0,
+				'/Settings/Ess/Mode': 1,
+				'/Ess/DisableCharge': None,
+				'/Ess/DisableDischarge': None,
+				'/Settings/Ess/MinimumSocLimit': 15,
+				'/Capabilities/HasDynamicEssSupport': 1,
+				})
+
+
+		self._add_device('com.victronenergy.solarcharger.mock33', {
+			'/Yield/Power': 500,
+			'/Dc/0/Current': 10, #SystemCalc uses this for pvpower
+			'/Dc/0/Voltage': 50, #SystemCalc uses this for pvpower
+			'/Connected': 1,
+			'/DeviceInstance': 33,
+		})
+
+		self._update_values()
+		timer_manager.run(10000)
+		DynamicEss.instance.update_values({}) #triggers idle call
+		timer_manager.run(5000)
+
+
+		#force idle with no external MPPT Power. /DisableXX Paths shall be used.
+		#check internal values
+
+		self.assertEqual(BatterySoc.instance.soc, 50.0)
+		self._check_values({
+			'/Dc/Battery/Soc': 50.0,
+			'/DynamicEss/ErrorCode': 0,
+			'/DynamicEss/Active': 1,
+			'/DynamicEss/WorkingSocPrecision': 0,
+			'/DynamicEss/ReactiveStrategy': 5,
+			'/DynamicEss/LastScheduledStart': stamp,
+		})
+
+		self.assertEqual(DynamicEss.instance._is_idle, True)
+		self.assertEqual(DynamicEss.instance._device.pvpower, 500)
+		self.assertEqual(DynamicEss.instance._device.external_pvpower, 500)
+		self.assertEqual(DynamicEss.instance._idle_feedin, True)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/AcPowerSetpoint'), 500 * 0.95 * -1)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/DisableCharge'), 0)
+		self.assertEqual(self._monitor.get_value(self.rs_service,'/Ess/DisableDischarge'), 0)
 
 	def test_0_RS_SetPointCalculations_Discharge(self):
 		from delegates.dynamicess import MultiRsDevice
