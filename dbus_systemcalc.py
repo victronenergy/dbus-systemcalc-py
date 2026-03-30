@@ -234,6 +234,11 @@ class SystemCalc:
 			},
 			'com.victronenergy.alternator': {
 				'/Dc/0/Power': dummy
+			},
+			'com.victronenergy.dcgenset': {
+				'/Dc/0/Power': dummy,
+				'/Dc/0/Voltage': dummy,
+				'/Dc/0/Current': dummy,
 			}
 		}
 
@@ -658,6 +663,22 @@ class SystemCalc:
 			p = self._dbusmonitor.get_value(alternator, '/Dc/0/Power')
 			if p is None:
 				continue
+
+			if '/Dc/Alternator/Power' not in newvalues:
+				newvalues['/Dc/Alternator/Power'] = p
+			else:
+				newvalues['/Dc/Alternator/Power'] += p
+
+		# DC gensets are alternators connected to an engine, add their power too
+		dcgensets = self._dbusmonitor.get_service_list('com.victronenergy.dcgenset')
+		for dcgenset in dcgensets:
+			p = self._dbusmonitor.get_value(dcgenset, '/Dc/0/Power')
+			if p is None:
+				v = self._dbusmonitor.get_value(dcgenset, '/Dc/0/Voltage')
+				i = self._dbusmonitor.get_value(dcgenset, '/Dc/0/Current')
+				if v is None or i is None:
+					continue
+				p = v * i
 
 			if '/Dc/Alternator/Power' not in newvalues:
 				newvalues['/Dc/Alternator/Power'] = p
