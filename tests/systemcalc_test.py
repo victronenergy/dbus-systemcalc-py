@@ -1176,6 +1176,89 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Dc/System/Power': 369,
 			'/Dc/System/Current': 30 })
 
+	def test_alternator_power(self):
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._add_device('com.victronenergy.alternator.ttyO1',
+						product_name='alternator',
+						values={
+								'/Dc/0/Power': 139 })
+		self._update_values()
+		self._check_values({
+			'/Dc/Alternator/Power': 139 })
+
+	def test_dcgenset_power(self):
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._set_setting('/Settings/SystemSetup/HasDcSystem', 1)
+		self._add_device('com.victronenergy.battery.ttyO2',
+						product_name='battery',
+						values={
+								'/Dc/0/Voltage': 25.0,
+								'/Dc/0/Current': -12.0,
+								'/Dc/0/Power': -300,
+								'/Soc': 50.0,
+								'/DeviceInstance': 2})
+		self._add_device('com.victronenergy.dcgenset.ttyO1',
+						product_name='dcgenset',
+						values={
+								'/Dc/0/Power': 100,
+								'/Dc/0/Voltage': 25.0,
+								'/Dc/0/Current': 4.0 })
+		self._update_values()
+		self._check_values({
+			'/Dc/Alternator/Power': 100,
+			'/Dc/System/Power': 400,
+			'/Dc/System/Current': 16 })
+
+	def test_dcgenset_power_fallback(self):
+		# DC gensets may not provide /Dc/0/Power; fall back to voltage * current
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._set_setting('/Settings/SystemSetup/HasDcSystem', 1)
+		self._add_device('com.victronenergy.battery.ttyO2',
+						product_name='battery',
+						values={
+								'/Dc/0/Voltage': 25.0,
+								'/Dc/0/Current': -12.0,
+								'/Dc/0/Power': -300,
+								'/Soc': 50.0,
+								'/DeviceInstance': 2})
+		self._add_device('com.victronenergy.dcgenset.ttyO1',
+						product_name='dcgenset',
+						values={
+								'/Dc/0/Voltage': 25.0,
+								'/Dc/0/Current': 5.0 })
+		self._update_values()
+		self._check_values({
+			'/Dc/Alternator/Power': 125,
+			'/Dc/System/Power': 425,
+			'/Dc/System/Current': 17 })
+
+	def test_alternator_and_dcgenset_combined(self):
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._set_setting('/Settings/SystemSetup/HasDcSystem', 1)
+		self._add_device('com.victronenergy.battery.ttyO2',
+						product_name='battery',
+						values={
+								'/Dc/0/Voltage': 25.0,
+								'/Dc/0/Current': -12.0,
+								'/Dc/0/Power': -300,
+								'/Soc': 50.0,
+								'/DeviceInstance': 2})
+		self._add_device('com.victronenergy.alternator.ttyO1',
+						product_name='alternator',
+						values={
+								'/Dc/0/Power': 80 })
+		self._add_device('com.victronenergy.dcgenset.ttyO1',
+						product_name='dcgenset',
+						values={
+								'/Dc/0/Power': 100,
+								'/Dc/0/Voltage': 25.0,
+								'/Dc/0/Current': 4.0 })
+		self._update_values()
+		self._check_values({
+			'/Dc/Alternator/Power': 180,
+			'/Dc/System/Power': 480,
+			'/Dc/System/Current': 19.2 })
+
 	def test_battery_state(self):
 		self._check_values({
 			'/Dc/Battery/State':  None})
