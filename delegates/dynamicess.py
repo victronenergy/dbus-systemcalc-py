@@ -101,12 +101,8 @@ class EVCSState():
 		self.monitor = monitor
 		self.emergency_charge = False
 		self.emergency_charge_timer = None
-<<<<<<< HEAD
-
-=======
 		self.gx_flags:EVCSGXFlags = EVCSGXFlags(0)
 
->>>>>>> e0be436 (dess: Introduced EVCS Flags for communication with VRM.)
 	@property
 	def status(self) -> int:
 		return self.monitor.get_value(self.service, "/Status")
