@@ -252,22 +252,22 @@ class TestBatteryLife(TestSystemCalcBase):
         })
 
         # Falls by more than 5%, recharge
-        self._monitor.set_value(self.vebus, '/Soc', 44)
+        self._monitor.set_value(self.vebus, '/Soc', 49)
         self._update_values()
         self._check_settings({
             'state': State.BLLowSocCharge, # Auto recharge
             'flags': Flags.Discharged,
         })
 
-        # Recovers to 50%, back to slow charge, discharged flag retained
-        self._monitor.set_value(self.vebus, '/Soc', 50)
+        # Recovers to previous floor (55% = active_soclimit - 5), back to slow charge
+        self._monitor.set_value(self.vebus, '/Soc', 55)
         self._update_values()
         self._check_settings({
             'state': State.BLForceCharge,
             'flags': Flags.Discharged,
         })
 
-        # Recovers to 55%, back to Discharged
+        # Slow charges to 60%, back to Discharged
         self._monitor.set_value(self.vebus, '/Soc', 60.1)
         self._update_values()
         self._check_settings({
@@ -462,16 +462,22 @@ class TestBatteryLife(TestSystemCalcBase):
         self._update_values()
         self._check_settings({ 'state': State.BLLowSocCharge })
 
-        # User decides 15% is okay after all
+        # User decides 15% is okay after all - but recharge targets the previous floor
+        # (active_soclimit - 5 = 20), not the new minsoclimit of 15.
         self._set_setting('/Settings/CGwacs/BatteryLife/MinimumSocLimit', 15)
-        self._monitor.set_value(self.vebus, '/Soc', 15)
+        self._monitor.set_value(self.vebus, '/Soc', 15.1)
         self._update_values()
-        self._check_settings({ 'state': State.BLDischarged })
+        self._check_settings({ 'state': State.BLLowSocCharge })
 
-        # or 10% even, but we remain in Discharged because SocLimit is 25.
+        # or 10% - still charging; active_soclimit-5=20 is the stop threshold
         self._set_setting('/Settings/CGwacs/BatteryLife/MinimumSocLimit', 10)
         self._update_values()
-        self._check_settings({ 'state': State.BLDischarged, 'soclimit': 25 })
+        self._check_settings({ 'state': State.BLLowSocCharge, 'soclimit': 25 })
+
+        # Reaches the previous floor (20%) - recharge stops
+        self._monitor.set_value(self.vebus, '/Soc', 20)
+        self._update_values()
+        self._check_settings({ 'state': State.BLDischarged })
 
         self._monitor.set_value(self.vebus, '/Soc', 28.1)
         self._update_values()
@@ -502,6 +508,42 @@ class TestBatteryLife(TestSystemCalcBase):
         self._update_values()
         self._check_settings({ 'state': State.BLAbsorption, 'soclimit': 30 })
 
+
+    def test_post_midnight_lowsoccharge_stop(self):
+        # minsoclimit=20, soclimit already ratcheted to 30
+        self._set_setting('/Settings/CGwacs/BatteryLife/SocLimit', 30)
+        self._set_setting('/Settings/CGwacs/BatteryLife/MinimumSocLimit', 20)
+        self._monitor.set_value(self.vebus, '/Soc', 31)
+        self._update_values()
+        self._check_settings({'state': State.BLDefault, 'soclimit': 30})
+
+        # Hit the active floor (30%) - on_discharged bumps soclimit to 35, sets Discharged flag
+        self._monitor.set_value(self.vebus, '/Soc', 30)
+        self._update_values()
+        self._check_settings({'state': State.BLDischarged, 'soclimit': 35})
+
+        # Past midnight: flags cleared; active_soclimit remains 35
+        self._set_setting('/Settings/CGwacs/BatteryLife/Flags', 0)
+
+        # Just above new threshold (max(20,30)-5=25) - stays in Discharged
+        self._monitor.set_value(self.vebus, '/Soc', 25.1)
+        self._update_values()
+        self._check_settings({'state': State.BLDischarged})
+
+        # Drops to threshold - recharge activates
+        self._monitor.set_value(self.vebus, '/Soc', 25.0)
+        self._update_values()
+        self._check_settings({'state': State.BLLowSocCharge})
+
+        # SoC recovers but hasn't reached previous day's floor (30%) - stay in recharge
+        self._monitor.set_value(self.vebus, '/Soc', 29.9)
+        self._update_values()
+        self._check_settings({'state': State.BLLowSocCharge})
+
+        # Reaches previous day's floor - recharge stops
+        self._monitor.set_value(self.vebus, '/Soc', 30.0)
+        self._update_values()
+        self._check_settings({'state': State.BLDischarged})
 
     # Older tests migrated and adapted from hub4control
     def test_chargeToAbsorption(self):

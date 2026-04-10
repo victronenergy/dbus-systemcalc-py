@@ -151,18 +151,19 @@ class BatteryLife(SystemCalcDelegate):
 	def _discharged(self):
 		if not self.sustain and (self.soc > self.switch_on_soc or self.soc >= 100):
 			return State.BLDefault
-		elif self.soc <= self.minsoclimit - Constants.LowSocChargeOffset:
+		elif self.soc <= max(self.minsoclimit, self.active_soclimit - Constants.LowSocChargeOffset) - Constants.LowSocChargeOffset:
 			return State.BLLowSocCharge
 
 	def _lowsoccharge(self):
-		# We stop charging when we get back to the SoC we had when we entered
-		# the discharged state. If we switched into discharged state at 0%,
-		# we will enter LowSocCharge, so we should not switch out until
-		# we picked up at least to 3% (SocSwitchOffset).
-		if self.soc >= min(100, max(self.minsoclimit, Constants.SocSwitchOffset)):
-			# Once we reach minsoclimit, check if we shouldn't go (back) to
-			# Slow charge (aka Force Charge). If it's been too long since
-			# reaching the discharged state, go to slow charge.
+		# We stop charging when we get back to the previous day's floor
+		# (active_soclimit - LowSocChargeOffset). If we switched into discharged
+		# state at 0%, we will enter LowSocCharge, so we should not switch out
+		# until we picked up at least to 3% (SocSwitchOffset).
+		stop = max(self.minsoclimit, self.active_soclimit - Constants.LowSocChargeOffset, Constants.SocSwitchOffset)
+		if self.soc >= min(100, stop):
+			# Once we reach the previous day's floor, check if we shouldn't go
+			# (back) to slow charge (aka Force Charge). If it's been too long
+			# since reaching the discharged state, go to slow charge.
 			if self.dischargedtime and \
 					self._get_time() - datetime.fromtimestamp(self.dischargedtime) \
 					> timedelta(seconds=Constants.ForceChargeInterval):
@@ -173,7 +174,7 @@ class BatteryLife(SystemCalcDelegate):
 		if not self.sustain and (self.soc > self.active_soclimit or self.soc >= 100):
 			self.dischargedtime = dt_to_stamp(self._get_time())
 			return State.BLDischarged
-		elif self.soc <= self.minsoclimit - Constants.LowSocChargeOffset:
+		elif self.soc <= max(self.minsoclimit, self.active_soclimit - Constants.LowSocChargeOffset) - Constants.LowSocChargeOffset:
 			return State.BLLowSocCharge
 
 	def _absorption(self):
