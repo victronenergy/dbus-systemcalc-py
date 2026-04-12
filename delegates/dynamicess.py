@@ -1429,6 +1429,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self.active = 0 # Off
 		self.errorcode = reason
 		self.targetsoc = None
+		self._is_idle = False
 		self._dbusservice['/DynamicEss/ChargeRate'] = self.chargerate = None
 		self._dbusservice['/DynamicEss/Strategy'] = None
 		self._dbusservice['/DynamicEss/Restrictions'] = None
@@ -1444,7 +1445,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			newvalues['/DynamicEss/Available'] = 0
 
 		# during idling, update the setpoint everytime we receive new values.
-		if self._device is not None and self._is_idle:
+		if self.active and self._device is not None and self._is_idle:
 			self._device.idle(self._idle_feedin)
 
 
