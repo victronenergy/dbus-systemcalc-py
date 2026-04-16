@@ -63,6 +63,9 @@ class SystemState(SystemCalcDelegate):
 				'/BatteryOperationalLimits/MaxDischargeCurrent',
 				'/Bms/AllowToDischarge',
 				'/Bms/AllowToCharge']),
+			('com.victronenergy.hub4', [
+				'/IsPeakShaving',
+			]),
 			('com.victronenergy.acsystem', [
 				'/State',
 				'/Ess/Sustain',
@@ -80,6 +83,7 @@ class SystemState(SystemCalcDelegate):
 			('/SystemState/SlowCharge', {'gettext': '%s'}),
 			('/SystemState/UserChargeLimited', {'gettext': '%s'}),
 			('/SystemState/UserDischargeLimited', {'gettext': '%s'}),
+			('/SystemState/PeakShaving', {'gettext': '%s'}),
 		]
 
 	def bms_state(self, vebus):
@@ -123,7 +127,8 @@ class SystemState(SystemCalcDelegate):
 	def state(self, newvalues):
 		vebus = newvalues.get('/VebusService')
 		flags = sc_utils.SmartDict(dict.fromkeys(['LowSoc', 'BatteryLife',
-		'DischargeDisabled', 'ChargeDisabled', 'SlowCharge', 'UserChargeLimited', 'UserDischargeLimited'], 0))
+		'DischargeDisabled', 'ChargeDisabled', 'SlowCharge',
+		'UserChargeLimited', 'UserDischargeLimited', 'PeakShaving'], 0))
 
 		ss = SystemState.UNKNOWN
 		if vebus is None:
@@ -191,6 +196,9 @@ class SystemState(SystemCalcDelegate):
 				'/Settings/SystemSetup/MaxChargeCurrent')
 			flags.UserDischargeLimited = int(user_discharge_limit == 0 and hubstate != SOCG.KeepCharged and minsoc < 100.0)
 			flags.UserChargeLimited = int(user_charge_limit == 0)
+
+			# Peak shaving
+			flags.PeakShaving = int(self._dbusmonitor.get_value('com.victronenergy.hub4', '/IsPeakShaving') == 1)
 
 			# ESS state
 			if (hubstate != SOCG.KeepCharged) and ScheduledCharging.instance.active:
