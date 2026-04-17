@@ -92,7 +92,7 @@ class _pylontech_quirk(BatteryBehaviour):
 		# Use 3.46V per cell plus a little, 27.8V for 24V batteries testing shows that's 100% SOC.
 		# That leaves 1.6V margin for 48V batteries and 1.0V for 24V.
 		# See https://github.com/victronenergy/venus/issues/536
-		if cv > 55:
+		if cv > 54:
 			# 48V battery (16 cells.) Assume BMS knows what it's doing.
 			return cv
 		if cv > 20:
