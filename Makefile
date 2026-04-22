@@ -79,7 +79,7 @@ clean: ;
 install: install_velib_python install_app install_delegates
 
 test:
-	python3 /usr/bin/nosetests -v -w tests
+	/usr/bin/nosetests3 -v -w tests
 
 testinstall:
 	$(eval TMP := $(shell mktemp -d))
