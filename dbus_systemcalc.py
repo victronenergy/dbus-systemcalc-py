@@ -73,6 +73,7 @@ class SystemCalc:
 				'/Connected': dummy,
 				'/ProductName': dummy,
 				'/Mgmt/Connection': dummy,
+				'/Mgmt/InsecureConnection': dummy,
 				'/DeviceInstance': dummy,
 				'/Dc/0/Voltage': dummy,
 				'/Dc/1/Voltage': dummy,
@@ -746,9 +747,16 @@ class SystemCalc:
 
 			if batteryservicetype in ('battery', 'inverter', 'multi', 'acsystem'):
 				newvalues['/Dc/Battery/Voltage'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Voltage')
-				newvalues['/Dc/Battery/VoltageService'] = self._batteryservice
 				newvalues['/Dc/Battery/Current'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Current')
 				newvalues['/Dc/Battery/Power'] = self._dbusmonitor.get_value(self._batteryservice, '/Dc/0/Power')
+
+				# If the connection is not secure, eg by Bluetooth, don't use
+				# it for serious voltage sensing (this value is used for SVS
+				# elsewhere).
+				if self._dbusmonitor.get_value(self._batteryservice, '/Mgmt/InsecureConnection') == 1:
+					newvalues['/Dc/Battery/VoltageService'] = None
+				else:
+					newvalues['/Dc/Battery/VoltageService'] = self._batteryservice
 
 				if batteryservicetype == 'battery':
 					capacity = self._dbusmonitor.get_value(self._batteryservice, '/InstalledCapacity')

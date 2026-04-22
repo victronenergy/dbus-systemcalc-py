@@ -748,6 +748,38 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/ActiveBatteryService': 'com.victronenergy.inverter/0',
 			'/Dc/Battery/VoltageService': 'com.victronenergy.inverter.ttyO1'})
 
+	def test_battery_insecure_connection_no_voltage_service(self):
+		self._add_device('com.victronenergy.battery.ttyO2',
+						product_name='battery',
+						values={
+								'/Dc/0/Voltage': 12.4,
+								'/Dc/0/Current': 5.6,
+								'/Dc/0/Power': 69.4,
+								'/Soc': 80,
+								'/DeviceInstance': 2,
+								'/Mgmt/InsecureConnection': 1})
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.battery/2')
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Voltage': 12.4,
+			'/Dc/Battery/VoltageService': None})
+
+	def test_battery_insecure_connection_secure_has_voltage_service(self):
+		self._add_device('com.victronenergy.battery.ttyO2',
+						product_name='battery',
+						values={
+								'/Dc/0/Voltage': 12.4,
+								'/Dc/0/Current': 5.6,
+								'/Dc/0/Power': 69.4,
+								'/Soc': 80,
+								'/DeviceInstance': 2,
+								'/Mgmt/InsecureConnection': 0})
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.battery/2')
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Voltage': 12.4,
+			'/Dc/Battery/VoltageService': 'com.victronenergy.battery.ttyO2'})
+
 	def test_battery_selection_solarcharger_extra_current(self):
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent', 0)
 		self._add_device('com.victronenergy.solarcharger.ttyO1',
