@@ -22,7 +22,7 @@ from logger import setup_logging
 import delegates
 from sc_utils import safeadd as _safeadd, safemax as _safemax
 
-softwareVersion = '2.252'
+softwareVersion = '2.253'
 
 # Pre-computed path strings for the hot path in _updatevalues().
 # Avoids repeated % string formatting every 1-second tick.
