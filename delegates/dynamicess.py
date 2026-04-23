@@ -95,7 +95,7 @@ class Restrictions(IntFlag):
 	BAT2GRID = 1
 	GRID2BAT = 2
 
-class EVCSGXFlags(IntFlag):
+class EvcsGxFlags(IntFlag):
 	NONE = 0
 	GX_AUTO_AQUIRED = 1
 	CONTROLLABLE = 2
@@ -104,6 +104,7 @@ class EVCSGXFlags(IntFlag):
 	EMERGENCY_COUNTDOWN = 16
 	EMERGENCY_ACTIVE = 32
 	CHARGE_NOW_ACTIVE = 64
+	EVCS_CONTROL_DISABLED=128
 
 	def stringify(self):
 		"""Returns a string representation of set flags, e.g., 'SCHEDULED | EMERGENCY_ACTIVE'"""
@@ -111,13 +112,13 @@ class EVCSGXFlags(IntFlag):
 			return "NONE"
 
 		flags = []
-		for flag in EVCSGXFlags:
+		for flag in EvcsGxFlags:
 			if flag.value != 0 and (self & flag):
 				flags.append(flag.name)
 
 		return " | ".join(flags) if flags else "NONE"
 
-class EVVRMFlags(IntFlag):
+class EvcsVrmFlags(IntFlag):
 	NONE = 0
 	CHARGE_NOW = 1
 
@@ -142,7 +143,7 @@ class EVCSDelegate():
 		self.s2_parser = S2Parser()
 		self._keep_alive_missed = 0
 		self.emergency_charge_timer = None
-		self.gx_flags:EVCSGXFlags = EVCSGXFlags.NONE
+		self.gx_flags:EvcsGxFlags = EvcsGxFlags.NONE
 		self.rm_details:ResourceManagerDetails = None
 		self._dess_delegate = delegate
 		self.service = None
@@ -183,13 +184,13 @@ class EVCSDelegate():
 	def mode(self) -> int:
 		return self._dbusmonitor.get_value(self.service_name, "/Mode")
 
-	def add_flag(self, flag:EVCSGXFlags):
+	def add_flag(self, flag:EvcsGxFlags):
 		'''
 			Adds the given flag to the current flag collection of this EVCS.
 		'''
 		self.gx_flags |= flag
 
-	def remove_flag(self, flag:EVCSGXFlags):
+	def remove_flag(self, flag:EvcsGxFlags):
 		'''
 			Removes the given flag from the current flag collection of this EVCS.
 		'''
@@ -213,7 +214,7 @@ class EVCSDelegate():
 		#Connect to the EVCS only, if DESS is active.
 		if self._dess_delegate.active:
 			self._dbusmonitor.dbusConn.call_async(self.service_name, self.s2rmpath, S2_IFACE, method='Connect', signature='si',
-				args=[wrap_dbus_value("dynamic_ess"), wrap_dbus_value(S2_KEEP_ALIVE_INTERVAL_S)],
+				args=[wrap_dbus_value(self._dess_delegate.s2_cem_name), wrap_dbus_value(S2_KEEP_ALIVE_INTERVAL_S)],
 				reply_handler=self._s2_connect_callback_ok, error_handler=self._s2_connect_callback_error)
 
 		#establish a retry timer, if not already present.
@@ -242,7 +243,7 @@ class EVCSDelegate():
 			GLib.source_remove(self._keep_alive_timer)
 			self._keep_alive_timer = None
 
-		self.gx_flags = EVCSGXFlags.NONE
+		self.gx_flags = EvcsGxFlags.NONE
 		logger.info("{} | RMDelegate is now uninitialized.".format(self.unique_identifier))
 
 	def loop(self, window:ScheduledWindow, now:datetime, dess_delegate:'DynamicEss'):
@@ -251,31 +252,24 @@ class EVCSDelegate():
 		'''
 		#validate the evcs is set to auto, else drop the s2 connection, if established
 		if self.mode != 1:
-			if self.gx_flags & EVCSGXFlags.GX_AUTO_AQUIRED:
+			if self.gx_flags & EvcsGxFlags.GX_AUTO_AQUIRED:
 				logger.info("{} | EVCS #{} is no longer in Auto mode. Dropping S2 Connection.".format(self.unique_identifier, self.instance))
 				self.end()
 			return
 
+		#check if control was explicit denied.
+		if self._dess_delegate._settings['dess_evcscontroldisabled'] == 1:
+			if not self.gx_flags & EvcsGxFlags.EVCS_CONTROL_DISABLED:
+				logger.info("{} | EVCS Control is explicit disabled via setting. Dropping S2 Connection and marking as control disabled.".format(self.unique_identifier))
+				self.end()
+			self.gx_flags = EvcsGxFlags.EVCS_CONTROL_DISABLED #mark as control disabled.
+		else:
+			#just gently remove the Control Disabled flag, this will re-initiate connection if possible.
+			self.remove_flag(EvcsGxFlags.EVCS_CONTROL_DISABLED)
+
 		#check if this evcs is controllable.
-		if EVCSGXFlags.CONTROLLABLE not in self.gx_flags:
+		if EvcsGxFlags.CONTROLLABLE not in self.gx_flags:
 			return;
-
-		#See, if we have to start an emergency countdown at first.
-		#This is the case if we are not charging, scheduled or already in countdown.
-		if self.gx_flags & (EVCSGXFlags.SCHEDULED | EVCSGXFlags.CHARGING | EVCSGXFlags.EMERGENCY_COUNTDOWN) == 0:
-			self.emergency_charge_timer = now
-			logger.info("{} | Starting emergency charge timer ({}s).".format(self.unique_identifier, dess_delegate._settings['dess_evemergencystart']))
-			self.add_flag(EVCSGXFlags.EMERGENCY_COUNTDOWN)
-
-		#Are we in an emergency countdown and the timer has expired?
-		if self.gx_flags & EVCSGXFlags.EMERGENCY_COUNTDOWN:
-			elapsed = (now - self.emergency_charge_timer).total_seconds()
-			if elapsed >= dess_delegate._settings['dess_evemergencystart']:
-				self.remove_flag(EVCSGXFlags.EMERGENCY_COUNTDOWN)
-				self.add_flag(EVCSGXFlags.EMERGENCY_ACTIVE)
-				self.add_flag(EVCSGXFlags.CHARGING)
-				self.current_setpoint = dess_delegate._settings['dess_evemergencycurrent']
-				logger.info("{} | Starting emergency charge after {}s.".format(self.unique_identifier, dess_delegate._settings['dess_evemergencystart']))
 
 		#Are we charging? See if we can identify the phase count.
 		l1 = self._dbusmonitor.get_value(self.service_name, "/Ac/L1/Power") or 0
@@ -289,40 +283,40 @@ class EVCSDelegate():
 			logger.info("{} | Detected EVCS as 1 phased.".format(self.unique_identifier))
 
 		#Do we have a schedule and need to react?
-		if self.instance in window.to_ev.keys():
+		if str(self.instance) in window.to_ev.keys():
 			#yes, we are at least scheduled now!
-			self.add_flag(EVCSGXFlags.SCHEDULED)
+			self.add_flag(EvcsGxFlags.SCHEDULED)
 
-			desired_charge_rate = window.to_ev[self.instance] * 4000 #convert kWh/15min to W
+			desired_charge_rate = window.to_ev[str(self.instance)] * 4000 #convert kWh/15min to W
 			avg_ac = dess_delegate.average_ac_voltage
 			desired_current_setpoint = max(6, round((desired_charge_rate) / avg_ac / (self.no_phases or 1), 0))
 
 			if desired_charge_rate == 0:
 				#stop regular charging?
-				if self.gx_flags & EVCSGXFlags.CHARGING and not self.gx_flags & EVCSGXFlags.EMERGENCY_ACTIVE:
-					self.remove_flag(EVCSGXFlags.CHARGING)
+				if self.gx_flags & EvcsGxFlags.CHARGING and not self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
+					self.remove_flag(EvcsGxFlags.CHARGING)
 					self.current_setpoint = 0
 					logger.info("{} | Stopping Charging due to 0 instruction.".format(self.unique_identifier))
 
 				#stop active emergency charging?
-				if self.gx_flags & EVCSGXFlags.CHARGING and self.gx_flags & EVCSGXFlags.EMERGENCY_ACTIVE:
-					self.remove_flag(EVCSGXFlags.EMERGENCY_ACTIVE)
-					self.remove_flag(EVCSGXFlags.CHARGING)
+				if self.gx_flags & EvcsGxFlags.CHARGING and self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
+					self.remove_flag(EvcsGxFlags.EMERGENCY_ACTIVE)
+					self.remove_flag(EvcsGxFlags.CHARGING)
 					self.current_setpoint = 0
 					logger.info("{} | Stopping Emergency Charging due to 0 instruction.".format(self.unique_identifier))
 			else:
 				#chargevolume > 0, pass over the setpoint so S2-Control can adjust.
 				#if we are not yet charging, log and change status.
-				if not self.gx_flags & EVCSGXFlags.CHARGING:
-					self.add_flag(EVCSGXFlags.CHARGING)
+				if not self.gx_flags & EvcsGxFlags.CHARGING:
+					self.add_flag(EvcsGxFlags.CHARGING)
 					logger.info("{} | Starting to charge with {}W according to schedule.".format(self.unique_identifier, desired_charge_rate))
 					self.current_setpoint = desired_current_setpoint
 
 				#if we know number of phases, we can hop on directly.
 				if self.no_phases is not None:
 					#we may directly switch from emergency to charging.
-					if self.gx_flags & EVCSGXFlags.EMERGENCY_ACTIVE:
-						self.remove_flag(EVCSGXFlags.EMERGENCY_ACTIVE)
+					if self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
+						self.remove_flag(EvcsGxFlags.EMERGENCY_ACTIVE)
 						self.current_setpoint = desired_current_setpoint
 						logger.info("{} | Switching from Emergency Charging to regular charging with {}W due to valid instruction.".format(self.unique_identifier, desired_charge_rate))
 
@@ -333,9 +327,26 @@ class EVCSDelegate():
 
 				else:
 					#Phases unknown, we start with 6A and look if we can identify it.
-					self.add_flag(EVCSGXFlags.CHARGING)
+					self.add_flag(EvcsGxFlags.CHARGING)
 					self.current_setpoint = 6
 					logger.info("{} | Starting to charge with 6A to probe phase count.".format(self.unique_identifier))
+
+		#See, if we have to start an emergency countdown
+		#This is the case if we are not charging, scheduled or already in countdown.
+		if self.gx_flags & (EvcsGxFlags.SCHEDULED | EvcsGxFlags.CHARGING | EvcsGxFlags.EMERGENCY_COUNTDOWN) == 0:
+			self.emergency_charge_timer = now
+			logger.info("{} | Starting emergency charge timer ({}s).".format(self.unique_identifier, dess_delegate._settings['dess_evemergencystart']))
+			self.add_flag(EvcsGxFlags.EMERGENCY_COUNTDOWN)
+
+		#Are we in an emergency countdown and the timer has expired?
+		if self.gx_flags & EvcsGxFlags.EMERGENCY_COUNTDOWN:
+			elapsed = (now - self.emergency_charge_timer).total_seconds()
+			if elapsed >= dess_delegate._settings['dess_evemergencystart']:
+				self.remove_flag(EvcsGxFlags.EMERGENCY_COUNTDOWN)
+				self.add_flag(EvcsGxFlags.EMERGENCY_ACTIVE)
+				self.add_flag(EvcsGxFlags.CHARGING)
+				self.current_setpoint = dess_delegate._settings['dess_evemergencycurrent']
+				logger.info("{} | Starting emergency charge after {}s.".format(self.unique_identifier, dess_delegate._settings['dess_evemergencystart']))
 
 		#finally, this EVCS eventually needs to approach a setpoint?
 		self._approach_setpoint(dess_delegate)
@@ -345,6 +356,9 @@ class EVCSDelegate():
 			Makes the state machine traverse the S2 Control Model until a suitable state
 			is found.
 		"""
+		if self.ombc_active_operation_mode is None or self.ombc_system_description is None:
+			return
+
 		#get all transitions (and their connected states) we have as an option from where we are.
 		eligible_operationmodes:dict[str, OMBCOperationMode] = {}
 		for transition in self.ombc_system_description.transitions:
@@ -403,7 +417,7 @@ class EVCSDelegate():
 		'''
 		try:
 			if self._dess_delegate.active:
-				if not EVCSGXFlags.GX_AUTO_AQUIRED in self.gx_flags and self.mode == 1:
+				if not EvcsGxFlags.GX_AUTO_AQUIRED in self.gx_flags and self.mode == 1 and not EvcsGxFlags.EVCS_CONTROL_DISABLED in self.gx_flags:
 					logger.info("{} | Retrying connection".format(self.unique_identifier))
 					self.begin()
 		except Exception as ex:
@@ -419,13 +433,13 @@ class EVCSDelegate():
 		try:
 			logger.warning("{} | Sending disconnect.".format(self.unique_identifier))
 			self._dbusmonitor.dbusConn.call_async(self.service_name, self.s2rmpath, S2_IFACE, method='Disconnect', signature='s',
-					args=[wrap_dbus_value("dynamic_ess")],
+					args=[wrap_dbus_value(self._dess_delegate.s2_cem_name)],
 					reply_handler=None, error_handler=None)
 		except Exception as ex:
 			logger.error("{} | Error sending a S2 Message.".format(self.unique_identifier), exc_info=ex)
 
 	def _s2_on_disconnect_handler(self, client_id, reason, sender_id:str):
-		if sender_id == self.service.id and client_id == "dynamic_ess":
+		if sender_id == self.service.id and client_id == self._dess_delegate.s2_cem_name:
 			logger.info("{} | Received Disconnect: {}".format(self.unique_identifier, reason))
 			self.end()
 
@@ -452,7 +466,7 @@ class EVCSDelegate():
 
 		try:
 			self._dbusmonitor.dbusConn.call_async(self.service_name, self.s2rmpath, S2_IFACE, method='Message', signature='ss',
-					args=[wrap_dbus_value("dynamic_ess"), wrap_dbus_value(message.to_json())],
+					args=[wrap_dbus_value(self._dess_delegate.s2_cem_name), wrap_dbus_value(message.to_json())],
 					reply_handler=None, error_handler=None)
 		except Exception as ex:
 			logger.error("{} | Error sending a S2 Message.".format(self.unique_identifier), exc_info=ex)
@@ -482,7 +496,7 @@ class EVCSDelegate():
 		self._keep_alive_timer = GLib.timeout_add(S2_KEEP_ALIVE_INTERVAL_S * 1000, self._keep_alive_loop)
 
 		#RM is now ready to be managed.
-		self.add_flag(EVCSGXFlags.GX_AUTO_AQUIRED)
+		self.add_flag(EvcsGxFlags.GX_AUTO_AQUIRED)
 
 	def _s2_connect_callback_error(self, result):
 		logger.warning("{} | S2-Connection failed. Operation will be retried in {}s: {}".format(self.unique_identifier, S2_CONNECTION_RETRY_INTERVAL_MS, result))
@@ -503,7 +517,7 @@ class EVCSDelegate():
 			self._keep_alive_missed = self._keep_alive_missed + 1
 
 		self._dbusmonitor.dbusConn.call_async(self.service_name, self.s2rmpath, S2_IFACE, method='KeepAlive', signature='s',
-										args=[wrap_dbus_value("dynamic_ess")],
+										args=[wrap_dbus_value(self._dess_delegate.s2_cem_name)],
 										reply_handler=reply_handler, error_handler=error_handler)
 
 		if self._keep_alive_missed < 2:
@@ -519,7 +533,7 @@ class EVCSDelegate():
 
 		if len(message.available_control_types) == 0:
 			self._s2_send_reception_message(ReceptionStatusValues.TEMPORARY_ERROR, message,"No ControlType provided.")
-			self.remove_flag(EVCSGXFlags.CONTROLLABLE) #make sure, that we are not marked as controllable, if no control type is offered.
+			self.remove_flag(EvcsGxFlags.CONTROLLABLE) #make sure, that we are not marked as controllable, if no control type is offered.
 			return
 
 		self._s2_send_reception_message(ReceptionStatusValues.OK, message)
@@ -529,7 +543,7 @@ class EVCSDelegate():
 				if reply.status == ReceptionStatusValues.OK:
 					self.active_control_type = ControlType.NOT_CONTROLABLE
 					self.no_phases = None #reset
-					self.gx_flags = EVCSGXFlags.GX_AUTO_AQUIRED #reset all flags, as we are not controllable. This is a safe way to ensure, that we don't have any leftovers from previous control sessions, that might cause issues.
+					self.gx_flags = EvcsGxFlags.GX_AUTO_AQUIRED #reset all flags, as we are not controllable. This is a safe way to ensure, that we don't have any leftovers from previous control sessions, that might cause issues.
 
 			logger.warning("{} | Only offered NOCTRL, accepting.".format(self.unique_identifier))
 
@@ -545,7 +559,7 @@ class EVCSDelegate():
 			def ombc_reply_handler(reply:ReceptionStatus):
 				if reply.status == ReceptionStatusValues.OK:
 					self.active_control_type = ControlType.OPERATION_MODE_BASED_CONTROL
-					self.add_flag(EVCSGXFlags.CONTROLLABLE) #mark controllable, as we support a compatible control type, that is not NOCTRL.
+					self.add_flag(EvcsGxFlags.CONTROLLABLE) #mark controllable, as we support a compatible control type, that is not NOCTRL.
 
 			logger.info("{} | Offered OMBC, accepting.".format(self.unique_identifier))
 
@@ -560,7 +574,7 @@ class EVCSDelegate():
 			else:
 				logger.error("{} | Offered no compatible ControlType. Rejecting request.".format(self.unique_identifier))
 				self._s2_send_reception_message(ReceptionStatusValues.PERMANENT_ERROR, "No supported ControlType offered.")
-				self.gx_flags = EVCSGXFlags.NONE #make sure, that we are not marked as controllable, if no compatible control type is offered.
+				self.gx_flags = EvcsGxFlags.NONE #make sure, that we are not marked as controllable, if no compatible control type is offered.
 				self.end()
 
 	def _s2_on_ombc_system_description(self, message:OMBCSystemDescription):
@@ -607,12 +621,12 @@ class EVCSDelegate():
 		"""
 			Handle incoming S2 Messages from this delegate.
 		"""
-		if sender_id == self.service.id and client_id == "dynamic_ess":
+		if sender_id == self.service.id and client_id == self._dess_delegate.s2_cem_name:
 			jmsg = json.loads(msg)
 
 			if "message_type" in jmsg:
 				#if client is not initialized, deny all messages, except Handshake.
-				if jmsg["message_type"] == "Handshake" or (EVCSGXFlags.GX_AUTO_AQUIRED in self.gx_flags):
+				if jmsg["message_type"] == "Handshake" or (EvcsGxFlags.GX_AUTO_AQUIRED in self.gx_flags):
 					if jmsg["message_type"] == "Handshake":
 						self._s2_on_handhsake_message(self.s2_parser.parse_as_message(msg, Handshake))
 					elif jmsg["message_type"] == "ResourceManagerDetails":
@@ -635,8 +649,9 @@ class EVCSDelegate():
 				else:
 					#Received another message than Handshake without beeing connected. Reject.
 					logger.warning("{} | Received a Message: {} while RM is not actively connected".format(self.unique_identifier, jmsg["message_type"]))
-					self._s2_send_reception_message(ReceptionStatusValues.TEMPORARY_ERROR, jmsg["message_id"], "Connection not yet established.")
 
+					if jmsg["message_type"] != "ReceptionStatus":
+						self._s2_send_reception_message(ReceptionStatusValues.TEMPORARY_ERROR, jmsg["message_id"], "Connection not yet established.")
 
 class ReactiveStrategy(int, Enum):
 	#do not re-number, external applications rely on this mapping.
@@ -1277,6 +1292,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 	def __init__(self):
 		super(DynamicEss, self).__init__()
+		self.s2_cem_name = "dynamic_ess"
 		self.prevsoc_cr_calc = None
 		self._external_solarcharger_services = []
 		self.chargerate = None # Chargerate based on tsoc. Always to be set to DynamicEss/ChargeRate, even if an override is used.
@@ -1361,7 +1377,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			("dess_gridimportlimit", path + '/GridImportLimit', -1.0, -1.0, 9999.9),
 			("dess_gridexportlimit", path + '/GridExportLimit', -1.0, -1.0, 9999.9),
 			("dess_evemergencystart", path + '/EVEmergencyStart', 60*60, 0, 86400),
-			("dess_evemergencycurrent", path + '/EVEmergencyCurrent', 6, 0, 32)
+			("dess_evemergencycurrent", path + '/EVEmergencyCurrent', 6, 0, 32),
+			("dess_evcscontroldisabled", path + '/DisableEvcsControl', 0, 0, 1),
+			("dess_evcsvrmflags", path + '/EvcsVrmFlags', "{}", "", ""),
 		]
 
 		for i in range(NUM_SCHEDULES):
@@ -2178,7 +2196,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 		#disconnect all EVCS we have eventually under control.
 		for evcs_id, evcs_delegate in self._evcs_delegates.items():
-			if EVCSGXFlags.GX_AUTO_AQUIRED in evcs_delegate.gx_flags:
+			if EvcsGxFlags.GX_AUTO_AQUIRED in evcs_delegate.gx_flags:
 				evcs_delegate.end()
 				#FIXME: Stop Charging?
 
