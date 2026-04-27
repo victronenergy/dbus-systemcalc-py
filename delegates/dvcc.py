@@ -1,3 +1,4 @@
+import dbus
 from dbus.exceptions import DBusException
 from gi.repository import GLib
 from math import pi, ceil
@@ -5,6 +6,7 @@ from itertools import count, chain
 from functools import partial
 
 # Victron packages
+from vedbus import VeDbusItemExport
 from sc_utils import safeadd, copy_dbus_value, ExpiringValue, reify
 from ve_utils import exit_on_error
 
@@ -1262,9 +1264,14 @@ class Dvcc(SystemCalcDelegate):
 			voltage_written = self._set_solarcharger_voltage(
 				bms_charge_voltage, effective_charge_voltage, vecan_voltage)
 
+			# check if pv is disabled.
+			pv_disabled = PvStartStopControl.instance.pv_disabled
+			_max_charge_current = 0 if pv_disabled else _max_charge_current
+			feedback_allowed = self.feedback_allowed and not pv_disabled
+
 			# Set current limits
 			# Try to push the solar chargers to the vebus-compensated value
-			self._chargesystem.set_maxchargecurrent(_max_charge_current, self.feedback_allowed, stop_on_mcc0)
+			self._chargesystem.set_maxchargecurrent(_max_charge_current, feedback_allowed, stop_on_mcc0)
 			current_written = int(network_mode_written and _max_charge_current is not None)
 
 		update_solarcharger_control_flags(voltage_written, current_written, effective_charge_voltage)
@@ -1576,3 +1583,82 @@ class Dvcc(SystemCalcDelegate):
 					pass
 
 		return (voltage_written, current_written)
+
+class DisablePvItem(VeDbusItemExport):
+	@dbus.service.method('com.victronenergy.BusItem', in_signature='v', out_signature='i')
+	def SetValue(self, newvalue):
+		try:
+			newvalue = int(newvalue)
+		except (ValueError, TypeError):
+			return 1
+		self._onchangecallback(self.__dbus_object_path__, newvalue)
+		self.local_set_value(newvalue)
+		return 0
+
+class PvStartStopControl(SystemCalcDelegate):
+	def __init__(self):
+		super(PvStartStopControl, self).__init__()
+		self._pv_disabled = ExpiringValue(20, False)
+		self._acsystem0 = None
+
+	def set_sources(self, dbusmonitor, settings, dbusservice):
+		super(PvStartStopControl, self).set_sources(dbusmonitor, settings, dbusservice)
+
+		self._dbusservice.add_path('/Pv/Disable', value=0, writeable=True,
+			itemtype=DisablePvItem,
+			onchangecallback=lambda p, v: self.disable_pv(v))
+
+	def get_input(self):
+		return [
+			('com.victronenergy.hub4', ['/Pv/Disable']),
+			('com.victronenergy.acsystem', ['/Pv/Disable']),
+			('com.victronenergy.shelly',  ['/Pv/Disable'])
+		]
+
+	def disable_pv(self, v:bool):
+		disabled:bool = int(v) > 0
+		self._dbusservice["/Pv/Disable"] = int(disabled)
+
+		# Tell hub4 (for acpv), DVCC (solar chargers) and acsystem (MultiRS)
+		# about the desired PV shutdown.  DVCC will read the pv_disabled
+		# property. dbus-shelly can provide shelly based inverters it can turn
+		# off.
+		self.pv_disabled = disabled
+		self._dbusmonitor.set_value_async("com.victronenergy.hub4", "/Pv/Disable", int(disabled))
+		self._dbusmonitor.set_value_async("com.victronenergy.shelly", "/Pv/Disable", int(disabled))
+		if self._acsystem0:
+			self._dbusmonitor.set_value_async(self._acsystem0, "/Pv/Disable", int(disabled))
+
+		return True
+
+	@property
+	def pv_disabled(self) -> bool:
+		"""
+		Flag, if dess requests to disable PV. Defaults to False. Will timeout
+		after 20 reads.  DVCC will read continuously and timeout the value when
+		no longer set.
+		"""
+		return self._pv_disabled.get() or False
+
+	@pv_disabled.setter
+	def pv_disabled(self, v:bool):
+		self._pv_disabled.set(bool(v))
+
+	def device_added(self, service, instance, *args, **kwargs):
+		service_type = service.split('.')[2]
+		if service_type == 'acsystem' and self._dbusmonitor.get_value(service,
+				'/DeviceInstance') == 0:
+			self._acsystem0 = service
+
+	def device_removed(self, service, instance, *args, **kwargs):
+		if service == self._acsystem0:
+			self._acsystem0 = None
+
+	def update_values(self, newvalues):
+		if self._dbusservice["/Pv/Disable"] == 1 and self._pv_disabled.expired:
+			# Also restore operation for hub4 and multi rs
+			self._dbusmonitor.set_value_async("com.victronenergy.hub4", "/Pv/Disable", 0)
+			self._dbusmonitor.set_value_async("com.victronenergy.shelly", "/Pv/Disable", 0)
+			if self._acsystem0 is not None:
+				self._dbusmonitor.set_value_async(self._acsystem0, "/Pv/Disable", 0)
+			self._dbusservice["/Pv/Disable"] = 0
