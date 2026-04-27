@@ -272,7 +272,8 @@ class SystemCalc:
 			delegates.LoadShedding(),
 			delegates.MotorDrive(),
 			delegates.MotorDriveConsumption(),
-			delegates.MotorDriveRange()]
+			delegates.MotorDriveRange(),
+			delegates.PvOpMon(self)]
 
 		for m in self._modules:
 			for service, paths in m.get_input():

@@ -1,3 +1,4 @@
+import logging
 from dbus.exceptions import DBusException
 from gi.repository import GLib
 from math import pi, ceil
@@ -11,6 +12,9 @@ from ve_utils import exit_on_error
 from delegates.base import SystemCalcDelegate
 from delegates.batteryservice import BatteryService
 from delegates.multi import Multi as MultiService
+from delegates.pvopmon import PvOpMon
+
+logger = logging.getLogger(__name__)
 
 # Adjust things this often (in seconds)
 # solar chargers has to switch to HEX mode each time we write a value to its
@@ -1262,9 +1266,14 @@ class Dvcc(SystemCalcDelegate):
 			voltage_written = self._set_solarcharger_voltage(
 				bms_charge_voltage, effective_charge_voltage, vecan_voltage)
 
+			# check if pv is disabled.
+			pv_disabled = PvOpMon.instance.pv_disabled
+			_max_charge_current = _max_charge_current if not pv_disabled else 0
+			feedback_allowed = self.feedback_allowed if not pv_disabled else False
+
 			# Set current limits
 			# Try to push the solar chargers to the vebus-compensated value
-			self._chargesystem.set_maxchargecurrent(_max_charge_current, self.feedback_allowed, stop_on_mcc0)
+			self._chargesystem.set_maxchargecurrent(_max_charge_current, feedback_allowed, stop_on_mcc0)
 			current_written = int(network_mode_written and _max_charge_current is not None)
 
 		update_solarcharger_control_flags(voltage_written, current_written, effective_charge_voltage)

@@ -33,3 +33,4 @@ from delegates.loadshedding import LoadShedding
 from delegates.motordrive import MotorDrive
 from delegates.motordriveconsumption import MotorDriveConsumption
 from delegates.motordriverange import MotorDriveRange
+from delegates.pvopmon import PvOpMon
