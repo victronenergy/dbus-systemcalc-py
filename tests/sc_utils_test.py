@@ -44,3 +44,63 @@ class TestScUtils(unittest.TestCase):
 		self.assertEqual(54,
 			self._monitor.get_value('com.victronenergy.vebus.ttyO1',
 			'/BatteryOperationalLimits/MaxChargeVoltage'))
+
+class TestExpiringValue(unittest.TestCase):
+	def test_initial_value_accessible(self):
+		from sc_utils import ExpiringValue
+		ev = ExpiringValue(3, 42)
+		self.assertEqual(42, ev.get())
+
+	def test_value_accessible_maxage_times(self):
+		from sc_utils import ExpiringValue
+		ev = ExpiringValue(3, 99)
+		self.assertEqual(99, ev.get())
+		self.assertEqual(99, ev.get())
+		self.assertEqual(99, ev.get())
+		self.assertIsNone(ev.get())
+
+	def test_value_none_after_expiry(self):
+		from sc_utils import ExpiringValue
+		ev = ExpiringValue(1, 7)
+		ev.get()
+		self.assertIsNone(ev.get())
+
+	def test_set_resets_ttl(self):
+		from sc_utils import ExpiringValue
+		ev = ExpiringValue(2, 1)
+		ev.get()
+		ev.get()
+		self.assertIsNone(ev.get())
+		ev.set(2)
+		self.assertEqual(2, ev.get())
+		self.assertEqual(2, ev.get())
+		self.assertIsNone(ev.get())
+
+	def test_set_updates_value(self):
+		from sc_utils import ExpiringValue
+		ev = ExpiringValue(5, 10)
+		ev.set(20)
+		self.assertEqual(20, ev.get())
+
+	def test_maxage_zero_never_returns_value(self):
+		from sc_utils import ExpiringValue
+		ev = ExpiringValue(0, 5)
+		self.assertIsNone(ev.get())
+
+	def test_expired_property_true_while_ttl_remaining(self):
+		# 'expired' returns True when TTL > 0 (value still accessible)
+		from sc_utils import ExpiringValue
+		ev = ExpiringValue(2, 1)
+		self.assertFalse(ev.expired)
+		ev.get()
+		self.assertFalse(ev.expired)
+		ev.get()
+		self.assertTrue(ev.expired)
+
+	def test_expired_property_resets_after_set(self):
+		from sc_utils import ExpiringValue
+		ev = ExpiringValue(1, 1)
+		ev.get()
+		self.assertTrue(ev.expired)
+		ev.set(2)
+		self.assertFalse(ev.expired)
