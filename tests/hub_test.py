@@ -1174,6 +1174,7 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Info/MaxChargeVoltage': 53.2,
 				'/Info/MaxDischargeCurrent': 25,
 				'/InstalledCapacity': None,
+				'/System/MinCellVoltage': 3.5,
 				'/System/MaxCellVoltage': 4.5,
 				'/ProductId': 0xB009})
 
