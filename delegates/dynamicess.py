@@ -670,6 +670,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self.iteration_change_tracker = IterationChangeTracker(self)
 		self._is_idle = False #Flag indicating if we are currently idling, resulting in a quick-update of the idle-setpoint upon value change.
 		self._idle_feedin = None #Cache the feedin-allowance of the window during idle, to quickly update the idle setpoint upon value changes.
+		self._is_pv_disabled = False #Flag indicating if PV is currently disabled.
 
 		#define the four kind of deterministic states we have.
 		#SCHEDULED_SELFCONSUME is left out, it isn't part of the overall deterministic strategy tree, but a quick escape before entering.
@@ -1433,10 +1434,12 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		# If pv shall be disabled, we need to recuringly set that path.
 		if disabled:
 			PvStartStopControl.instance.disable_pv(True)
+			self._is_pv_disabled = True
 		else:
 			# Only need to disable it once
-			if PvStartStopControl.instance.pv_disabled:
+			if self._is_pv_disabled:
 				PvStartStopControl.instance.disable_pv(False)
+				self._is_pv_disabled = False
 
 	def deactivate(self, reason):
 		try:
