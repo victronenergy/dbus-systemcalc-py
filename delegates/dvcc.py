@@ -102,15 +102,31 @@ class _pylontech_quirk(BatteryBehaviour):
 					return min(cv, 27.6)
 				return min(cv, 27.8)
 			else:
-				# 48V
-				# Aim for 52.5V, but somewhat aggressively penalise the charge
-				# voltage if the highest cell goes over 3.485V. Filter this
-				# to keep it somewhat stable.
+				# 48V, 15 cells
+				# Aim for max 52.8V. Start from the current voltage, and
+				# add an offset that assumes all cells move together, to get
+				# them to 3.525V each. Add a correction factor to account
+				# for skew, in case cell voltages are skewed low or high.
+				# Filter the entire thing to keep it stable.
 				try:
-					cv = max(47.0, 52.5 - 30 * max(0, bms.maxcellvoltage-3.485))
+					# distance between high and low cell
+					spread = max(0.0, bms.maxcellvoltage - bms.mincellvoltage)
+
+					# δ = average - median (estimated as cell_middle)
+					dd =  bms.voltage/15 - spread/2
+
+					# Skew, value between -0.5 and 0.5 indicating how much our
+					# cell voltages are leaning left or right
+					try:
+						skew = min(0.5, max(-0.5, dd / spread))
+					except ZeroDivisionError:
+						skew = 0.0
+
+					cv = max(47.0, min(52.8,
+						bms.voltage + 16 * (3.52-bms.maxcellvoltage) - skew * spread))
 					cv = self._chargevoltage = 0.95 * self._chargevoltage + 0.05 * cv
 					return round(cv, 2)
-				except TypeError:
+				except TypeError: # One of the factors was None
 					return min(cv, 52.4)
 
 		# Not known, probably a 12V battery.
