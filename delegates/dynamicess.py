@@ -131,37 +131,40 @@ class ChangeIndicator(int, Enum):
 	CHANGED = 5
 
 class EVCSDelegate():
-	def __init__(self, service_name, instance, monitor, delegate):
-		self.service_name = service_name
+	def __init__(self, service_name, instance, monitor, delegate, init_disabled:bool=False):
 		self.s2rmpath = "/S2/0/Rm"
 		self.instance = instance
-		self.current_setpoint = 0
-		self.is_started = False
-		self.no_phases = None
 		self._dbusmonitor = monitor
-		self.emergency_charge = False
 		self.s2_parser = S2Parser()
-		self._keep_alive_missed = 0
-		self.emergency_charge_timer = None
-		self.gx_flags:EvcsGxFlags = EvcsGxFlags.NONE
+
 		self.rm_details:ResourceManagerDetails = None
 		self._dess_delegate = delegate
 		self.service = None
-
-		#we need to find the actual service object from _dbusmonitor.servicesById.
-		#it is a disct with the id as key and a service object as value.
-		for owner_id, service in self._dbusmonitor.servicesById.items():
-			if service.name == self.service_name and service.deviceInstance == self.instance:
-				self.service = service
-				logger.info("Identified service as {}:{} for {}#{}".format(owner_id, service, self.service_name, self.instance))
-				break
 
 		#Generic Handler
 		self._message_receiver=None
 		self._disconnect_receiver=None
 		self._keep_alive_timer=None
 		self._retry_timer=None
+
+		self.re_init(service_name, init_disabled)
+
+	def re_init(self, service_name:str, init_disabled:bool=False):
+		'''
+			Sets the current discovered service for this delegate.
+		'''
+		self.current_setpoint = 0
+		self.service_name = service_name
+		self.is_started = False
+		self.no_phases = None
+		self._keep_alive_missed = 0
+		self.emergency_timer_start = None
 		self._reply_handler_dict:Dict[uuid.UUID, Callable[[ReceptionStatus], None]]={} #TODO Needs handling, when replies are never received?
+
+		self.gx_flags:EvcsGxFlags = EvcsGxFlags.NONE
+		if init_disabled:
+			self.gx_flags = EvcsGxFlags.EVCS_CONTROL_DISABLED
+			logger.info("{} | Initializing EVCSDelegate in disabled state due to settings.".format(self.unique_identifier))
 
 		#Generic value holder
 		self.rm_details=None
@@ -171,6 +174,14 @@ class EVCSDelegate():
 		self.ombc_system_description = None
 		self.ombc_active_instruction = None
 		self.ombc_active_operation_mode = None
+
+		#we need to find the actual service object from _dbusmonitor.servicesById.
+		#it is a disct with the id as key and a service object as value.
+		for owner_id, service in self._dbusmonitor.servicesById.items():
+			if service.name == self.service_name and service.deviceInstance == self.instance:
+				self.service = service
+				logger.info("Identified service as {}:{} for {}#{}".format(owner_id, service, self.service_name, self.instance))
+				break
 
 	@property
 	def unique_identifier(self) -> str:
@@ -196,7 +207,7 @@ class EVCSDelegate():
 		'''
 		self.gx_flags &= ~flag
 
-	def begin(self):
+	def begin(self, init_disabled:bool=False):
 		'''
 			Establish the S2Connection with the EVCS and starts heartbeat monitoring.
 		'''
@@ -211,14 +222,16 @@ class EVCSDelegate():
 			self._disconnect_receiver = self._dbusmonitor.dbusConn.add_signal_receiver(self._s2_on_disconnect_handler,
 				dbus_interface=S2_IFACE, signal_name='Disconnect', path=self.s2rmpath, sender_keyword='sender_id')
 
-		#Connect to the EVCS only, if DESS is active.
-		if self._dess_delegate.active:
-			self._dbusmonitor.dbusConn.call_async(self.service_name, self.s2rmpath, S2_IFACE, method='Connect', signature='si',
-				args=[wrap_dbus_value(self._dess_delegate.s2_cem_name), wrap_dbus_value(S2_KEEP_ALIVE_INTERVAL_S)],
-				reply_handler=self._s2_connect_callback_ok, error_handler=self._s2_connect_callback_error)
+		#Connect to the EVCS only, if DESS is active and control is permitted.
+		if not init_disabled:
+			if self._dess_delegate.active:
+				self._dbusmonitor.dbusConn.call_async(self.service_name, self.s2rmpath, S2_IFACE, method='Connect', signature='si',
+					args=[wrap_dbus_value(self._dess_delegate.s2_cem_name), wrap_dbus_value(S2_KEEP_ALIVE_INTERVAL_S)],
+					reply_handler=self._s2_connect_callback, error_handler=self._s2_connect_callback_error)
 
 		#establish a retry timer, if not already present.
 		if self._retry_timer is None:
+			logger.info("{} | Establishing retry timer for S2 Connection with {}.".format(self.unique_identifier, S2_CONNECTION_RETRY_INTERVAL_MS))
 			self._retry_timer = GLib.timeout_add(S2_CONNECTION_RETRY_INTERVAL_MS, self._on_timer_retry_connection)
 
 	def end(self, send_disconnect=True):
@@ -243,29 +256,26 @@ class EVCSDelegate():
 			GLib.source_remove(self._keep_alive_timer)
 			self._keep_alive_timer = None
 
-		self.gx_flags = EvcsGxFlags.NONE
+		#if we disconnect because of control disabled, the flag should also turn to Disabled to avoid retry attempts.
+		if self._dess_delegate._settings['dess_evcscontroldisabled'] == 1:
+			self.gx_flags = EvcsGxFlags.EVCS_CONTROL_DISABLED
+		else:
+			self.gx_flags = EvcsGxFlags.NONE
+
 		logger.info("{} | RMDelegate is now uninitialized.".format(self.unique_identifier))
 
 	def loop(self, window:ScheduledWindow, now:datetime, dess_delegate:'DynamicEss'):
 		'''
 			Should be called every loop to maintain the state of this EVCS and react on changes.
 		'''
+		self._check_conditions()
+
 		#validate the evcs is set to auto, else drop the s2 connection, if established
 		if self.mode != 1:
 			if self.gx_flags & EvcsGxFlags.GX_AUTO_AQUIRED:
 				logger.info("{} | EVCS #{} is no longer in Auto mode. Dropping S2 Connection.".format(self.unique_identifier, self.instance))
 				self.end()
 			return
-
-		#check if control was explicit denied.
-		if self._dess_delegate._settings['dess_evcscontroldisabled'] == 1:
-			if not self.gx_flags & EvcsGxFlags.EVCS_CONTROL_DISABLED:
-				logger.info("{} | EVCS Control is explicit disabled via setting. Dropping S2 Connection and marking as control disabled.".format(self.unique_identifier))
-				self.end()
-			self.gx_flags = EvcsGxFlags.EVCS_CONTROL_DISABLED #mark as control disabled.
-		else:
-			#just gently remove the Control Disabled flag, this will re-initiate connection if possible.
-			self.remove_flag(EvcsGxFlags.EVCS_CONTROL_DISABLED)
 
 		#check if this evcs is controllable.
 		if EvcsGxFlags.CONTROLLABLE not in self.gx_flags:
@@ -287,8 +297,25 @@ class EVCSDelegate():
 			#yes, we are at least scheduled now!
 			self.add_flag(EvcsGxFlags.SCHEDULED)
 
+			#Cancel any eventually running emergency countdown.
+			if self.gx_flags & EvcsGxFlags.EMERGENCY_COUNTDOWN:
+				self.remove_flag(EvcsGxFlags.EMERGENCY_COUNTDOWN)
+				logger.info("{} | Canceling emergency charge countdown due to valid schedule.".format(self.unique_identifier))
+
+				#if we are already in active emergency charging, we may stop that as well.
+				if self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
+					self.remove_flag(EvcsGxFlags.EMERGENCY_ACTIVE)
+					self.remove_flag(EvcsGxFlags.CHARGING)
+					self.current_setpoint = 0
+					logger.info("{} | Stopping active emergency charge due to valid schedule.".format(self.unique_identifier))
+
+				self.emergency_timer_start = None
+
 			desired_charge_rate = window.to_ev[str(self.instance)] * 4000 #convert kWh/15min to W
-			avg_ac = dess_delegate.average_ac_voltage
+			#Usually using ac_voltage would be right, but the evcs is not doing that. To avoid
+			#missmatching, take a fixed value as well.
+			#avg_ac = dess_delegate.average_ac_voltage
+			avg_ac = 230.0
 			desired_current_setpoint = max(6, round((desired_charge_rate) / avg_ac / (self.no_phases or 1), 0))
 
 			if desired_charge_rate == 0:
@@ -334,13 +361,13 @@ class EVCSDelegate():
 		#See, if we have to start an emergency countdown
 		#This is the case if we are not charging, scheduled or already in countdown.
 		if self.gx_flags & (EvcsGxFlags.SCHEDULED | EvcsGxFlags.CHARGING | EvcsGxFlags.EMERGENCY_COUNTDOWN) == 0:
-			self.emergency_charge_timer = now
+			self.emergency_timer_start = now
 			logger.info("{} | Starting emergency charge timer ({}s).".format(self.unique_identifier, dess_delegate._settings['dess_evemergencystart']))
 			self.add_flag(EvcsGxFlags.EMERGENCY_COUNTDOWN)
 
 		#Are we in an emergency countdown and the timer has expired?
 		if self.gx_flags & EvcsGxFlags.EMERGENCY_COUNTDOWN:
-			elapsed = (now - self.emergency_charge_timer).total_seconds()
+			elapsed = (now - self.emergency_timer_start).total_seconds()
 			if elapsed >= dess_delegate._settings['dess_evemergencystart']:
 				self.remove_flag(EvcsGxFlags.EMERGENCY_COUNTDOWN)
 				self.add_flag(EvcsGxFlags.EMERGENCY_ACTIVE)
@@ -350,6 +377,17 @@ class EVCSDelegate():
 
 		#finally, this EVCS eventually needs to approach a setpoint?
 		self._approach_setpoint(dess_delegate)
+
+	def _check_conditions(self):
+		#check if control was explicit denied.
+		if self._dess_delegate._settings['dess_evcscontroldisabled'] == 1:
+			if not self.gx_flags & EvcsGxFlags.EVCS_CONTROL_DISABLED:
+				logger.info("{} | EVCS Control is explicit disabled via setting. Dropping S2 Connection and marking as control disabled.".format(self.unique_identifier))
+				self.end()
+			self.gx_flags = EvcsGxFlags.EVCS_CONTROL_DISABLED #mark as control disabled.
+		else:
+			#just gently remove the Control Disabled flag, this will re-initiate a connection if possible.
+			self.remove_flag(EvcsGxFlags.EVCS_CONTROL_DISABLED)
 
 	def _approach_setpoint(self, dess_delegate:'DynamicEss'):
 		"""
@@ -397,7 +435,9 @@ class EVCSDelegate():
 			logger.warning("{} | Unable to find a operation-mode close to {}A / {}W".format(self.unique_identifier, self.current_setpoint, power_setpoint))
 		else:
 			if next_mode.id != self.ombc_active_operation_mode.id:
-				logger.info("{} | Moving to operation mode: {} ({}A / {}W)".format(self.unique_identifier, next_mode.diagnostic_label, self.current_setpoint, power_setpoint))
+				p_total = sum([p.end_of_range for p in op_mode.power_ranges])
+				delta = abs(p_total - power_setpoint)
+				logger.info("{} | Moving to operation mode: {}@{}W because delta is {}W. (Setpoint: {}W)".format(self.unique_identifier, next_mode.diagnostic_label, p_total, delta, power_setpoint))
 
 				#no handler needed, we deal with ombc status confirmations instead.
 				self._s2_send_message(
@@ -418,7 +458,6 @@ class EVCSDelegate():
 		try:
 			if self._dess_delegate.active:
 				if not EvcsGxFlags.GX_AUTO_AQUIRED in self.gx_flags and self.mode == 1 and not EvcsGxFlags.EVCS_CONTROL_DISABLED in self.gx_flags:
-					logger.info("{} | Retrying connection".format(self.unique_identifier))
 					self.begin()
 		except Exception as ex:
 			logger.error("Exception while retrying connection. Skipping attempt.", exc_info=ex)
@@ -489,14 +528,18 @@ class EVCSDelegate():
 			#wrong version. Reject.
 			self._s2_send_reception_message(ReceptionStatusValues.INVALID_CONTENT, message)
 
-	def _s2_connect_callback_ok(self, result):
-		logger.info("{} | S2-Connection established with Keep-Alive {}".format(self.unique_identifier, S2_KEEP_ALIVE_INTERVAL_S))
+	def _s2_connect_callback(self, result):
+		result = unwrap_dbus_value(result)
+		if result == True:
+			logger.info("{} | S2-Connection established with Keep-Alive {}".format(self.unique_identifier, S2_KEEP_ALIVE_INTERVAL_S))
 
-		#Set KeepAlive Timer.
-		self._keep_alive_timer = GLib.timeout_add(S2_KEEP_ALIVE_INTERVAL_S * 1000, self._keep_alive_loop)
+			#Set KeepAlive Timer.
+			self._keep_alive_timer = GLib.timeout_add(S2_KEEP_ALIVE_INTERVAL_S * 1000, self._keep_alive_loop)
 
-		#RM is now ready to be managed.
-		self.add_flag(EvcsGxFlags.GX_AUTO_AQUIRED)
+			#RM is now ready to be managed.
+			self.add_flag(EvcsGxFlags.GX_AUTO_AQUIRED)
+		else:
+			logger.warning("{} | S2-Connection rejected by RM. Operation will be retried in {}s. ({})".format(self.unique_identifier, S2_CONNECTION_RETRY_INTERVAL_MS, result))
 
 	def _s2_connect_callback_error(self, result):
 		logger.warning("{} | S2-Connection failed. Operation will be retried in {}s: {}".format(self.unique_identifier, S2_CONNECTION_RETRY_INTERVAL_MS, result))
@@ -506,26 +549,27 @@ class EVCSDelegate():
 		"""
 			Sends the keepalive and monitors for success.
 		"""
-		def reply_handler(result):
-			result = unwrap_dbus_value(result)
-			if result:
-				self._keep_alive_missed = 0
-			else:
+		if EvcsGxFlags.GX_AUTO_AQUIRED in self.gx_flags:
+			def reply_handler(result):
+				result = unwrap_dbus_value(result)
+				if result:
+					self._keep_alive_missed = 0
+				else:
+					self._keep_alive_missed = self._keep_alive_missed + 1
+
+			def error_handler(result):
 				self._keep_alive_missed = self._keep_alive_missed + 1
 
-		def error_handler(result):
-			self._keep_alive_missed = self._keep_alive_missed + 1
+			self._dbusmonitor.dbusConn.call_async(self.service_name, self.s2rmpath, S2_IFACE, method='KeepAlive', signature='s',
+											args=[wrap_dbus_value(self._dess_delegate.s2_cem_name)],
+											reply_handler=reply_handler, error_handler=error_handler)
 
-		self._dbusmonitor.dbusConn.call_async(self.service_name, self.s2rmpath, S2_IFACE, method='KeepAlive', signature='s',
-										args=[wrap_dbus_value(self._dess_delegate.s2_cem_name)],
-										reply_handler=reply_handler, error_handler=error_handler)
-
-		if self._keep_alive_missed < 2:
-			return True
-		else:
-			logger.warning("{} | Keepalive MISSED ({})".format(self.unique_identifier, self._keep_alive_missed))
-			self.end()
-			return False
+			if self._keep_alive_missed < 2:
+				return True
+			else:
+				logger.warning("{} | Keepalive MISSED ({})".format(self.unique_identifier, self._keep_alive_missed))
+				self.end()
+				return False
 
 	def _s2_on_rm_details(self, message:ResourceManagerDetails):
 		# Detail update. Store to keep information present.
@@ -595,20 +639,24 @@ class EVCSDelegate():
 
 	def _s2_on_ombc_status(self, message:OMBCStatus):
 		try:
-			for opm in self.ombc_system_description.operation_modes:
-				#FIXME: Theres an error with message.active_operation_mode_id in s2-pyhton. fix this, once it was fixed.
-				#       Until then, compare root with id.
-				if "{}".format(opm.id) == "{}".format(message.active_operation_mode_id.root):
-					self.ombc_active_operation_mode = opm
-					logger.info(f"Reported Operation Mode: {opm.diagnostic_label}")
-					self._s2_send_reception_message(ReceptionStatusValues.OK, message)
-					return
+			if self.ombc_system_description is not None:
+				for opm in self.ombc_system_description.operation_modes:
+					#FIXME: Theres an error with message.active_operation_mode_id in s2-pyhton. fix this, once it was fixed.
+					#       Until then, compare root with id.
+					if "{}".format(opm.id) == "{}".format(message.active_operation_mode_id.root):
+						self.ombc_active_operation_mode = opm
+						logger.info(f"Reported Operation Mode: {opm.diagnostic_label}")
+						self._s2_send_reception_message(ReceptionStatusValues.OK, message)
+						return
 
 			#Operationmode is not known. This may be a temporary error.
-			logger.error("Unknown operationmode-id reported: {}, expecting any of: {}".format(
-				message.active_operation_mode_id,
-				["{}=>{}".format(mode.id, mode.diagnostic_label) for mode in self.ombc_system_description.operation_modes]
-			))
+			if self.ombc_system_description is not None:
+				logger.error("Unknown operationmode-id reported: {}, expecting any of: {}".format(
+					message.active_operation_mode_id,
+					["{}=>{}".format(mode.id, mode.diagnostic_label) for mode in self.ombc_system_description.operation_modes]
+				))
+			else:
+				logger.error("Unknown operationmode-id reported: {}, but system description is not yet present to compare.".format(message.active_operation_mode_id))
 			self._s2_send_reception_message(ReceptionStatusValues.TEMPORARY_ERROR, message, "Unknown operationmode-id: {}".format(message.active_operation_mode_id))
 		except Exception as ex:
 			logger.error("Exception during status reception. This may be temporary", exc_info=ex)
@@ -621,37 +669,38 @@ class EVCSDelegate():
 		"""
 			Handle incoming S2 Messages from this delegate.
 		"""
-		if sender_id == self.service.id and client_id == self._dess_delegate.s2_cem_name:
-			jmsg = json.loads(msg)
+		if self.service is not None:
+			if sender_id == self.service.id and client_id == self._dess_delegate.s2_cem_name:
+				jmsg = json.loads(msg)
 
-			if "message_type" in jmsg:
-				#if client is not initialized, deny all messages, except Handshake.
-				if jmsg["message_type"] == "Handshake" or (EvcsGxFlags.GX_AUTO_AQUIRED in self.gx_flags):
-					if jmsg["message_type"] == "Handshake":
-						self._s2_on_handhsake_message(self.s2_parser.parse_as_message(msg, Handshake))
-					elif jmsg["message_type"] == "ResourceManagerDetails":
-						self._s2_on_rm_details(self.s2_parser.parse_as_message(msg, ResourceManagerDetails))
-					elif jmsg["message_type"] == "OMBC.SystemDescription":
-						self._s2_on_ombc_system_description(self.s2_parser.parse_as_message(msg, OMBCSystemDescription))
-					elif jmsg["message_type"] == "OMBC.Status":
-						self._s2_on_ombc_status(self.s2_parser.parse_as_message(msg, OMBCStatus))
-					elif jmsg["message_type"] == "PowerMeasurement":
-						self._s2_on_power_measurement(self.s2_parser.parse_as_message(msg, PowerMeasurement))
-					elif jmsg["message_type"] == "ReceptionStatus":
-						p = self.s2_parser.parse_as_message(msg, ReceptionStatus)
-						if p.subject_message_id in self._reply_handler_dict:
-							self._reply_handler_dict[p.subject_message_id](p)
-							del self._reply_handler_dict[p.subject_message_id]
+				if "message_type" in jmsg:
+					#if client is not initialized, deny all messages, except Handshake.
+					if jmsg["message_type"] == "Handshake" or (EvcsGxFlags.GX_AUTO_AQUIRED in self.gx_flags):
+						if jmsg["message_type"] == "Handshake":
+							self._s2_on_handhsake_message(self.s2_parser.parse_as_message(msg, Handshake))
+						elif jmsg["message_type"] == "ResourceManagerDetails":
+							self._s2_on_rm_details(self.s2_parser.parse_as_message(msg, ResourceManagerDetails))
+						elif jmsg["message_type"] == "OMBC.SystemDescription":
+							self._s2_on_ombc_system_description(self.s2_parser.parse_as_message(msg, OMBCSystemDescription))
+						elif jmsg["message_type"] == "OMBC.Status":
+							self._s2_on_ombc_status(self.s2_parser.parse_as_message(msg, OMBCStatus))
+						elif jmsg["message_type"] == "PowerMeasurement":
+							self._s2_on_power_measurement(self.s2_parser.parse_as_message(msg, PowerMeasurement))
+						elif jmsg["message_type"] == "ReceptionStatus":
+							p = self.s2_parser.parse_as_message(msg, ReceptionStatus)
+							if p.subject_message_id in self._reply_handler_dict:
+								self._reply_handler_dict[p.subject_message_id](p)
+								del self._reply_handler_dict[p.subject_message_id]
+						else:
+							#Not yet implemented!
+							logger.warning("{} | Received an unknown Message: {} ".format(self.unique_identifier, jmsg["message_type"]))
+							self._s2_send_reception_message(ReceptionStatusValues.PERMANENT_ERROR, jmsg["message_id"], "MessageType not yet implemented in EMS.")
 					else:
-						#Not yet implemented!
-						logger.warning("{} | Received an unknown Message: {} ".format(self.unique_identifier, jmsg["message_type"]))
-						self._s2_send_reception_message(ReceptionStatusValues.PERMANENT_ERROR, jmsg["message_id"], "MessageType not yet implemented in EMS.")
-				else:
-					#Received another message than Handshake without beeing connected. Reject.
-					logger.warning("{} | Received a Message: {} while RM is not actively connected".format(self.unique_identifier, jmsg["message_type"]))
+						#Received another message than Handshake without beeing connected. Reject.
+						logger.warning("{} | Received a Message: {} while RM is not actively connected".format(self.unique_identifier, jmsg["message_type"]))
 
-					if jmsg["message_type"] != "ReceptionStatus":
-						self._s2_send_reception_message(ReceptionStatusValues.TEMPORARY_ERROR, jmsg["message_id"], "Connection not yet established.")
+						if jmsg["message_type"] != "ReceptionStatus":
+							self._s2_send_reception_message(ReceptionStatusValues.TEMPORARY_ERROR, jmsg["message_id"], "Connection not yet established.")
 
 class ReactiveStrategy(int, Enum):
 	#do not re-number, external applications rely on this mapping.
@@ -1501,11 +1550,14 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		elif service.startswith('com.victronenergy.solarcharger.'):
 			self._external_solarcharger_services.append(service)
 		elif service.startswith('com.victronenergy.evcharger.'):
-			logger.info("Registering EVCS #{} on {} for charge control. Attempting S2 Connection.".format(instance, service))
+			logger.info("Registering EVCS #{} on {} for charge control.".format(instance, service))
+			evcs_disabled = self._settings['dess_evcscontroldisabled'] == 1
 			if str(instance) not in self._evcs_delegates.keys():
-				delegate = EVCSDelegate(service, instance, self._dbusmonitor, self)
+				delegate = EVCSDelegate(service, instance, self._dbusmonitor, self, evcs_disabled)
 				self._evcs_delegates[str(instance)] = delegate
-				self._evcs_delegates[str(instance)].begin()
+				self._evcs_delegates[str(instance)].begin(evcs_disabled)
+			else:
+				self._evcs_delegates[str(instance)].re_init(service, evcs_disabled) #update service in case it changed due to a restart of the evcs-service.
 				self.publish_evcs_flags()
 
 	def device_removed(self, service, instance):
@@ -1514,7 +1566,7 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		elif service.startswith('com.victronenergy.evcharger.'):
 			if str(instance) in self._evcs_delegates.keys():
 				self._evcs_delegates[str(instance)].end(False) #cleanup.
-				del self._evcs_delegates[str(instance)]
+				self._evcs_delegates[str(instance)].re_init(None) #clear service name to avoid any further calls to a non-existing service until the delegate is removed.
 				logger.info("EVCS #{} on {} removed from charge control.".format(instance, service))
 				self.publish_evcs_flags()
 
