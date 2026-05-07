@@ -55,13 +55,15 @@ class MotorDriveRangeTest(TestSystemCalcBase):
 	def _removeGps(self):
 		self._remove_device("com.victronenergy.gps.ttyX2")
 
-	def _addBattery(self):
+	def _addBattery(self, discharge_floor=None):
 		self._add_device('com.victronenergy.battery.ttyO1',
 			product_name='battery',
 			values={
 				'/Soc': 50,
 				'/Capacity': 100,
-				'/DeviceInstance': 0})
+				'/DeviceInstance': 0,
+				'/Settings/DischargeFloor': discharge_floor,
+			})
 
 	def _removeBattery(self):
 		self._remove_device("com.victronenergy.battery.ttyO1")
@@ -196,5 +198,40 @@ class MotorDriveRangeTest(TestSystemCalcBase):
 			{
 				"/MotorDrive/ConsumptionAhkm": 0,
 				"/MotorDrive/Range": None,
+			}
+		)
+
+	def test_with_discharge_floor(self):
+		self._addGps()
+		self._addMotorDrive()
+		self._addBattery(20)
+
+		self._update_values()
+		self._check_values(
+			{
+				"/MotorDrive/Range": None,
+			}
+		)
+
+		self.simulate_steps(
+			[
+				[60000, 100, 45, 1000, 30],
+				[60000, 100, 45, 1000, 30],
+				[60000, 100, 45, 1000, 30],
+				[60000, 100, 45, 1000, 30],
+				[60000, 100, 45, 1000, 30],
+				[60000, 100, 45, 1000, 30],
+				[60000, 100, 45, 1000, 30],
+				[60000, 100, 45, 1000, 30],
+				[60000, 100, 45, 1000, 30],
+				[60000, 100, 45, 1000, 30],
+				[60000, 100, 45, 1000, 30],
+			]
+		)
+
+		self._check_values(
+			{
+				"/MotorDrive/ConsumptionAhkm": 5.0,
+				"/MotorDrive/Range": 6.000000000000002,
 			}
 		)

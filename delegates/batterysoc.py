@@ -14,5 +14,11 @@ class BatterySoc(SystemCalcDelegate):
 			return self._dbusmonitor.get_value(self.systemcalc.batteryservice, '/Soc')
 		return None
 
+	@property
+	def discharge_floor(self):
+		if self.systemcalc.batteryservice is not None:
+			return self._dbusmonitor.get_value(self.systemcalc.batteryservice, '/Settings/DischargeFloor')
+		return None
+
 	def update_values(self, newvalues):
 		newvalues['/Dc/Battery/Soc'] = self.soc

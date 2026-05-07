@@ -87,7 +87,8 @@ class SystemCalc:
 				'/ConsumedAmphours': dummy,
 				'/ProductId': dummy,
 				'/CustomName': dummy,
-				'/Info/MaxChargeVoltage': dummy},
+				'/Info/MaxChargeVoltage': dummy,
+				'/Settings/DischargeFloor': dummy},
 			'com.victronenergy.vebus' : {
 				'/Ac/ActiveIn/ActiveInput': dummy,
 				'/Ac/ActiveIn/L1/P': dummy,
