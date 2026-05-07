@@ -281,6 +281,8 @@ class EVCSDelegate():
 		if EvcsGxFlags.CONTROLLABLE not in self.gx_flags:
 			return;
 
+		self.current_setpoint = 0 #to be determined each round.
+
 		#Are we charging? See if we can identify the phase count.
 		l1 = self._dbusmonitor.get_value(self.service_name, "/Ac/L1/Power") or 0
 		l3 = self._dbusmonitor.get_value(self.service_name, "/Ac/L3/Power") or 0
@@ -292,71 +294,97 @@ class EVCSDelegate():
 			self.no_phases = 1
 			logger.info("{} | Detected EVCS as 1 phased.".format(self.unique_identifier))
 
+		#ChargeNow desired?
+		if self._dess_delegate._settings['dess_evcsvrmflags'] is not None:
+			try:
+				jflags = json.loads(self._dess_delegate._settings['dess_evcsvrmflags'])
+				if str(self.instance) in jflags:
+					flags:EvcsVrmFlags = EvcsVrmFlags(jflags[str(self.instance)])
+					if EvcsVrmFlags.CHARGE_NOW in flags:
+						if EvcsGxFlags.CHARGE_NOW_ACTIVE not in self.gx_flags:
+							self.add_flag(EvcsGxFlags.CHARGE_NOW_ACTIVE)
+							self.add_flag(EvcsGxFlags.CHARGING)
+							logger.info("{} | ChargeNow activated via EvcsVrmFlags.".format(self.unique_identifier))
+							self.current_setpoint = 32 #just charge max, whatever that will be.
+					else:
+						#Stop, if we are in CHARGE_NOW
+						if EvcsGxFlags.CHARGE_NOW_ACTIVE in self.gx_flags:
+							self.remove_flag(EvcsGxFlags.CHARGE_NOW_ACTIVE)
+							self.remove_flag(EvcsGxFlags.CHARGING)
+							self.current_setpoint = 0
+							logger.info("{} | ChargeNow deactivated via EvcsVrmFlags.".format(self.unique_identifier))
+
+			except:
+				logger.warning("{} | Unable to parse EVCS VRM Flags. This should be a JSON with instance as key and EvcsVrmFlags as value. Ignoring flags: {}".format(self.unique_identifier, self._dess_delegate._Settings['dess_evcsvrmflags']))
+				#invalid payload. ignore.
+				pass
+
 		#Do we have a schedule and need to react?
-		if str(self.instance) in window.to_ev.keys():
-			#yes, we are at least scheduled now!
-			self.add_flag(EvcsGxFlags.SCHEDULED)
+		if not EvcsGxFlags.CHARGE_NOW_ACTIVE in self.gx_flags:
+			if str(self.instance) in window.to_ev.keys():
+				#yes, we are at least scheduled now!
+				self.add_flag(EvcsGxFlags.SCHEDULED)
 
-			#Cancel any eventually running emergency countdown.
-			if self.gx_flags & EvcsGxFlags.EMERGENCY_COUNTDOWN:
-				self.remove_flag(EvcsGxFlags.EMERGENCY_COUNTDOWN)
-				logger.info("{} | Canceling emergency charge countdown due to valid schedule.".format(self.unique_identifier))
+				#Cancel any eventually running emergency countdown.
+				if self.gx_flags & EvcsGxFlags.EMERGENCY_COUNTDOWN:
+					self.remove_flag(EvcsGxFlags.EMERGENCY_COUNTDOWN)
+					logger.info("{} | Canceling emergency charge countdown due to valid schedule.".format(self.unique_identifier))
 
-				#if we are already in active emergency charging, we may stop that as well.
-				if self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
-					self.remove_flag(EvcsGxFlags.EMERGENCY_ACTIVE)
-					self.remove_flag(EvcsGxFlags.CHARGING)
-					self.current_setpoint = 0
-					logger.info("{} | Stopping active emergency charge due to valid schedule.".format(self.unique_identifier))
-
-				self.emergency_timer_start = None
-
-			desired_charge_rate = window.to_ev[str(self.instance)] * 4000 #convert kWh/15min to W
-			#Usually using ac_voltage would be right, but the evcs is not doing that. To avoid
-			#missmatching, take a fixed value as well.
-			#avg_ac = dess_delegate.average_ac_voltage
-			avg_ac = 230.0
-			desired_current_setpoint = max(6, round((desired_charge_rate) / avg_ac / (self.no_phases or 1), 0))
-
-			if desired_charge_rate == 0:
-				#stop regular charging?
-				if self.gx_flags & EvcsGxFlags.CHARGING and not self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
-					self.remove_flag(EvcsGxFlags.CHARGING)
-					self.current_setpoint = 0
-					logger.info("{} | Stopping Charging due to 0 instruction.".format(self.unique_identifier))
-
-				#stop active emergency charging?
-				if self.gx_flags & EvcsGxFlags.CHARGING and self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
-					self.remove_flag(EvcsGxFlags.EMERGENCY_ACTIVE)
-					self.remove_flag(EvcsGxFlags.CHARGING)
-					self.current_setpoint = 0
-					logger.info("{} | Stopping Emergency Charging due to 0 instruction.".format(self.unique_identifier))
-			else:
-				#chargevolume > 0, pass over the setpoint so S2-Control can adjust.
-				#if we are not yet charging, log and change status.
-				if not self.gx_flags & EvcsGxFlags.CHARGING:
-					self.add_flag(EvcsGxFlags.CHARGING)
-					logger.info("{} | Starting to charge with {}W according to schedule.".format(self.unique_identifier, desired_charge_rate))
-					self.current_setpoint = desired_current_setpoint
-
-				#if we know number of phases, we can hop on directly.
-				if self.no_phases is not None:
-					#we may directly switch from emergency to charging.
+					#if we are already in active emergency charging, we may stop that as well.
 					if self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
 						self.remove_flag(EvcsGxFlags.EMERGENCY_ACTIVE)
-						self.current_setpoint = desired_current_setpoint
-						logger.info("{} | Switching from Emergency Charging to regular charging with {}W due to valid instruction.".format(self.unique_identifier, desired_charge_rate))
+						self.remove_flag(EvcsGxFlags.CHARGING)
+						self.current_setpoint = 0
+						logger.info("{} | Stopping active emergency charge due to valid schedule.".format(self.unique_identifier))
 
-					#do we need to adjust?
-					if self.current_setpoint != desired_current_setpoint:
-						self.current_setpoint = desired_current_setpoint
-						logger.info("{} | Adjusting setpoint to {}W according to schedule.".format(self.unique_identifier, desired_charge_rate))
+					self.emergency_timer_start = None
 
+				desired_charge_rate = window.to_ev[str(self.instance)] * 4000 #convert kWh/15min to W
+				#Usually using ac_voltage would be right, but the evcs is not doing that. To avoid
+				#missmatching, take a fixed value as well.
+				#avg_ac = dess_delegate.average_ac_voltage
+				avg_ac = 230.0
+				desired_current_setpoint = max(6, round((desired_charge_rate) / avg_ac / (self.no_phases or 1), 0))
+
+				if desired_charge_rate == 0:
+					#stop regular charging?
+					if self.gx_flags & EvcsGxFlags.CHARGING and not self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
+						self.remove_flag(EvcsGxFlags.CHARGING)
+						self.current_setpoint = 0
+						logger.info("{} | Stopping Charging due to 0 instruction.".format(self.unique_identifier))
+
+					#stop active emergency charging?
+					if self.gx_flags & EvcsGxFlags.CHARGING and self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
+						self.remove_flag(EvcsGxFlags.EMERGENCY_ACTIVE)
+						self.remove_flag(EvcsGxFlags.CHARGING)
+						self.current_setpoint = 0
+						logger.info("{} | Stopping Emergency Charging due to 0 instruction.".format(self.unique_identifier))
 				else:
-					#Phases unknown, we start with 6A and look if we can identify it.
-					self.add_flag(EvcsGxFlags.CHARGING)
-					self.current_setpoint = 6
-					logger.info("{} | Starting to charge with 6A to probe phase count.".format(self.unique_identifier))
+					#chargevolume > 0, pass over the setpoint so S2-Control can adjust.
+					#if we are not yet charging, log and change status.
+					if not self.gx_flags & EvcsGxFlags.CHARGING:
+						self.add_flag(EvcsGxFlags.CHARGING)
+						logger.info("{} | Starting to charge with {}W according to schedule.".format(self.unique_identifier, desired_charge_rate))
+						self.current_setpoint = desired_current_setpoint
+
+					#if we know number of phases, we can hop on directly.
+					if self.no_phases is not None:
+						#we may directly switch from emergency to charging.
+						if self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
+							self.remove_flag(EvcsGxFlags.EMERGENCY_ACTIVE)
+							self.current_setpoint = desired_current_setpoint
+							logger.info("{} | Switching from Emergency Charging to regular charging with {}W due to valid instruction.".format(self.unique_identifier, desired_charge_rate))
+
+						#do we need to adjust?
+						if self.current_setpoint != desired_current_setpoint:
+							self.current_setpoint = desired_current_setpoint
+							logger.info("{} | Adjusting setpoint to {}W according to schedule.".format(self.unique_identifier, desired_charge_rate))
+
+					else:
+						#Phases unknown, we start with 6A and look if we can identify it.
+						self.add_flag(EvcsGxFlags.CHARGING)
+						self.current_setpoint = 6
+						logger.info("{} | Starting to charge with 6A to probe phase count.".format(self.unique_identifier))
 
 		#See, if we have to start an emergency countdown
 		#This is the case if we are not charging, scheduled or already in countdown.
@@ -395,6 +423,7 @@ class EVCSDelegate():
 			is found.
 		"""
 		if self.ombc_active_operation_mode is None or self.ombc_system_description is None:
+			logger.warning("{} | No OperationMode known, or missing system description. Can't charge.".format(self.unique_identifier))
 			return
 
 		#get all transitions (and their connected states) we have as an option from where we are.
@@ -435,7 +464,7 @@ class EVCSDelegate():
 			logger.warning("{} | Unable to find a operation-mode close to {}A / {}W".format(self.unique_identifier, self.current_setpoint, power_setpoint))
 		else:
 			if next_mode.id != self.ombc_active_operation_mode.id:
-				p_total = sum([p.end_of_range for p in op_mode.power_ranges])
+				p_total = sum([p.end_of_range for p in next_mode.power_ranges])
 				delta = abs(p_total - power_setpoint)
 				logger.info("{} | Moving to operation mode: {}@{}W because delta is {}W. (Setpoint: {}W)".format(self.unique_identifier, next_mode.diagnostic_label, p_total, delta, power_setpoint))
 
@@ -1382,9 +1411,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		#               8 = values set on Venus (Battery balancing, capacity, operation mode, rate limits)
 		#              16 = DESS split coping capability
 		#              32 = support decimal target soc values
-		#              64 = (reserved)
+		#              64 = EVCS control
 		#             128 = Disable PV.
-		self._dbusservice.add_path('/DynamicEss/Capabilities', value=0b10111111)
+		self._dbusservice.add_path('/DynamicEss/Capabilities', value=0b11111111)
 		self._dbusservice.add_path('/DynamicEss/NumberOfSchedules', value=NUM_SCHEDULES)
 		self._dbusservice.add_path('/DynamicEss/Active', value=0, gettextcallback=lambda p, v: MODES.get(v, 'Unknown'))
 		self._dbusservice.add_path('/DynamicEss/TargetSoc', value=0.0, gettextcallback=lambda p, v: '{}%'.format(v))
