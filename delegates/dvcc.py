@@ -616,7 +616,7 @@ class ChargerSubsystem(object):
 			charger.chargevoltage = bms_charge_voltage
 		return voltage_written
 
-	def set_maxchargecurrent(self, max_charge_current, feedback_allowed, stop_on_mcc0):
+	def set_maxchargecurrent(self, max_charge_current, feedback_allowed, stop_on_mcc0, pv_disabled=False):
 		""" Distribute max charge current to all chargers. """
 		# Do not limit max charge current when feedback is allowed. The
 		# rationale behind this is that MPPT charge power should match the
@@ -640,7 +640,7 @@ class ChargerSubsystem(object):
 		elif self.acsystem_allows_feedback: # By Multi-RS
 			# The maximum to generate, is what the battery can take, plus
 			# what the inverter/charger can take off our hands.
-			m = max_charge_current + self._acsystem0.discharge_capacity
+			m = (max_charge_current + self._acsystem0.discharge_capacity) if not pv_disabled else 0
 
 			# The total charge current, somewhat smoothed, that the external
 			# solar chargers are making.
@@ -656,7 +656,7 @@ class ChargerSubsystem(object):
 			# And when mm becomes negative, that is when we have overcurrent,
 			# feed that to the grid.
 			self._acsystem0.discharge_setpoint = max(0.0, round(-mm, 1))
-		elif feedback_allowed: # by VE.Bus Multi, max_charge_current is not None
+		elif feedback_allowed and not pv_disabled: # by VE.Bus Multi, max_charge_current is not None
 			# Maximise all chargers, as we have always done, and let the Multi
 			# feed it in using overvoltage-feedin.
 			for charger in chargers:
@@ -1267,11 +1267,10 @@ class Dvcc(SystemCalcDelegate):
 			# check if pv is disabled.
 			pv_disabled = PvStartStopControl.instance.pv_disabled
 			_max_charge_current = 0 if pv_disabled else _max_charge_current
-			feedback_allowed = self.feedback_allowed and not pv_disabled
 
 			# Set current limits
 			# Try to push the solar chargers to the vebus-compensated value
-			self._chargesystem.set_maxchargecurrent(_max_charge_current, feedback_allowed, stop_on_mcc0)
+			self._chargesystem.set_maxchargecurrent(_max_charge_current, self.feedback_allowed, stop_on_mcc0, pv_disabled)
 			current_written = int(network_mode_written and _max_charge_current is not None)
 
 		update_solarcharger_control_flags(voltage_written, current_written, effective_charge_voltage)
