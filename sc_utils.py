@@ -97,11 +97,17 @@ class ExpiringValue(object):
 	def __init__(self, maxage, v):
 		self._ttl = self._maxage = maxage
 		self._value = v
+
 	def get(self):
 		if self._ttl > 0:
 			self._ttl -= 1
 			return self._value
 		return None
+
 	def set(self, v):
 		self._value = v
 		self._ttl = self._maxage
+
+	@property
+	def expired(self):
+		return self._ttl <= 0

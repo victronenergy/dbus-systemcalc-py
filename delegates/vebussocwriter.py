@@ -35,7 +35,7 @@ class VebusSocWriter(SystemCalcDelegate):
 		self._dbusservice.add_path('/Control/VebusSoc', value=0)
 
 		GLib.idle_add(exit_on_error, lambda: not self._write_vebus_soc())
-		GLib.timeout_add(10000, exit_on_error, self._write_vebus_soc)
+		GLib.timeout_add_seconds(10, exit_on_error, self._write_vebus_soc)
 
 	def update_values(self, newvalues):
 		vebus_service = newvalues.get('/VebusService')

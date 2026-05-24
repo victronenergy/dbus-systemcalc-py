@@ -873,6 +873,7 @@ class TestHubSystem(TestSystemCalcBase):
 		self._update_values()
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 12.6)
 		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', 2)
+		self._monitor.add_value('com.victronenergy.settings', '/Settings/System/AccessLevel', 3)
 		self._service.set_value('/Debug/BatteryOperationalLimits/SolarVoltageOffset', 0.4)
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/State': 0,
@@ -1157,6 +1158,34 @@ class TestHubSystem(TestSystemCalcBase):
 		})
 		self._check_values({ '/Control/EffectiveChargeVoltage': 14.2 })
 
+	def test_pylontech_high_cell_voltage_floor(self):
+		""" A very high maxcellvoltage should not push the charge voltage
+		    below 47V. """
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 51.8,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 155.4,
+				'/Soc': 95,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': None,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 53.2,
+				'/Info/MaxDischargeCurrent': 25,
+				'/InstalledCapacity': None,
+				'/System/MinCellVoltage': 3.5,
+				'/System/MaxCellVoltage': 4.5,
+				'/ProductId': 0xB009})
+
+		# Run enough ticks for the filter to converge
+		for _ in range(100):
+			self._update_values(interval=3000)
+
+		# Check that the charge voltage is floored at 47V
+		v = self._monitor.get_value('com.victronenergy.vebus.ttyO1',
+			'/BatteryOperationalLimits/MaxChargeVoltage')
+		self.assertAlmostEqual(v, 47.0, places=1)
 
 	def test_no_bms_max_charge_current_setting(self):
 		# Test that with no BMS but a user limit, /Dc/0/MaxChargeCurrent is correctly set.
@@ -1718,6 +1747,41 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Info/MaxChargeVoltage': 56.5,
 				'/Info/MaxDischargeCurrent': 10,
 				'/ProductId': 0xA3E5})
+
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 3,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Dc/0/Voltage': 58.0,
+			'/Dc/0/Current': 30,
+			'/FirmwareVersion': 0x0129},
+			connection='VE.Direct')
+
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/ChargeCurrent': 0, # Shut down
+			}
+		})
+
+	def test_quirk_lynx_parallel_bms(self):
+		""" When the Lynx Parallel BMS sends CCL=0, it wants us to stop all charging. """
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 55.1,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 165.3,
+				'/Soc': 100,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 0,
+				'/Info/MaxChargeVoltage': 56.5,
+				'/Info/MaxDischargeCurrent': 10,
+				'/ProductId': 0xA3E3})
 
 		self._add_device('com.victronenergy.solarcharger.ttyO2', {
 			'/State': 3,
@@ -2578,3 +2642,96 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Link/ChargeCurrent': 5.0,
 			}
 		})
+
+	def test_current_distribution_solarchargers_multirs_2(self):
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+
+		self._add_device('com.victronenergy.multi.ttyO1', {
+			'/Ac/Out/L1/P': -530,
+			'/Ac/Out/L1/V': 234.2,
+			'/Dc/0/Voltage': 53.1,
+			'/Dc/0/Current': 56.4,
+			'/Dc/0/Power': 3000,
+			'/Dc/0/Temperature': 24.5,
+			'/DeviceInstance': 0,
+			'/Soc': 53.2,
+			'/State': 9,
+			'/IsInverterCharger': 1,
+			'/Link/ChargeCurrent': None,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Yield/Power': 51},
+			product_name='Multi RS', connection='VE.Direct')
+
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+				'/State': 4,
+				'/Link/NetworkMode': 0,
+				'/Link/ChargeVoltage': None,
+				'/Link/ChargeCurrent': 100,
+				'/Link/VoltageSense': None,
+				'/Dc/0/Voltage': 53.1,
+				'/Dc/0/Current': 5.0,
+				'/FirmwareVersion': 0x129,
+				'/Settings/ChargeCurrentLimit': 100 },
+				connection='VE.Direct')
+
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 53.1,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 100.0,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
+
+		self._update_values(interval=3000)
+		self._check_external_values({ # Charge current adds up to 100A
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeCurrent': 31.5,
+			},
+			'com.victronenergy.multi.ttyO1': {
+				'/Link/ChargeCurrent': 68.5,
+			}
+		})
+
+	def test_voltage_changed_callback(self):
+		""" Test that registered voltage changed callbacks are called when
+		    the BMS charge voltage changes. """
+		from delegates.batteryservice import BatteryService
+
+		received = []
+		BatteryService.instance.add_voltage_changed_callback(
+			lambda v: received.append(v))
+
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 51.8,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 155.4,
+				'/Soc': 95,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': None,
+				'/Info/MaxChargeCurrent': 25,
+				'/Info/MaxChargeVoltage': 53.2,
+				'/Info/MaxDischargeCurrent': 25,
+				'/ProductId': 0xB009})
+		self._update_values(interval=3000)
+
+		# Change the charge voltage, callback should fire
+		self._monitor.set_value('com.victronenergy.battery.ttyO2',
+			'/Info/MaxChargeVoltage', 52.0)
+		self.assertEqual(received, [52.0])
+
+		# Change again
+		self._monitor.set_value('com.victronenergy.battery.ttyO2',
+			'/Info/MaxChargeVoltage', 51.5)
+		self.assertEqual(received, [52.0, 51.5])
+
+		# Setting to None should pass None to the callback
+		self._monitor.set_value('com.victronenergy.battery.ttyO2',
+			'/Info/MaxChargeVoltage', None)
+		self.assertEqual(received, [52.0, 51.5, None])

@@ -31,6 +31,7 @@ class TestSystemCalc(TestSystemCalcBase):
 				'/DeviceInstance': 0,
 				'/Devices/0/Assistants': [0x55, 0x1] + (26 * [0]),  # Hub-4 assistant
 				'/Dc/0/MaxChargeCurrent': None,
+				'/Dc/0/Capacity': None,
 				'/Soc': 53.2,
 				'/State': 3,
 				'/BatteryOperationalLimits/MaxChargeVoltage': None,
@@ -747,6 +748,38 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/ActiveBatteryService': 'com.victronenergy.inverter/0',
 			'/Dc/Battery/VoltageService': 'com.victronenergy.inverter.ttyO1'})
 
+	def test_battery_insecure_connection_no_voltage_service(self):
+		self._add_device('com.victronenergy.battery.ttyO2',
+						product_name='battery',
+						values={
+								'/Dc/0/Voltage': 12.4,
+								'/Dc/0/Current': 5.6,
+								'/Dc/0/Power': 69.4,
+								'/Soc': 80,
+								'/DeviceInstance': 2,
+								'/Mgmt/InsecureConnection': 1})
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.battery/2')
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Voltage': 12.4,
+			'/Dc/Battery/VoltageService': None})
+
+	def test_battery_insecure_connection_secure_has_voltage_service(self):
+		self._add_device('com.victronenergy.battery.ttyO2',
+						product_name='battery',
+						values={
+								'/Dc/0/Voltage': 12.4,
+								'/Dc/0/Current': 5.6,
+								'/Dc/0/Power': 69.4,
+								'/Soc': 80,
+								'/DeviceInstance': 2,
+								'/Mgmt/InsecureConnection': 0})
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.battery/2')
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Voltage': 12.4,
+			'/Dc/Battery/VoltageService': 'com.victronenergy.battery.ttyO2'})
+
 	def test_battery_selection_solarcharger_extra_current(self):
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/ExtraBatteryCurrent', 0)
 		self._add_device('com.victronenergy.solarcharger.ttyO1',
@@ -1175,6 +1208,89 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Dc/System/Power': 369,
 			'/Dc/System/Current': 30 })
 
+	def test_alternator_power(self):
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._add_device('com.victronenergy.alternator.ttyO1',
+						product_name='alternator',
+						values={
+								'/Dc/0/Power': 139 })
+		self._update_values()
+		self._check_values({
+			'/Dc/Alternator/Power': 139 })
+
+	def test_dcgenset_power(self):
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._set_setting('/Settings/SystemSetup/HasDcSystem', 1)
+		self._add_device('com.victronenergy.battery.ttyO2',
+						product_name='battery',
+						values={
+								'/Dc/0/Voltage': 25.0,
+								'/Dc/0/Current': -12.0,
+								'/Dc/0/Power': -300,
+								'/Soc': 50.0,
+								'/DeviceInstance': 2})
+		self._add_device('com.victronenergy.dcgenset.ttyO1',
+						product_name='dcgenset',
+						values={
+								'/Dc/0/Power': 100,
+								'/Dc/0/Voltage': 25.0,
+								'/Dc/0/Current': 4.0 })
+		self._update_values()
+		self._check_values({
+			'/Dc/Alternator/Power': 100,
+			'/Dc/System/Power': 400,
+			'/Dc/System/Current': 16 })
+
+	def test_dcgenset_power_fallback(self):
+		# DC gensets may not provide /Dc/0/Power; fall back to voltage * current
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._set_setting('/Settings/SystemSetup/HasDcSystem', 1)
+		self._add_device('com.victronenergy.battery.ttyO2',
+						product_name='battery',
+						values={
+								'/Dc/0/Voltage': 25.0,
+								'/Dc/0/Current': -12.0,
+								'/Dc/0/Power': -300,
+								'/Soc': 50.0,
+								'/DeviceInstance': 2})
+		self._add_device('com.victronenergy.dcgenset.ttyO1',
+						product_name='dcgenset',
+						values={
+								'/Dc/0/Voltage': 25.0,
+								'/Dc/0/Current': 5.0 })
+		self._update_values()
+		self._check_values({
+			'/Dc/Alternator/Power': 125,
+			'/Dc/System/Power': 425,
+			'/Dc/System/Current': 17 })
+
+	def test_alternator_and_dcgenset_combined(self):
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._set_setting('/Settings/SystemSetup/HasDcSystem', 1)
+		self._add_device('com.victronenergy.battery.ttyO2',
+						product_name='battery',
+						values={
+								'/Dc/0/Voltage': 25.0,
+								'/Dc/0/Current': -12.0,
+								'/Dc/0/Power': -300,
+								'/Soc': 50.0,
+								'/DeviceInstance': 2})
+		self._add_device('com.victronenergy.alternator.ttyO1',
+						product_name='alternator',
+						values={
+								'/Dc/0/Power': 80 })
+		self._add_device('com.victronenergy.dcgenset.ttyO1',
+						product_name='dcgenset',
+						values={
+								'/Dc/0/Power': 100,
+								'/Dc/0/Voltage': 25.0,
+								'/Dc/0/Current': 4.0 })
+		self._update_values()
+		self._check_values({
+			'/Dc/Alternator/Power': 180,
+			'/Dc/System/Power': 480,
+			'/Dc/System/Current': 19.2 })
+
 	def test_battery_state(self):
 		self._check_values({
 			'/Dc/Battery/State':  None})
@@ -1560,6 +1676,116 @@ class TestSystemCalc(TestSystemCalcBase):
 			'/Ac/ConsumptionOnOutput/L1/Current': 0.4,
 			'/Ac/ConsumptionOnInput/L1/Power': None,
 			'/Ac/ConsumptionOnInput/L1/Current': None
+		})
+
+	def test_battery_capacity(self):
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.vebus/0')
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Capacity': None
+		})
+
+		# Multi has capacity
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1',
+			'/Dc/0/Capacity', 150.0)
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Capacity': 150.0
+		})
+
+		# Battery selected with no capacity
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 51.8,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 155.4,
+				'/Soc': 95,
+				'/DeviceInstance': 0,
+				'/ProductId': 0x203,
+				'/Capacity': None,
+				'/InstalledCapacity': None})
+		self._set_setting('/Settings/SystemSetup/BatteryService', 'com.victronenergy.battery/0')
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Capacity': None
+		})
+
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Capacity', 150.0)
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Capacity': 150.0
+		})
+
+		# InstalledCapacity is fallback
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Capacity', None)
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/InstalledCapacity', 200.0)
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Capacity': 200.0
+		})
+
+	def test_vebus_and_non_vebus_inverter_ac_out_summed(self):
+		"""When a VE.Bus Multi and a non-VE.Bus inverter both exist, their
+		AC output power should be summed for consumption calculation."""
+		# Default setUp already has a VE.Bus Multi with Ac/Out/L1/P=100, I=0.4.
+		# Add an RS Smart inverter alongside it.
+		self._add_device('com.victronenergy.inverter.ttyO2',
+			product_name='RS Smart',
+			values={
+				'/Dc/0/Voltage': 48.0,
+				'/Ac/Out/L1/V': 230,
+				'/Ac/Out/L1/I': 0.5,
+				'/Ac/Out/L1/P': 115,
+				'/DeviceInstance': 1,
+			})
+
+		self._update_values()
+		self._check_values({
+			'/Ac/ActiveIn/Source': 1,
+			'/Ac/Grid/L1/Power': 123,
+			# AC-out consumption should be VE.Bus(100) + RS Smart(115) = 215
+			'/Ac/ConsumptionOnOutput/L1/Power': 100 + 115,
+			'/Ac/ConsumptionOnOutput/L1/Current': 0.4 + 0.5,
+			# Total consumption = input(0) + output(215)
+			'/Ac/Consumption/L1/Power': 100 + 115,
+		})
+
+	def test_vebus_and_non_vebus_inverter_ac_in_with_gridmeter(self):
+		"""When a VE.Bus Multi and a Multi RS both exist with a grid meter,
+		both AC input values should be subtracted from the meter reading."""
+		self._add_device('com.victronenergy.multi.ttyO2',
+			product_name='Multi RS',
+			values={
+				'/Dc/0/Voltage': 48.0,
+				'/Ac/Out/L1/V': 230,
+				'/Ac/Out/L1/I': 0.3,
+				'/Ac/Out/L1/P': 70,
+				'/Ac/In/1/L1/P': 80,
+				'/Ac/In/1/L1/I': 0.35,
+				'/Ac/ActiveIn/ActiveInput': 0,
+				'/Ac/In/1/Type': 1,
+				'/Ac/In/2/Type': 2,
+				'/Yield/Power': 0,
+				'/DeviceInstance': 1,
+			})
+		self._add_device('com.victronenergy.grid.ttyUSB1', {
+			'/Ac/L1/Power': 1000,
+			'/Ac/L1/Current': 4.3,
+		})
+
+		self._update_values()
+		self._check_values({
+			'/Ac/ActiveIn/Source': 1,
+			'/Ac/Grid/L1/Power': 1000,
+			# Consumption on input = meter(1000) - vebus_ac_in(123) - multi_rs_ac_in(80)
+			'/Ac/ConsumptionOnInput/L1/Power': 1000 - 123 - 80,
+			'/Ac/ConsumptionOnInput/L1/Current': 4.3 - 0.6 - 0.35,
+			# Consumption on output = vebus(100) + multi_rs(70)
+			'/Ac/ConsumptionOnOutput/L1/Power': 100 + 70,
+			'/Ac/ConsumptionOnOutput/L1/Current': 0.4 + 0.3,
+			# Total = input + output
+			'/Ac/Consumption/L1/Power': (1000 - 123 - 80) + (100 + 70),
 		})
 
 if __name__ == '__main__':

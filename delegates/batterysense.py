@@ -111,7 +111,7 @@ class BatterySense(SystemCalcDelegate):
 		self._dbusservice.add_path('/Dc/Battery/TemperatureService', value=None)
 		self._dbusservice.add_path('/Dc/Battery/Temperature', value=None, gettextcallback=lambda p, v: '{:.1F} C'.format(v))
 		self._dbusservice.add_path('/Debug/DisableBatterySense', value=0, writeable=True)
-		self._timer = GLib.timeout_add(3000, exit_on_error, self._on_timer)
+		self._timer = GLib.timeout_add_seconds(3, exit_on_error, self._on_timer)
 
 	@property
 	def temperature_service(self):

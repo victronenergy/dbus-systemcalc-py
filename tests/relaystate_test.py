@@ -17,6 +17,24 @@ class RelayStateTest(TestSystemCalcBase):
 		TestSystemCalcBase.__init__(self, methodName)
 
 	def setUp(self):
+		self.gpio_dir = tempfile.mkdtemp()
+		os.mkdir(os.path.join(self.gpio_dir, 'relay_1'))
+		os.mkdir(os.path.join(self.gpio_dir, 'relay_2'))
+		os.mkdir(os.path.join(self.gpio_dir, 'relay_3'))
+		self.gpio1_state = os.path.join(self.gpio_dir, 'relay_1', 'value')
+		self.gpio2_state = os.path.join(self.gpio_dir, 'relay_2', 'value')
+		self.gpio3_state = os.path.join(self.gpio_dir, 'relay_3', 'value')
+
+		# Relay 1 is on, relay 2 is off
+		with open(self.gpio1_state, 'wt') as f:
+			f.write('1')
+		with open(self.gpio2_state, 'wt') as f:
+			f.write('0')
+		with open(self.gpio3_state, 'wt') as f:
+			f.write('0')
+
+		RelayState.RELAY_GLOB = os.path.join(self.gpio_dir, 'relay_*')
+
 		TestSystemCalcBase.setUp(self)
 		self._add_device('com.victronenergy.vebus.ttyO1', product_name='Multi',
 		values={
@@ -41,24 +59,13 @@ class RelayStateTest(TestSystemCalcBase):
 			'/Settings/Relay/1/Polarity': 0,
 		})
 
-		self.gpio_dir = tempfile.mkdtemp()
-		os.mkdir(os.path.join(self.gpio_dir, 'relay_1'))
-		os.mkdir(os.path.join(self.gpio_dir, 'relay_2'))
-		self.gpio1_state = os.path.join(self.gpio_dir, 'relay_1', 'value')
-		self.gpio2_state = os.path.join(self.gpio_dir, 'relay_2', 'value')
-		RelayState.RELAY_GLOB = os.path.join(self.gpio_dir, 'relay_*')
-
-		# Relay 1 is on, relay 2 is off
-		with open(self.gpio1_state, 'wt') as f:
-			f.write('1')
-		with open(self.gpio2_state, 'wt') as f:
-			f.write('0')
-
 	def tearDown(self):
 		os.remove(self.gpio1_state)
 		os.remove(self.gpio2_state)
+		os.remove(self.gpio3_state)
 		os.rmdir(os.path.join(self.gpio_dir, 'relay_1'))
 		os.rmdir(os.path.join(self.gpio_dir, 'relay_2'))
+		os.rmdir(os.path.join(self.gpio_dir, 'relay_3'))
 		os.rmdir(self.gpio_dir)
 
 	def test_relay_state(self):

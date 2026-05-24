@@ -16,6 +16,7 @@ class RelayState(SystemCalcDelegate):
 	def __init__(self):
 		SystemCalcDelegate.__init__(self)
 		self._relays = {}
+		self._relay_dirs = sorted(glob(self.RELAY_GLOB))
 
 	def get_input(self):
 		return [
@@ -26,22 +27,32 @@ class RelayState(SystemCalcDelegate):
 				 '/Settings/Relay/1/Polarity'])] # Managed by venus-platform
 
 	def get_settings(self):
-		return [
+		s = [
 			('/Relay/0/State', '/Settings/Relay/0/InitialState', 0, 0, 1),
 			('/SwitchableOutput/0/Settings/Group', '/Settings/Relay/0/Group', "", 0, 0),
 			('/SwitchableOutput/0/Settings/CustomName', '/Settings/Relay/0/CustomName', "", 0, 0),
-			('/SwitchableOutput/0/Settings/ShowUIControl', '/Settings/Relay/0/ShowUIControl', 1, 0, 1),
+			('/SwitchableOutput/0/Settings/ShowUIControl', '/Settings/Relay/0/ShowUIControl', 1, 0, 0),
 
 			('/Relay/1/State', '/Settings/Relay/1/InitialState', 0, 0, 1),
 			('/SwitchableOutput/1/Settings/Group', '/Settings/Relay/1/Group', "", 0, 0),
 			('/SwitchableOutput/1/Settings/CustomName', '/Settings/Relay/1/CustomName', "", 0, 0),
-			('/SwitchableOutput/1/Settings/ShowUIControl', '/Settings/Relay/1/ShowUIControl', 1, 0, 1),
+			('/SwitchableOutput/1/Settings/ShowUIControl', '/Settings/Relay/1/ShowUIControl', 1, 0, 0),
 		]
+		# Add settings for additional relays, for the tinkerers. These are not
+		# managed by venus-platform.
+		for i, r in enumerate(self._relay_dirs[2:], 2):
+			s.extend((
+				(f'/Relay/{i}/State', f'/Settings/Relay/{i}/InitialState', 0, 0, 1),
+				(f'/SwitchableOutput/{i}/Settings/Group', f'/Settings/Relay/{i}/Group', "", 0, 0),
+				(f'/SwitchableOutput/{i}/Settings/CustomName', f'/Settings/Relay/{i}/CustomName', "", 0, 0),
+				(f'/SwitchableOutput/{i}/Settings/ShowUIControl', f'/Settings/Relay/{i}/ShowUIControl', 1, 0, 0),
+			))
+		return s
 
 	def _relay_function(self, idx):
 		return self._dbusmonitor.get_value('com.victronenergy.settings',
 			('/Settings/Relay/Function' if idx == 0 else
-			 f'/Settings/Relay/{idx}/Function'))
+			 f'/Settings/Relay/{idx}/Function'), 2)
 
 	def set_relay_function(self, valid, idx, v):
 		# check that function is allowed. The relevant bit must be in the
@@ -69,14 +80,13 @@ class RelayState(SystemCalcDelegate):
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
-		relays = sorted(glob(self.RELAY_GLOB))
 
-		if len(relays) == 0:
+		if len(self._relay_dirs) == 0:
 			logging.info('No relays found')
 			return
 
 		self._relays.update({i: os.path.join(r, 'value') \
-			for i, r in enumerate(relays) })
+			for i, r in enumerate(self._relay_dirs) })
 
 		GLib.idle_add(exit_on_error, self._init_relay_state)
 		logging.info('Relays found: {}'.format(', '.join(self._relays.values())))
@@ -98,7 +108,7 @@ class RelayState(SystemCalcDelegate):
 				s.add_path(f'/SwitchableOutput/{idx}/Status', value=None)
 
 				# Switchable output settings
-				for setting, typ in (('Group', str), ('CustomName', str), ('ShowUIControl', bool)):
+				for setting, typ in (('Group', str), ('CustomName', str), ('ShowUIControl', int)):
 					s.add_path(p := f'/SwitchableOutput/{idx}/Settings/{setting}',
 						value=self._settings[p], writeable=True,
 						onchangecallback=partial(self._on_relay_setting_changed, idx, typ))
@@ -134,7 +144,7 @@ class RelayState(SystemCalcDelegate):
 				self.__update_relay_state(idx, path)
 
 		# Watch changes and update dbus. Do we still need this?
-		GLib.timeout_add(5000, exit_on_error, self._update_relay_state)
+		GLib.timeout_add_seconds(5, exit_on_error, self._update_relay_state)
 		return False
 
 	def _update_relay_state(self):

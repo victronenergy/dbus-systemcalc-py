@@ -5,7 +5,7 @@ from delegates.base import SystemCalcDelegate
 
 # All delegates
 from delegates.hubtype import HubTypeSelect
-from delegates.dvcc import Dvcc
+from delegates.dvcc import Dvcc, PvStartStopControl
 from delegates.servicemapper import ServiceMapper
 from delegates.vebussocwriter import VebusSocWriter
 from delegates.relaystate import RelayState
@@ -31,3 +31,5 @@ from delegates.invertercharger import InverterCharger
 from delegates.dynamicess import DynamicEss
 from delegates.loadshedding import LoadShedding
 from delegates.motordrive import MotorDrive
+from delegates.motordriveconsumption import MotorDriveConsumption
+from delegates.motordriverange import MotorDriveRange

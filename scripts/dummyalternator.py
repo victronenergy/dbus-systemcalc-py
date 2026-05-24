@@ -67,6 +67,7 @@ s = DbusDummyService(
 		'/State': {'initial': 3},
 		'/History/Cumulative/User/OperationTime': {'initial': 1234},
 		'/History/Cumulative/User/ChargedAh': {'initial': 445},
+		'/History/EnergyOut': {'initial': 0.0 },
     },
     productname='Orion XS 1400 Charger',
     connection='VE.Direct port 1')

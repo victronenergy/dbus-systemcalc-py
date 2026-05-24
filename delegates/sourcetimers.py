@@ -29,7 +29,7 @@ class SourceTimers(SystemCalcDelegate):
 			self._dbusservice.add_path(p, value=0)
 		self._dbusservice.add_path('/Timers/TimeOff', value=0)
 		self._on_timer()
-		self._timer = GLib.timeout_add(10000, exit_on_error, self._on_timer)
+		self._timer = GLib.timeout_add_seconds(10, exit_on_error, self._on_timer)
 
 	@property
 	def elapsed(self):

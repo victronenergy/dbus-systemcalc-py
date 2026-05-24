@@ -46,6 +46,12 @@ class BatterySoc(SystemCalcDelegate):
 		'''
 		return self._isoc if self._isoc is not None else self.soc_bms
 
+	@property
+	def discharge_floor(self):
+		if self.systemcalc.batteryservice is not None:
+			return self._dbusmonitor.get_value(self.systemcalc.batteryservice, '/Settings/DischargeFloor')
+		return None
+
 	def update_values(self, newvalues):
 		#doing this one time is enough for now, battery capacity is not expected to change during runtime.
 		if self.one_percent_equivalent is None:
