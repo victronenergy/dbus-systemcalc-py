@@ -13,6 +13,7 @@ class BatterySoc(SystemCalcDelegate):
 		self.one_percent_equivalent = None
 		self.iamount = None
 		self._isoc = None
+		self.capacity = None
 
 	def get_input(self):
 		return [
@@ -20,7 +21,7 @@ class BatterySoc(SystemCalcDelegate):
 				'/Settings/DynamicEss/BatteryCapacity'
 			])
 		]
-	
+
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(BatterySoc, self).set_sources(dbusmonitor, settings, dbusservice)
 
@@ -31,16 +32,16 @@ class BatterySoc(SystemCalcDelegate):
 
 	@property
 	def soc_bms(self):
-		''' 
-			soc as returned by the bms 
+		'''
+			soc as returned by the bms
 		'''
 		if self.systemcalc.batteryservice is not None:
 			return self._dbusmonitor.get_value(self.systemcalc.batteryservice, '/Soc')
 		return None
-	
+
 	@property
 	def soc(self):
-		''' 
+		'''
 			Will return the interpolated soc if enabled and initialized, else the bms soc until
 			interpolated becomes available.
 		'''
@@ -56,22 +57,23 @@ class BatterySoc(SystemCalcDelegate):
 		#doing this one time is enough for now, battery capacity is not expected to change during runtime.
 		if self.one_percent_equivalent is None:
 			battery_capacity = self._dbusmonitor.get_value("com.victronenergy.settings", '/Settings/DynamicEss/BatteryCapacity')
-			logging.getLogger().info("BatterySoc: read battery capacity of {} kWh".format(battery_capacity))	
+			logging.getLogger().info("BatterySoc: read battery capacity of {} kWh".format(battery_capacity))
 			if battery_capacity is not None:
 				# *1000 / 100 = *10
 				self.one_percent_equivalent = battery_capacity * 10
+				self.capacity = battery_capacity * 1000
 				logging.getLogger().info("BatterySoc: one percent equivalent set to {} Wh".format(self.one_percent_equivalent))
 
 				if (PRECISION > 0):
 					logging.getLogger().info("BatterySoc: interpolation enabled with precision {}".format(PRECISION))
 
 		current_soc = self.soc_bms
-        
+
 		#check if we can do interpolation
 		if PRECISION == 0 or self.one_percent_equivalent is None:
 			newvalues['/Dc/Battery/Soc'] = current_soc
 			return
-            
+
 		try:
 			now = datetime.now()
 			current_power = self._dbusmonitor.get_value(self.systemcalc.batteryservice, '/Dc/0/Power')
@@ -95,7 +97,7 @@ class BatterySoc(SystemCalcDelegate):
 					if (current_soc < self.last_soc):
 						#dropping
 						self.iamount = self.one_percent_equivalent
-					
+
 					if (current_soc > self.last_soc):
 						#raising
 						self.iamount = 0
@@ -105,8 +107,8 @@ class BatterySoc(SystemCalcDelegate):
 						delta_seconds = (now - self.last_measurement).total_seconds()
 						self.iamount += (current_power / 3600.0) * delta_seconds
 						self.iamount = max(0, min(self.iamount, self.one_percent_equivalent))
-					
-					# the interpolated amount is Wh we belive to exist above soc. 
+
+					# the interpolated amount is Wh we belive to exist above soc.
 					# yet we are only interpolating "within the reported percent" to avoid derailing
 					# due to long periods of noise. so clamp the iamount based offset to 0..1
 					# worst case (iamount derailed) it'll be as good as the uninterpolated soc value.
@@ -119,6 +121,27 @@ class BatterySoc(SystemCalcDelegate):
 
 			self.last_soc = current_soc
 			self.last_measurement = now
+
+			#calculate time to go
+			try:
+				remaining_capacity = ((self._dbusservice["/Control/ActiveSocLimit"] or 0) / 100.0) * self.capacity
+				missing_capacity = (1 - current_soc/100.0) * self.capacity
+				current_capacity = (current_soc/100.0) * self.capacity
+				usable_capacity = current_capacity - remaining_capacity
+
+				remaining = None
+				if (current_power < 0):
+					remaining = (usable_capacity / current_power) * 60 * 60 * -1
+				elif (current_power > 0):
+					remaining = (missing_capacity / current_power) * 60 * 60
+
+				#Inject calculated value to dbus.
+				if (remaining is not None):
+					newvalues['/Dc/Battery/TimeToGo'] = round(remaining, 0)
+			except Exception as ex:
+				logging.getLogger().warning("Exception during time to go calculation: ", exc_info=ex)
+				#oops, ignore.
+
 		except Exception as ex:
 			logging.getLogger().warning("Exception during soc interpolation: ", exc_info=ex)
 			newvalues['/Dc/Battery/Soc'] = current_soc #oops, better return unmodified.
