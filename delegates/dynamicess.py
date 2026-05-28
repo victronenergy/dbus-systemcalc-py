@@ -270,7 +270,7 @@ class EVCSDelegate():
 		#validate the evcs is set to auto, else drop the s2 connection, if established
 		if self.mode != 1:
 			if self.gx_flags & EvcsGxFlags.GX_AUTO_AQUIRED:
-				logger.debug("{} | EVCS #{} is no longer in Auto mode. Dropping S2 Connection.".format(self.unique_identifier, self.instance))
+				logger.info("{} | EVCS #{} is no longer in Auto mode. Dropping S2 Connection.".format(self.unique_identifier, self.instance))
 				self.end()
 			return
 
@@ -321,15 +321,15 @@ class EVCSDelegate():
 				#Cancel any eventually running emergency countdown.
 				if self.gx_flags & EvcsGxFlags.EMERGENCY_COUNTDOWN:
 					self.remove_flag(EvcsGxFlags.EMERGENCY_COUNTDOWN)
-					logger.debug("{} | Canceling emergency charge countdown due to valid schedule.".format(self.unique_identifier))
+					logger.info("{} | Canceling emergency charge countdown due to valid schedule arrived.".format(self.unique_identifier))
+					self.emergency_timer_start = None
 
-					#if we are already in active emergency charging, we may stop that as well.
-					if self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
-						self.remove_flag(EvcsGxFlags.EMERGENCY_ACTIVE)
-						self.remove_flag(EvcsGxFlags.CHARGING)
-						self.current_setpoint = 0
-						logger.debug("{} | Stopping active emergency charge due to valid schedule.".format(self.unique_identifier))
-
+				#if we are already in active emergency charging, we may stop that as well.
+				if self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
+					self.remove_flag(EvcsGxFlags.EMERGENCY_ACTIVE)
+					self.remove_flag(EvcsGxFlags.CHARGING)
+					self.current_setpoint = 0
+					logger.info("{} | Stopping active emergency charge due to valid schedule arrived.".format(self.unique_identifier))
 					self.emergency_timer_start = None
 
 				desired_charge_rate = window.to_ev[str(self.instance)] * 4000 #convert kWh/15min to W
@@ -344,20 +344,20 @@ class EVCSDelegate():
 					if self.gx_flags & EvcsGxFlags.CHARGING and not self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
 						self.remove_flag(EvcsGxFlags.CHARGING)
 						self.current_setpoint = 0
-						logger.debug("{} | Stopping Charging due to 0 instruction.".format(self.unique_identifier))
+						logger.info("{} | Stopping Charging due to 0 instruction.".format(self.unique_identifier))
 
 					#stop active emergency charging?
 					if self.gx_flags & EvcsGxFlags.CHARGING and self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
 						self.remove_flag(EvcsGxFlags.EMERGENCY_ACTIVE)
 						self.remove_flag(EvcsGxFlags.CHARGING)
 						self.current_setpoint = 0
-						logger.debug("{} | Stopping Emergency Charging due to 0 instruction.".format(self.unique_identifier))
+						logger.info("{} | Stopping Emergency Charging due to 0 instruction.".format(self.unique_identifier))
 				else:
 					#chargevolume > 0, pass over the setpoint so S2-Control can adjust.
 					#if we are not yet charging, log and change status.
 					if not self.gx_flags & EvcsGxFlags.CHARGING:
 						self.add_flag(EvcsGxFlags.CHARGING)
-						logger.debug("{} | Starting to charge with {}W according to schedule.".format(self.unique_identifier, desired_charge_rate))
+						logger.info("{} | Starting to charge with {}W according to schedule.".format(self.unique_identifier, desired_charge_rate))
 						self.current_setpoint = desired_current_setpoint
 
 					#if we know number of phases, we can hop on directly.
@@ -366,24 +366,23 @@ class EVCSDelegate():
 						if self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
 							self.remove_flag(EvcsGxFlags.EMERGENCY_ACTIVE)
 							self.current_setpoint = desired_current_setpoint
-							logger.debug("{} | Switching from Emergency Charging to regular charging with {}W due to valid instruction.".format(self.unique_identifier, desired_charge_rate))
+							logger.info("{} | Switching from Emergency Charging to regular charging with {}W due to valid instruction.".format(self.unique_identifier, desired_charge_rate))
 
 						#do we need to adjust?
 						if self.current_setpoint != desired_current_setpoint:
 							self.current_setpoint = desired_current_setpoint
-							logger.debug("{} | Adjusting setpoint to {}W according to schedule.".format(self.unique_identifier, desired_charge_rate))
 
 					else:
 						#Phases unknown, we start with 6A and look if we can identify it.
 						self.add_flag(EvcsGxFlags.CHARGING)
 						self.current_setpoint = 6
-						logger.debug("{} | Starting to charge with 6A to probe phase count.".format(self.unique_identifier))
+						logger.info("{} | Starting to charge with 6A to probe phase count.".format(self.unique_identifier))
 
 		#See, if we have to start an emergency countdown
 		#This is the case if we are not charging, scheduled or already in countdown.
 		if self.gx_flags & (EvcsGxFlags.SCHEDULED | EvcsGxFlags.CHARGING | EvcsGxFlags.EMERGENCY_COUNTDOWN) == 0:
 			self.emergency_timer_start = now
-			logger.debug("{} | Starting emergency charge timer ({}s).".format(self.unique_identifier, dess_delegate._settings['dess_evemergencystart']))
+			logger.info("{} | Starting emergency charge countdown ({}s).".format(self.unique_identifier, dess_delegate._settings['dess_evemergencystart']))
 			self.add_flag(EvcsGxFlags.EMERGENCY_COUNTDOWN)
 
 		#Are we in an emergency countdown and the timer has expired?
@@ -475,7 +474,13 @@ class EVCSDelegate():
 					)
 				)
 
-				logger.info("{} | Sending instruction to switch to operation mode {} with total power {}W to approach setpoint of {}A / {}W.".format(self.unique_identifier, next_mode.diagnostic_label, p_total, self.current_setpoint, power_setpoint, delta))
+				logger.info("{} | Sending instruction to switch to operation mode {} (Advertised power {}W) to approach target setpoint of {}A / {}W. (Delta: {}W)".format(
+					self.unique_identifier,
+					next_mode.diagnostic_label,
+					round(p_total),
+					round(self.current_setpoint),
+					round(power_setpoint),
+					round(delta)))
 
 	def _on_timer_retry_connection(self):
 		'''
@@ -615,7 +620,7 @@ class EVCSDelegate():
 					self.no_phases = None #reset
 					self.gx_flags = EvcsGxFlags.GX_AUTO_AQUIRED #reset all flags, as we are not controllable. This is a safe way to ensure, that we don't have any leftovers from previous control sessions, that might cause issues.
 
-			logger.debug("{} | Only offered NOCTRL, accepting.".format(self.unique_identifier))
+			logger.info("{} | Offered NOCTRL, accepting.".format(self.unique_identifier))
 
 			self._s2_send_message(
 				SelectControlType(
@@ -631,7 +636,7 @@ class EVCSDelegate():
 					self.active_control_type = ControlType.OPERATION_MODE_BASED_CONTROL
 					self.add_flag(EvcsGxFlags.CONTROLLABLE) #mark controllable, as we support a compatible control type, that is not NOCTRL.
 
-			logger.debug("{} | Offered OMBC, accepting.".format(self.unique_identifier))
+			logger.info("{} | Offered OMBC, accepting.".format(self.unique_identifier))
 
 			if ControlType.OPERATION_MODE_BASED_CONTROL in message.available_control_types:
 				self._s2_send_message(
@@ -671,7 +676,7 @@ class EVCSDelegate():
 					#       Until then, compare root with id.
 					if "{}".format(opm.id) == "{}".format(message.active_operation_mode_id.root):
 						self.ombc_active_operation_mode = opm
-						logger.debug(f"Reported Operation Mode: {opm.diagnostic_label}")
+						logger.info(f"Reported Operation Mode: {opm.diagnostic_label}")
 						self._s2_send_reception_message(ReceptionStatusValues.OK, message)
 						return
 
@@ -1939,11 +1944,15 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 
 	def publish_evcs_flags(self) -> None:
 		jo = {}
+		jor = {}
 		for evcs_delegate in self._evcs_delegates.values():
 			jo[evcs_delegate.instance] = evcs_delegate.gx_flags
+			jor[evcs_delegate.instance] = evcs_delegate.gx_flags.stringify()
 
 		jos = json.dumps(jo)
+		jors = json.dumps(jor)
 		if jos != self._dbusservice['/DynamicEss/EvcsGxFlags']:
+			logger.info("EvcsGxFlags on dbus updated to: {} (4Human: {})".format(jos, jors))
 			self._dbusservice['/DynamicEss/EvcsGxFlags'] = jos
 
 	def is_ev_charging(self) -> bool:
