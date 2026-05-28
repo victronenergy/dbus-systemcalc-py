@@ -153,7 +153,7 @@ class EVCSDelegate():
 		'''
 			Sets the current discovered service for this delegate.
 		'''
-		self.current_setpoint = 0
+		self.power_setpoint = 0
 		self.service_name = service_name
 		self.no_phases = None
 		self._keep_alive_missed = 0
@@ -278,14 +278,13 @@ class EVCSDelegate():
 		if EvcsGxFlags.CONTROLLABLE not in self.gx_flags:
 			return;
 
-		#Are we charging? See if we can identify the phase count.
-		l1 = self._dbusmonitor.get_value(self.service_name, "/Ac/L1/Power") or 0
-		l3 = self._dbusmonitor.get_value(self.service_name, "/Ac/L3/Power") or 0
+		#validate we have OMBC and know the proper system description.
+		if (self.active_control_type != ControlType.OPERATION_MODE_BASED_CONTROL):
+			return
 
-		if l3 > 0 and l1 > 0 and self.no_phases != 3:
-			self.no_phases = 3
-		elif l1 > 0 and l3 == 0 and self.no_phases != 1:
-			self.no_phases = 1
+		if self.ombc_active_operation_mode is None or self.ombc_system_description is None:
+			logger.warning("{} | No OperationMode known, or missing system description. Can't charge by now.".format(self.unique_identifier))
+			return
 
 		#ChargeNow desired?
 		if self._dess_delegate._settings['dess_evcsvrmflags'] is not None:
@@ -298,13 +297,13 @@ class EVCSDelegate():
 							self.add_flag(EvcsGxFlags.CHARGE_NOW_ACTIVE)
 							self.add_flag(EvcsGxFlags.CHARGING)
 							logger.info("{} | ChargeNow activated via EvcsVrmFlags.".format(self.unique_identifier))
-							self.current_setpoint = 32 #just charge max, whatever that will be.
+							self.power_setpoint = 32 * 230 #just charge max, whatever that will be.
 					else:
 						#Stop, if we are in CHARGE_NOW
 						if EvcsGxFlags.CHARGE_NOW_ACTIVE in self.gx_flags:
 							self.remove_flag(EvcsGxFlags.CHARGE_NOW_ACTIVE)
 							self.remove_flag(EvcsGxFlags.CHARGING)
-							self.current_setpoint = 0
+							self.power_setpoint = 0
 							logger.info("{} | ChargeNow deactivated via EvcsVrmFlags.".format(self.unique_identifier))
 
 			except:
@@ -328,55 +327,35 @@ class EVCSDelegate():
 				if self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
 					self.remove_flag(EvcsGxFlags.EMERGENCY_ACTIVE)
 					self.remove_flag(EvcsGxFlags.CHARGING)
-					self.current_setpoint = 0
+					self.power_setpoint = 0
 					logger.info("{} | Stopping active emergency charge due to valid schedule arrived.".format(self.unique_identifier))
 					self.emergency_timer_start = None
 
-				desired_charge_rate = window.to_ev[str(self.instance)] * 4000 #convert kWh/15min to W
-				#Usually using ac_voltage would be right, but the evcs is not doing that. To avoid
-				#missmatching, take a fixed value as well.
-				#avg_ac = dess_delegate.average_ac_voltage
-				avg_ac = 230.0
-				desired_current_setpoint = max(6, round((desired_charge_rate) / avg_ac / (self.no_phases or 1), 0))
+				scheduled_power_setpoint = window.to_ev[str(self.instance)] * 4000 #convert kWh/15min to W
 
-				if desired_charge_rate == 0:
+				if scheduled_power_setpoint == 0:
 					#stop regular charging?
 					if self.gx_flags & EvcsGxFlags.CHARGING and not self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
 						self.remove_flag(EvcsGxFlags.CHARGING)
-						self.current_setpoint = 0
+						self.power_setpoint = 0
 						logger.info("{} | Stopping Charging due to 0 instruction.".format(self.unique_identifier))
 
 					#stop active emergency charging?
 					if self.gx_flags & EvcsGxFlags.CHARGING and self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
 						self.remove_flag(EvcsGxFlags.EMERGENCY_ACTIVE)
 						self.remove_flag(EvcsGxFlags.CHARGING)
-						self.current_setpoint = 0
+						self.power_setpoint = 0
 						logger.info("{} | Stopping Emergency Charging due to 0 instruction.".format(self.unique_identifier))
 				else:
 					#chargevolume > 0, pass over the setpoint so S2-Control can adjust.
 					#if we are not yet charging, log and change status.
 					if not self.gx_flags & EvcsGxFlags.CHARGING:
 						self.add_flag(EvcsGxFlags.CHARGING)
-						logger.info("{} | Starting to charge with {}W according to schedule.".format(self.unique_identifier, desired_charge_rate))
-						self.current_setpoint = desired_current_setpoint
-
-					#if we know number of phases, we can hop on directly.
-					if self.no_phases is not None:
-						#we may directly switch from emergency to charging.
-						if self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
-							self.remove_flag(EvcsGxFlags.EMERGENCY_ACTIVE)
-							self.current_setpoint = desired_current_setpoint
-							logger.info("{} | Switching from Emergency Charging to regular charging with {}W due to valid instruction.".format(self.unique_identifier, desired_charge_rate))
-
-						#do we need to adjust?
-						if self.current_setpoint != desired_current_setpoint:
-							self.current_setpoint = desired_current_setpoint
-
+						logger.info("{} | Starting to charge with {}W according to schedule.".format(self.unique_identifier, scheduled_power_setpoint))
+						self.power_setpoint = scheduled_power_setpoint
 					else:
-						#Phases unknown, we start with 6A and look if we can identify it.
-						self.add_flag(EvcsGxFlags.CHARGING)
-						self.current_setpoint = 6
-						logger.info("{} | Starting to charge with 6A to probe phase count.".format(self.unique_identifier))
+						#setpoint update?
+						self.power_setpoint = scheduled_power_setpoint
 
 		#See, if we have to start an emergency countdown
 		#This is the case if we are not charging, scheduled or already in countdown.
@@ -392,15 +371,17 @@ class EVCSDelegate():
 				self.remove_flag(EvcsGxFlags.EMERGENCY_COUNTDOWN)
 				self.add_flag(EvcsGxFlags.EMERGENCY_ACTIVE)
 				self.add_flag(EvcsGxFlags.CHARGING)
-				self.current_setpoint = dess_delegate._settings['dess_evemergencycurrent']
+				self.power_setpoint = -1 #-1 means charge at the minum possible rate (for now)
 				logger.info("{} | Starting emergency charge after {}s.".format(self.unique_identifier, dess_delegate._settings['dess_evemergencystart']))
 
 		#Are we emergency charging and need to keep the setpoint?
 		if self.gx_flags & EvcsGxFlags.EMERGENCY_ACTIVE:
-			self.current_setpoint = dess_delegate._settings['dess_evemergencycurrent']
+			self.power_setpoint = -1 #-1 means charge at the minum possible rate (for now)
 
 		#finally, this EVCS eventually needs to approach a setpoint?
-		self._approach_setpoint(dess_delegate)
+		# -1 and 0 targets should always be passed on.
+		if self.gx_flags & EvcsGxFlags.CHARGING or self.power_setpoint <= 0:
+			self._approach_setpoint(dess_delegate)
 
 	def _check_conditions(self):
 		#check if control was explicit denied.
@@ -418,9 +399,6 @@ class EVCSDelegate():
 			Makes the state machine traverse the S2 Control Model until a suitable state
 			is found.
 		"""
-		if self.ombc_active_operation_mode is None or self.ombc_system_description is None:
-			logger.warning("{} | No OperationMode known, or missing system description. Can't charge.".format(self.unique_identifier))
-			return
 
 		#get all transitions (and their connected states) we have as an option from where we are.
 		eligible_operationmodes:dict[str, OMBCOperationMode] = {}
@@ -428,6 +406,8 @@ class EVCSDelegate():
 			if transition.from_ == self.ombc_active_operation_mode.id:
 				#we have a transition from where we are. Check, if this is the one we need to approach our setpoint.
 				eligible_operationmodes[transition.to] = None
+
+		#if there is an active mode, that one is always eligible to be selected as well.
 
 		#find the operation modes.
 		for op_mode_id, _ in eligible_operationmodes.items():
@@ -442,25 +422,30 @@ class EVCSDelegate():
 		#check which mode matches best.
 		next_mode = None
 		next_mode_delta = 99999
-		power_setpoint = dess_delegate.average_ac_voltage * self.current_setpoint * (self.no_phases or 1)
+
 		for op_mode_id, op_mode in eligible_operationmodes.items():
 			if op_mode is not None:
 				p_total = sum([p.end_of_range for p in op_mode.power_ranges])
-				delta = abs(p_total - power_setpoint)
-				if delta < next_mode_delta:
-					#if we don't know the phase count, we may need to prevent Standby beeing selected.
-					if self.no_phases is None and p_total == 0 and self.current_setpoint > 0:
-						continue
-
-					next_mode_delta = delta
-					next_mode = op_mode
+				if self.power_setpoint >= 0:
+					delta = abs(p_total - self.power_setpoint)
+					if delta < next_mode_delta:
+						next_mode_delta = delta
+						next_mode = op_mode
+				else:
+					#-1 means charge at minimum, whatever that will be. thus, the first mode that could be found
+					# and does not equal standby.
+					delta = abs(p_total - self.power_setpoint)
+					if delta < next_mode_delta:
+						if p_total > 0:
+							next_mode = op_mode
+							next_mode_delta = delta #so we know, it's emergency selection.
 
 		if next_mode is None:
-			logger.warning("{} | Unable to find a operation-mode close to {}A / {}W".format(self.unique_identifier, self.current_setpoint, power_setpoint))
+			logger.warning("{} | Unable to find a operation-mode close to {}W".format(self.unique_identifier, self.power_setpoint))
 		else:
 			if next_mode.id != self.ombc_active_operation_mode.id:
 				p_total = sum([p.end_of_range for p in next_mode.power_ranges])
-				delta = abs(p_total - power_setpoint)
+				delta = abs(p_total - self.power_setpoint)
 
 				#no handler needed, we deal with ombc status confirmations instead.
 				self._s2_send_message(
@@ -474,13 +459,12 @@ class EVCSDelegate():
 					)
 				)
 
-				logger.info("{} | Sending instruction to switch to operation mode {} (Advertised power {}W) to approach target setpoint of {}A / {}W. (Delta: {}W)".format(
+				logger.info("{} | Sending instruction to switch to operation mode {} (Advertised power {}W) to approach target setpoint {}W. (Delta: {}W)".format(
 					self.unique_identifier,
 					next_mode.diagnostic_label,
 					round(p_total),
-					round(self.current_setpoint),
-					round(power_setpoint),
-					round(delta)))
+					round(self.power_setpoint) if self.power_setpoint >= 0 else "MIN",
+					round(delta) if self.power_setpoint >= 0 else "?"))
 
 	def _on_timer_retry_connection(self):
 		'''
@@ -568,6 +552,7 @@ class EVCSDelegate():
 			self._keep_alive_timer = GLib.timeout_add(S2_KEEP_ALIVE_INTERVAL_S * 1000, self._keep_alive_loop)
 
 			#RM is now ready to be managed.
+			self.re_init(self.service_name)
 			self.add_flag(EvcsGxFlags.GX_AUTO_AQUIRED)
 		else:
 			logger.warning("{} | S2-Connection rejected by RM. Operation will be retried in {}s. ({})".format(self.unique_identifier, S2_CONNECTION_RETRY_INTERVAL_MS, result))
@@ -676,18 +661,19 @@ class EVCSDelegate():
 					#       Until then, compare root with id.
 					if "{}".format(opm.id) == "{}".format(message.active_operation_mode_id.root):
 						self.ombc_active_operation_mode = opm
-						logger.info(f"Reported Operation Mode: {opm.diagnostic_label}")
+						logger.info(f"{self.unique_identifier} | Reported Operation Mode: {opm.diagnostic_label}")
 						self._s2_send_reception_message(ReceptionStatusValues.OK, message)
 						return
 
 			#Operationmode is not known. This may be a temporary error.
 			if self.ombc_system_description is not None:
-				logger.error("Unknown operationmode-id reported: {}, expecting any of: {}".format(
+				logger.error("{} | Unknown operationmode-id reported: {}, expecting any of: {}".format(
+					self.unique_identifier,
 					message.active_operation_mode_id,
 					["{}=>{}".format(mode.id, mode.diagnostic_label) for mode in self.ombc_system_description.operation_modes]
 				))
 			else:
-				logger.error("Unknown operationmode-id reported: {}, but system description is not yet present to compare.".format(message.active_operation_mode_id))
+				logger.error("{} | Unknown operationmode-id reported: {}, but system description is not yet present to compare.".format(self.unique_identifier, message.active_operation_mode_id))
 			self._s2_send_reception_message(ReceptionStatusValues.TEMPORARY_ERROR, message, "Unknown operationmode-id: {}".format(message.active_operation_mode_id))
 		except Exception as ex:
 			logger.error("Exception during status reception. This may be temporary", exc_info=ex)
