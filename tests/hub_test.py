@@ -540,6 +540,53 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Control/EffectiveChargeVoltage': 58.3,
 			'/Control/BmsParameters': 1})
 
+	def test_mppt_absorb_float_minimum_offset(self):
+		# When the battery is in absorb (4) or float (5) state and feedback is
+		# allowed, DVCC applies a minimum 0.1 V offset so that MPPTs that are
+		# calibrated slightly below the BMS limit keep charging, allowing
+		# feed-in to be reached faster.
+		#
+		# The Multi's firmware safeguard prevents it from raising hub_voltage
+		# while it is still charging (AC-coupled PV scenario), so the normal
+		# ovoffset calculation yields 0. The workaround forces it to 0.1.
+		#
+		# hub_voltage = 58.3, BMS max = 58.2, bol.chargevoltage = None (first tick)
+		# -> ovoffset = max(0.0, 0.1) = 0.1
+		# -> charge_voltage = min(58.3, 58.3) = 58.3  (vs 58.2 without workaround)
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub4/AssistantId', 5)
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 58.2)
+		self._monitor.add_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn', 1)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/State', 4)
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/State': 3,
+			'/Settings/ChargeCurrentLimit': 35,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
+			'/Dc/0/Voltage': 58.0,
+			'/Dc/0/Current': 15,
+			'/FirmwareVersion': 0x0129},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 58.0,
+				'/Dc/0/Current': 2,
+				'/Dc/0/Power': 116,
+				'/Soc': 95,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 45,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
+		self._update_values(interval=10000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO1': {
+				'/Link/ChargeVoltage': 58.3}})
+		self._check_values({
+			'/Control/EffectiveChargeVoltage': 58.3})
+
 	def test_hub1_control_vedirect_solarcharger_bms_battery_no_solarcharger(self):
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',

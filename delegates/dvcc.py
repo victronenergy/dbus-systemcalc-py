@@ -1439,10 +1439,11 @@ class Dvcc(SystemCalcDelegate):
 		# BMS (if any). This will probably prevent feedback, but that is
 		# probably not allowed anyway.
 		charge_voltage = vecan_voltage = None
-		if self._multi.active:
+		if self._multi.active and self._multi.hub_voltage is not None:
 			# Calculate the offset that is currently being applied for
 			# overvoltage feedin.
 			ovoffset = 0.0
+			abs_offset = 0.0
 			try:
 				ovoffset = max(0.0, min(
 					self._multi.hub_voltage - self._multi.bol.chargevoltage,
@@ -1450,15 +1451,29 @@ class Dvcc(SystemCalcDelegate):
 			except TypeError:
 				pass
 
+			# This is a workaround for cases where the Multi does not
+			# increase the charge voltage (yet), because there is AC-coupled
+			# capacity and the battery still accepts plenty of current
+			# from the Multis. In some cases, the MPPTs may be calibrated
+			# slightly lower, and they will stop charging. By adding a small
+			# offset of our own, when the battery is in absorb or float state,
+			# and feedback is allowed, we keep the MPPT charging so that
+			# feed-in can be reached faster. By limiting this to charge
+			# states, we are not adding anything if the Multi is not in a
+			# charging state, eg Inverting.
+			if self._multi.state in (3, 4, 5) and self.feedback_allowed:
+				ovoffset = max(ovoffset, 0.1)
+				abs_offset = 0.1
+
 			# Allow the hub_voltage to be max 0.4V higher than the
 			# bms_charge_voltage. This helps to deal with delays in
 			# the pipeline, otherwise it takes a full extra 3 seconds for
 			# a lowered CVL to work its way through the ESS pipeline.
 			try:
 				charge_voltage = vecan_voltage = min(
-					bms_charge_voltage + ovoffset, self._multi.hub_voltage)
+					bms_charge_voltage + ovoffset, self._multi.hub_voltage + abs_offset)
 			except TypeError:
-				charge_voltage = vecan_voltage = self._multi.hub_voltage
+				charge_voltage = vecan_voltage = self._multi.hub_voltage + abs_offset
 
 		# Next try a voltage from an inverter/charger
 		if charge_voltage is None:
