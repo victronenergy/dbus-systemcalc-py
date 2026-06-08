@@ -1,3 +1,5 @@
+from dbusmonitor import AsyncDbusMonitor
+
 class TrackInstance(type):
 	@property
 	def instance(klass):
@@ -9,7 +11,7 @@ class SystemCalcDelegate(object, metaclass=TrackInstance):
 		return klass._instance
 
 	def __init__(self):
-		self._dbusmonitor = None
+		self._dbusmonitor:AsyncDbusMonitor = None
 		self._settings = None
 		self._dbusservice = None
 
