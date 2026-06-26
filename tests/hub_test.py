@@ -540,6 +540,60 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Control/EffectiveChargeVoltage': 58.3,
 			'/Control/BmsParameters': 1})
 
+	def test_control_vedirect_solarcharger_bms_ess_feedback_genset(self):
+		# When feedback is allowed we do not limit MPPTs, but if the active AC
+		# input is a genset (AcInput == 2), feed-in is not possible, so the
+		# charge current limit should still be applied. This test verifies that
+		# the MPPT is limited in that case.
+		# Force system type to ESS
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub4/AssistantId', 5)
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 58.3)
+		self._monitor.add_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn', 1)
+		# The active AC input is the second input, which is configured as a
+		# genset (AcInput2 == 2 in setUp). AC is still connected.
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Ac/ActiveIn/ActiveInput', 1)
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 1,
+			'/Settings/ChargeCurrentLimit': 100,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': 57.3,
+			'/Link/ChargeCurrent': 20,
+			'/Link/VoltageSense': None,
+			'/Dc/0/Voltage': 12.6,
+			'/Dc/0/Current': 31,
+			'/FirmwareVersion': 0x0129},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 58.0,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': 45,
+				'/Info/MaxChargeVoltage': 58.2,
+				'/Info/MaxDischargeCurrent': 50})
+		self._update_values(interval=60000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/NetworkMode': 13,
+				'/Link/ChargeCurrent': 45 + 8,
+				'/Link/ChargeVoltage': 58.3},
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/BatteryLowVoltage': 47,
+				'/BatteryOperationalLimits/MaxChargeCurrent': 14,
+				'/BatteryOperationalLimits/MaxChargeVoltage': 58.2,
+				'/BatteryOperationalLimits/MaxDischargeCurrent': 50,
+				'/Dc/0/MaxChargeCurrent': 999}})
+		self._check_values({
+			'/SystemType': 'ESS',
+			'/Control/SolarChargeCurrent': 1,
+			'/Control/SolarChargeVoltage': 1,
+			'/Control/EffectiveChargeVoltage': 58.3,
+			'/Control/BmsParameters': 1})
+
 	def test_mppt_absorb_float_minimum_offset(self):
 		# When the battery is in absorb (4) or float (5) state and feedback is
 		# allowed, DVCC applies a minimum 0.1 V offset so that MPPTs that are

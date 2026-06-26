@@ -827,6 +827,10 @@ class Multi(object):
 		return getattr(MultiService.instance.vebus_service, 'has_ess_assistant', False)
 
 	@property
+	def active_source_type(self):
+		return getattr(MultiService.instance.vebus_service, 'active_source_type', None)
+
+	@property
 	def dc_current(self):
 		""" Return a low-pass smoothed current. """
 		return self._dc_current.value
@@ -1423,7 +1427,10 @@ class Dvcc(SystemCalcDelegate):
 	def feedback_allowed(self):
 		# Feedback allowed is defined as 'ESS present and FeedInOvervoltage is
 		# enabled'. This ignores other setups which allow feedback: hub-1.
+		# Feed-in is not possible when the active AC input is a genset
+		# (AcInput == 2), so feedback is not allowed in that case either.
 		return self.has_ess_assistant and self._multi.ac_connected and \
+			self._multi.active_source_type != 2 and \
 			self._dbusmonitor.get_value('com.victronenergy.settings',
 				'/Settings/CGwacs/OvervoltageFeedIn') == 1
 

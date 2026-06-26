@@ -33,6 +33,17 @@ class Service(object):
 			'/Settings/SystemSetup/AcInput{}'.format(i + 1))) for i in range(self.number_of_inputs or 0)]
 
 	@property
+	def active_source_type(self):
+		""" The configured type of the currently active AC input. Returns one of
+		    the /Settings/SystemSetup/AcInput values (1=grid, 2=genset,
+		    3=shore), or None if there is no active input. """
+		i = self.active_input
+		if i is None or i < 0:
+			return None
+		return self.monitor.get_value('com.victronenergy.settings',
+			'/Settings/SystemSetup/AcInput{}'.format(i + 1))
+
+	@property
 	def port(self):
 		return self.monitor.get_value(self.service, '/Interfaces/Mk2/Connection') or ''
 
