@@ -673,9 +673,13 @@ class ChargerSubsystem(object):
 			# feed that to the grid.
 			self._acsystem0.discharge_setpoint = max(0.0, round(-mm, 1))
 		elif feedback_allowed and not pv_disabled: # by VE.Bus Multi, max_charge_current is not None
-			# Maximise all chargers, as we have always done, and let the Multi
-			# feed it in using overvoltage-feedin.
-			for charger in chargers:
+			# Respect the BMS CCL on solar chargers. The Multi feeds
+			# any excess PV power to the grid via overvoltage-feedin.
+			# Previously maximize_charge_current() ignored the BMS CCL,
+			# causing battery overcurrent when MPPT capacity exceeds the
+			# battery charge limit (#1358).
+			self._set_charge_current(solarchargers, max_charge_current)
+			for charger in inverterchargers:
 				charger.maximize_charge_current()
 
 		elif len(chargers): # no feedback, max_charge_current is not None
