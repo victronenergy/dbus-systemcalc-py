@@ -12,7 +12,6 @@ from mock_gobject import timer_manager
 # our own packages
 import dbus_systemcalc
 from delegates import DynamicEss
-from delegates.dynamicess import Flags, Restrictions
 from base import TestSystemCalcBase
 
 # Monkey patching for unit tests
