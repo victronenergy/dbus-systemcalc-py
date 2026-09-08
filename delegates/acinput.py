@@ -70,7 +70,9 @@ class AcInputs(SystemCalcDelegate):
 					'/DeviceType', 
 				]),
 				('com.victronenergy.settings', [
-					'/Settings/CGwacs/PreventFeedback'
+					'/Settings/CGwacs/PreventFeedback',
+					'/Settings/SystemSetup/AcInput1',
+					'/Settings/SystemSetup/AcInput2'
 				]),
 				('com.victronenergy.heatpump', [
 					'/ProductId']),
@@ -90,6 +92,13 @@ class AcInputs(SystemCalcDelegate):
 				('/Ac/In/1/Source', {'gettext': '%d'}),
 				('/Ac/In/1/Connected', {'gettext': '%d'}),
 				('/Ac/In/NumberOfAcInputs', {'gettext': '%d'}),
+				# The /Ac/In/N/ paths above are a compacted list: an input that
+				# is marked "not available" is left out and the ones after it
+				# shift down. The paths below relay the configured type of each
+				# AC input keeping the input number, so that a consumer can map
+				# an input onto its source.
+				('/Ac/SystemSetup/In/1/Type', {'gettext': '%d'}),
+				('/Ac/SystemSetup/In/2/Type', {'gettext': '%d'}),
 				('/Ac/ActiveIn/GridParallel', {'gettext': '%d'}),
 				('/Ac/ActiveIn/FeedbackEnabled', {'gettext': '%d'}),
 				('/Ac/ActiveIn/ServiceType', {'gettext': '%s'}),
@@ -172,18 +181,29 @@ class AcInputs(SystemCalcDelegate):
 			# the meter itself is powered by the grid/genset, so if it shows
 			# up on dbus, we can assume it is connected. We assume the first
 			# one found is actually active, with grid taking priority.
-			sources = zip(
-				[x for x in (self.gridmeter, self.gensetmeter) if x is not None],
-				(1, 2))
+			# Pair each meter with its own type before dropping the ones that
+			# are absent, otherwise a lone genset meter takes the type of the
+			# grid. There are no physical AC inputs to number here, so the
+			# position in this list is used for the input number as well.
+			sources = [(m, t) for m, t in
+				((self.gridmeter, 1), (self.gensetmeter, 2)) if m is not None]
 			for source, t in sources:
 				active = input_count == 0
 				newvalues.update(self.input_tree(input_count, source.service, source.instance, t, int(active)))
+				newvalues['/Ac/SystemSetup/In/{}/Type'.format(input_count + 1)] = t
 				if active:
 					newvalues['/Ac/ActiveIn/ServiceType'] = source.service.split(".")[2]
 				input_count += 1
 			newvalues['/Ac/In/NumberOfAcInputs'] = input_count
 		else:
 			for i, t in getattr(multi, 'input_types', ()):
+				# Relay the type of this input before the compaction below
+				# throws the input number away. Only two inputs are published;
+				# the device may claim more.
+				if i < 2:
+					newvalues['/Ac/SystemSetup/In/{}/Type'.format(i + 1)] = \
+						t if t in (0, 1, 2, 3) else None
+
 				if t is None or (not 0 < t < 4): # Input is marked "Not available", or invalid
 					continue
 
