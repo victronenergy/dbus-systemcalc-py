@@ -680,8 +680,9 @@ class VoltageSenseTest(TestSystemCalcBase):
 			self.assertTrue(Dvcc.instance.has_dvcc)
 			self._remove_device('com.victronenergy.battery.ttyO2')
 
-		# FreedomWON, BlueNova, Hubble and FD forces bol, but not SVS
-		for product_id in (0xB014, 0xB020, 0xB024, 0xB051, 0xB02A, 0xB02B):
+		# FreedomWON, BlueNova, Hubble, FD, Weco, BlueNova and Pytes forces
+		# bol, but not SVS
+		for product_id in (0xB014, 0xB020, 0xB024, 0xB051, 0xB02A, 0xB01B, 0xB02B):
 			self._add_device('com.victronenergy.battery.ttyO2',
 				product_name='battery',
 				values={
