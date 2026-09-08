@@ -169,41 +169,60 @@ class AcInputs(SystemCalcDelegate):
 			'/Ac/In/{}/Connected'.format(inp): active
 		}
 
+	def _metersources(self):
+		""" The AC sources to use when there is no inverter/charger, in order.
+		    Each meter is paired with its own type before the absent ones are
+		    dropped, otherwise a lone genset meter takes the type of the
+		    grid. """
+		return [(m, t) for m, t in
+			((self.gridmeter, 1), (self.gensetmeter, 2)) if m is not None]
+
+	@property
+	def acinput_types(self):
+		""" The configured type of each AC input, keyed by input number
+		    (1-based): 0=not available, 1=grid, 2=genset, 3=shore. An input
+		    that does not exist is absent from the result.
+
+		    Computed on demand rather than read back from the published
+		    /Ac/SystemSetup/In/N/Type paths, because a delegate that runs
+		    before this one during an update would otherwise see the values
+		    of the previous cycle. """
+		multi = Multi.instance.multi or self.invertercharger
+		if multi is None:
+			# Without an inverter/charger nothing is configured; the meters on
+			# the bus stand in for the inputs. See update_values below.
+			return {n: t for n, (_, t) in enumerate(self._metersources(), 1)}
+
+		# Only two inputs are published; the device may claim more.
+		return {i + 1: t for i, t in getattr(multi, 'input_types', ())
+			if i < 2 and t in (0, 1, 2, 3)}
+
 	def update_values(self, newvalues):
 		multi = Multi.instance.multi or self.invertercharger
 		input_count = 0
 		newvalues['/Ac/ActiveIn/GridParallel'] = 0
 		newvalues['/Ac/ActiveIn/FeedbackEnabled'] = 0
 		newvalues['/Ac/HasAcLoads'] = int(len(self.acloads) + len(self.inverterchargers) > 0)
+		for n, t in self.acinput_types.items():
+			newvalues['/Ac/SystemSetup/In/{}/Type'.format(n)] = t
 		if multi is None:
 			# This is a system without an inverter/charger. If there is a
 			# grid meter or a genset, we can display that. This works because
 			# the meter itself is powered by the grid/genset, so if it shows
 			# up on dbus, we can assume it is connected. We assume the first
 			# one found is actually active, with grid taking priority.
-			# Pair each meter with its own type before dropping the ones that
-			# are absent, otherwise a lone genset meter takes the type of the
-			# grid. There are no physical AC inputs to number here, so the
-			# position in this list is used for the input number as well.
-			sources = [(m, t) for m, t in
-				((self.gridmeter, 1), (self.gensetmeter, 2)) if m is not None]
+			# There are no physical AC inputs to number here, so the position
+			# in this list is used for the input number as well.
+			sources = self._metersources()
 			for source, t in sources:
 				active = input_count == 0
 				newvalues.update(self.input_tree(input_count, source.service, source.instance, t, int(active)))
-				newvalues['/Ac/SystemSetup/In/{}/Type'.format(input_count + 1)] = t
 				if active:
 					newvalues['/Ac/ActiveIn/ServiceType'] = source.service.split(".")[2]
 				input_count += 1
 			newvalues['/Ac/In/NumberOfAcInputs'] = input_count
 		else:
 			for i, t in getattr(multi, 'input_types', ()):
-				# Relay the type of this input before the compaction below
-				# throws the input number away. Only two inputs are published;
-				# the device may claim more.
-				if i < 2:
-					newvalues['/Ac/SystemSetup/In/{}/Type'.format(i + 1)] = \
-						t if t in (0, 1, 2, 3) else None
-
 				if t is None or (not 0 < t < 4): # Input is marked "Not available", or invalid
 					continue
 

@@ -208,6 +208,8 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/State': 3,
 				'/DeviceInstance': 30,
 				'/Ess/AcPowerSetpoint': 0,
+				'/Ac/NumberOfAcInputs': 1,
+				'/Ac/In/1/Type': 1,
 				})
 
 		self._add_device('com.victronenergy.pvinverter.mock33', {
@@ -456,6 +458,8 @@ class TestDynamicEss(TestSystemCalcBase):
 				'/State': 3,
 				'/DeviceInstance': 30,
 				'/Ess/AcPowerSetpoint': 0,
+				'/Ac/NumberOfAcInputs': 1,
+				'/Ac/In/1/Type': 1,
 				})
 
 		self._add_device('com.victronenergy.pvinverter.mock33', {

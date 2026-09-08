@@ -1,5 +1,6 @@
 from gi.repository import GLib
 from delegates.base import SystemCalcDelegate
+from delegates.acinput import AcInputs
 from sc_utils import safeadd
 from ve_utils import exit_on_error
 
@@ -81,16 +82,19 @@ class PvInverters(SystemCalcDelegate):
 		    position. We're primarily concerned about Grid vs Genset. """
 		if p == 1:
 			return '/Ac/PvOnOutput'
-		s = {
-			0: self._dbusmonitor.get_value(
-				'com.victronenergy.settings', '/Settings/SystemSetup/AcInput1'),
-			2: self._dbusmonitor.get_value(
-				'com.victronenergy.settings', '/Settings/SystemSetup/AcInput2')
-			}.get(p)
+
+		inp = {0: 1, 2: 2}.get(p) # 0 = AC input 1, 2 = AC input 2
+		if inp is None:
+			return None
+
+		# An input marked "not available" is dropped. An input we know nothing
+		# about is assumed to be the grid, so that the PV is not silently
+		# dropped from the totals: on a system with no inverter/ charger and no
+		# meters there is nothing to go on.
 		return {
-			1: '/Ac/PvOnGrid',
+			0: None,
 			2: '/Ac/PvOnGenset',
-			3: '/Ac/PvOnGrid'}.get(s)
+		}.get(AcInputs.instance.acinput_types.get(inp), '/Ac/PvOnGrid')
 
 	def get_totals(self):
 		newvalues = {}

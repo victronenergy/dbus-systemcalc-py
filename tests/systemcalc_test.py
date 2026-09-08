@@ -24,6 +24,7 @@ class TestSystemCalc(TestSystemCalcBase):
 				'/Ac/ActiveIn/L1/I': 0.6,
 				'/Ac/ActiveIn/ActiveInput': 0,
 				'/Ac/ActiveIn/Connected': 1,
+				'/Ac/NumberOfAcInputs': 2,
 				'/Ac/Out/L1/P': 100,
 				'/Ac/Out/L1/I': 0.4,
 				'/Dc/0/Voltage': 12.25,
@@ -1584,6 +1585,65 @@ class TestSystemCalc(TestSystemCalcBase):
 		self._check_values({
 			'/Ac/PvOnGenset/L1/Power': 105,
 			'/Ac/PvOnGrid/L1/Power': 210
+		})
+
+	def test_pv_allocated_by_multirs_configuration(self):
+		# A Multi-RS keeps its AC input configuration on the device. The
+		# settings from setUp say the other way around, so it is obvious
+		# which of the two is followed.
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._add_device('com.victronenergy.acsystem.sys0',
+			product_name='Multi RS',
+			values={
+				'/DeviceInstance': 30,
+				'/Ac/ActiveIn/ActiveInput': 0,
+				'/Ac/NumberOfAcInputs': 2,
+				'/Ac/In/1/Type': 2, # Genset
+				'/Ac/In/2/Type': 1, # Grid
+			})
+		self._add_device('com.victronenergy.pvinverter.fronius_122_2314', {
+			'/Ac/L1/Power': 105,
+			'/Position': 0 # AC-in 1, the genset on this system
+		})
+		self._add_device('com.victronenergy.pvinverter.fronius_122_2315', {
+			'/Ac/L1/Power': 210,
+			'/Position': 2 # AC-in 2, the grid on this system
+		})
+
+		self._update_values()
+		self._check_values({
+			'/Ac/PvOnGenset/L1/Power': 105,
+			'/Ac/PvOnGrid/L1/Power': 210
+		})
+
+	def test_pv_on_unavailable_acinput_is_dropped(self):
+		# An input marked "not available" carries no PV.
+		self._monitor.set_value('com.victronenergy.settings',
+			'/Settings/SystemSetup/AcInput2', 0)
+		self._add_device('com.victronenergy.pvinverter.fronius_122_2312', {
+			'/Ac/L1/Power': 500,
+			'/Position': 2
+		})
+
+		self._update_values()
+		self._check_values({
+			'/Ac/PvOnGenset/L1/Power': None,
+			'/Ac/PvOnGrid/L1/Power': None
+		})
+
+	def test_pv_on_unknown_acinput_counts_as_grid(self):
+		# No inverter/charger and no meters, so nothing says what the AC
+		# inputs are. Assume the grid rather than dropping the PV.
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._add_device('com.victronenergy.pvinverter.fronius_122_2312', {
+			'/Ac/L1/Power': 500,
+			'/Position': 0
+		})
+
+		self._update_values()
+		self._check_values({
+			'/Ac/PvOnGrid/L1/Power': 500,
+			'/Ac/PvOnGenset/L1/Power': None
 		})
 
 	def test_multi_rs_3phase_summing(self):
