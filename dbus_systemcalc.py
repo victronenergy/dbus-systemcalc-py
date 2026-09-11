@@ -88,7 +88,8 @@ class SystemCalc:
 				'/ProductId': dummy,
 				'/CustomName': dummy,
 				'/Info/MaxChargeVoltage': dummy,
-				'/Settings/DischargeFloor': dummy},
+				'/Settings/DischargeFloor': dummy,
+				'/ParallelBmsId': dummy},
 			'com.victronenergy.vebus' : {
 				'/Ac/ActiveIn/ActiveInput': dummy,
 				'/Ac/ActiveIn/L1/P': dummy,
@@ -1214,6 +1215,11 @@ class SystemCalc:
 		cn = self._dbusmonitor.get_value(servicename, '/CustomName')
 		if cn is not None and cn.strip():
 			return cn
+
+		if servicename.startswith('com.victronenergy.battery.lynxparallel'):
+			return '%s %s' % (
+				self._dbusmonitor.get_value(servicename, '/ProductName'),
+				self._dbusmonitor.get_value(servicename, '/ParallelBmsId'))
 
 		return '%s on %s' % (
 			self._dbusmonitor.get_value(servicename, '/ProductName'),
