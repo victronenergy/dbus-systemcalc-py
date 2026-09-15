@@ -77,11 +77,31 @@ class _pylontech_quirk(BatteryBehaviour):
 	    running the battery at 52.4V it will be 99%-100% full, balancing should
 	    be active, and we should avoid high voltage alarms.
 
-	    Identify 24-V batteries by the lower charge voltage, and do the same
-	    thing with an 8-to-15 cell ratio, +-3.48V per cell.
+	    Identify 24-V batteries by the lower charge voltage. If the battery
+	    communicates its highest cell voltage, the charge voltage for both
+	    15-cell and 8-cell batteries is slowly adjusted to get the highest
+	    cell to about 3.52V.
 	"""
 	def __init__(self):
-		self._chargevoltage = 52.5
+		self._chargevoltage = None
+		self._cells = None
+
+	def _control_voltage(self, bms, cells, target, vmin, vmax):
+		""" Start from the current voltage, and add an offset that assumes all
+		    cells move together, to get the highest cell to target. Filter the
+		    entire thing to keep it stable. Raises TypeError if the battery
+		    voltage or highest cell voltage is unknown. """
+		if cells != self._cells:
+			# Battery type changed, restart the filter
+			self._cells = cells
+			self._chargevoltage = None
+
+		cv = max(vmin, min(vmax,
+			bms.voltage + (cells + 1) * (target - bms.maxcellvoltage)))
+		if self._chargevoltage is None:
+			self._chargevoltage = max(vmin, min(vmax, bms.voltage))
+		cv = self._chargevoltage = 0.95 * self._chargevoltage + 0.05 * cv
+		return round(cv, 2)
 
 	def charge_voltage(self, bms):
 		cv = bms.chargevoltage
@@ -99,36 +119,18 @@ class _pylontech_quirk(BatteryBehaviour):
 			return cv
 		if cv > 20:
 			if cv < 30:
-				# 24V
-				if bms.maxchargecurrent < 0.1:
-					return min(cv, 27.6)
-				return min(cv, 27.8)
-			else:
-				# 48V, 15 cells
-				# Aim for max 52.8V. Start from the current voltage, and
-				# add an offset that assumes all cells move together, to get
-				# them to 3.525V each. Add a correction factor to account
-				# for skew, in case cell voltages are skewed low or high.
-				# Filter the entire thing to keep it stable.
+				# 24V, 8 cells. Aim for max 28.2V.
 				try:
-					# distance between high and low cell
-					spread = max(0.0, bms.maxcellvoltage - bms.mincellvoltage)
-
-					# δ = average - median (estimated as cell_middle)
-					dd =  bms.voltage/15 - spread/2
-
-					# Skew, value between -0.5 and 0.5 indicating how much our
-					# cell voltages are leaning left or right
-					try:
-						skew = min(0.5, max(-0.5, dd / spread))
-					except ZeroDivisionError:
-						skew = 0.0
-
-					cv = max(47.0, min(52.8,
-						bms.voltage + 16 * (3.52-bms.maxcellvoltage) - skew * spread))
-					cv = self._chargevoltage = 0.95 * self._chargevoltage + 0.05 * cv
-					return round(cv, 2)
-				except TypeError: # One of the factors was None
+					return self._control_voltage(bms, 8, 3.52, 25.0, 28.2)
+				except TypeError: # No cell voltage data
+					if bms.maxchargecurrent < 0.1:
+						return min(cv, 27.6)
+					return min(cv, 27.8)
+			else:
+				# 48V, 15 cells. Aim for max 52.8V.
+				try:
+					return self._control_voltage(bms, 15, 3.52, 47.0, 52.8)
+				except TypeError: # No cell voltage data
 					return min(cv, 52.4)
 
 		# Not known, probably a 12V battery.

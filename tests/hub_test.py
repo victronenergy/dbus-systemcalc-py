@@ -1359,7 +1359,6 @@ class TestHubSystem(TestSystemCalcBase):
 				'/Info/MaxChargeVoltage': 53.2,
 				'/Info/MaxDischargeCurrent': 25,
 				'/InstalledCapacity': None,
-				'/System/MinCellVoltage': 3.5,
 				'/System/MaxCellVoltage': 4.5,
 				'/ProductId': 0xB009})
 
@@ -1371,6 +1370,84 @@ class TestHubSystem(TestSystemCalcBase):
 		v = self._monitor.get_value('com.victronenergy.vebus.ttyO1',
 			'/BatteryOperationalLimits/MaxChargeVoltage')
 		self.assertAlmostEqual(v, 47.0, places=1)
+
+	def test_pylontech_24v_high_cell_voltage_floor(self):
+		""" A very high maxcellvoltage should not push the charge voltage
+		    of an 8-cell battery below 25V. """
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 27.6,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 82.8,
+				'/Soc': 95,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': None,
+				'/Info/MaxChargeCurrent': 55,
+				'/Info/MaxChargeVoltage': 28.4,
+				'/Info/MaxDischargeCurrent': 55,
+				'/InstalledCapacity': None,
+				'/System/MaxCellVoltage': 4.5,
+				'/ProductId': 0xB009})
+
+		# Run enough ticks for the filter to converge
+		for _ in range(100):
+			self._update_values(interval=3000)
+
+		v = self._monitor.get_value('com.victronenergy.vebus.ttyO1',
+			'/BatteryOperationalLimits/MaxChargeVoltage')
+		self.assertAlmostEqual(v, 25.0, places=1)
+
+	def test_pylontech_24v_voltage_control(self):
+		""" Charge voltage of an 8-cell battery is adjusted to get the
+		    highest cell to 3.52V, and the filter restarts if the battery
+		    type changes. """
+		from unittest.mock import patch
+		from delegates import dvcc
+
+		# The quirk is a shared instance, don't inherit filter state from
+		# other tests.
+		p = patch.dict(dvcc.BEHAVIOURS, {0xB009: dvcc._pylontech_quirk()})
+		p.start()
+		self.addCleanup(p.stop)
+
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 28.0,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 84.0,
+				'/Soc': 95,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': None,
+				'/Info/MaxChargeCurrent': 55,
+				'/Info/MaxChargeVoltage': 28.4,
+				'/Info/MaxDischargeCurrent': 55,
+				'/InstalledCapacity': None,
+				'/System/MaxCellVoltage': 3.51,
+				'/ProductId': 0xB009})
+
+		def cv():
+			return self._monitor.get_value('com.victronenergy.vebus.ttyO1',
+				'/BatteryOperationalLimits/MaxChargeVoltage')
+
+		# Filter starts at the battery voltage and moves towards
+		# 28.0 + 9 * (3.52 - 3.51) = 28.09
+		self._update_values(interval=3000)
+		self.assertGreaterEqual(cv(), 28.0)
+		self.assertLess(cv(), 28.09)
+
+		for _ in range(200):
+			self._update_values(interval=3000)
+		self.assertAlmostEqual(cv(), 28.09, places=2)
+
+		# Switch to a 15-cell battery, filter restarts from battery voltage
+		# and moves towards 52.5 + 16 * (3.52 - 3.51) = 52.66
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Dc/0/Voltage', 52.5)
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeVoltage', 53.2)
+		self._update_values(interval=3000)
+		self.assertGreaterEqual(cv(), 52.5)
+		self.assertLess(cv(), 52.66)
 
 	def test_no_bms_max_charge_current_setting(self):
 		# Test that with no BMS but a user limit, /Dc/0/MaxChargeCurrent is correctly set.
