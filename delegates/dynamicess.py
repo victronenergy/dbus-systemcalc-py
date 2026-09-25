@@ -58,8 +58,11 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice.add_path('/DynamicEss/ChargeControlAcquired', value=0)
 
 	def get_settings(self):
-		# Settings for DynamicEss - nothing needed here, service handles that.
-		return [ ]
+		# Settings for DynamicEss - dynamicess delegate needs to own the mode paramater
+		# so, we have that available on systems that never had the service running before.
+		return [
+			('dess_mode', '/Settings/DynamicEss/Mode', 0, 0, 5)
+		]
 
 	def get_input(self):
 		return [
