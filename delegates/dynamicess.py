@@ -90,6 +90,7 @@ class ReactiveStrategy(int, Enum):
 	SELFCONSUME_ACCEPT_BELOW_TSOC = 20
 	IDLE_NO_DISCHARGE_OPPORTUNITY = 21
 
+	ERROR_CODE = 90
 	SELFCONSUME_INVALID_TARGETSOC = 91
 	DESS_DISABLED = 92
 	SELFCONSUME_UNEXPECTED_EXCEPTION = 93
@@ -1026,28 +1027,21 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 			self._dbusservice['/DynamicEss/ReactiveStrategy'] = ReactiveStrategy.DESS_DISABLED.value
 			return False
 
-		def bail(code):
-			self.release_control()
-			self.active = 0 # Off
-			self.errorcode = code
-			self.targetsoc = None
-			self._dbusservice['/DynamicEss/MinimumSoc'] = None
-
 		if self.capacity == 0.0:
-			bail(5) # Capacity not set
+			self.deactivate(5) # Capacity not set
 			return True
 
 		if self._device is None:
-			bail(1) # No ESS
+			self.deactivate(1) # No ESS
 			return True
 
 		if self.soc is None:
-			bail(4) # Low SOC, can happen during firmware updates
+			self.deactivate(4) # Low SOC, can happen during firmware updates
 			return True
 
 		errorcode = self._device.check_conditions()
 		if errorcode != 0:
-			bail(errorcode)
+			self.deactivate(errorcode)
 			return True
 
 		now = self._get_time()
@@ -1457,6 +1451,9 @@ class DynamicEss(SystemCalcDelegate, ChargeControl):
 		self._dbusservice['/DynamicEss/Restrictions'] = None
 		self._dbusservice['/DynamicEss/AllowGridFeedIn'] = None
 		self._dbusservice['/DynamicEss/MinimumSoc'] = None
+
+		if reason > 0:
+			self._dbusservice['/DynamicEss/ReactiveStrategy'] = ReactiveStrategy.ERROR_CODE.value
 
 	def update_values(self, newvalues):
 		# Indicate whether this system has DESS capability. Presently
