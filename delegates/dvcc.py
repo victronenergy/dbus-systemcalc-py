@@ -78,7 +78,7 @@ class _pylontech_quirk(BatteryBehaviour):
 	    be active, and we should avoid high voltage alarms.
 
 	    Identify 24-V batteries by the lower charge voltage. If the battery
-	    communicates its highest cell voltage, the charge voltage for both
+	    communicates its highest cell voltage, the charge voltage for 16-cell,
 	    15-cell and 8-cell batteries is slowly adjusted to get the highest
 	    cell to about 3.52V.
 	"""
@@ -115,8 +115,11 @@ class _pylontech_quirk(BatteryBehaviour):
 		# That leaves 1.6V margin for 48V batteries and 1.0V for 24V.
 		# See https://github.com/victronenergy/venus/issues/536
 		if cv > 54:
-			# 48V battery (16 cells.) Assume BMS knows what it's doing.
-			return cv
+			# 48V, 16 cells. Aim for max 56.4V.
+			try:
+				return self._control_voltage(bms, 16, 3.52, 50.0, 56.4)
+			except TypeError: # No cell voltage data, assume BMS knows best
+				return cv
 		if cv > 20:
 			if cv < 30:
 				# 24V, 8 cells. Aim for max 28.2V.
