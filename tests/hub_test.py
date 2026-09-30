@@ -1452,7 +1452,8 @@ class TestHubSystem(TestSystemCalcBase):
 	def test_pylontech_16cell_voltage_control(self):
 		""" Charge voltage of a 16-cell battery is adjusted to get the
 		    highest cell to 3.52V, clamped to 50V-56.4V. Without cell
-		    voltage data, the battery's charge voltage is used. """
+		    voltage data, the battery's charge voltage is used, capped at
+		    57.6V. """
 		from unittest.mock import patch
 		from delegates import dvcc
 
@@ -1508,6 +1509,11 @@ class TestHubSystem(TestSystemCalcBase):
 		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/System/MaxCellVoltage', None)
 		self._update_values(interval=3000)
 		self.assertEqual(cv(), 57.0)
+
+		# ... but not above 3.6V per cell
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeVoltage', 58.4)
+		self._update_values(interval=3000)
+		self.assertEqual(cv(), 57.6)
 
 	def test_no_bms_max_charge_current_setting(self):
 		# Test that with no BMS but a user limit, /Dc/0/MaxChargeCurrent is correctly set.
@@ -2817,7 +2823,7 @@ class TestHubSystem(TestSystemCalcBase):
 
 	def test_pylontech_with_voltage_control(self):
 		""" Some Pylontech batteries can control their own charge,
-		    voltage, then pass voltage through. """
+		    voltage, then pass voltage through, capped at 57.6V. """
 		self._add_device('com.victronenergy.battery.ttyO2',
 			product_name='battery',
 			values={
@@ -2841,6 +2847,15 @@ class TestHubSystem(TestSystemCalcBase):
 			}
 		})
 		self._check_values({ '/Control/EffectiveChargeVoltage': 53.2 })
+
+		# Capped at 3.6V per cell for 16 cells
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeVoltage', 58.4)
+		self._update_values(interval=3000)
+		self._check_external_values({
+			'com.victronenergy.vebus.ttyO1': {
+				'/BatteryOperationalLimits/MaxChargeVoltage': 57.6
+			}
+		})
 
 	def test_current_distribution_solarchargers_multirs(self):
 		self._remove_device('com.victronenergy.vebus.ttyO1')

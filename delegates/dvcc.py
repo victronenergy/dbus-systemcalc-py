@@ -106,9 +106,10 @@ class _pylontech_quirk(BatteryBehaviour):
 	def charge_voltage(self, bms):
 		cv = bms.chargevoltage
 
-		# Check if the battery can do its own charge voltage control
+		# Check if the battery can do its own charge voltage control. Cap
+		# at 3.6V per cell for 16 cells as a safety limit.
 		if bms.has_charge_voltage_control:
-			return cv
+			return min(cv, 57.6)
 
 		# Use 3.48V per cell plus a little, 52.4V for 15 cell 48V batteries.
 		# Use 3.46V per cell plus a little, 27.8V for 24V batteries testing shows that's 100% SOC.
@@ -118,8 +119,8 @@ class _pylontech_quirk(BatteryBehaviour):
 			# 48V, 16 cells. Aim for max 56.4V.
 			try:
 				return self._control_voltage(bms, 16, 3.52, 50.0, 56.4)
-			except TypeError: # No cell voltage data, assume BMS knows best
-				return cv
+			except TypeError: # No cell voltage data, cap at 3.6V per cell
+				return min(cv, 57.6)
 		if cv > 20:
 			if cv < 30:
 				# 24V, 8 cells. Aim for max 28.2V.
