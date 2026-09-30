@@ -74,6 +74,7 @@ class RelayStateTest(TestSystemCalcBase):
 
 		self._update_values(6000)
 		self.assertEqual(self._service['/Relay/0/State'], 1)
+		self.assertEqual(self._service['/SwitchableOutput/Capabilities'], 1)
 
 		self._service.set_value('/Relay/0/State', 0)
 		self.assertEqual(open(self.gpio1_state, 'rt').read(), '0')

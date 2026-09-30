@@ -95,6 +95,9 @@ class RelayState(SystemCalcDelegate):
 		if self.relay_function is None:
 			return True # Try again on the next idle event
 
+		# Capabilities: 1 = WATCH_UI_VISIBILITY
+		self._dbusservice.add_path('/SwitchableOutput/Capabilities', 1)
+
 		for idx, path in self._relays.items():
 			with self._dbusservice as s:
 				s.add_path(f'/Relay/{idx}/State', value=None, writeable=True,
