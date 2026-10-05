@@ -138,19 +138,13 @@ class _pylontech_quirk(BatteryBehaviour):
 		cv = bms.chargevoltage
 		mcc = bms.maxchargecurrent
 
-		if bms.has_charge_voltage_control or cv > 55 or cv <= 20:
+		if bms.has_charge_voltage_control or not (20 < cv < 30):
 			return mcc
 
-		# 48V battery (15 cells) or 24V battery (8 cells). We want to halve
-		# the charge current limit when CCL=0 is sent. Normally the limit is
-		# C/2, so limit to C/4, or assume a single module (25Ah/55Ah) if not
-		# known.
-		if cv < 30:
-			# 24V
-			capacity = bms.capacity or 55
-		else:
-			# 48V
-			capacity = bms.capacity or 25.0
+		# 24V battery (8 cells). We want to halve the charge current limit
+		# when CCL=0 is sent. Normally the limit is C/2, so limit to C/4, or
+		# assume a single module (55Ah) if not known.
+		capacity = bms.capacity or 55
 		return max(mcc, round(capacity/4.0))
 
 class _pylontech_pelio_quirk(BatteryBehaviour):
