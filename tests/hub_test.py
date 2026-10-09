@@ -1524,6 +1524,91 @@ class TestHubSystem(TestSystemCalcBase):
 		self._update_values(interval=3000)
 		self.assertEqual(cv(), 57.6)
 
+	def test_user_cell_voltage_control(self):
+		""" With a user-configured cell count and maximum cell voltage, the
+		    charge voltage of any battery is adjusted to get the highest cell
+		    to that voltage, clamped between 3.1V per cell and the battery's
+		    charge voltage. """
+		from unittest.mock import patch
+		from delegates import dvcc
+
+		# The default behaviour is a shared instance, don't inherit filter
+		# state from other tests.
+		p = patch.object(dvcc, 'DEFAULT_BEHAVIOUR', dvcc.BatteryBehaviour())
+		p.start()
+		self.addCleanup(p.stop)
+
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 54.0,
+				'/Dc/0/Current': 3,
+				'/Dc/0/Power': 162.0,
+				'/Soc': 95,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': None,
+				'/Info/MaxChargeCurrent': 55,
+				'/Info/MaxChargeVoltage': 56.0,
+				'/Info/MaxDischargeCurrent': 55,
+				'/InstalledCapacity': None,
+				'/System/MaxCellVoltage': 3.40,
+				'/ProductId': 0xB0FF})
+
+		def cv():
+			return self._monitor.get_value('com.victronenergy.vebus.ttyO1',
+				'/BatteryOperationalLimits/MaxChargeVoltage')
+
+		def settle():
+			for _ in range(200):
+				self._update_values(interval=3000)
+
+		# Not configured, use the battery's charge voltage
+		self._update_values(interval=3000)
+		self.assertEqual(cv(), 56.0)
+
+		# Filter starts at the battery voltage and moves towards
+		# 54.0 + 17 * (3.45 - 3.40) = 54.85
+		self._set_setting('/Settings/SystemSetup/BatteryCellCount', 16)
+		self._set_setting('/Settings/SystemSetup/MaxCellVoltage', 3.45)
+		self._update_values(interval=3000)
+		self.assertGreaterEqual(cv(), 54.0)
+		self.assertLess(cv(), 54.85)
+		settle()
+		self.assertAlmostEqual(cv(), 54.85, places=2)
+
+		# Target cell voltage cannot be set below 3.35V,
+		# 54.0 + 17 * (3.35 - 3.40) = 53.15
+		self._set_setting('/Settings/SystemSetup/MaxCellVoltage', 3.0)
+		settle()
+		self.assertAlmostEqual(cv(), 53.15, places=2)
+
+		# High cells pull it down, but not below 16 * 3.1 = 49.6V
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/System/MaxCellVoltage', 4.5)
+		settle()
+		self.assertAlmostEqual(cv(), 49.6, places=1)
+
+		# Low cells push it up, but not above the battery's charge voltage
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/System/MaxCellVoltage', 3.2)
+		settle()
+		self.assertAlmostEqual(cv(), 56.0, places=1)
+
+		# If the battery lowers its charge voltage, follow it immediately
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/Info/MaxChargeVoltage', 55.0)
+		self._update_values(interval=3000)
+		self.assertLessEqual(cv(), 55.0)
+
+		# No cell voltage data, pass through the battery's charge voltage
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/System/MaxCellVoltage', None)
+		self._update_values(interval=3000)
+		self.assertEqual(cv(), 55.0)
+
+		# Cell count too high for this battery, pass through the battery's
+		# charge voltage
+		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/System/MaxCellVoltage', 3.40)
+		self._set_setting('/Settings/SystemSetup/BatteryCellCount', 18)
+		self._update_values(interval=3000)
+		self.assertEqual(cv(), 55.0)
+
 	def test_no_bms_max_charge_current_setting(self):
 		# Test that with no BMS but a user limit, /Dc/0/MaxChargeCurrent is correctly set.
 		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 55.2)

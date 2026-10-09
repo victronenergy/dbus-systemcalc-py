@@ -26,11 +26,39 @@ VEBUS_FIRMWARE_REQUIRED = 0x422
 VEDIRECT_FIRMWARE_REQUIRED = 0x129
 VECAN_FIRMWARE_REQUIRED = 0x10200 # 1.02, 24-bit version
 
+# Limits for user-configured cell voltage control. The target cell voltage
+# may not be set lower than MIN_CELL_VOLTAGE, and the charge voltage is never
+# controlled below CELL_FLOOR per cell.
+MIN_CELL_VOLTAGE = 3.35
+CELL_FLOOR = 3.1
+
 # This is a place to account for some BMS quirks where we may have to ignore
 # the BMS value and substitute our own.
 class BatteryBehaviour(object):
 	_stop_on_mcc0 = False
 	_quick_adjust = False
+
+	def __init__(self):
+		self._chargevoltage = None
+		self._cells = None
+
+	def control_voltage(self, bms, cells, target, vmin, vmax):
+		""" Start from the current voltage, and add an offset that assumes all
+		    cells move together, to get the highest cell to target. Filter the
+		    entire thing to keep it stable. Raises TypeError if the battery
+		    voltage or highest cell voltage is unknown. """
+		if cells != self._cells:
+			# Battery type changed, restart the filter
+			self._cells = cells
+			self._chargevoltage = None
+
+		clamp = lambda v: min(vmax, max(vmin, v))
+		cv = clamp(bms.voltage + (cells + 1) * (target - bms.maxcellvoltage))
+		if self._chargevoltage is None:
+			self._chargevoltage = bms.voltage
+		# Clamp the filter state too, in case the limits moved
+		cv = self._chargevoltage = 0.95 * clamp(self._chargevoltage) + 0.05 * cv
+		return round(cv, 2)
 
 	def charge_voltage(self, bms):
 		return bms.chargevoltage
@@ -82,27 +110,6 @@ class _pylontech_quirk(BatteryBehaviour):
 	    15-cell and 8-cell batteries is slowly adjusted to get the highest
 	    cell to about 3.52V.
 	"""
-	def __init__(self):
-		self._chargevoltage = None
-		self._cells = None
-
-	def _control_voltage(self, bms, cells, target, vmin, vmax):
-		""" Start from the current voltage, and add an offset that assumes all
-		    cells move together, to get the highest cell to target. Filter the
-		    entire thing to keep it stable. Raises TypeError if the battery
-		    voltage or highest cell voltage is unknown. """
-		if cells != self._cells:
-			# Battery type changed, restart the filter
-			self._cells = cells
-			self._chargevoltage = None
-
-		cv = max(vmin, min(vmax,
-			bms.voltage + (cells + 1) * (target - bms.maxcellvoltage)))
-		if self._chargevoltage is None:
-			self._chargevoltage = max(vmin, min(vmax, bms.voltage))
-		cv = self._chargevoltage = 0.95 * self._chargevoltage + 0.05 * cv
-		return round(cv, 2)
-
 	def charge_voltage(self, bms):
 		cv = bms.chargevoltage
 
@@ -118,14 +125,14 @@ class _pylontech_quirk(BatteryBehaviour):
 		if cv > 54:
 			# 48V, 16 cells. Aim for max 56.4V.
 			try:
-				return self._control_voltage(bms, 16, 3.52, 50.0, 56.4)
+				return self.control_voltage(bms, 16, 3.52, 50.0, 56.4)
 			except TypeError: # No cell voltage data, cap at 3.6V per cell
 				return min(cv, 57.6)
 		if cv > 20:
 			if cv < 30:
 				# 24V, 8 cells. Aim for max 28.2V.
 				try:
-					return self._control_voltage(bms, 8, 3.52, 25.0, 28.2)
+					return self.control_voltage(bms, 8, 3.52, 25.0, 28.2)
 				except TypeError: # No cell voltage data
 					if bms.maxchargecurrent < 0.1:
 						return min(cv, 27.6)
@@ -133,7 +140,7 @@ class _pylontech_quirk(BatteryBehaviour):
 			else:
 				# 48V, 15 cells. Aim for max 52.8V.
 				try:
-					return self._control_voltage(bms, 15, 3.52, 47.0, 52.8)
+					return self.control_voltage(bms, 15, 3.52, 47.0, 52.8)
 				except TypeError: # No cell voltage data
 					return min(cv, 52.4)
 
@@ -1071,6 +1078,8 @@ class Dvcc(SystemCalcDelegate):
 		return [
 			('maxchargecurrent', '/Settings/SystemSetup/MaxChargeCurrent', -1, -1, 10000),
 			('maxchargevoltage', '/Settings/SystemSetup/MaxChargeVoltage', 0.0, 0.0, 80.0),
+			('cellcount', '/Settings/SystemSetup/BatteryCellCount', 0, 0, 32),
+			('maxcellvoltage', '/Settings/SystemSetup/MaxCellVoltage', 0.0, 0.0, 4.5),
 			('bol', '/Settings/Services/Bol', 0, 0, 7),
 			('bolsecondary', '/Settings/SystemSetup/DvccControlAllMultis', 0, 0, 1)
 		]
@@ -1389,10 +1398,25 @@ class Dvcc(SystemCalcDelegate):
 	def _battery_behaviour(bms_service):
 		return BEHAVIOURS.get(bms_service.product_id, DEFAULT_BEHAVIOUR)
 
+	def _battery_chargevoltage(self, behaviour, bms_service):
+		""" If the user configured a cell count and maximum cell voltage,
+		    control the charge voltage to keep the highest cell at that
+		    voltage. Otherwise use the battery behaviour. """
+		cells = self._settings['cellcount']
+		target = self._settings['maxcellvoltage']
+		cv = bms_service.chargevoltage
+		if cells > 0 and target > 0 and cv is not None and cells * CELL_FLOOR < cv:
+			try:
+				return behaviour.control_voltage(bms_service, cells,
+					max(MIN_CELL_VOLTAGE, target), cells * CELL_FLOOR, cv)
+			except TypeError:
+				pass # No cell voltage data
+		return behaviour.charge_voltage(bms_service)
+
 	def _adjust_battery_chargevoltage(self, behaviour, bms_service):
 		""" Take the charge voltage from the BMS and adjust it as necessary,
 		    applying battery behaviour and user limits. """
-		cv = behaviour.charge_voltage(bms_service)
+		cv = self._battery_chargevoltage(behaviour, bms_service)
 
 		# Override the battery charge voltage by taking the lesser of the
 		# voltage limits. Only override if the battery supplies one, to prevent
