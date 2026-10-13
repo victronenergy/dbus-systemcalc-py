@@ -44,7 +44,7 @@ s = DbusDummyService(
 		'/Engine/OperatingHours': {'initial': 101},
 		'/Engine/CoolantTemperature': {'initial': 92},
 		'/Engine/WindingTemperature': {'initial': 101},
-		'/Engine/ExaustTemperature': {'initial': 188},
+		'/Engine/ExhaustTemperature': {'initial': 188},
 		'/StarterVoltage': {'initial': 12.2},
 		'/Ac/L1/Voltage': {'initial': 230.2},
 		'/Ac/L1/Current': {'initial': 1.2},
