@@ -116,10 +116,10 @@ class Multi(SystemCalcDelegate):
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		SystemCalcDelegate.set_sources(self, dbusmonitor, settings, dbusservice)
 
-		# Determine if this platform has a built-in MK2/3. Maxi-GX
-		# and generic (Raspberry Pi) does not.
+		# Determine if this platform has a built-in MK2/3. Maxi-GX,
+		# generic (Raspberry Pi), Nucleo GX and Container GX do not.
 		self.has_onboard_mkx = get_product_id() not in (
-			'C009', 'C00D', 'C010', 'C003', 'C015')
+			'C009', 'C00D', 'C010', 'C003', 'C015', 'C018')
 
 	def get_input(self):
 		return [('com.victronenergy.vebus', [

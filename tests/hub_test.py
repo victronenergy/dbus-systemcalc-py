@@ -2897,6 +2897,34 @@ class TestHubSystem(TestSystemCalcBase):
 				'/BatteryOperationalLimits/MaxDischargeCurrent': 50 },
 		})
 
+	def test_usb_multi_is_main_without_onboard_mkx(self):
+		""" A container (C018) has no built-in MK2/3, so a Multi on an
+		    MK3-USB is the main VE.Bus device. """
+		from unittest.mock import patch
+		from delegates.multi import Multi
+		with patch('delegates.multi.get_product_id', return_value='C018'):
+			Multi.instance.set_sources(Multi.instance._dbusmonitor,
+				Multi.instance._settings, Multi.instance._dbusservice)
+		self.assertFalse(Multi.instance.has_onboard_mkx)
+
+		self._remove_device('com.victronenergy.vebus.ttyO1')
+		self._add_device('com.victronenergy.vebus.ttyUSB0',
+			product_name='Multi',
+			values={
+				'/Ac/ActiveIn/ActiveInput': 0,
+				'/Ac/ActiveIn/Connected': 1,
+				'/Dc/0/Voltage': 12.25,
+				'/Dc/0/Current': -8,
+				'/DeviceInstance': 0,
+				'/State': 3,
+				'/Interfaces/Mk2/ProductName': 'MK3',
+				'/Interfaces/Mk2/Connection': '/dev/ttyUSB0'
+			})
+		self._update_values(interval=3000)
+		self._check_values({
+			'/VebusService': 'com.victronenergy.vebus.ttyUSB0'
+		})
+
 	def test_dvcc_with_multiple_multis_no_extra_multis(self):
 		from delegates.multi import Multi
 		Multi.instance.has_onboard_mkx = True # Force it true
