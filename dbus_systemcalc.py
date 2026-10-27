@@ -1343,7 +1343,7 @@ class DbusSystemCalc(SystemCalc):
 			connection='data from other dbus processes',
 			deviceinstance=0,
 			productid=None,
-			productname=None,
+			productname='System',
 			firmwareversion=venusversion,
 			hardwareversion=None,
 			connected=1)
