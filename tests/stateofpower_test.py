@@ -42,6 +42,25 @@ class TestStateOfPower(TestSystemCalcBase):
 		self.assertAlmostEqual(self._service['/Dc/Battery/Sop/C'], 0.0, delta=1.0)
 		# 3.48V reached at (3.48 - 3.35) / 0.002 = 65A
 		self.assertAlmostEqual(self._service['/Dc/Battery/Sop/ChargeCurrent'], 65, delta=3)
+		self.assertAlmostEqual(self._service['/Dc/Battery/Sop/ChargePower'], 65 * 53.6, delta=3 * 53.6)
+
+	def test_pv_current(self):
+		self._add_device('com.victronenergy.solarcharger.ttyO1', {
+			'/Dc/0/Voltage': 53.6,
+			'/Dc/0/Current': 20})
+		for t in range(600):
+			self._set_current(10.0 if (t // 30) % 2 else 30.0)
+			self._update_values()
+
+		# MPPTs take 20A of the 65A
+		self.assertAlmostEqual(self._service['/Dc/Battery/Sop/ChargeCurrent'], 45, delta=3)
+		self.assertAlmostEqual(self._service['/Dc/Battery/Sop/ChargePower'], 45 * 53.6, delta=3 * 53.6)
+
+		# Never negative
+		self._monitor.set_value('com.victronenergy.solarcharger.ttyO1', '/Dc/0/Current', 100)
+		self._update_values(2000)
+		self.assertEqual(self._service['/Dc/Battery/Sop/ChargeCurrent'], 0)
+		self.assertEqual(self._service['/Dc/Battery/Sop/ChargePower'], 0)
 
 	def test_capacity(self):
 		self._set_current(10.0)
