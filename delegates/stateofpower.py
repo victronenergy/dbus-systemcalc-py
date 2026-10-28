@@ -29,6 +29,8 @@ class StateOfPower(SystemCalcDelegate):
 			gettextcallback=lambda p, v: '' if v is None else f'{v:.1f} mV')
 		self._dbusservice.add_path('/Dc/Battery/Sop/ChargeCurrent', value=None,
 			gettextcallback=lambda p, v: '' if v is None else f'{v:.1f} A')
+		self._dbusservice.add_path('/Dc/Battery/Sop/ChargePower', value=None,
+			gettextcallback=lambda p, v: '' if v is None else f'{v:.0f} W')
 		self._dbusservice.add_path('/Dc/Battery/Sop/CurrentStep', value=None,
 			gettextcallback=lambda p, v: '' if v is None else f'{v:.1f} A')
 
@@ -37,10 +39,11 @@ class StateOfPower(SystemCalcDelegate):
 		""" Battery capacity in Ah, or None if unknown. """
 		return self._dbusservice['/Dc/Battery/Capacity']
 
-	def _publish(self, r, c, i, s):
+	def _publish(self, r, c, i, p, s):
 		self._dbusservice['/Dc/Battery/Sop/R'] = r
 		self._dbusservice['/Dc/Battery/Sop/C'] = c
 		self._dbusservice['/Dc/Battery/Sop/ChargeCurrent'] = i
+		self._dbusservice['/Dc/Battery/Sop/ChargePower'] = p
 		self._dbusservice['/Dc/Battery/Sop/CurrentStep'] = s
 
 	def _on_timer(self):
@@ -51,7 +54,7 @@ class StateOfPower(SystemCalcDelegate):
 
 		if vmax is None or current is None:
 			self._estimator = self._service = None
-			self._publish(None, None, None, None)
+			self._publish(None, None, None, None, None)
 			return True
 
 		if self._estimator is None or battery.service != self._service:
@@ -59,9 +62,16 @@ class StateOfPower(SystemCalcDelegate):
 			self._service = battery.service
 
 		i_avail = self._estimator.update(vmax, current)
+
+		# Only what is left after the MPPTs have taken their share
+		pv_current = self._dbusservice['/Dc/Pv/Current'] or 0
+		i_avail = max(0, i_avail - pv_current)
+		voltage = self._dbusservice['/Dc/Battery/Voltage']
+
 		self._publish(
 			round(self._estimator.resistance * 1e3, 3),
 			round(self._estimator.drift * 1e3, 1),
 			round(i_avail, 1),
+			None if voltage is None else round(i_avail * voltage),
 			round(self._estimator.min_current_step, 1))
 		return True
