@@ -135,6 +135,29 @@ class RelayStateTest(TestSystemCalcBase):
 		self.assertEqual(self._service['/Relay/0/State'], 1) # Unaffected
 		self.assertEqual(open(self.gpio1_state, 'rt').read(), '1') # Unaffected
 
+	def test_relay_polarity_setting(self):
+		rs = RelayState()
+		rs.set_sources(self._monitor, self._system_calc._settings, self._service)
+		self._update_values(5000)
+
+		self.assertEqual(self._service['/SwitchableOutput/0/Settings/Polarity'], 0)
+		self.assertEqual(self._service['/SwitchableOutput/1/Settings/Polarity'], 0)
+
+		# Writes are mirrored into settings
+		self._service.set_value('/SwitchableOutput/1/Settings/Polarity', 1)
+		self.assertEqual(self._monitor.get_value('com.victronenergy.settings',
+			'/Settings/Relay/1/Polarity'), 1)
+
+		# Invalid values are rejected
+		self._service.set_value('/SwitchableOutput/1/Settings/Polarity', 2)
+		self.assertEqual(self._monitor.get_value('com.victronenergy.settings',
+			'/Settings/Relay/1/Polarity'), 1)
+
+		# Changes in settings are reflected on dbus
+		self._monitor.set_value('com.victronenergy.settings', '/Settings/Relay/Polarity', 1)
+		self._update_values(5000)
+		self.assertEqual(self._service['/SwitchableOutput/0/Settings/Polarity'], 1)
+
 	def test_relay_manual_polarity(self):
 		rs = RelayState()
 		rs.set_sources(self._monitor, self._system_calc._settings, self._service)

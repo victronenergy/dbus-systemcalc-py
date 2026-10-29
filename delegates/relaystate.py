@@ -49,18 +49,20 @@ class RelayState(SystemCalcDelegate):
 			))
 		return s
 
+	@staticmethod
+	def _relay_setting_path(idx, name):
+		return f'/Settings/Relay/{name}' if idx == 0 else f'/Settings/Relay/{idx}/{name}'
+
 	def _relay_function(self, idx):
 		return self._dbusmonitor.get_value('com.victronenergy.settings',
-			('/Settings/Relay/Function' if idx == 0 else
-			 f'/Settings/Relay/{idx}/Function'), 2)
+			self._relay_setting_path(idx, 'Function'), 2)
 
 	def set_relay_function(self, valid, idx, v):
 		# check that function is allowed. The relevant bit must be in the
 		# valid mask
 		if 0 <= v <= 5 and bool(2**v & valid):
 			self._dbusmonitor.set_value('com.victronenergy.settings',
-				('/Settings/Relay/Function' if idx == 0 else
-				 f'/Settings/Relay/{idx}/Function'), v)
+				self._relay_setting_path(idx, 'Function'), v)
 			return True
 		return False
 
@@ -68,14 +70,23 @@ class RelayState(SystemCalcDelegate):
 	def relay_function(self):
 		return self._relay_function(0)
 
+	def _relay_polarity_setting(self, idx):
+		return self._dbusmonitor.get_value('com.victronenergy.settings',
+			self._relay_setting_path(idx, 'Polarity'))
+
+	def set_relay_polarity(self, idx, v):
+		if v in (0, 1): # 0 = N/O, 1 = N/C
+			self._dbusmonitor.set_value('com.victronenergy.settings',
+				self._relay_setting_path(idx, 'Polarity'), v)
+			return True
+		return False
+
 	def _relay_polarity(self, idx):
 		# Only manual polarity is flipped here. Alarm polarity is flipped
 		# in venus-platform
 		if self._relay_function(idx) == 2:
 			# This ensures it can only ever return 0 or 1
-			return int(self._dbusmonitor.get_value('com.victronenergy.settings',
-				('/Settings/Relay/Polarity' if idx == 0 else
-				 f'/Settings/Relay/{idx}/Polarity')) == 1)
+			return int(self._relay_polarity_setting(idx) == 1)
 		return 0
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
@@ -128,6 +139,9 @@ class RelayState(SystemCalcDelegate):
 					onchangecallback=lambda p, v, f=functions, idx=idx: self.set_relay_function(f, idx, int(v)))
 				s.add_path(f'/SwitchableOutput/{idx}/Settings/ValidFunctions',
 					value=functions)
+				s.add_path(f'/SwitchableOutput/{idx}/Settings/Polarity',
+					value=self._relay_polarity_setting(idx), writeable=True,
+					onchangecallback=lambda p, v, idx=idx: self.set_relay_polarity(idx, int(v)))
 
 			# If relay is manual, restore previous state. Otherwise the
 			# controlling service will set it correctly once it comes up.
@@ -161,6 +175,7 @@ class RelayState(SystemCalcDelegate):
 
 			# Make sure updates to relay function in settings is reflected here
 			self._dbusservice[f'/SwitchableOutput/{idx}/Settings/Function'] = self._relay_function(idx)
+			self._dbusservice[f'/SwitchableOutput/{idx}/Settings/Polarity'] = self._relay_polarity_setting(idx)
 
 		return True
 
