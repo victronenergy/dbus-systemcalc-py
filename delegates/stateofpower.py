@@ -14,7 +14,7 @@ class StateOfPower(SystemCalcDelegate):
 	def __init__(self):
 		super(StateOfPower, self).__init__()
 		self._estimator = None
-		self._service = None
+		self._source = None
 
 	def set_sources(self, dbusmonitor, settings, dbusservice):
 		super(StateOfPower, self).set_sources(dbusmonitor, settings, dbusservice)
@@ -48,6 +48,15 @@ class StateOfPower(SystemCalcDelegate):
 			# Older dvcc delegate that doesn't register this setting
 			return None
 
+	@property
+	def cellcount(self):
+		""" Number of cells in series, or None if not configured. """
+		try:
+			return self._settings['cellcount'] or None
+		except KeyError:
+			# Older dvcc delegate that doesn't register this setting
+			return None
+
 	def _publish(self, r, c, i, p, s):
 		self._dbusservice['/Dc/Battery/Sop/R'] = r
 		self._dbusservice['/Dc/Battery/Sop/C'] = c
@@ -57,19 +66,31 @@ class StateOfPower(SystemCalcDelegate):
 
 	def _on_timer(self):
 		battery = BatteryService.instance.bms or BatteryService.instance.batteryservice
-		vmax = battery.maxcellvoltage if battery is not None else None
-		current = self._dbusmonitor.get_value(battery.service, '/Dc/0/Current') \
-			if battery is not None else None
+		vmax = current = None
+		estimated = False
+		if battery is not None:
+			vmax = battery.maxcellvoltage
+			current = self._dbusmonitor.get_value(battery.service, '/Dc/0/Current')
+
+			# Battery doesn't report cell voltages, assume a balanced pack
+			if vmax is None:
+				estimated = True
+				voltage, cells = battery.voltage, self.cellcount
+				if voltage is not None and cells is not None:
+					vmax = voltage / cells
 
 		if vmax is None or current is None:
-			self._estimator = self._service = None
+			self._estimator = self._source = None
 			self._publish(None, None, None, None, None)
 			return True
 
-		if self._estimator is None or battery.service != self._service:
+		# Don't mix history from another battery, or from measured and
+		# estimated cell voltages
+		source = (battery.service, estimated)
+		if self._estimator is None or source != self._source:
 			self._estimator = ChargeHeadroom(capacity=lambda: self.capacity,
 				v_limit=lambda: self.maxcellvoltage)
-			self._service = battery.service
+			self._source = source
 
 		i_avail = self._estimator.update(vmax, current)
 

@@ -54,6 +54,29 @@ class TestStateOfPower(TestSystemCalcBase):
 		# 3.45V reached at (3.45 - 3.35) / 0.002 = 50A
 		self.assertAlmostEqual(self._service['/Dc/Battery/Sop/ChargeCurrent'], 50, delta=3)
 
+	def test_estimated_cell_voltage(self):
+		self._monitor.set_value(self.battery, '/System/MaxCellVoltage', None)
+		self._set_setting('/Settings/SystemSetup/BatteryCellCount', 16)
+		for t in range(600):
+			current = 10.0 if (t // 30) % 2 else 30.0
+			self._monitor.set_value(self.battery, '/Dc/0/Current', current)
+			self._monitor.set_value(self.battery, '/Dc/0/Voltage',
+				round(16 * (3.35 + 0.002 * current), 2))
+			self._update_values()
+
+		self.assertAlmostEqual(self._service['/Dc/Battery/Sop/R'], 2.0, delta=0.1)
+		self.assertAlmostEqual(self._service['/Dc/Battery/Sop/ChargeCurrent'], 65, delta=3)
+
+	def test_estimated_cell_voltage_no_cellcount(self):
+		self._monitor.set_value(self.battery, '/System/MaxCellVoltage', None)
+		self._update_values()
+		self._check_values({
+			'/Dc/Battery/Sop/R': None,
+			'/Dc/Battery/Sop/C': None,
+			'/Dc/Battery/Sop/ChargeCurrent': None,
+			'/Dc/Battery/Sop/ChargePower': None,
+			'/Dc/Battery/Sop/CurrentStep': None})
+
 	def test_pv_current(self):
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/Dc/0/Voltage': 53.6,
