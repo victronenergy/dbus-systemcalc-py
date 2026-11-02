@@ -1080,6 +1080,7 @@ class Dvcc(SystemCalcDelegate):
 			('maxchargevoltage', '/Settings/SystemSetup/MaxChargeVoltage', 0.0, 0.0, 80.0),
 			('cellcount', '/Settings/SystemSetup/BatteryCellCount', 0, 0, 32),
 			('maxcellvoltage', '/Settings/SystemSetup/MaxCellVoltage', 0.0, 0.0, 4.5),
+			('cellvoltagecontrol', '/Settings/SystemSetup/CellVoltageControl', 0, 0, 1),
 			('bol', '/Settings/Services/Bol', 0, 0, 7),
 			('bolsecondary', '/Settings/SystemSetup/DvccControlAllMultis', 0, 0, 1)
 		]
@@ -1399,9 +1400,13 @@ class Dvcc(SystemCalcDelegate):
 		return BEHAVIOURS.get(bms_service.product_id, DEFAULT_BEHAVIOUR)
 
 	def _battery_chargevoltage(self, behaviour, bms_service):
-		""" If the user configured a cell count and maximum cell voltage,
-		    control the charge voltage to keep the highest cell at that
-		    voltage. Otherwise use the battery behaviour. """
+		""" If the user enabled cell voltage control and configured a cell
+		    count and maximum cell voltage, control the charge voltage to keep
+		    the highest cell at that voltage. Otherwise use the battery
+		    behaviour. """
+		if not self._settings['cellvoltagecontrol']:
+			return behaviour.charge_voltage(bms_service)
+
 		cells = self._settings['cellcount']
 		target = self._settings['maxcellvoltage']
 		cv = bms_service.chargevoltage

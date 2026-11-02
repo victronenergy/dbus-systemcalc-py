@@ -1525,8 +1525,8 @@ class TestHubSystem(TestSystemCalcBase):
 		self.assertEqual(cv(), 57.6)
 
 	def test_user_cell_voltage_control(self):
-		""" With a user-configured cell count and maximum cell voltage, the
-		    charge voltage of any battery is adjusted to get the highest cell
+		""" With cell voltage control enabled and a user-configured cell count
+		    and maximum cell voltage, the charge voltage of any battery is adjusted to get the highest cell
 		    to that voltage, clamped between 3.1V per cell and the battery's
 		    charge voltage. """
 		from unittest.mock import patch
@@ -1566,10 +1566,15 @@ class TestHubSystem(TestSystemCalcBase):
 		self._update_values(interval=3000)
 		self.assertEqual(cv(), 56.0)
 
-		# Filter starts at the battery voltage and moves towards
-		# 54.0 + 17 * (3.45 - 3.40) = 54.85
+		# Configured but not enabled, use the battery's charge voltage
 		self._set_setting('/Settings/SystemSetup/BatteryCellCount', 16)
 		self._set_setting('/Settings/SystemSetup/MaxCellVoltage', 3.45)
+		self._update_values(interval=3000)
+		self.assertEqual(cv(), 56.0)
+
+		# Filter starts at the battery voltage and moves towards
+		# 54.0 + 17 * (3.45 - 3.40) = 54.85
+		self._set_setting('/Settings/SystemSetup/CellVoltageControl', 1)
 		self._update_values(interval=3000)
 		self.assertGreaterEqual(cv(), 54.0)
 		self.assertLess(cv(), 54.85)
@@ -1606,6 +1611,14 @@ class TestHubSystem(TestSystemCalcBase):
 		# charge voltage
 		self._monitor.set_value('com.victronenergy.battery.ttyO2', '/System/MaxCellVoltage', 3.40)
 		self._set_setting('/Settings/SystemSetup/BatteryCellCount', 18)
+		self._update_values(interval=3000)
+		self.assertEqual(cv(), 55.0)
+
+		# Disabling the feature passes through the battery's charge voltage
+		self._set_setting('/Settings/SystemSetup/BatteryCellCount', 16)
+		self._update_values(interval=3000)
+		self.assertLess(cv(), 55.0)
+		self._set_setting('/Settings/SystemSetup/CellVoltageControl', 0)
 		self._update_values(interval=3000)
 		self.assertEqual(cv(), 55.0)
 
