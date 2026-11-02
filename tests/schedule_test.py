@@ -91,6 +91,33 @@ class TestSchedule(TestSystemCalcBase):
 				'/Overrides/ForceCharge': 0,
 		}})
 
+	def test_scheduled_charge_max_charge_power(self):
+		from delegates.dvcc import Dvcc
+
+		# Determine seconds since midnight on timer right now.
+		now = timer_manager.datetime
+		midnight = datetime.combine(now.date(), time.min)
+		stamp = (now-midnight).seconds
+
+		# Set a schedule to start in 2 minutes and stop in another 1.
+		self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Day', 7)
+		self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Start', stamp+120)
+		self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Duration', 60)
+		self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Soc', 100)
+		self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/MaxChargePower', 2700)
+
+		# No limit outside the window.
+		timer_manager.run(60000)
+		self.assertIsNone(Dvcc.instance.internal_maxchargepower)
+
+		# Inside the window, DVCC limits the charge power.
+		timer_manager.run(66000)
+		self._check_external_values({
+				'com.victronenergy.hub4': {
+				'/Overrides/ForceCharge': 1,
+		}})
+		self.assertEqual(Dvcc.instance.internal_maxchargepower, 2700)
+
 	def test_scheduled_charge_stop_on_soc(self):
 		# Add solar charger
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
