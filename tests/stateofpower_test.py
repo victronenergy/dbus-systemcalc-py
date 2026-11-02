@@ -44,6 +44,16 @@ class TestStateOfPower(TestSystemCalcBase):
 		self.assertAlmostEqual(self._service['/Dc/Battery/Sop/ChargeCurrent'], 65, delta=3)
 		self.assertAlmostEqual(self._service['/Dc/Battery/Sop/ChargePower'], 65 * 53.6, delta=3 * 53.6)
 
+	def test_maxcellvoltage(self):
+		self._set_setting('/Settings/SystemSetup/MaxCellVoltage', 3.45)
+		self.assertEqual(StateOfPower.instance.maxcellvoltage, 3.45)
+		for t in range(600):
+			self._set_current(10.0 if (t // 30) % 2 else 30.0)
+			self._update_values()
+
+		# 3.45V reached at (3.45 - 3.35) / 0.002 = 50A
+		self.assertAlmostEqual(self._service['/Dc/Battery/Sop/ChargeCurrent'], 50, delta=3)
+
 	def test_pv_current(self):
 		self._add_device('com.victronenergy.solarcharger.ttyO1', {
 			'/Dc/0/Voltage': 53.6,

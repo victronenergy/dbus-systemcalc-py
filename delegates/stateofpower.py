@@ -39,6 +39,15 @@ class StateOfPower(SystemCalcDelegate):
 		""" Battery capacity in Ah, or None if unknown. """
 		return self._dbusservice['/Dc/Battery/Capacity']
 
+	@property
+	def maxcellvoltage(self):
+		""" Target cell voltage in V, or None if not configured. """
+		try:
+			return self._settings['maxcellvoltage'] or None
+		except KeyError:
+			# Older dvcc delegate that doesn't register this setting
+			return None
+
 	def _publish(self, r, c, i, p, s):
 		self._dbusservice['/Dc/Battery/Sop/R'] = r
 		self._dbusservice['/Dc/Battery/Sop/C'] = c
@@ -58,7 +67,8 @@ class StateOfPower(SystemCalcDelegate):
 			return True
 
 		if self._estimator is None or battery.service != self._service:
-			self._estimator = ChargeHeadroom(capacity=lambda: self.capacity)
+			self._estimator = ChargeHeadroom(capacity=lambda: self.capacity,
+				v_limit=lambda: self.maxcellvoltage)
 			self._service = battery.service
 
 		i_avail = self._estimator.update(vmax, current)

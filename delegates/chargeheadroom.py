@@ -32,13 +32,17 @@ K_MIN = 0.015
 # Used when the battery capacity is unknown
 DEFAULT_CAPACITY = 100.0
 
+# Used when the target cell voltage is not configured
+DEFAULT_V_LIMIT = 3.48
+
 class ChargeHeadroom:
-    def __init__(self, v_limit=3.48, window=20.0, sample_time=1.0,
+    def __init__(self, v_limit=None, window=20.0, sample_time=1.0,
                  i_max=300.0, forgetting=0.99,
                  output_time_constant=10.0, drift_gain=0.02,
                  capacity=None):
         """
-        v_limit              : max cell voltage [V]
+        v_limit              : callable returning the max cell voltage [V],
+                               or None when unknown
         window               : comparison window [s]
         sample_time          : interval between update() calls [s]
         i_max                : upper clamp on the reported headroom [A]
@@ -49,7 +53,7 @@ class ChargeHeadroom:
         capacity             : callable returning the battery capacity [Ah],
                                or None when unknown
         """
-        self.v_limit = v_limit
+        self._v_limit = v_limit
         self.window_samples = max(1, int(round(window / sample_time)))
         self.sample_time = sample_time
         self.i_max = i_max
@@ -79,6 +83,12 @@ class ChargeHeadroom:
         """Battery capacity [Ah], falling back to a default when unknown."""
         c = self._capacity() if self._capacity is not None else None
         return c if c else DEFAULT_CAPACITY
+
+    @property
+    def v_limit(self):
+        """Target cell voltage [V], falling back to a default when unknown."""
+        v = self._v_limit() if self._v_limit is not None else None
+        return v if v else DEFAULT_V_LIMIT
 
     @property
     def resistance(self):
