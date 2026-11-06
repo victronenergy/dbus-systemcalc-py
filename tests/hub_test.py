@@ -574,6 +574,125 @@ class TestHubSystem(TestSystemCalcBase):
 			'/Control/EffectiveChargeVoltage': 58.3,
 			'/Control/BmsParameters': 1})
 
+	def _setup_vebus_feedin(self, ccl=20, solar=60, multi=-40, voltage=52.0):
+		# ESS with DC-coupled PV feed-in, and a hub4control that supports
+		# a discharge setpoint.
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub4/AssistantId', 5)
+		self._monitor.add_value('com.victronenergy.vebus.ttyO1', '/Hub/ChargeVoltage', 55.2)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Dc/0/Current', multi)
+		self._monitor.add_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn', 1)
+		self._add_device('com.victronenergy.hub4', {
+			'/Overrides/DischargeSetpoint': None})
+		self._add_device('com.victronenergy.solarcharger.ttyO2', {
+			'/State': 3,
+			'/Settings/ChargeCurrentLimit': 70,
+			'/Link/NetworkMode': 0,
+			'/Link/ChargeVoltage': None,
+			'/Link/ChargeCurrent': None,
+			'/Link/VoltageSense': None,
+			'/Dc/0/Voltage': voltage,
+			'/Dc/0/Current': solar,
+			'/FirmwareVersion': 0x0129},
+			connection='VE.Direct')
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': voltage,
+				'/Dc/0/Current': ccl,
+				'/Dc/0/Power': voltage * ccl,
+				'/Soc': 50,
+				'/DeviceInstance': 2,
+				'/Info/BatteryLowVoltage': 47,
+				'/Info/MaxChargeCurrent': ccl,
+				'/Info/MaxChargeVoltage': 55.2,
+				'/Info/MaxDischargeCurrent': 50})
+
+	def test_vebus_feedin_discharge_setpoint(self):
+		# Solar makes 60A, battery may only take 20A. The Multi is asked to
+		# take the other 40A off the DC bus, and solar stays maximised.
+		self._setup_vebus_feedin(ccl=20, solar=60, multi=-40)
+		self._update_values(interval=60000)
+		self._check_external_values({
+			'com.victronenergy.solarcharger.ttyO2': {
+				'/Link/ChargeCurrent': 70},
+			'com.victronenergy.hub4': {
+				'/Overrides/DischargeSetpoint': round(40 * 52 * 0.87)}})
+
+	def test_vebus_feedin_windup(self):
+		# The Multi cannot take more than 10A. Solar chargers must be
+		# wound down so the battery stays near its limit.
+		self._setup_vebus_feedin(ccl=20, solar=60, multi=-10)
+		sc = 'com.victronenergy.solarcharger.ttyO2'
+		for _ in range(20):
+			self._update_values(interval=3000)
+			# Solar follows its limit
+			self._monitor.set_value(sc, '/Dc/0/Current',
+				min(60, self._monitor.get_value(sc, '/Link/ChargeCurrent')))
+
+		limit = self._monitor.get_value(sc, '/Link/ChargeCurrent')
+		self.assertGreaterEqual(limit, 20 + 10)
+		self.assertLessEqual(limit, 20 + 10 + 4)
+		setpoint = self._monitor.get_value('com.victronenergy.hub4',
+			'/Overrides/DischargeSetpoint')
+		self.assertLessEqual(setpoint, 14 * 52)
+
+		# The Multi can take everything again. Over time we recover.
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Dc/0/Current', -40)
+		for _ in range(100):
+			self._update_values(interval=3000)
+			self._monitor.set_value(sc, '/Dc/0/Current',
+				min(60, self._monitor.get_value(sc, '/Link/ChargeCurrent')))
+			# The Multi draws the AC setpoint plus its losses from DC.
+			self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Dc/0/Current',
+				-(self._monitor.get_value('com.victronenergy.hub4',
+				'/Overrides/DischargeSetpoint') or 0) / (52 * 0.87))
+		self._check_external_values({
+			sc: {'/Link/ChargeCurrent': 70},
+			'com.victronenergy.hub4': {
+				'/Overrides/DischargeSetpoint': round(40 * 52 * 0.87)}})
+
+	def test_vebus_feedin_windup_12v(self):
+		# Same as above on a 12V system. The thresholds are in Watts, so
+		# the solar chargers are wound down equally well.
+		self._setup_vebus_feedin(ccl=20, solar=60, multi=-10, voltage=13.0)
+		self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Dc/0/Voltage', 13.0)
+		sc = 'com.victronenergy.solarcharger.ttyO2'
+		for _ in range(20):
+			self._update_values(interval=3000)
+			self._monitor.set_value(sc, '/Dc/0/Current',
+				min(60, self._monitor.get_value(sc, '/Link/ChargeCurrent')))
+
+		limit = self._monitor.get_value(sc, '/Link/ChargeCurrent')
+		self.assertGreaterEqual(limit, 20 + 10)
+		self.assertLessEqual(limit, 20 + 10 + 8)
+
+		# The Multi can take everything again. Over time we recover.
+		for _ in range(100):
+			self._update_values(interval=3000)
+			self._monitor.set_value(sc, '/Dc/0/Current',
+				min(60, self._monitor.get_value(sc, '/Link/ChargeCurrent')))
+			self._monitor.set_value('com.victronenergy.vebus.ttyO1', '/Dc/0/Current',
+				-(self._monitor.get_value('com.victronenergy.hub4',
+				'/Overrides/DischargeSetpoint') or 0) / (13 * 0.87))
+		self._check_external_values({
+			sc: {'/Link/ChargeCurrent': 70},
+			'com.victronenergy.hub4': {
+				'/Overrides/DischargeSetpoint': round(40 * 13 * 0.87)}})
+
+	def test_vebus_feedin_disabled(self):
+		# When feed-in is no longer allowed, the setpoint is invalidated
+		# and we go back to limiting the solar chargers.
+		self._setup_vebus_feedin(ccl=20, solar=60, multi=-40)
+		self._update_values(interval=10000)
+		self.assertIsNotNone(self._monitor.get_value('com.victronenergy.hub4',
+			'/Overrides/DischargeSetpoint'))
+
+		self._monitor.set_value('com.victronenergy.settings', '/Settings/CGwacs/OvervoltageFeedIn', 0)
+		self._update_values(interval=10000)
+		# An empty array invalidates the value on D-Bus
+		self.assertEqual(self._monitor.get_value('com.victronenergy.hub4',
+			'/Overrides/DischargeSetpoint'), [])
+
 	def test_control_vedirect_solarcharger_bms_ess_feedback_no_ac_in(self):
 		# When feedback is allowed we do not limit MPPTs, but in this case there is no AC-in so feedback is
 		# not possible.

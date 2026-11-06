@@ -22,6 +22,20 @@ from delegates.multi import Multi as MultiService
 # above.
 ADJUST = 3
 
+HUB4_SERVICE = 'com.victronenergy.hub4'
+
+# Feeding excess DC-coupled PV into the grid with a VE.Bus Multi. We don't
+# know how much the Multi is able to feed in (thermal limits, grid codes,
+# etc), so it is estimated by looking for wind-up: a persistent shortfall
+# between what we asked the Multi to take from the DC bus and what it actually
+# takes.
+FEEDIN_MARGIN = 100.0 # W, shortfall below this is ignored, measurements are poor
+FEEDIN_GAIN = 0.5 # How hard to wind down the solar chargers on a shortfall
+FEEDIN_RECOVER = 0.01 # Fraction of solar capacity to regain per ADJUST period
+FEEDIN_RECOVER_MIN = 50.0 # W, regain at least this much per ADJUST period
+FEEDIN_RAMP = 50.0 # W per ADJUST period, if rising faster the Multi is still catching up
+FEEDIN_EFFICIENCY = 0.87 # hub4control treats the setpoint as AC power
+
 VEBUS_FIRMWARE_REQUIRED = 0x422
 VEDIRECT_FIRMWARE_REQUIRED = 0x129
 VECAN_FIRMWARE_REQUIRED = 0x10200 # 1.02, 24-bit version
@@ -522,6 +536,7 @@ class ChargerSubsystem(object):
 		self._inverterchargers = {}
 		self._acsystem0 = None
 		self._otherchargers = {}
+		self.vebusfeedin = VebusFeedIn(monitor)
 
 	def add_solar_charger(self, service):
 		self._solarchargers[service] = charger = SolarCharger(self.monitor, service)
@@ -606,6 +621,12 @@ class ChargerSubsystem(object):
 		return safeadd(*(c.smoothed_current for c in self)) or 0
 
 	@property
+	def solar_capacity(self):
+		""" Capacity of solar chargers and inverter/chargers combined. """
+		return safeadd(*(c.currentlimit for c in chain(
+			self._solarchargers.values(), self._inverterchargers.values()))) or 0
+
+	@property
 	def solar_current(self):
 		return safeadd(*(c.smoothed_current for c in chain(
 			self._solarchargers.values(), self._inverterchargers.values()))) or 0
@@ -680,10 +701,23 @@ class ChargerSubsystem(object):
 			# feed that to the grid.
 			self._acsystem0.discharge_setpoint = max(0.0, round(-mm, 1))
 		elif feedback_allowed and not pv_disabled: # by VE.Bus Multi, max_charge_current is not None
-			# Maximise all chargers, as we have always done, and let the Multi
-			# feed it in using overvoltage-feedin.
-			for charger in chargers:
-				charger.maximize_charge_current()
+			feedin = self.vebusfeedin
+			if feedin.available:
+				# Similar to the Multi-RS above, but we have to use an
+				# estimate of how much the Multi can take off our hands.
+				# The estimate is in Watts, the chargers work in Amps.
+				m = max_charge_current + feedin.capacity / feedin.voltage
+				solarcurrent = min(self._set_charge_current(chargers, m),
+					safeadd(*(c.smoothed_current for c in chargers)) or 0)
+
+				# Ask the Multi to take whatever exceeds the charge current
+				# limit, and feed it into the grid.
+				feedin.setpoint = max(0.0, solarcurrent - max_charge_current) * feedin.voltage
+			else:
+				# Older hub4control. Maximise all chargers, as we have always
+				# done, and let the Multi feed it in using overvoltage-feedin.
+				for charger in chargers:
+					charger.maximize_charge_current()
 
 		elif len(chargers): # no feedback, max_charge_current is not None
 			self._set_charge_current(chargers, max_charge_current)
@@ -971,6 +1005,69 @@ class AcSystem(object):
 		self.monitor.set_value_async(self.service,
 			'/Ess/BatteryDischargeSetpoint', v)
 
+class VebusFeedIn(object):
+	""" Keeps track of feeding excess DC-coupled PV into the grid with a
+	    VE.Bus Multi. hub4control is asked to take at least a certain amount
+	    of power from the DC bus. Since we don't know how much the Multi can
+	    actually feed in, this is estimated by detecting wind-up, that is when
+	    the Multi persistently takes less than what was asked. This works in
+	    Watts, because the Multi's DC current is estimated from the AC side,
+	    so its error does not scale with the battery voltage. """
+	def __init__(self, monitor):
+		self.monitor = monitor
+		self.capacity = None # Estimated feed-in capacity in W, None if unknown
+		self.setpoint = 0.0 # Last requested DC discharge power in W
+		self.achieved = 0.0 # Last measured DC discharge power in W
+		self.voltage = None # DC voltage, to convert to and from Amps
+		self.written = False # Whether a valid setpoint was written to hub4
+
+	@property
+	def available(self):
+		""" True if hub4control supports a discharge setpoint. """
+		return self.monitor.seen(HUB4_SERVICE, '/Overrides/DischargeSetpoint')
+
+	def update(self, achieved, ceiling, voltage):
+		""" Update the capacity estimate. achieved is the power the Multi
+		    currently takes from the DC bus, ceiling is the total solar
+		    capacity, both in Watts. """
+		self.voltage = voltage
+		capacity = ceiling if self.capacity is None else min(self.capacity, ceiling)
+		shortfall = self.setpoint - achieved
+		catching_up = achieved - self.achieved > FEEDIN_RAMP
+		self.achieved = achieved
+
+		if shortfall > FEEDIN_MARGIN:
+			if not catching_up:
+				# Wind-up: the Multi is not taking what we asked, and it is
+				# not getting any closer. Trim towards what it achieves.
+				capacity = max(0.0, min(capacity, self.setpoint) -
+					FEEDIN_GAIN * (shortfall - FEEDIN_MARGIN))
+		else:
+			# Forget slowly, so we don't get stuck at a lower level.
+			capacity = min(ceiling, capacity + max(FEEDIN_RECOVER_MIN, FEEDIN_RECOVER * ceiling))
+		self.capacity = capacity
+
+	def write(self):
+		""" Write the setpoint to hub4control. hub4control treats this as AC
+		    power, so correct for the conversion losses, otherwise the Multi
+		    takes them from the battery. """
+		self.monitor.set_value_async(HUB4_SERVICE,
+			'/Overrides/DischargeSetpoint',
+			round(self.setpoint * FEEDIN_EFFICIENCY))
+		self.written = True
+
+	def invalidate(self):
+		""" Reset the estimate and invalidate the setpoint in hub4control,
+		    if we previously wrote one. """
+		self.capacity = None
+		self.setpoint = 0.0
+		self.achieved = 0.0
+		self.voltage = None
+		if self.written:
+			self.monitor.set_value_async(HUB4_SERVICE,
+				'/Overrides/DischargeSetpoint', [])
+			self.written = False
+
 class Dvcc(SystemCalcDelegate):
 	""" This is the main DVCC delegate object. """
 	def __init__(self, sc):
@@ -1072,6 +1169,9 @@ class Dvcc(SystemCalcDelegate):
 				'/Ac/NoFeedInReason',
 				'/Ess/BatteryDischargeCapacity',
 				'/Ess/BatteryDischargeSetpoint',
+			]),
+			(HUB4_SERVICE, [
+				'/Overrides/DischargeSetpoint',
 			])]
 
 	def get_settings(self):
@@ -1344,9 +1444,34 @@ class Dvcc(SystemCalcDelegate):
 			pv_disabled = PvStartStopControl.instance.pv_disabled
 			_max_charge_current = 0 if pv_disabled else _max_charge_current
 
-			# Set current limits
-			# Try to push the solar chargers to the vebus-compensated value
-			self._chargesystem.set_maxchargecurrent(_max_charge_current, self.feedback_allowed, stop_on_mcc0, pv_disabled)
+			# Feed excess DC-coupled PV into the grid with a VE.Bus Multi?
+			feedin = self._chargesystem.vebusfeedin
+			feedback_allowed = self.feedback_allowed
+			voltage = self._dbusservice['/Dc/Battery/Voltage']
+			vebus_feedin = feedback_allowed and not pv_disabled and \
+				max_charge_current is not None and \
+				not (stop_on_mcc0 and max_charge_current == 0) and \
+				not self._chargesystem.acsystem_allows_feedback and \
+				voltage is not None and voltage > 0 and \
+				feedin.available
+
+			if vebus_feedin:
+				# Update the feed-in capacity estimate before distributing.
+				feedin.update(max(0.0, -(vebus_dc_current or 0)) * voltage,
+					self._chargesystem.solar_capacity * voltage, voltage)
+
+				# The Multi's DC current is what we ask it to feed in, it
+				# should not be added to the solar charge limit, so use the
+				# uncompensated value here.
+				self._chargesystem.set_maxchargecurrent(max_charge_current,
+					feedback_allowed, stop_on_mcc0, pv_disabled)
+				feedin.write()
+			else:
+				feedin.invalidate()
+
+				# Set current limits
+				# Try to push the solar chargers to the vebus-compensated value
+				self._chargesystem.set_maxchargecurrent(_max_charge_current, feedback_allowed, stop_on_mcc0, pv_disabled)
 			current_written = int(network_mode_written and _max_charge_current is not None)
 
 		update_solarcharger_control_flags(voltage_written, current_written, effective_charge_voltage)
