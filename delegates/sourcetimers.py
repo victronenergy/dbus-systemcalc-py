@@ -1,4 +1,4 @@
-from time import time
+from time import monotonic
 from gi.repository import GLib
 
 # Victron packages
@@ -16,7 +16,7 @@ class SourceTimers(SystemCalcDelegate):
 	}
 
 	# So we can override it in testing
-	_get_time = lambda s: int(time())
+	_get_time = lambda s: int(monotonic())
 
 	def __init__(self):
 		super(SourceTimers, self).__init__()
