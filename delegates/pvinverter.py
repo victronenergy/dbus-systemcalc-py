@@ -58,6 +58,7 @@ class PvInverters(SystemCalcDelegate):
 	def device_added(self, service, instance, *args):
 		if service.startswith('com.victronenergy.pvinverter.'):
 			self.pvinverters.add(service)
+			self._dbusmonitor.track_value(service, "/ProductId", self._updatepvinverterspidlist)
 			self._updatepvinverterspidlist()
 		elif service.startswith('com.victronenergy.acsystem.') and self._timer is None:
 			# Only bother pushing AC-coupled PV to acsystem services (collections
@@ -71,7 +72,7 @@ class PvInverters(SystemCalcDelegate):
 			self.pvinverters.discard(service)
 			self._updatepvinverterspidlist()
 
-	def _updatepvinverterspidlist(self):
+	def _updatepvinverterspidlist(self, *args):
 		# Create list of connected pv inverters id's
 		productids = set(self._dbusmonitor.get_value(p, '/ProductId') for p in self.pvinverters)
 		productids.discard(None)
