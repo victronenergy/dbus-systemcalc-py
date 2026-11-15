@@ -110,7 +110,9 @@ class InverterCharger(SystemCalcDelegate):
 								except (TypeError, ZeroDivisionError):
 									pass
 					else:
-						power = safeadd(power, v * c)
+						current = safeadd(current, c)
+						if v is not None:
+							power = safeadd(power, v * c)
 				else:
 					power = safeadd(power, p)
 					current = safeadd(current, c)
