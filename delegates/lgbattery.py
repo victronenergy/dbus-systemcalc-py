@@ -48,6 +48,8 @@ class LgCircuitBreakerDetect(SystemCalcDelegate):
 		min_voltage = min(self._lg_voltage_buffer)
 		max_voltage = max(self._lg_voltage_buffer)
 		battery_voltage = self._dbusmonitor.get_value(self._lg_battery, '/Dc/0/Voltage')
+		if battery_voltage is None:
+			return
 		logging.debug('LG battery current V=%s I=%s' % (battery_voltage, battery_current))
 		if min_voltage < 0.9 * battery_voltage or max_voltage > 1.1 * battery_voltage:
 			logging.error('LG shutdown detected V=%s I=%s %s' %
