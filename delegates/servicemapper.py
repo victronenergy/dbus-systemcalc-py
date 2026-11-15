@@ -12,7 +12,7 @@ class ServiceMapper(SystemCalcDelegate):
 
 	def device_removed(self, service, instance):
 		path = ServiceMapper._get_service_mapping_path(service, instance)
-		if path in self._dbusservice:
+		if path in self._dbusservice and self._dbusservice[path] == service:
 			del self._dbusservice[path]
 
 	@staticmethod
