@@ -56,7 +56,7 @@ class SmartDict(dict):
 	def __getattr__(self, n):
 		try:
 			return self[n]
-		except IndexError:
+		except KeyError:
 			raise AttributeError(n)
 	def __setattr__(self, k, v):
 		self[k] = v
