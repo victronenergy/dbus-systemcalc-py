@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import unittest
+import math
 
 # This adapts sys.path to include all relevant packages
 import context
@@ -15,7 +16,7 @@ import patches
 from mock_gobject import timer_manager
 
 # Time travel patch
-Gps._get_time = lambda *a: timer_manager.datetime
+Gps._get_time = staticmethod(lambda: timer_manager.time / 1000.0)
 
 class GpsTest(TestSystemCalcBase):
 
@@ -104,6 +105,26 @@ class GpsTest(TestSystemCalcBase):
 				'/GpsService': 'com.victronenergy.gps.ttyX1',
 				'/GpsSpeed': expected_ema
 			})
+
+	def test_speed_smoothing_after_clock_correction(self):
+		gps = next(module for module in self._system_calc._modules if isinstance(module, Gps))
+		self._monitor.set_value('com.victronenergy.gps.ttyX1', '/Fix', 1)
+		self._update_values()
+		original_timestamp = timer_manager._timestamp
+		try:
+			for correction in (-3600, 3600):
+				with self.subTest(correction=correction):
+					gps.last_time = None
+					self._monitor.set_value('com.victronenergy.gps.ttyX1', '/Speed', 5)
+					gps.update_values({})
+					timer_manager._timestamp += correction
+					timer_manager._time += 1000
+					self._monitor.set_value('com.victronenergy.gps.ttyX1', '/Speed', 6)
+					values = {}
+					gps.update_values(values)
+					self.assertAlmostEqual(values['/GpsSpeed'], 6 - math.exp(-1))
+		finally:
+			timer_manager._timestamp = original_timestamp
 
 	def test_no_speed(self):
 		self._monitor.set_value('com.victronenergy.gps.ttyX1', '/Fix', 1)
