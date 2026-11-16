@@ -86,6 +86,17 @@ class MotorDriveConsumption(SystemCalcDelegate):
 			if self.last_point is not None
 			else 0
 		)
+		if self.last_point is not None:
+			if dt == 0:
+				return
+			if dt > 43200000:  # A clock rewind or a gap longer than half a day.
+				self.last_point = point
+				self.last_bearing = None
+				self.is_continuous = False
+				self.power_ema = None
+				self.current_ema = None
+				return
+
 		distance = self._calculate_distance_traveled(point, dt)
 		energy_wh = self._calculate_energy_wh_used(power, dt)
 		energy_ah = self._calculate_energy_ah_used(current, dt)
