@@ -9,7 +9,7 @@ from mock_gobject import timer_manager
 
 # our own packages
 import dbus_systemcalc
-from delegates import ScheduledCharging
+from delegates import ScheduledCharging, DynamicEss
 from base import TestSystemCalcBase
 
 # Monkey patching for unit tests
@@ -43,6 +43,7 @@ class TestSchedule(TestSystemCalcBase):
 		self._update_values()
 
 	def tearDown(self):
+		DynamicEss.instance.release_control()
 		ScheduledCharging.instance.release_control()
 
 	def test_scheduled_charge(self):
@@ -429,6 +430,82 @@ class TestSchedule(TestSystemCalcBase):
 				'com.victronenergy.hub4': {
 				'/Overrides/ForceCharge': 0,
 		}})
+
+	def test_state_not_scheduled_when_preempted(self):
+		""" When a higher priority controller (eg DynamicEss) takes over
+		    charge control in the middle of a scheduled window, SystemState
+		    must no longer report scheduled charging. """
+		now = timer_manager.datetime
+		midnight = datetime.combine(now.date(), time.min)
+		stamp = (now-midnight).seconds
+
+		self._add_device('com.victronenergy.dynamicess', values={
+			'/Ready': 0,
+			'/Active': 0})
+		self._monitor.add_value('com.victronenergy.settings',
+			'/Settings/DynamicEss/Mode', 1)
+
+		# Schedule starts in 10 seconds and lasts an hour
+		self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Day', 7)
+		self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Start', stamp+10)
+		self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Duration', 3600)
+		self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Soc', 100)
+
+		# Scheduled charging takes control. Move the SoC to make SystemState
+		# recompute.
+		timer_manager.run(20000)
+		self._monitor.set_value(self.vebus, '/Soc', 60)
+		timer_manager.run(1000)
+		self._check_values({
+			'/SystemState/State': 0x103,
+			'/Control/ScheduledCharge': 1})
+
+		# DynamicEss becomes ready and takes control
+		self._monitor.set_value('com.victronenergy.dynamicess', '/Ready', 1)
+		timer_manager.run(6000)
+		self._monitor.set_value(self.vebus, '/Soc', 61)
+		timer_manager.run(1000)
+		self.assertFalse(ScheduledCharging.instance.active)
+		self._check_values({
+			'/SystemState/State': 3,
+			'/Control/ScheduledCharge': 0,
+			'/Control/ScheduledChargeStatus': 4}) # BLOCKED
+
+		# DynamicEss releases control, scheduled charging resumes
+		self._monitor.set_value('com.victronenergy.dynamicess', '/Ready', 0)
+		timer_manager.run(6000)
+		self._monitor.set_value(self.vebus, '/Soc', 60)
+		timer_manager.run(1000)
+		self._check_values({
+			'/SystemState/State': 0x103,
+			'/Control/ScheduledCharge': 1,
+			'/Control/ScheduledChargeStatus': 0})
+
+	def test_state_not_scheduled_when_soc_unavailable(self):
+		now = timer_manager.datetime
+		midnight = datetime.combine(now.date(), time.min)
+		stamp = (now-midnight).seconds
+
+		self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Day', 7)
+		self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Start', stamp+10)
+		self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Duration', 3600)
+		self._set_setting('/Settings/CGwacs/BatteryLife/Schedule/Charge/0/Soc', 100)
+
+		timer_manager.run(20000)
+		self._monitor.set_value(self.vebus, '/Soc', 60)
+		timer_manager.run(1000)
+		self._check_values({'/SystemState/State': 0x103})
+
+		# SoC goes away mid-window
+		self._monitor.set_value(self.vebus, '/Soc', None)
+		timer_manager.run(6000)
+		self._monitor.set_value(self.vebus, '/State', 4)
+		timer_manager.run(1000)
+		self.assertFalse(ScheduledCharging.instance.active)
+		self._check_values({
+			'/SystemState/State': 4,
+			'/Control/ScheduledCharge': 0,
+			'/Control/ScheduledChargeStatus': 2}) # NO_SOC
 
 	def test_hysteresis(self):
 		""" Test that battery is allowed to drop 5% before re-acivating

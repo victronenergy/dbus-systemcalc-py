@@ -310,12 +310,14 @@ class ScheduledCharging(SystemCalcDelegate, ChargeControl):
 			self._dbusservice['/Control/ScheduledChargeStatus'] = Reasons.BLOCKED
 			self._dbusservice['/Control/ScheduledCharge'] = 0
 			self._dbusservice['/Control/ScheduledSoc'] = None
+			self.active = False
 			return True
 
 		if self.soc is None:
 			self._dbusservice['/Control/ScheduledChargeStatus'] = Reasons.NO_SOC
 			self._dbusservice['/Control/ScheduledCharge'] = 0
 			self._dbusservice['/Control/ScheduledSoc'] = None
+			self.active = False
 			return True
 
 		condition = Reasons.NO_ESS
@@ -326,6 +328,7 @@ class ScheduledCharging(SystemCalcDelegate, ChargeControl):
 			self._dbusservice['/Control/ScheduledChargeStatus'] = condition
 			self._dbusservice['/Control/ScheduledCharge'] = 0
 			self._dbusservice['/Control/ScheduledSoc'] = None
+			self.active = False
 			return True
 
 		now = self._get_time()
