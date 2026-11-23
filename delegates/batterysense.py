@@ -115,6 +115,11 @@ class BatterySense(SystemCalcDelegate):
 
 	@property
 	def temperature_service(self):
+		# The selection is only accessible in the GUI (DVCC section) when
+		# STS is enabled. When STS is off, or forced off by a BMS, behave
+		# as if it is set to default.
+		if not self.has_tsense:
+			return self.TEMPSERVICE_DEFAULT
 		return self._settings['temperatureservice']
 
 	@property

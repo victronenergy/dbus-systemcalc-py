@@ -339,6 +339,60 @@ class VoltageSenseTest(TestSystemCalcBase):
 				'/BatterySense/Temperature': 8}})
 
 
+	def test_temperature_service_ignored_when_tsense_off(self):
+		self._set_setting('/Settings/Services/Bol', 1)
+		self._set_setting('/Settings/SystemSetup/SharedTemperatureSense', 1)
+		self._set_setting('/Settings/SystemSetup/TemperatureService', 'com.victronenergy.temperature/3/Temperature')
+
+		self._add_device('com.victronenergy.battery.ttyO2',
+			product_name='battery',
+			values={
+				'/Dc/0/Voltage': 12.15,
+				'/Dc/0/Current': 5.3,
+				'/Dc/0/Power': 65,
+				'/Dc/0/Temperature': 8,
+				'/Soc': 15.3,
+				'/DeviceInstance': 2})
+		self._add_device('com.victronenergy.temperature.ttyO3',
+			product_name='temperature sensor',
+			values={
+				'/Temperature': 9,
+				'/TemperatureType': 0,
+				'/DeviceInstance': 3})
+
+		# STS on, selected sensor is used
+		self._update_values(9000)
+		self._check_values({
+			'/Dc/Battery/Temperature': 9,
+			'/Dc/Battery/TemperatureService': 'com.victronenergy.temperature.ttyO3',
+		})
+
+		# STS off or forced off, selection is ignored, battery is used
+		for tsense in (0, 2):
+			self._set_setting('/Settings/SystemSetup/SharedTemperatureSense', tsense)
+			self._update_values(9000)
+			self._check_values({
+				'/Dc/Battery/Temperature': 8,
+				'/Dc/Battery/TemperatureService': 'com.victronenergy.battery.ttyO2',
+			})
+
+		# nosensor is also ignored when STS is off
+		self._set_setting('/Settings/SystemSetup/TemperatureService', 'nosensor')
+		self._update_values(9000)
+		self._check_values({
+			'/Dc/Battery/Temperature': 8,
+			'/Dc/Battery/TemperatureService': 'com.victronenergy.battery.ttyO2',
+		})
+
+		# STS back on, selection is honoured again
+		self._set_setting('/Settings/SystemSetup/TemperatureService', 'com.victronenergy.temperature/3/Temperature')
+		self._set_setting('/Settings/SystemSetup/SharedTemperatureSense', 1)
+		self._update_values(9000)
+		self._check_values({
+			'/Dc/Battery/Temperature': 9,
+			'/Dc/Battery/TemperatureService': 'com.victronenergy.temperature.ttyO3',
+		})
+
 	def test_temperature_sense_order(self):
 		self._set_setting('/Settings/Services/Bol', 1)
 
