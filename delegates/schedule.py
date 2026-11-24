@@ -1,6 +1,7 @@
 from enum import IntEnum
 from gi.repository import GLib
 from datetime import datetime, timedelta, time
+from itertools import repeat
 
 # Victron packages
 from ve_utils import exit_on_error
@@ -90,10 +91,11 @@ class ScheduledWindow(object):
 		return "Start: {}, Stop: {}".format(self.start, self.stop)
 
 class ScheduledChargeWindow(ScheduledWindow):
-	def __init__(self, starttime, duration, soc, allow_discharge):
+	def __init__(self, starttime, duration, soc, allow_discharge, maxchargepower=-1):
 		super(ScheduledChargeWindow, self).__init__(starttime, duration)
 		self.soc = soc
 		self.allow_discharge = allow_discharge
+		self.maxchargepower = maxchargepower
 
 	def soc_reached(self, s):
 		return not self.soc >= 100 and s >= self.soc
@@ -280,21 +282,23 @@ class ScheduledCharging(SystemCalcDelegate, ChargeControl):
 				BLPATH + "/Schedule/Charge/{}/Soc".format(i), 100, 0, 100))
 			settings.append(("schedule_discharge_{}".format(i),
 				BLPATH + "/Schedule/Charge/{}/AllowDischarge".format(i), 0, 0, 1))
+			settings.append(("schedule_maxchargepower_{}".format(i),
+				BLPATH + "/Schedule/Charge/{}/MaxChargePower".format(i), -1, -1, 200000))
 
 		return settings
 
 	@classmethod
-	def _charge_windows(klass, today, days, starttimes, durations, stopsocs, discharges):
+	def _charge_windows(klass, today, days, starttimes, durations, stopsocs, discharges, maxchargepowers=repeat(-1)):
 		starttimes = (time(x//3600 % 24, x//60 % 60, x % 60) for x in starttimes)
 
-		for d, starttime, duration, soc, discharge in zip(days, starttimes, durations, stopsocs, discharges):
+		for d, starttime, duration, soc, discharge, mcp in zip(days, starttimes, durations, stopsocs, discharges, maxchargepowers):
 			if d >= 0:
 				d0 = prev_schedule_day(today, d)
 				d1 = next_schedule_day(today, d)
 				yield ScheduledChargeWindow(
-					datetime.combine(d0, starttime), duration, soc, discharge)
+					datetime.combine(d0, starttime), duration, soc, discharge, mcp)
 				yield ScheduledChargeWindow(
-					datetime.combine(d1, starttime), duration, soc, discharge)
+					datetime.combine(d1, starttime), duration, soc, discharge, mcp)
 
 	def charge_windows(self, today):
 		days = (self._settings['schedule_day_{}'.format(i)] for i in range(NUM_SCHEDULES))
@@ -302,7 +306,8 @@ class ScheduledCharging(SystemCalcDelegate, ChargeControl):
 		durations = (self._settings['schedule_duration_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		stopsocs = (self._settings['schedule_soc_{}'.format(i)] for i in range(NUM_SCHEDULES))
 		discharges = (self._settings['schedule_discharge_{}'.format(i)] for i in range(NUM_SCHEDULES))
-		return self._charge_windows(today, days, starttimes, durations, stopsocs, discharges)
+		maxchargepowers = (self._settings['schedule_maxchargepower_{}'.format(i)] for i in range(NUM_SCHEDULES))
+		return self._charge_windows(today, days, starttimes, durations, stopsocs, discharges, maxchargepowers)
 
 	def _on_timer(self):
 		# Another delegate controls charging
@@ -361,6 +366,8 @@ class ScheduledCharging(SystemCalcDelegate, ChargeControl):
 				# soc is 100%.
 				if device.forcecharge:
 					device.maxdischargepower = None
+					if w.maxchargepower >= 0:
+						Dvcc.instance.internal_maxchargepower = w.maxchargepower
 					break # from the for loop, skip the else clause below.
 
 				# If we are here, it means the battery has reached the target
