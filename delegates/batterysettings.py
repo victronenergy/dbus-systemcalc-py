@@ -33,6 +33,7 @@ BATTERY_SOLUNA = 0xB02F
 BATTERY_TAB = 0xB052
 BATTERY_SSS = 0xB054
 BATTERY_VOLTSMILE = 0xB055
+BATTERY_DYNESS = 0xB025
 
 class BatterySettings(SystemCalcDelegate):
 	""" Manages battery settings for known batteries. At present
@@ -53,7 +54,7 @@ class BatterySettings(SystemCalcDelegate):
 		if pid in (BATTERY_PYLONTECH, BATTERY_BYD, BATTERY_BYD_L, BATTERY_BYD_PREMIUM,
 				BATTERY_DISCOVER_AES, BATTERY_LEOCH, BATTERY_LBSA,
 				BATTERY_BSLBATT, BATTERY_BMZ, BATTERY_CEGASA, BATTERY_PELIO_L,
-				BATTERY_ZYC, BATTERY_SUNWODA, BATTERY_TAB):
+				BATTERY_ZYC, BATTERY_SUNWODA, BATTERY_TAB, BATTERY_DYNESS):
 			self._settings['vsense'] = 2 # Forced Off
 			self._settings['tsense'] = 2 # Forced Off
 			self._settings['bol'] = 3 # Forced on
