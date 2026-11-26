@@ -42,7 +42,10 @@ class GensetStartStop(SystemCalcDelegate):
 		for service in sorted(self._dbusmonitor.get_service_list('com.victronenergy.generator')):
 			rbc = self._dbusmonitor.get_value(service, '/RunningByConditionCode')
 			if rbc is not None:
-				if self._dbusservice[PREFIX + '/RunningByConditionCode'] == 0 and rbc > 0:
+				last_start = self._dbusmonitor.get_value(service, '/LastStartTime')
+				if last_start is not None:
+					self.starttime = last_start
+				elif self._dbusservice[PREFIX + '/RunningByConditionCode'] == 0 and rbc > 0:
 					# Generator was started, update LastStartTime
 					self.starttime = int(time())
 
