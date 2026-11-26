@@ -142,7 +142,8 @@ class BatteryService(SystemCalcDelegate):
 			GLib.idle_add(self._set_bms)
 
 	def device_removed(self, service, instance):
-		if service.startswith('com.victronenergy.battery.') and instance in self._batteries:
+		if service.startswith('com.victronenergy.battery.') and instance in self._batteries \
+				and self._batteries[instance].service == service:
 			del self._batteries[instance]
 			self._set_bms()
 
