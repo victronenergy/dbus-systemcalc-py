@@ -1063,6 +1063,8 @@ class Dvcc(SystemCalcDelegate):
 			('com.victronenergy.vecan',	[
 				'/Link/ChargeVoltage',
 				'/Link/NetworkMode']),
+			('com.victronenergy.hub4', [
+				'/Overrides/FeedInExcess']),
 			('com.victronenergy.settings', [
 				 '/Settings/CGwacs/OvervoltageFeedIn',
 				 '/Settings/Services/Bol',
@@ -1507,7 +1509,9 @@ class Dvcc(SystemCalcDelegate):
 		return self.has_ess_assistant and self._multi.ac_connected and \
 			self._multi.active_source_type != 2 and \
 			self._dbusmonitor.get_value('com.victronenergy.settings',
-				'/Settings/CGwacs/OvervoltageFeedIn') == 1
+				'/Settings/CGwacs/OvervoltageFeedIn') == 1 and \
+			self._dbusmonitor.get_value('com.victronenergy.hub4',
+				'/Overrides/FeedInExcess') != 1
 
 	@reify
 	def gx_is_rooted(self):
