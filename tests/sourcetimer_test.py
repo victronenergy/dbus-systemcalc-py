@@ -10,8 +10,12 @@ from delegates import SourceTimers
 
 # Monkey patching for unit tests
 import patches
+import unittest
+from unittest.mock import patch
+import delegates.sourcetimers as sourcetimers
 
 # Time travel patch
+production_get_time = SourceTimers._get_time
 SourceTimers._get_time = lambda *a: (timer_manager.time / 1000)
 
 class TestTimers(TestSystemCalcBase):
@@ -92,3 +96,32 @@ class TestTimers(TestSystemCalcBase):
 			'/Timers/TimeOnInverter': 10,
 			'/Timers/TimeOff': 10,
 		})
+
+
+class TestTimerClockCorrections(unittest.TestCase):
+	def test_clock_corrections_do_not_change_elapsed_time(self):
+		for jump in (-3600, 3600, 86400):
+			for source, state, path in (
+				(1, 3, '/Timers/TimeOnGrid'),
+				(2, 3, '/Timers/TimeOnGenerator'),
+				(0xF0, 3, '/Timers/TimeOnInverter'),
+				(1, 0, '/Timers/TimeOff'),
+			):
+				with self.subTest(jump=jump, path=path):
+					clocks = {'wall': 100000, 'elapsed': 1000}
+					with patch.object(sourcetimers, 'time', lambda: clocks['wall'], create=True), \
+						patch.object(sourcetimers, 'monotonic', lambda: clocks['elapsed'], create=True):
+						timer = SourceTimers()
+						timer._get_time = production_get_time.__get__(timer, SourceTimers)
+						timer._dbusservice = {
+							'/Ac/ActiveIn/Source': source,
+							'/SystemState/State': state, path: 0}
+						timer._on_timer()
+						clocks['wall'] += 10 + jump
+						clocks['elapsed'] += 10
+						timer._on_timer()
+						self.assertEqual(timer._dbusservice[path], 10)
+						clocks['wall'] += 10
+						clocks['elapsed'] += 10
+						timer._on_timer()
+						self.assertEqual(timer._dbusservice[path], 20)
