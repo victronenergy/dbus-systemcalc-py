@@ -1,13 +1,13 @@
 from gi.repository import GLib
 from delegates.base import SystemCalcDelegate
 import math
-from datetime import datetime
+from time import monotonic
 
 SPEED_EMA_TIME_CONSTANT = 1.0  # seconds
 
 class Gps(SystemCalcDelegate):
 
-	_get_time = datetime.now
+	_get_time = staticmethod(monotonic)
 
 	def __init__(self):
 		super(Gps, self).__init__()
@@ -62,7 +62,7 @@ class Gps(SystemCalcDelegate):
 				self.speed_ema = speed
 			else:
 				now = self._get_time()
-				dt = (now - self.last_time).total_seconds()
+				dt = now - self.last_time
 				alpha = 1 - math.exp(-dt / SPEED_EMA_TIME_CONSTANT)
 				self.speed_ema = alpha * speed + (1 - alpha) * self.speed_ema
 				self.last_time = now
