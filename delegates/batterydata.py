@@ -97,7 +97,7 @@ class BatteryTracker(object):
 			'instance': self.instance,
 			'voltage': voltage,
 			'current': current,
-			'power': power or calculated_power,
+			'power': power if power is not None else calculated_power,
 			'temperature': self._tracked['/Dc/0/Temperature'],
 			'soc': self._tracked['/Soc'],
 			'timetogo': self._tracked.get('/TimeToGo', None),
